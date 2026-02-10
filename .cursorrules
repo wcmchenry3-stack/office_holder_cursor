@@ -1,0 +1,1 @@
+When making significant code changes (new routes, moving/renaming scraper or DB modules, or changing run/preview/debug behavior), update README.md so the Architecture and "How the scraper works" sections stay accurate.

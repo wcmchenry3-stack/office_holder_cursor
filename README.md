@@ -1,0 +1,120 @@
+# Office Holder
+
+Local app to build a database of political officeholders by scraping Wikipedia. Run the scraper locally (no Google Colab), manage office configs and party list in a dark-mode UI, and store data in SQLite.
+
+**When you change the codebase:** Update this README when you add/remove major routes or features, move or rename scraper/DB modules, or change run modes, preview behavior, or debug export. Keep the "Architecture" and "How the scraper works" sections in sync with the code so Cursor and future edits can rely on it.
+
+---
+
+## Setup
+
+1. **Clone and enter the project**
+   ```bash
+   cd office_holder
+   ```
+
+2. **Create a virtual environment (recommended)**
+   ```bash
+   python -m venv venv
+   # Windows:
+   venv\Scripts\activate
+   # macOS/Linux:
+   source venv/bin/activate
+   ```
+
+3. **Install dependencies**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+4. **Run the app**
+   ```bash
+   uvicorn src.main:app --reload
+   ```
+   Open http://127.0.0.1:8000
+
+---
+
+## Architecture
+
+```mermaid
+flowchart LR
+  Browser[Browser]
+  Main[main.py]
+  DB[src/db]
+  Scraper[src/scraper]
+  SQLite[(SQLite)]
+  Wiki[Wikipedia]
+
+  Browser --> Main
+  Main --> DB
+  Main --> Scraper
+  DB --> SQLite
+  Scraper --> Wiki
+  Scraper --> DB
+```
+
+- **`src/main.py`** — FastAPI app: all HTTP routes (offices, parties, run, individuals, office terms), form handlers, and API endpoints (preview, test-config, debug export, preview-offices). Builds office draft from JSON via `_office_draft_from_body()` for test-config and preview.
+- **`src/db/`** — SQLite layer: `connection.py` (path, init, get_connection), `offices.py`, `parties.py`, `refs.py` (countries, states, levels, branches), `individuals.py`, `office_terms.py`, `bulk_import.py`, `migrate.py`, `schema.py`, `date_utils.py`. Shared `_row_to_dict` in `db/utils.py`.
+- **`src/scraper/`** — Parsing and run: `runner.py` (run_with_db, preview_with_config), `table_parser.py` (DataCleanup, Offices, Biography), `parse_core.py` (re-exports from table_parser; sample file is not used at runtime), `config_test.py` (test_office_config, get_raw_table_preview, get_all_tables_preview, get_table_html), `logger.py` (Logger, HTTP_USER_AGENT).
+
+---
+
+## How the scraper works
+
+- **Run modes** (implemented in `src/scraper/runner.py`):
+  - **Full run:** Clears office terms (and optionally individuals), then parses all enabled offices and writes to DB.
+  - **Delta run:** Parses all office tables, compares with existing terms, inserts/updates only changes.
+  - **Live person update:** Refreshes biography data for individuals with no death date.
+  - **Single-bio:** Run biography for one individual (by ID or Wikipedia URL).
+
+- **Table parsing:** Done by `src/scraper/table_parser.py` (classes DataCleanup, Offices, Biography). **The app does not load or execute `sample files/` at runtime.** `src/scraper/parse_core.py` only imports and re-exports from `table_parser`. Column mapping, rowspan handling, dynamic parse, and term-date extraction all live in table_parser.
+
+- **Config test and preview:**
+  - `src/scraper/config_test.py`: `test_office_config(office_row)` validates URL, table_no, and column indices; `get_raw_table_preview`, `get_all_tables_preview`, `get_table_html` fetch and return raw table data or HTML for the UI.
+  - `runner.preview_with_config(office_row, max_rows=10)` runs the full parser (table_parser) for one office and returns `preview_rows`, `raw_table_preview`, `error`.
+
+---
+
+## Key endpoints and features
+
+| Route / feature | Purpose |
+|-----------------|--------|
+| `GET /`, `GET /offices` | List offices (with filters, show limit, test all, preview all). |
+| `GET/POST /offices/new`, `GET/POST /offices/{id}` | Create/update office config. |
+| `GET /api/offices/{id}/test-config` | Test saved config for one office. |
+| `POST /api/offices/test-config` | Test draft config from JSON body. |
+| `POST /api/preview` | Preview with draft config (JSON body); returns parsed rows. |
+| `POST /api/preview-all-tables` | Fetch URL, return all tables (top 10 rows each); confirm if many tables. |
+| `POST /api/raw-table-preview` | Fetch URL, return raw cell text for the single table at `table_no` (top 10 rows; no mapping). |
+| `POST /api/table-html` | Fetch URL, return raw HTML of table at `table_no`. |
+| `POST /api/office-debug-export` | Write debug file (config + extracted table + raw HTML) to `debug/`. |
+| `POST /api/preview-offices` | Body: `{ "office_ids": [...] }`. Runs top-10 preview for each using saved config; used by "Preview all" on offices list. |
+| `GET /parties`, `/parties/new`, etc. | Parties CRUD and bulk import. |
+| `GET /run`, `POST /run` | Run page: start job (full/delta/live_person), poll progress. |
+| `GET /data/individuals`, `GET /data/office-terms` | View individuals and office terms. |
+
+---
+
+## Data and config
+
+- **SQLite:** `data/office_holder.db` (created on first request). Path and log dir from `src/db/connection.py`.
+- **Logs:** Under `data/` or project log dir; used by scraper runs and test run.
+- **Debug exports:** Written to `debug/` at project root (gitignored); filename `{OfficeName}_{timestamp}.txt`.
+- **`.gitignore`:** `data/`, `debug/`, `*.db`, `logs/`, etc. `sample files/` is tracked for reference and bulk-import CSV.
+
+---
+
+## Using the UI
+
+- **Offices:** Add/edit office configs (Wikipedia list URL, table number, column mapping, flags). Use **Bulk import** with a path like `sample files/OfficeTables - Sheet1 (1).csv` to load many at once. **Test config**, **Preview**, **Show all tables**, **Show selected table** (raw cell text for the configured table only), **Show table HTML**, **Export debug file** use the current form values.
+- **Parties:** Manage the party list (country, name, Wikipedia link) used when resolving party from table links.
+- **Run:** Choose run mode (Full / Delta / Live person), optionally **Dry run** or **Test run**, set max rows per table, then run. Results are written to the DB unless you use dry run.
+- **Individuals / Office terms:** View scraped data.
+
+---
+
+## Git and data
+
+- Repo is safe to refresh: `data/`, `*.db`, `logs/`, and `debug/` are in `.gitignore`. Your DB, logs, and debug exports are not removed on pull.
+- `sample files/` is tracked so the sample script and CSV stay in the repo.

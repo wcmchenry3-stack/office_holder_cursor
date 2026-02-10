@@ -1,0 +1,694 @@
+{% extends "base.html" %}
+{% block title %}Offices – Office Holder{% endblock %}
+{% block content %}
+<h1>Office configs</h1>
+{% if saved %}<div class="alert alert-success">Saved to local database (data/office_holder.db).</div>{% endif %}
+{% if imported %}<div class="alert alert-success">Imported {{ imported_count }} offices to local database (data/office_holder.db).{% if imported_errors %}{{ imported_errors }} row(s) had errors.{% endif %}</div>{% endif %}
+<div class="actions">
+  <a href="/offices/new" class="btn">Add office</a>
+  <a href="/offices/import" class="btn btn-secondary">Bulk import CSV</a>
+  <button type="button" class="btn btn-secondary" id="toggleAllOn">Toggle all on</button>
+  <button type="button" class="btn btn-secondary" id="toggleAllOff">Toggle all off</button>
+  <button type="button" class="btn btn-secondary" id="testAll">Test all configs</button>
+  <button type="button" class="btn btn-secondary" id="previewAllBtn">Preview all</button>
+</div>
+<div id="testAllResult" class="alert" style="display:none; margin-top:0.5rem;"></div>
+<div id="previewAllPanel" class="preview-panel" style="display:none; margin-top:1rem;">
+  <h2>Preview all (visible offices)</h2>
+  <p><small>Top 10 rows per office using saved config. Only offices currently shown (after filters/limit) are included.</small></p>
+  <div id="previewAllContent"></div>
+  <div class="actions" style="margin-top:0.5rem;">
+    <button type="button" class="btn btn-secondary btn-sm" id="previewAllClear">Clear</button>
+    <button type="button" class="btn btn-secondary btn-sm" id="previewAllClose">Close</button>
+  </div>
+</div>
+{% if offices %}
+<div class="office-filters form-row" style="margin:0.5rem 0; flex-wrap:wrap; gap:0.5rem 1rem;">
+  <div class="form-group" style="margin:0; min-width:10rem;">
+    <label for="filterCountry">Country</label>
+    <select id="filterCountry" class="office-col-filter"><option value="">All</option></select>
+  </div>
+  <div class="form-group" style="margin:0; min-width:10rem;">
+    <label for="filterState">State</label>
+    <select id="filterState" class="office-col-filter"><option value="">All</option></select>
+  </div>
+  <div class="form-group" style="margin:0; min-width:8rem;">
+    <label for="filterLevel">Level</label>
+    <select id="filterLevel" class="office-col-filter"><option value="">All</option></select>
+  </div>
+  <div class="form-group" style="margin:0; min-width:8rem;">
+    <label for="filterBranch">Branch</label>
+    <select id="filterBranch" class="office-col-filter"><option value="">All</option></select>
+  </div>
+  <div class="form-group" style="margin:0; min-width:12rem;">
+    <label for="filterName">Name</label>
+    <input type="text" id="filterName" class="office-col-filter" placeholder="Search name…">
+  </div>
+  <div class="form-group" style="margin:0; min-width:8rem;">
+    <label for="filterTerms">Terms</label>
+    <select id="filterTerms" class="office-col-filter">
+      <option value="">All</option>
+      <option value="0">=0</option>
+      <option value="gt0">&gt;0</option>
+    </select>
+  </div>
+  <div class="form-group" style="margin:0;">
+    <label>&nbsp;</label>
+    <button type="button" id="removeFilters" class="btn btn-secondary btn-sm">Remove filters</button>
+  </div>
+  <div class="form-group" style="margin:0; min-width:8rem;">
+    <label for="showLimit">Show</label>
+    <select id="showLimit" class="office-col-filter">
+      <option value="20">Top 20</option>
+      <option value="50">Top 50</option>
+      <option value="100">Top 100</option>
+      <option value="all">All</option>
+    </select>
+  </div>
+</div>
+<table id="officesTable">
+  <thead>
+    <tr>
+      <th class="sortable" data-sort="enabled" title="Sort by on/off"><span>On</span></th>
+      <th class="sortable" data-sort="name" title="Sort by name"><span>Name</span></th>
+      <th class="sortable" data-sort="country" title="Sort by country"><span>Country</span></th>
+      <th class="sortable" data-sort="state" title="Sort by state"><span>State</span></th>
+      <th class="sortable" data-sort="level" title="Sort by level"><span>Level</span></th>
+      <th class="sortable" data-sort="branch" title="Sort by branch"><span>Branch</span></th>
+      <th class="sortable" data-sort="url" title="Sort by URL"><span>URL</span></th>
+      <th class="sortable" data-sort="table" title="Sort by table number"><span>Table</span></th>
+      <th>Terms</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for o in offices %}
+    <tr data-office-id="{{ o.id }}" data-office-name="{{ (o.name or 'Office')|e }}"
+        data-enabled="{{ 1 if o.enabled|default(1) else 0 }}"
+        data-name="{{ (o.name or '')|lower|e }}"
+        data-country="{{ (o.country_name or '')|e }}"
+        data-state="{{ (o.state_name or '')|e }}"
+        data-level="{{ (o.level_name or '')|e }}"
+        data-branch="{{ (o.branch_name or '')|e }}"
+        data-url="{{ (o.url or '')|lower|e }}"
+        data-table="{{ o.table_no }}"
+        data-terms-count="{{ o.terms_count|default(0) }}">
+      <td>
+        <label class="checkbox-group" title="Include this office in runs">
+          <input type="checkbox" class="office-enabled" data-office-id="{{ o.id }}" {% if o.enabled|default(1) %}checked{% endif %} aria-label="Office {{ o.name or o.id }} enabled">
+        </label>
+      </td>
+      <td><a href="/offices/{{ o.id }}">{{ o.name or '—' }}</a></td>
+      <td>{{ o.country_name or '—' }}</td>
+      <td>{{ o.state_name or '—' }}</td>
+      <td>{{ o.level_name or '—' }}</td>
+      <td>{{ o.branch_name or '—' }}</td>
+      <td>{% if o.url %}<a href="{{ o.url }}" target="_blank" rel="noopener">{{ (o.url[:50] + '…') if o.url|length > 50 else o.url }}</a>{% else %}—{% endif %}</td>
+      <td>{{ o.table_no }}</td>
+      <td>{{ o.terms_count|default(0) }}</td>
+      <td>
+        <button type="button" class="btn btn-sm office-test-btn" data-office-id="{{ o.id }}" data-office-name="{{ (o.name or 'Office')|e }}">Test config</button>
+        <span class="office-test-msg" data-office-id="{{ o.id }}" style="margin-left:0.25rem; font-size:0.875rem;"></span>
+        <button type="button" class="btn btn-sm office-populate-terms-btn" data-office-id="{{ o.id }}" data-office-name="{{ (o.name or 'Office')|e }}">Populate terms</button>
+        <button type="button" class="btn btn-sm office-populate-stop-btn" data-office-id="{{ o.id }}" style="display:none; margin-left:0.25rem;">Stop</button>
+        <span class="office-populate-msg" data-office-id="{{ o.id }}" style="margin-left:0.25rem; font-size:0.875rem;"></span>
+        <a href="/offices/{{ o.id }}/preview" class="btn btn-sm">Preview</a>
+        <a href="/offices/{{ o.id }}" class="btn btn-sm btn-secondary edit-office-btn" data-office-id="{{ o.id }}">Edit</a>
+        <form action="/offices/{{ o.id }}/delete" method="post" style="display:inline;" onsubmit="return confirm('Delete this office?');">
+          <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>No offices yet. <a href="/offices/new">Add one</a> or <a href="/offices/import">bulk import from CSV</a>.</p>
+{% endif %}
+<script>
+(function() {
+  var esc = window.esc;
+  var sortCol = null;
+  var sortAsc = true;
+  var previewAllStopped = false;
+  var previewAllAbortController = null;
+
+  function getVisibleOfficeRows() {
+    return Array.from(document.querySelectorAll('#officesTable tbody tr[data-office-id]')).filter(function(tr) {
+      return tr.style.display !== 'none';
+    });
+  }
+
+  function hasActiveFilter() {
+    var c = document.getElementById('filterCountry');
+    var s = document.getElementById('filterState');
+    var l = document.getElementById('filterLevel');
+    var b = document.getElementById('filterBranch');
+    var n = document.getElementById('filterName');
+    var t = document.getElementById('filterTerms');
+    return (c && c.value !== '') || (s && s.value !== '') || (l && l.value !== '') || (b && b.value !== '') || (n && (n.value || '').trim().length > 0) || (t && t.value !== '');
+  }
+
+  var FILTER_STORAGE_KEY = 'office_holder_office_filters';
+  var SHOW_LIMIT_STORAGE_KEY = 'office_holder_office_show_limit';
+
+  function getShowLimit() {
+    var el = document.getElementById('showLimit');
+    if (!el || el.value === 'all') return Infinity;
+    var n = parseInt(el.value, 10);
+    return isNaN(n) ? Infinity : n;
+  }
+
+  function applyTopN() {
+    var limit = getShowLimit();
+    var tbody = document.querySelector('#officesTable tbody');
+    if (!tbody) return;
+    var rows = tbody.querySelectorAll('tr[data-office-id]');
+    var visibleCount = 0;
+    for (var i = 0; i < rows.length; i++) {
+      var tr = rows[i];
+      if (tr.style.display !== 'none') {
+        visibleCount++;
+        if (visibleCount > limit) tr.style.display = 'none';
+      }
+    }
+  }
+
+  function saveFilters() {
+    try {
+      var c = document.getElementById('filterCountry');
+      var s = document.getElementById('filterState');
+      var l = document.getElementById('filterLevel');
+      var b = document.getElementById('filterBranch');
+      var n = document.getElementById('filterName');
+      var t = document.getElementById('filterTerms');
+      var o = {
+        country: (c && c.value) || '',
+        state: (s && s.value) || '',
+        level: (l && l.value) || '',
+        branch: (b && b.value) || '',
+        name: (n && n.value) ? n.value.trim() : '',
+        terms: (t && t.value) || ''
+      };
+      sessionStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(o));
+    } catch (e) {}
+  }
+
+  function restoreFilters() {
+    try {
+      var raw = sessionStorage.getItem(FILTER_STORAGE_KEY);
+      if (!raw) return;
+      var o = JSON.parse(raw);
+      var c = document.getElementById('filterCountry');
+      var s = document.getElementById('filterState');
+      var l = document.getElementById('filterLevel');
+      var b = document.getElementById('filterBranch');
+      var n = document.getElementById('filterName');
+      if (c && o.country && Array.from(c.options).some(function(opt) { return opt.value === o.country; })) c.value = o.country;
+      if (s && o.state && Array.from(s.options).some(function(opt) { return opt.value === o.state; })) s.value = o.state;
+      if (l && o.level && Array.from(l.options).some(function(opt) { return opt.value === o.level; })) l.value = o.level;
+      if (b && o.branch && Array.from(b.options).some(function(opt) { return opt.value === o.branch; })) b.value = o.branch;
+      if (n && o.name) n.value = o.name;
+      var t = document.getElementById('filterTerms');
+      if (t && o.terms && (o.terms === '' || o.terms === '0' || o.terms === 'gt0')) t.value = o.terms;
+    } catch (e) {}
+  }
+
+  function clearFilters() {
+    sessionStorage.removeItem(FILTER_STORAGE_KEY);
+    var c = document.getElementById('filterCountry');
+    var s = document.getElementById('filterState');
+    var l = document.getElementById('filterLevel');
+    var b = document.getElementById('filterBranch');
+    var n = document.getElementById('filterName');
+    var t = document.getElementById('filterTerms');
+    if (c) c.value = '';
+    if (s) s.value = '';
+    if (l) l.value = '';
+    if (b) b.value = '';
+    if (n) n.value = '';
+    if (t) t.value = '';
+    applyFilter();
+  }
+
+  function applyFilter() {
+    var selCountry = (document.getElementById('filterCountry') && document.getElementById('filterCountry').value) || '';
+    var selState = (document.getElementById('filterState') && document.getElementById('filterState').value) || '';
+    var selLevel = (document.getElementById('filterLevel') && document.getElementById('filterLevel').value) || '';
+    var selBranch = (document.getElementById('filterBranch') && document.getElementById('filterBranch').value) || '';
+    var nameQ = (document.getElementById('filterName') && document.getElementById('filterName').value || '').trim().toLowerCase();
+    var selTerms = (document.getElementById('filterTerms') && document.getElementById('filterTerms').value) || '';
+    document.querySelectorAll('#officesTable tbody tr[data-office-id]').forEach(function(tr) {
+      var countryMatch = !selCountry || (tr.dataset.country || '') === selCountry;
+      var stateMatch = !selState || (tr.dataset.state || '') === selState;
+      var levelMatch = !selLevel || (tr.dataset.level || '') === selLevel;
+      var branchMatch = !selBranch || (tr.dataset.branch || '') === selBranch;
+      var nameMatch = !nameQ || (tr.dataset.name || '').indexOf(nameQ) >= 0;
+      var termsMatch = true;
+      if (selTerms === '0') termsMatch = parseInt(tr.dataset.termsCount || '0', 10) === 0;
+      else if (selTerms === 'gt0') termsMatch = parseInt(tr.dataset.termsCount || '0', 10) > 0;
+      tr.style.display = (countryMatch && stateMatch && levelMatch && branchMatch && nameMatch && termsMatch) ? '' : 'none';
+    });
+    saveFilters();
+    applyTopN();
+  }
+
+  function buildFilterDropdowns() {
+    var rows = document.querySelectorAll('#officesTable tbody tr[data-office-id]');
+    var countries = {};
+    var states = {};
+    var levels = {};
+    var branches = {};
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      var c = (r.dataset.country || '').trim();
+      var s = (r.dataset.state || '').trim();
+      var l = (r.dataset.level || '').trim();
+      var b = (r.dataset.branch || '').trim();
+      if (c) countries[c] = true;
+      if (s) states[s] = true;
+      if (l) levels[l] = true;
+      if (b) branches[b] = true;
+    }
+    function addOptions(selId, values) {
+      var sel = document.getElementById(selId);
+      if (!sel) return;
+      var opts = Object.keys(values).sort();
+      opts.forEach(function(v) {
+        var o = document.createElement('option');
+        o.value = v;
+        o.textContent = v;
+        sel.appendChild(o);
+      });
+    }
+    addOptions('filterCountry', countries);
+    addOptions('filterState', states);
+    addOptions('filterLevel', levels);
+    addOptions('filterBranch', branches);
+  }
+
+  function sortTable(col) {
+    var tbody = document.querySelector('#officesTable tbody');
+    if (!tbody) return;
+    var rows = Array.from(tbody.querySelectorAll('tr[data-office-id]'));
+    var key = col === 'table' ? 'table' : col;
+    var isNum = key === 'table' || key === 'enabled';
+    rows.sort(function(a, b) {
+      var va = a.dataset[key] !== undefined ? a.dataset[key] : '';
+      var vb = b.dataset[key] !== undefined ? b.dataset[key] : '';
+      if (isNum) {
+        var na = parseInt(va, 10) || 0;
+        var nb = parseInt(vb, 10) || 0;
+        return sortAsc ? na - nb : nb - na;
+      }
+      var c = (va || '').localeCompare(vb || '', 'en', { sensitivity: 'base' });
+      return sortAsc ? c : -c;
+    });
+    rows.forEach(function(r) { tbody.appendChild(r); });
+    document.querySelectorAll('#officesTable thead th.sortable').forEach(function(th) {
+      th.classList.remove('sort-asc', 'sort-desc');
+      if (th.dataset.sort === col) th.classList.add(sortAsc ? 'sort-asc' : 'sort-desc');
+    });
+    applyTopN();
+  }
+
+  function saveShowLimit() {
+    try {
+      var el = document.getElementById('showLimit');
+      if (el) sessionStorage.setItem(SHOW_LIMIT_STORAGE_KEY, el.value);
+    } catch (e) {}
+  }
+
+  function restoreShowLimit() {
+    try {
+      var v = sessionStorage.getItem(SHOW_LIMIT_STORAGE_KEY);
+      var el = document.getElementById('showLimit');
+      if (!el) return;
+      if (v === '20' || v === '50' || v === '100' || v === 'all') el.value = v;
+    } catch (e) {}
+  }
+
+  buildFilterDropdowns();
+  restoreFilters();
+  restoreShowLimit();
+  applyFilter();
+  document.getElementById('removeFilters')?.addEventListener('click', clearFilters);
+  document.getElementById('showLimit')?.addEventListener('change', function() {
+    saveShowLimit();
+    applyTopN();
+  });
+  document.querySelectorAll('.office-col-filter').forEach(function(el) {
+    if (el.tagName === 'SELECT' && el.id !== 'showLimit') {
+      el.addEventListener('change', applyFilter);
+    } else {
+      var timeout;
+      el.addEventListener('input', function() {
+        clearTimeout(timeout);
+        timeout = setTimeout(applyFilter, 200);
+      });
+      el.addEventListener('keydown', function(e) { if (e.key === 'Escape') { this.value = ''; applyFilter(); } });
+    }
+  });
+  document.querySelectorAll('#officesTable thead th.sortable').forEach(function(th) {
+    th.style.cursor = 'pointer';
+    th.addEventListener('click', function() {
+      var col = this.dataset.sort;
+      if (sortCol === col) sortAsc = !sortAsc; else { sortCol = col; sortAsc = true; }
+      sortTable(col);
+    });
+  });
+  sortCol = 'name';
+  sortAsc = true;
+  sortTable('name');
+
+  function setEnabled(officeId, enabled, checkbox) {
+    const formData = new FormData();
+    formData.set('enabled', enabled ? '1' : '0');
+    fetch('/api/offices/' + officeId + '/enabled', { method: 'POST', body: formData })
+      .then(function(r) { if (!r.ok) throw new Error('Failed'); })
+      .catch(function() { if (checkbox) checkbox.checked = !enabled; });
+  }
+  document.querySelectorAll('.office-enabled').forEach(function(cb) {
+    cb.addEventListener('change', function() {
+      setEnabled(this.dataset.officeId, this.checked, this);
+    });
+  });
+  document.getElementById('toggleAllOn')?.addEventListener('click', function() {
+    if (hasActiveFilter()) {
+      var rows = getVisibleOfficeRows();
+      rows.forEach(function(tr) {
+        var id = tr.dataset.officeId;
+        var formData = new FormData();
+        formData.set('enabled', '1');
+        fetch('/api/offices/' + id + '/enabled', { method: 'POST', body: formData }).then(function(r) {
+          if (r.ok) {
+            var cb = tr.querySelector('.office-enabled');
+            if (cb) cb.checked = true;
+          }
+        });
+      });
+      return;
+    }
+    var formData = new FormData();
+    formData.set('enabled', '1');
+    fetch('/api/offices/enabled-all', { method: 'POST', body: formData })
+      .then(function(r) { if (r.ok) window.location.reload(); });
+  });
+  document.getElementById('toggleAllOff')?.addEventListener('click', function() {
+    if (hasActiveFilter()) {
+      var rows = getVisibleOfficeRows();
+      rows.forEach(function(tr) {
+        var id = tr.dataset.officeId;
+        var formData = new FormData();
+        formData.set('enabled', '0');
+        fetch('/api/offices/' + id + '/enabled', { method: 'POST', body: formData }).then(function(r) {
+          if (r.ok) {
+            var cb = tr.querySelector('.office-enabled');
+            if (cb) cb.checked = false;
+          }
+        });
+      });
+      return;
+    }
+    var formData = new FormData();
+    formData.set('enabled', '0');
+    fetch('/api/offices/enabled-all', { method: 'POST', body: formData })
+      .then(function(r) { if (r.ok) window.location.reload(); });
+  });
+
+  function showTestResult(officeId, ok, message) {
+    const el = document.querySelector('.office-test-msg[data-office-id="' + officeId + '"]');
+    if (!el) return;
+    el.textContent = ok ? 'OK' : message;
+    el.style.color = ok ? 'var(--success)' : 'var(--danger)';
+  }
+  document.querySelectorAll('.office-test-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      const id = this.dataset.officeId;
+      const msgEl = document.querySelector('.office-test-msg[data-office-id="' + id + '"]');
+      if (msgEl) msgEl.textContent = '…';
+      fetch('/api/offices/' + id + '/test-config')
+        .then(function(r) { return r.json(); })
+        .then(function(d) { showTestResult(id, d.ok, d.message); })
+        .catch(function() { showTestResult(id, false, 'Request failed'); });
+    });
+  });
+
+  function showPopulateResult(id, ok, message) {
+    var msgEl = document.querySelector('.office-populate-msg[data-office-id="' + id + '"]');
+    if (!msgEl) return;
+    msgEl.textContent = message || (ok ? 'Done' : 'Failed');
+    msgEl.style.color = ok ? 'var(--success)' : 'var(--danger)';
+  }
+  document.querySelectorAll('.office-populate-terms-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var id = this.dataset.officeId;
+      var msgEl = document.querySelector('.office-populate-msg[data-office-id="' + id + '"]');
+      var stopBtn = document.querySelector('.office-populate-stop-btn[data-office-id="' + id + '"]');
+      if (msgEl) msgEl.textContent = 'Starting…';
+      this.disabled = true;
+      if (stopBtn) stopBtn.style.display = 'none';
+      fetch('/api/offices/' + id + '/populate-terms', { method: 'POST' })
+        .then(function(r) { return r.json().then(function(d) { return { status: r.status, data: d }; }); })
+        .then(function(res) {
+          if (res.status === 202 && res.data.job_id) {
+            var jobId = res.data.job_id;
+            if (stopBtn) {
+              stopBtn.style.display = 'inline-block';
+              stopBtn.disabled = false;
+              stopBtn.onclick = function() {
+                stopBtn.disabled = true;
+                fetch('/api/offices/' + id + '/populate-terms/cancel/' + jobId, { method: 'POST' }).catch(function() {});
+              };
+            }
+            var poll = function() {
+              fetch('/api/offices/' + id + '/populate-terms/status/' + jobId)
+                .then(function(r) { return r.json(); })
+                .then(function(s) {
+                  var msg = s.message || 'Processing…';
+                  if (s.total > 0) msg += ' (' + s.current + ' of ' + s.total + ')';
+                  if (s.extra && s.extra.terms_so_far !== undefined) msg += ' — ' + s.extra.terms_so_far + ' terms';
+                  if (msgEl) msgEl.textContent = msg;
+                  if (s.status === 'complete' || s.status === 'cancelled') {
+                    var r = s.result;
+                    if (r && r.ok) {
+                      showPopulateResult(id, true, r.message);
+                    } else {
+                      showPopulateResult(id, false, (r && r.message) ? r.message : s.error || 'Failed');
+                    }
+                    btn.disabled = false;
+                    if (stopBtn) stopBtn.style.display = 'none';
+                    if (window.playJobCompleteSound) window.playJobCompleteSound();
+                    return;
+                  }
+                  if (s.status === 'error') {
+                    showPopulateResult(id, false, s.error || 'Failed');
+                    btn.disabled = false;
+                    if (stopBtn) stopBtn.style.display = 'none';
+                    if (window.playJobCompleteSound) window.playJobCompleteSound();
+                    return;
+                  }
+                  setTimeout(poll, 400);
+                })
+                .catch(function() {
+                  showPopulateResult(id, false, 'Request failed');
+                  btn.disabled = false;
+                  if (stopBtn) stopBtn.style.display = 'none';
+                  if (window.playJobCompleteSound) window.playJobCompleteSound();
+                });
+            };
+            poll();
+          } else if (res.data.ok) {
+            showPopulateResult(id, true, res.data.message);
+            btn.disabled = false;
+            if (window.playJobCompleteSound) window.playJobCompleteSound();
+          } else {
+            showPopulateResult(id, false, res.data.message || 'Failed');
+            btn.disabled = false;
+            if (window.playJobCompleteSound) window.playJobCompleteSound();
+          }
+        })
+        .catch(function() {
+          showPopulateResult(id, false, 'Request failed');
+          btn.disabled = false;
+          if (window.playJobCompleteSound) window.playJobCompleteSound();
+        });
+    });
+  });
+
+  document.getElementById('testAll')?.addEventListener('click', function() {
+    const resultEl = document.getElementById('testAllResult');
+    const rows = hasActiveFilter() ? getVisibleOfficeRows() : Array.from(document.querySelectorAll('tbody tr[data-office-id]'));
+    if (!rows.length) { resultEl.style.display = 'none'; return; }
+    resultEl.textContent = 'Testing…';
+    resultEl.className = 'alert';
+    resultEl.style.display = 'block';
+    const ids = Array.from(rows).map(function(r) { return r.dataset.officeId; });
+    const names = {};
+    rows.forEach(function(r) { names[r.dataset.officeId] = r.dataset.officeName || r.dataset.officeId; });
+    let done = 0;
+    const results = [];
+    function runNext(index) {
+      if (index >= ids.length) {
+        const okCount = results.filter(function(x) { return x.ok; }).length;
+        const failCount = results.length - okCount;
+        resultEl.className = failCount ? 'alert alert-error' : 'alert alert-success';
+        resultEl.innerHTML = 'Done: ' + okCount + ' OK, ' + failCount + ' failed.<br>' +
+          results.map(function(x) {
+            return (x.ok ? '✓' : '✗') + ' ' + (names[x.id] || x.id) + (x.ok ? '' : ': ' + x.message);
+          }).join('<br>');
+        return;
+      }
+      const id = ids[index];
+      fetch('/api/offices/' + id + '/test-config')
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          results.push({ id: id, ok: d.ok, message: d.message });
+          showTestResult(id, d.ok, d.message);
+          done++;
+          runNext(index + 1);
+        })
+        .catch(function() {
+          results.push({ id: id, ok: false, message: 'Request failed' });
+          showTestResult(id, false, 'Request failed');
+          runNext(index + 1);
+        });
+    }
+    runNext(0);
+  });
+
+  document.getElementById('previewAllPanel')?.addEventListener('click', function(e) {
+    if (e.target.id === 'previewAllStopBtn') {
+      previewAllStopped = true;
+      if (previewAllAbortController) previewAllAbortController.abort();
+    }
+  });
+  document.getElementById('previewAllBtn')?.addEventListener('click', function() {
+    var rows = getVisibleOfficeRows();
+    if (!rows.length) {
+      alert('No visible offices. Adjust filters or Show limit.');
+      return;
+    }
+    previewAllStopped = false;
+    previewAllAbortController = null;
+    var officeIds = rows.map(function(tr) { return parseInt(tr.dataset.officeId, 10); }).filter(function(n) { return !isNaN(n); });
+    var total = officeIds.length;
+    var panel = document.getElementById('previewAllPanel');
+    var content = document.getElementById('previewAllContent');
+    panel.style.display = 'block';
+    content.innerHTML = '<p>Loading… 0 of ' + total + ' tables</p><button type="button" class="btn btn-secondary btn-sm" id="previewAllStopBtn">Stop</button>';
+
+    function renderResults(results) {
+      var html = '';
+      var headers = ['Wiki Link', 'Party', 'District', 'Term Start', 'Term End'];
+      results.forEach(function(item) {
+        html += '<div class="preview-all-office" style="margin-bottom:1.5rem;">';
+        html += '<h3 style="margin:0 0 0.5rem 0; font-size:1rem;"><a href="/offices/' + esc(item.office_id) + '">' + esc(item.name || 'Office ' + item.office_id) + '</a>';
+        if (item.url) html += ' <a href="' + esc(item.url) + '" target="_blank" rel="noopener" style="font-size:0.85rem;">Wiki</a>';
+        html += '</h3>';
+        if (item.error) {
+          html += '<p class="alert alert-error" style="margin:0;">' + esc(item.error) + '</p>';
+        } else if (item.preview_rows && item.preview_rows.length) {
+          html += '<table class="preview-table"><thead><tr>';
+          headers.forEach(function(h) { html += '<th>' + esc(h) + '</th>'; });
+          html += '</tr></thead><tbody>';
+          item.preview_rows.forEach(function(r) {
+            var link = r['Wiki Link'];
+            var linkCell = (link && link !== 'No link') ? '<a href="' + esc(link) + '" target="_blank" rel="noopener">' + esc(String(link).length > 50 ? String(link).slice(0, 50) + '…' : link) + '</a>' : esc(link || '—');
+            html += '<tr><td>' + linkCell + '</td><td>' + esc(r.Party || '—') + '</td><td>' + esc(r.District || '—') + '</td><td>' + esc(r['Term Start'] || '—') + '</td><td>' + esc(r['Term End'] || '—') + '</td></tr>';
+          });
+          html += '</tbody></table>';
+        } else if (item.raw_table_preview && item.raw_table_preview.rows && item.raw_table_preview.rows.length) {
+          html += '<p class="alert" style="margin:0 0 0.5rem 0;">Parse failed. Raw table (first 10 rows):</p>';
+          var raw = item.raw_table_preview.rows;
+          var maxCols = Math.max.apply(null, raw.map(function(r) { return r.length; })) || 1;
+          html += '<table class="preview-table"><thead><tr>';
+          for (var c = 1; c <= maxCols; c++) html += '<th>Col ' + c + '</th>';
+          html += '</tr></thead><tbody>';
+          raw.forEach(function(row) {
+            html += '<tr>';
+            for (var i = 0; i < maxCols; i++) html += '<td>' + esc(row[i] || '') + '</td>';
+            html += '</tr>';
+          });
+          html += '</tbody></table>';
+        } else {
+          html += '<p style="margin:0;">No rows.</p>';
+        }
+        html += '</div>';
+      });
+      return html || '<p>No results.</p>';
+    }
+
+    var results = [];
+    var index = 0;
+    function fetchNext() {
+      if (previewAllStopped) {
+        content.innerHTML = '<p>Stopped.</p>' + renderResults(results);
+        return;
+      }
+      if (index >= total) {
+        content.innerHTML = renderResults(results);
+        return;
+      }
+      content.innerHTML = '<p>Loading… ' + (index + 1) + ' of ' + total + ' tables</p><button type="button" class="btn btn-secondary btn-sm" id="previewAllStopBtn">Stop</button>';
+      previewAllAbortController = new AbortController();
+      fetch('/api/preview/' + officeIds[index], { signal: previewAllAbortController.signal })
+        .then(function(r) { return r.json(); })
+        .then(function(item) {
+          results.push({
+            office_id: item.office_id != null ? item.office_id : officeIds[index],
+            name: item.name || null,
+            url: item.url || null,
+            error: item.error || null,
+            preview_rows: item.preview_rows || null,
+            raw_table_preview: item.raw_table_preview || null
+          });
+          index++;
+          if (previewAllStopped) {
+            content.innerHTML = '<p>Stopped.</p>' + renderResults(results);
+            return;
+          }
+          if (index < total) {
+            content.innerHTML = '<p>Loading… ' + (index + 1) + ' of ' + total + ' tables</p><button type="button" class="btn btn-secondary btn-sm" id="previewAllStopBtn">Stop</button>';
+            fetchNext();
+          } else {
+            content.innerHTML = renderResults(results);
+          }
+        })
+        .catch(function(err) {
+          if (err.name === 'AbortError') {
+            content.innerHTML = '<p>Stopped.</p>' + renderResults(results);
+            return;
+          }
+          results.push({ office_id: officeIds[index], name: null, url: null, error: 'Request failed', preview_rows: null, raw_table_preview: null });
+          index++;
+          if (previewAllStopped) {
+            content.innerHTML = '<p>Stopped.</p>' + renderResults(results);
+            return;
+          }
+          if (index < total) fetchNext();
+          else content.innerHTML = renderResults(results);
+        });
+    }
+    fetchNext();
+  });
+  document.getElementById('previewAllClear')?.addEventListener('click', function() {
+    document.getElementById('previewAllContent').innerHTML = '';
+  });
+  document.getElementById('previewAllClose')?.addEventListener('click', function() {
+    document.getElementById('previewAllPanel').style.display = 'none';
+  });
+  document.querySelectorAll('.edit-office-btn').forEach(function(a) {
+    a.addEventListener('click', function(e) {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      var id = this.dataset.officeId;
+      var rows = getVisibleOfficeRows();
+      var ids = rows.map(function(tr) { return tr.dataset.officeId; }).filter(function(x) { return x; });
+      var nav = ids.length ? '?nav_ids=' + ids.join(',') : '';
+      location.href = '/offices/' + id + nav;
+    });
+  });
+})();
+</script>
+{% endblock %}

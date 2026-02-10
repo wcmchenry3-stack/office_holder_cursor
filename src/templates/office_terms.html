@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Office terms – Office Holder{% endblock %}
+{% block content %}
+<h1>Office terms</h1>
+{% if terms %}
+<table>
+  <thead>
+    <tr><th>Office</th><th>Country</th><th>Wiki URL</th><th>Party</th><th>District</th><th>Term start</th><th>Term end</th></tr>
+  </thead>
+  <tbody>
+    {% for t in terms %}
+    <tr>
+      <td>{{ t.office_name or '—' }}</td>
+      <td>{{ t.country or '—' }}</td>
+      <td>{% if t.wiki_url %}<a href="{{ t.wiki_url }}" target="_blank" rel="noopener">{{ t.wiki_url[:40] }}…</a>{% else %}—{% endif %}</td>
+      <td>{{ t.party_display or '—' }}</td>
+      <td>{{ t.district or '—' }}</td>
+      <td>{{ t.term_start or '—' }}{% if t.term_start_imprecise %} <span class="imprecise-hint">(imprecise)</span>{% endif %}</td>
+      <td>{{ t.term_end or '—' }}{% if t.term_end_imprecise %} <span class="imprecise-hint">(imprecise)</span>{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+<p><small>Showing up to 100.</small></p>
+{% else %}
+<p>No office terms yet. Run the scraper.</p>
+{% endif %}
+{% endblock %}

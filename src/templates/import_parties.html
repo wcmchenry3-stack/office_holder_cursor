@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Bulk import parties – Office Holder{% endblock %}
+{% block content %}
+<h1>Bulk import parties</h1>
+<p>Import parties from a CSV with columns: <strong>Country</strong>, <strong>Party name</strong> (or Party Name), <strong>Party link</strong> (or Party Link).</p>
+<p>Country must match a name in the reference data (e.g. United States).</p>
+{% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
+<form method="post" action="/parties/import" enctype="multipart/form-data">
+  <div class="form-group">
+    <label>CSV file</label>
+    <input type="file" name="csv_file" accept=".csv" required>
+  </div>
+  <div class="form-group">
+    <label>If parties already exist:</label>
+    <div>
+      <label><input type="radio" name="mode" value="append" {% if mode != 'overwrite' %}checked{% endif %}> Append – add new rows only</label>
+    </div>
+    <div>
+      <label><input type="radio" name="mode" value="overwrite"> Overwrite – delete all existing parties, then import from CSV</label>
+    </div>
+  </div>
+  <button type="submit" class="btn">Import</button>
+  <a href="/parties" class="btn btn-secondary">Back to parties</a>
+</form>
+{% endblock %}

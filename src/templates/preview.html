@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Preview: {{ office.name }} – Office Holder{% endblock %}
+{% block content %}
+<h1>Preview: {{ office.name or 'Office' }}</h1>
+<p><small>Top 10 records from the page (dry run — not saved to the database).</small></p>
+{% if office.url %}<p><a href="{{ office.url }}" target="_blank" rel="noopener">{{ office.url }}</a></p>{% endif %}
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% elif rows %}
+<table>
+  <thead>
+    <tr>
+      <th>Wiki Link</th>
+      <th>Party</th>
+      <th>District</th>
+      <th>Term Start</th>
+      <th>Term End</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in rows %}
+    <tr>
+      <td>{% if r.get('Wiki Link') and r.get('Wiki Link') != 'No link' %}<a href="{{ r['Wiki Link'] }}" target="_blank" rel="noopener">{% if r['Wiki Link']|length > 50 %}{{ r['Wiki Link'][:50] }}…{% else %}{{ r['Wiki Link'] }}{% endif %}</a>{% else %}{{ r.get('Wiki Link', '—') }}{% endif %}</td>
+      <td>{{ r.get('Party') or '—' }}</td>
+      <td>{{ r.get('District') or '—' }}</td>
+      <td>{{ r.get('Term Start') or '—' }}</td>
+      <td>{{ r.get('Term End') or '—' }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% elif raw_table_preview and raw_table_preview.rows %}
+<p class="alert alert-error">Table could not be parsed with current config. Raw table (first 10 rows) from selected table:</p>
+<table>
+  <thead>
+    <tr>
+      {% for c in range(1, raw_table_preview.max_cols + 1) %}
+      <th>Column {{ c }}</th>
+      {% endfor %}
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in raw_table_preview.rows %}
+    <tr>
+      {% for i in range(raw_table_preview.max_cols) %}
+      <td>{{ row[i] if i < row|length else '' }}</td>
+      {% endfor %}
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>No rows parsed. Check the table number and column mapping for this office, or the page structure may have changed.</p>
+{% endif %}
+<div class="actions" style="margin-top:1rem;">
+  <a href="/offices" class="btn btn-secondary">Back to offices</a>
+  <a href="/offices/{{ office.id }}" class="btn">Edit this office</a>
+</div>
+{% endblock %}

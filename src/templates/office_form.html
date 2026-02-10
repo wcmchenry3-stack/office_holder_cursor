@@ -1,0 +1,670 @@
+{% extends "base.html" %}
+{% block title %}{{ "Edit" if office else "New" }} office – Office Holder{% endblock %}
+{% block content %}
+<h1>{{ "Edit" if office else "New" }} office</h1>
+{% if office and (nav_prev_id or nav_next_id) %}
+<p class="nav-row" style="margin-bottom:1rem;">
+  {% if nav_prev_id %}<a href="/offices/{{ nav_prev_id }}{% if nav_ids %}?nav_ids={{ nav_ids }}{% endif %}" class="btn btn-secondary btn-sm">Previous</a>{% endif %}
+  {% if nav_prev_id and nav_current and nav_total %} | {% endif %}
+  {% if nav_current and nav_total %}<span style="margin:0 0.5rem;">{{ nav_current }} of {{ nav_total }}</span>{% endif %}
+  {% if nav_next_id and nav_current and nav_total %} | {% endif %}
+  {% if nav_next_id %}<a href="/offices/{{ nav_next_id }}{% if nav_ids %}?nav_ids={{ nav_ids }}{% endif %}" class="btn btn-secondary btn-sm">Next</a>{% endif %}
+</p>
+{% endif %}
+{% if saved %}<div class="alert alert-success">Saved.</div>{% endif %}
+{% if office and terms_count is not none %}<p><small>Office terms: {{ terms_count }}</small></p>{% endif %}
+<form method="post" action="{% if office %}/offices/{{ office.id }}{% else %}/offices/new{% endif %}" id="officeForm">
+  {% if office and nav_ids %}<input type="hidden" name="nav_ids" value="{{ nav_ids }}">{% endif %}
+  <div class="form-row">
+    <div class="form-group">
+      <label>Country</label>
+      <select name="country_id" id="countryId" required>
+        <option value="">— Select country —</option>
+        {% for c in countries %}
+        <option value="{{ c.id }}" {% if office and office.country_id == c.id %}selected{% endif %}>{{ c.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="form-group">
+      <label>State / Province / Territory</label>
+      <select name="state_id" id="stateId">
+        <option value="">— None —</option>
+        {% for s in states %}
+        <option value="{{ s.id }}" {% if office and office.state_id == s.id %}selected{% endif %}>{{ s.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+  <div class="form-row">
+    <div class="form-group">
+      <label>Level</label>
+      <select name="level_id" id="levelId">
+        <option value="">— None —</option>
+        {% for l in levels %}
+        <option value="{{ l.id }}" {% if office and office.level_id == l.id %}selected{% endif %}>{{ l.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Branch</label>
+      <select name="branch_id" id="branchId">
+        <option value="">— None —</option>
+        {% for b in branches %}
+        <option value="{{ b.id }}" {% if office and office.branch_id == b.id %}selected{% endif %}>{{ b.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+  <div class="form-row">
+    <div class="form-group"><label>Department</label><input type="text" name="department" value="{{ office.department if office else '' }}"></div>
+    <div class="form-group"><label>Office name</label><input type="text" name="name" value="{{ office.name if office else '' }}" required></div>
+  </div>
+  {% if office %}
+  <div class="form-group checkbox-group"><label><input type="checkbox" name="enabled" value="1" {% if office.enabled %}checked{% endif %}> Include in runs</label></div>
+  {% endif %}
+  <div class="form-group"><label>URL</label><input type="url" name="url" value="{{ office.url if office else '' }}" required></div>
+  <div class="form-group"><label>Notes</label><input type="text" name="notes" value="{{ office.notes if office else '' }}"></div>
+  <h2>Table parsing</h2>
+  <div class="form-row">
+    <div class="form-group"><label>Table no</label><input type="number" name="table_no" value="{{ office.table_no if office else 1 }}" min="1"></div>
+    <div class="form-group"><label>Table rows (min)</label><input type="number" name="table_rows" value="{{ office.table_rows if office else 4 }}" min="1"></div>
+  </div>
+  <div class="form-row">
+    <div class="form-group"><label>Link column (1-based)</label><input type="number" name="link_column" value="{{ office.link_column if office else 1 }}" min="0"></div>
+    <div class="form-group"><label>Party column</label><input type="number" name="party_column" value="{{ office.party_column if office else 0 }}" min="0"></div>
+    <div class="form-group"><label>Term start column</label><input type="number" name="term_start_column" value="{{ office.term_start_column if office else 4 }}" min="0"></div>
+    <div class="form-group"><label>Term end column</label><input type="number" name="term_end_column" value="{{ office.term_end_column if office else 5 }}" min="0"></div>
+    <div class="form-group"><label>District column</label><input type="number" name="district_column" value="{{ office.district_column if office else 0 }}" min="0"></div>
+  </div>
+  <div class="form-row">
+    <div class="form-group checkbox-group"><label><input type="checkbox" name="dynamic_parse" value="1" {% if office and office.dynamic_parse %}checked{% endif %}> Dynamic parse</label></div>
+    <div class="form-group checkbox-group"><label><input type="checkbox" name="read_right_to_left" value="1" {% if office and office.read_right_to_left %}checked{% endif %}> Read right to left</label></div>
+    <div class="form-group checkbox-group"><label><input type="checkbox" name="find_date_in_infobox" value="1" {% if office and office.find_date_in_infobox %}checked{% endif %}> Find date in infobox</label></div>
+    <div class="form-group checkbox-group"><label><input type="checkbox" name="parse_rowspan" value="1" {% if office and office.parse_rowspan %}checked{% endif %}> Parse rowspan</label></div>
+    <div class="form-group checkbox-group"><label><input type="checkbox" name="rep_link" value="1" {% if office and office.rep_link %}checked{% endif %}> Rep link</label></div>
+    <div class="form-group checkbox-group"><label><input type="checkbox" name="party_link" value="1" {% if office and office.party_link %}checked{% endif %}> Party link</label></div>
+    <div class="form-group checkbox-group"><label><input type="checkbox" name="use_full_page_for_table" value="1" {% if office and office.use_full_page_for_table %}checked{% endif %}> Use full page for table fetch</label></div>
+  </div>
+  <div class="form-group"><label>Alt link</label><input type="text" name="alt_link" value="{{ office.alt_link if office else '' }}"></div>
+  <div class="actions">
+    <button type="submit" name="action" value="save" class="btn">Save</button>
+    <button type="submit" name="action" value="save_and_close" class="btn">Save and close</button>
+    <a href="/offices" class="btn btn-secondary">Cancel</a>
+    {% if office %}
+    <button type="button" class="btn btn-secondary" id="testConfigBtn">Test config</button>
+    <button type="button" class="btn btn-secondary" id="previewBtn">Preview</button>
+    <button type="button" class="btn btn-secondary" id="showAllTablesBtn">Show all tables</button>
+    <button type="button" class="btn btn-secondary" id="showSelectedTableBtn">Show selected table</button>
+    <button type="button" class="btn btn-secondary" id="showTableHtmlBtn">Show table HTML</button>
+    <button type="button" class="btn btn-secondary" id="refreshTableCacheBtn">Refresh table from Wikipedia</button>
+    <button type="button" class="btn btn-secondary" id="exportDebugBtn">Export debug file</button>
+    <button type="button" class="btn btn-secondary" id="populateTermsBtn" data-office-id="{{ office.id }}">Populate terms</button>
+    <form action="/offices/{{ office.id }}/delete" method="post" style="display:inline;" onsubmit="return confirm('Delete this office?');">
+      <button type="submit" class="btn btn-danger">Delete</button>
+    </form>
+    {% endif %}
+  </div>
+</form>
+{% if office %}
+<div id="testConfigResult" class="alert" style="display:none; margin-top:0.5rem;"></div>
+<button type="button" class="btn btn-secondary btn-sm" id="populateTermsStopBtn" style="display:none; margin-top:0.25rem;">Stop</button>
+<div id="previewPanel" class="preview-panel" style="display:none; margin-top:1rem;">
+  <h2>Preview</h2>
+  <p><small>Top 10 records from the page (dry run — not saved).</small></p>
+  <div id="previewContent"></div>
+  <div class="actions" style="margin-top:0.5rem;">
+    <button type="button" class="btn btn-secondary btn-sm" id="previewClose">Close preview</button>
+  </div>
+</div>
+<div id="allTablesPanel" class="preview-panel" style="display:none; margin-top:1rem;">
+  <h2>All tables on page</h2>
+  <p><small>Top 10 rows per table (from current URL).</small></p>
+  <div id="allTablesContent"></div>
+  <div id="allTablesConfirm" style="display:none; margin:0.5rem 0;">
+    <p>This page has <strong id="allTablesCount">0</strong> tables. Load preview for all?</p>
+    <button type="button" class="btn btn-sm" id="allTablesConfirmLoad">Load</button>
+    <button type="button" class="btn btn-secondary btn-sm" id="allTablesConfirmCancel">Cancel</button>
+  </div>
+  <div class="actions" style="margin-top:0.5rem;">
+    <button type="button" class="btn btn-secondary btn-sm" id="allTablesClear">Clear</button>
+    <button type="button" class="btn btn-secondary btn-sm" id="allTablesClose">Close</button>
+  </div>
+</div>
+<div id="rawTablePanel" class="preview-panel" style="display:none; margin-top:1rem;">
+  <h2>Selected table (raw)</h2>
+  <p><small>Raw cell text for the table number in the form — no column mapping applied.</small></p>
+  <div id="rawTableContent"></div>
+  <div class="actions" style="margin-top:0.5rem;">
+    <button type="button" class="btn btn-secondary btn-sm" id="rawTableClear">Clear</button>
+    <button type="button" class="btn btn-secondary btn-sm" id="rawTableClose">Close</button>
+  </div>
+</div>
+<div id="tableHtmlPanel" class="preview-panel" style="display:none; margin-top:1rem;">
+  <h2>Table HTML</h2>
+  <p><small>Raw HTML for the selected table (Table no in form).</small></p>
+  <div id="tableHtmlContent"></div>
+  <div class="actions" style="margin-top:0.5rem;">
+    <button type="button" class="btn btn-secondary btn-sm" id="tableHtmlClear">Clear</button>
+    <button type="button" class="btn btn-secondary btn-sm" id="tableHtmlClose">Close</button>
+  </div>
+</div>
+<div id="exportDebugResult" class="alert" style="display:none; margin-top:0.5rem;"></div>
+{% endif %}
+<script>
+(function() {
+  var esc = window.esc;
+  var countrySelect = document.getElementById('countryId');
+  var stateSelect = document.getElementById('stateId');
+  var selectedStateId = {% if office and office.state_id %}{{ office.state_id }}{% else %}null{% endif %};
+
+  function loadStates(countryId) {
+    stateSelect.innerHTML = '<option value="">— None —</option>';
+    if (!countryId) return;
+    fetch('/api/states?country_id=' + encodeURIComponent(countryId))
+      .then(function(r) { return r.json(); })
+      .then(function(states) {
+        states.forEach(function(s) {
+          var opt = document.createElement('option');
+          opt.value = s.id;
+          opt.textContent = s.name;
+          if (selectedStateId && s.id === selectedStateId) opt.selected = true;
+          stateSelect.appendChild(opt);
+        });
+      });
+  }
+
+  countrySelect.addEventListener('change', function() {
+    selectedStateId = null;
+    loadStates(countrySelect.value);
+  });
+
+  if (countrySelect.value) loadStates(countrySelect.value);
+
+  {% if office %}
+  function getFormDraft() {
+    var form = document.getElementById('officeForm');
+    var data = {
+      country_id: form.country_id?.value || '',
+      state_id: form.state_id?.value || '',
+      level_id: form.level_id?.value || '',
+      branch_id: form.branch_id?.value || '',
+      department: form.department?.value || '',
+      name: form.name?.value || '',
+      notes: form.notes?.value || '',
+      url: form.url?.value || '',
+      table_no: parseInt(form.table_no?.value, 10) || 1,
+      table_rows: parseInt(form.table_rows?.value, 10) || 4,
+      link_column: parseInt(form.link_column?.value, 10) || 1,
+      party_column: parseInt(form.party_column?.value, 10) || 0,
+      term_start_column: parseInt(form.term_start_column?.value, 10) || 4,
+      term_end_column: parseInt(form.term_end_column?.value, 10) || 5,
+      district_column: parseInt(form.district_column?.value, 10) || 0,
+      dynamic_parse: !!form.dynamic_parse?.checked,
+      read_right_to_left: !!form.read_right_to_left?.checked,
+      find_date_in_infobox: !!form.find_date_in_infobox?.checked,
+      parse_rowspan: !!form.parse_rowspan?.checked,
+      rep_link: !!form.rep_link?.checked,
+      party_link: !!form.party_link?.checked,
+      alt_link: form.alt_link?.value || '',
+      use_full_page_for_table: !!form.use_full_page_for_table?.checked
+    };
+    return data;
+  }
+  document.getElementById('testConfigBtn')?.addEventListener('click', function() {
+    var el = document.getElementById('testConfigResult');
+    el.style.display = 'block';
+    el.textContent = '…';
+    el.className = 'alert';
+    fetch('/api/offices/test-config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(getFormDraft())
+    })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        el.textContent = d.ok ? 'OK: ' + d.message : 'Error: ' + d.message;
+        el.className = d.ok ? 'alert alert-success' : 'alert alert-error';
+      })
+      .catch(function() {
+        el.textContent = 'Request failed';
+        el.className = 'alert alert-error';
+      });
+  });
+  function renderPreviewResult(result, content, showAll) {
+    var rows = result.preview_rows || [];
+    var raw = result.raw_table_preview;
+    var err = result.error;
+    if (err && !rows.length && !raw) {
+      content.innerHTML = '<div class="alert alert-error">' + esc(err) + '</div>';
+      return;
+    }
+    if (rows.length) {
+      var caption = showAll ? ('<p><small>Showing all ' + rows.length + ' rows.</small></p>') : ('<p><small>Showing first ' + rows.length + ' rows.</small></p>');
+      var html = caption + '<table><thead><tr><th>Wiki Link</th><th>Party</th><th>District</th><th>Term Start</th><th>Term End</th></tr></thead><tbody>';
+      rows.forEach(function(r) {
+        var link = r['Wiki Link'];
+        var linkCell = (link && link !== 'No link') ? '<a href="' + esc(link) + '" target="_blank" rel="noopener">' + esc(link.length > 50 ? link.slice(0, 50) + '…' : link) + '</a>' : esc(link || '—');
+        html += '<tr><td>' + linkCell + '</td><td>' + esc(r.Party || '—') + '</td><td>' + esc(r.District || '—') + '</td><td>' + esc(r['Term Start'] || '—') + '</td><td>' + esc(r['Term End'] || '—') + '</td></tr>';
+      });
+      html += '</tbody></table>';
+      var payload = getFormDraft();
+      var showAllBtn = '<button type="button" class="btn btn-secondary btn-sm preview-show-all" style="margin-top:0.5rem;">Show all</button>';
+      var showTop10Btn = '<button type="button" class="btn btn-secondary btn-sm preview-show-top10" style="margin-top:0.5rem;">Show top 10 only</button>';
+      if (showAll) {
+        html += '<div class="preview-actions">' + showTop10Btn + '</div>';
+      } else {
+        html += '<div class="preview-actions">' + showAllBtn + '</div>';
+      }
+      content.innerHTML = html;
+      content.querySelector('.preview-show-all')?.addEventListener('click', function() {
+        content.innerHTML = '<p>Loading all rows…</p>';
+        payload.show_all = true;
+        fetch('/api/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+          .then(function(r) { return r.json(); })
+          .then(function(res) { renderPreviewResult(res, content, true); })
+          .catch(function() { content.innerHTML = '<div class="alert alert-error">Request failed.</div>'; });
+      });
+      content.querySelector('.preview-show-top10')?.addEventListener('click', function() {
+        content.innerHTML = '<p>Loading…</p>';
+        fetch('/api/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(getFormDraft()) })
+          .then(function(r) { return r.json(); })
+          .then(function(res) { renderPreviewResult(res, content, false); })
+          .catch(function() { content.innerHTML = '<div class="alert alert-error">Request failed.</div>'; });
+      });
+      return;
+    }
+    if (raw && raw.rows && raw.rows.length) {
+      var msg = '<p class="alert alert-error">Table could not be parsed with current config. Raw table (first 10 rows) from selected table:</p>';
+      var maxCols = Math.max.apply(null, raw.rows.map(function(r) { return r.length; })) || 1;
+      var headerCells = '';
+      for (var c = 1; c <= maxCols; c++) headerCells += '<th>Column ' + c + '</th>';
+      var tableHtml = '<table><thead><tr>' + headerCells + '</tr></thead><tbody>';
+      raw.rows.forEach(function(row) {
+        tableHtml += '<tr>';
+        for (var i = 0; i < maxCols; i++) tableHtml += '<td>' + esc(row[i] || '') + '</td>';
+        tableHtml += '</tr>';
+      });
+      tableHtml += '</tbody></table>';
+      content.innerHTML = msg + tableHtml;
+      return;
+    }
+    content.innerHTML = '<p>No rows parsed. Check table number and column mapping.</p>';
+  }
+  document.getElementById('previewBtn')?.addEventListener('click', function() {
+    var panel = document.getElementById('previewPanel');
+    var content = document.getElementById('previewContent');
+    panel.style.display = 'block';
+    content.innerHTML = '<p>Loading preview…</p>';
+    fetch('/api/preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(getFormDraft())
+    })
+      .then(function(r) { return r.json(); })
+      .then(function(result) {
+        renderPreviewResult(result, content, false);
+      })
+      .catch(function() {
+        content.innerHTML = '<div class="alert alert-error">Request failed.</div>';
+      });
+  });
+  document.getElementById('previewClose')?.addEventListener('click', function() {
+    document.getElementById('previewPanel').style.display = 'none';
+  });
+
+  var allTablesPendingUrl = null;
+  function renderAllTables(data) {
+    var content = document.getElementById('allTablesContent');
+    if (data.error) {
+      content.innerHTML = '<div class="alert alert-error">' + esc(data.error) + '</div>';
+      return;
+    }
+    var tables = data.tables || [];
+    var html = '';
+    tables.forEach(function(tbl) {
+      var rows = tbl.rows || [];
+      var maxCols = 0;
+      rows.forEach(function(r) { if (r.length > maxCols) maxCols = r.length; });
+      if (maxCols === 0) maxCols = 1;
+      html += '<h3 style="margin-top:1rem;">Table ' + tbl.table_index + '</h3>';
+      html += '<table><thead><tr>';
+      for (var c = 1; c <= maxCols; c++) html += '<th>Column ' + c + '</th>';
+      html += '</tr></thead><tbody>';
+      rows.forEach(function(row) {
+        html += '<tr>';
+        for (var i = 0; i < maxCols; i++) html += '<td>' + esc(row[i] || '') + '</td>';
+        html += '</tr>';
+      });
+      html += '</tbody></table>';
+    });
+    content.innerHTML = html || '<p>No tables found.</p>';
+  }
+  document.getElementById('showAllTablesBtn')?.addEventListener('click', function() {
+    var url = document.getElementById('officeForm')?.url?.value?.trim();
+    if (!url) {
+      alert('Enter a URL first.');
+      return;
+    }
+    var panel = document.getElementById('allTablesPanel');
+    var content = document.getElementById('allTablesContent');
+    var confirmDiv = document.getElementById('allTablesConfirm');
+    panel.style.display = 'block';
+    confirmDiv.style.display = 'none';
+    content.innerHTML = '<p>Loading…</p>';
+    fetch('/api/preview-all-tables', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: url })
+    })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data.confirm_required && data.num_tables) {
+          allTablesPendingUrl = url;
+          document.getElementById('allTablesCount').textContent = data.num_tables;
+          content.innerHTML = '';
+          confirmDiv.style.display = 'block';
+          return;
+        }
+        renderAllTables(data);
+      })
+      .catch(function() {
+        content.innerHTML = '<div class="alert alert-error">Request failed.</div>';
+      });
+  });
+  document.getElementById('allTablesConfirmLoad')?.addEventListener('click', function() {
+    if (!allTablesPendingUrl) return;
+    var content = document.getElementById('allTablesContent');
+    var confirmDiv = document.getElementById('allTablesConfirm');
+    content.innerHTML = '<p>Loading…</p>';
+    confirmDiv.style.display = 'none';
+    fetch('/api/preview-all-tables', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: allTablesPendingUrl, confirm: true })
+    })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        allTablesPendingUrl = null;
+        renderAllTables(data);
+      })
+      .catch(function() {
+        content.innerHTML = '<div class="alert alert-error">Request failed.</div>';
+      });
+  });
+  document.getElementById('allTablesConfirmCancel')?.addEventListener('click', function() {
+    allTablesPendingUrl = null;
+    document.getElementById('allTablesConfirm').style.display = 'none';
+    document.getElementById('allTablesContent').innerHTML = '';
+  });
+  document.getElementById('allTablesClose')?.addEventListener('click', function() {
+    document.getElementById('allTablesPanel').style.display = 'none';
+  });
+  document.getElementById('allTablesClear')?.addEventListener('click', function() {
+    document.getElementById('allTablesContent').innerHTML = '';
+    document.getElementById('allTablesConfirm').style.display = 'none';
+    allTablesPendingUrl = null;
+  });
+
+  document.getElementById('showSelectedTableBtn')?.addEventListener('click', function() {
+    var form = document.getElementById('officeForm');
+    var url = form?.url?.value?.trim();
+    var tableNo = parseInt(form?.table_no?.value, 10) || 1;
+    if (!url) {
+      alert('Enter a URL first.');
+      return;
+    }
+    var panel = document.getElementById('rawTablePanel');
+    var content = document.getElementById('rawTableContent');
+    panel.style.display = 'block';
+    content.innerHTML = '<p>Loading…</p>';
+    fetch('/api/raw-table-preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: url, table_no: tableNo })
+    })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data.error) {
+          content.innerHTML = '<div class="alert alert-error">' + esc(data.error) + '</div>';
+          return;
+        }
+        var rows = data.rows || [];
+        var maxCols = 0;
+        rows.forEach(function(r) { if (r.length > maxCols) maxCols = r.length; });
+        if (maxCols === 0) maxCols = 1;
+        var html = '<p><small>Table ' + esc(data.table_no) + ' of ' + esc(data.num_tables) + ' (top 10 rows).</small></p>';
+        html += '<table><thead><tr>';
+        for (var c = 1; c <= maxCols; c++) html += '<th>Column ' + c + '</th>';
+        html += '</tr></thead><tbody>';
+        rows.forEach(function(row) {
+          html += '<tr>';
+          for (var i = 0; i < maxCols; i++) html += '<td>' + esc(row[i] || '') + '</td>';
+          html += '</tr>';
+        });
+        html += '</tbody></table>';
+        content.innerHTML = html || '<p>No rows.</p>';
+      })
+      .catch(function() {
+        content.innerHTML = '<div class="alert alert-error">Request failed.</div>';
+      });
+  });
+  document.getElementById('rawTableClear')?.addEventListener('click', function() {
+    document.getElementById('rawTableContent').innerHTML = '';
+  });
+  document.getElementById('rawTableClose')?.addEventListener('click', function() {
+    document.getElementById('rawTablePanel').style.display = 'none';
+  });
+
+  document.getElementById('showTableHtmlBtn')?.addEventListener('click', function() {
+    var form = document.getElementById('officeForm');
+    var url = form?.url?.value?.trim();
+    var tableNo = parseInt(form?.table_no?.value, 10) || 1;
+    if (!url) {
+      alert('Enter a URL first.');
+      return;
+    }
+    var panel = document.getElementById('tableHtmlPanel');
+    var content = document.getElementById('tableHtmlContent');
+    panel.style.display = 'block';
+    content.innerHTML = '<p>Loading…</p>';
+    fetch('/api/table-html', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: url, table_no: tableNo })
+    })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data.error) {
+          content.innerHTML = '<div class="alert alert-error">' + esc(data.error) + '</div>';
+          return;
+        }
+        var html = data.html || '';
+        content.innerHTML = '<pre style="white-space:pre-wrap; word-break:break-all; max-height:30rem; overflow:auto; font-size:0.8rem; background:var(--bg2); padding:0.75rem; border-radius:4px;"><code>' + esc(html) + '</code></pre>';
+      })
+      .catch(function() {
+        content.innerHTML = '<div class="alert alert-error">Request failed.</div>';
+      });
+  });
+  document.getElementById('tableHtmlClear')?.addEventListener('click', function() {
+    document.getElementById('tableHtmlContent').innerHTML = '';
+  });
+  document.getElementById('tableHtmlClose')?.addEventListener('click', function() {
+    document.getElementById('tableHtmlPanel').style.display = 'none';
+  });
+
+  document.getElementById('refreshTableCacheBtn')?.addEventListener('click', function() {
+    var form = document.getElementById('officeForm');
+    var url = form?.url?.value?.trim();
+    var tableNo = parseInt(form?.table_no?.value, 10) || 1;
+    if (!url) {
+      alert('Enter a URL first.');
+      return;
+    }
+    var btn = this;
+    btn.disabled = true;
+    fetch('/api/refresh-table-cache', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        url: url,
+        table_no: tableNo,
+        use_full_page: !!document.getElementById('officeForm')?.use_full_page_for_table?.checked
+      })
+    })
+      .then(function(r) {
+        if (!r.ok) return r.json().then(function(d) { throw new Error(d.detail || r.statusText); });
+        return r.json();
+      })
+      .then(function() {
+        alert('Table cache updated.');
+      })
+      .catch(function(err) {
+        alert('Refresh failed: ' + (err.message || 'Request failed'));
+      })
+      .finally(function() { btn.disabled = false; });
+  });
+
+  document.getElementById('exportDebugBtn')?.addEventListener('click', function() {
+    var form = document.getElementById('officeForm');
+    var resultEl = document.getElementById('exportDebugResult');
+    var url = form?.url?.value?.trim();
+    if (!url) {
+      resultEl.style.display = 'block';
+      resultEl.className = 'alert alert-error';
+      resultEl.textContent = 'Enter a URL first.';
+      return;
+    }
+    var config = getFormDraft();
+    var officeName = (config.name || '').trim() || 'office';
+    resultEl.style.display = 'block';
+    resultEl.className = 'alert';
+    resultEl.textContent = 'Exporting…';
+    fetch('/api/preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config)
+    })
+      .then(function(r) { return r.json(); })
+      .then(function(previewResult) {
+        return fetch('/api/table-html', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            url: url,
+            table_no: config.table_no || 1,
+            use_full_page: !!config.use_full_page_for_table
+          })
+        }).then(function(r) { return r.json(); }).then(function(tableHtmlResult) {
+          return { previewResult: previewResult, tableHtmlResult: tableHtmlResult };
+        });
+      })
+      .then(function(_) {
+        return fetch('/api/office-debug-export', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            office_name: officeName,
+            config: config,
+            preview_result: _.previewResult,
+            table_html_result: _.tableHtmlResult
+          })
+        }).then(function(r) { return r.json(); });
+      })
+      .then(function(data) {
+        resultEl.className = 'alert alert-success';
+        var fn = data.filename || (data.path ? data.path.replace(/^[^/]*\//, '') : null) || 'debug file';
+        resultEl.textContent = 'Debug file exported successfully. File: ' + fn;
+      })
+      .catch(function(err) {
+        resultEl.className = 'alert alert-error';
+        resultEl.textContent = err && err.message ? err.message : 'Export failed.';
+      });
+  });
+  document.getElementById('populateTermsBtn')?.addEventListener('click', function() {
+    var btn = this;
+    var officeId = btn.dataset.officeId;
+    var resultEl = document.getElementById('testConfigResult');
+    var stopBtn = document.getElementById('populateTermsStopBtn');
+    if (!officeId || !resultEl) return;
+    resultEl.style.display = 'block';
+    resultEl.textContent = 'Starting…';
+    resultEl.className = 'alert';
+    btn.disabled = true;
+    if (stopBtn) stopBtn.style.display = 'none';
+    fetch('/api/offices/' + officeId + '/populate-terms', { method: 'POST' })
+      .then(function(r) { return r.json().then(function(d) { return { status: r.status, data: d }; }); })
+      .then(function(res) {
+        if (res.status === 202 && res.data.job_id) {
+          var jobId = res.data.job_id;
+          if (stopBtn) {
+            stopBtn.style.display = 'inline-block';
+            stopBtn.disabled = false;
+            stopBtn.onclick = function() {
+              stopBtn.disabled = true;
+              fetch('/api/offices/' + officeId + '/populate-terms/cancel/' + jobId, { method: 'POST' }).catch(function() {});
+            };
+          }
+          var poll = function() {
+            fetch('/api/offices/' + officeId + '/populate-terms/status/' + jobId)
+              .then(function(r) { return r.json(); })
+              .then(function(s) {
+                var msg = s.message || 'Processing…';
+                if (s.total > 0) msg += ' (' + s.current + ' of ' + s.total + ')';
+                if (s.extra && s.extra.terms_so_far !== undefined) msg += ' — ' + s.extra.terms_so_far + ' terms';
+                resultEl.textContent = msg;
+                if (s.status === 'complete' || s.status === 'cancelled') {
+                  var r = s.result;
+                  if (r && r.ok) {
+                    resultEl.textContent = r.message;
+                    resultEl.className = 'alert alert-success';
+                  } else {
+                    resultEl.textContent = (r && r.message) ? r.message : ('Error: ' + (s.error || 'Failed'));
+                    resultEl.className = 'alert alert-error';
+                  }
+                  btn.disabled = false;
+                  if (stopBtn) stopBtn.style.display = 'none';
+                  if (window.playJobCompleteSound) window.playJobCompleteSound();
+                  return;
+                }
+                if (s.status === 'error') {
+                  resultEl.textContent = 'Error: ' + (s.error || 'Failed');
+                  resultEl.className = 'alert alert-error';
+                  btn.disabled = false;
+                  if (stopBtn) stopBtn.style.display = 'none';
+                  if (window.playJobCompleteSound) window.playJobCompleteSound();
+                  return;
+                }
+                setTimeout(poll, 400);
+              })
+              .catch(function() {
+                resultEl.textContent = 'Request failed.';
+                resultEl.className = 'alert alert-error';
+                btn.disabled = false;
+                if (stopBtn) stopBtn.style.display = 'none';
+                if (window.playJobCompleteSound) window.playJobCompleteSound();
+              });
+          };
+          poll();
+        } else if (res.data.ok) {
+          resultEl.textContent = res.data.message;
+          resultEl.className = 'alert alert-success';
+          btn.disabled = false;
+          if (window.playJobCompleteSound) window.playJobCompleteSound();
+        } else {
+          resultEl.textContent = 'Error: ' + (res.data.message || 'Failed');
+          resultEl.className = 'alert alert-error';
+          btn.disabled = false;
+          if (window.playJobCompleteSound) window.playJobCompleteSound();
+        }
+      })
+      .catch(function() {
+        resultEl.textContent = 'Request failed.';
+        resultEl.className = 'alert alert-error';
+        btn.disabled = false;
+        if (window.playJobCompleteSound) window.playJobCompleteSound();
+      });
+  });
+  {% endif %}
+})();
+</script>
+{% endblock %}

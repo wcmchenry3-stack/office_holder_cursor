@@ -1,0 +1,1075 @@
+# -*- coding: utf-8 -*-
+"""Table parsing: DataCleanup, Offices, Biography. In-repo implementation (sample file ignored)."""
+import copy
+import json
+import re
+from datetime import datetime
+from pathlib import Path
+from urllib.parse import urlparse, quote
+
+import requests
+
+from src.scraper.wiki_fetch import WIKIPEDIA_REQUEST_HEADERS, normalize_wiki_url, wiki_url_to_rest_html_url
+from bs4 import BeautifulSoup
+from dateutil.parser import parse
+
+class DataCleanup:
+
+  def __init__(self , logger ):
+
+
+    self.Logger = logger
+
+
+
+  def format_date( self , date_str ):
+
+
+
+    # List of regex patterns to match different date formats
+    date_patterns = [
+    r'\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s+\d{4}\b',  # Matches full Month DD, YYYY
+    r'\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(\d{1,2}),\s+(\d{4})\b',  # Matches abbreviated Month DD, YYYY
+    r'\b\d{1,2}\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4}\b',  # DD Month YYYY (e.g. 18 June 1798)
+    r'\((\d{4}-\d{2}-\d{2})\)'  # Matches YYYY-MM-DD within parentheses
+    ]
+
+    # List of datetime formats corresponding to the regex patterns
+    datetime_formats = [
+        '%B %d, %Y',  # Correct format for full Month names
+        '%b %d, %Y',  # Correct format for abbreviated Month names
+        '%d %B %Y',   # DD Month YYYY (e.g. 18 June 1798)
+        '%Y-%m-%d'    # Corresponds to YYYY-MM-DD
+    ]
+
+
+
+
+    self.Logger.debug_log( f"starting format_date {date_str}" , True )
+
+    # Attempt to find and parse a date using each pattern
+    for pattern, date_format in zip(date_patterns, datetime_formats):
+        self.Logger.debug_log( f"starting to search for pattern: {pattern} and date format {date_format}" , True )
+
+        match = re.search(pattern, date_str)
+        self.Logger.debug_log( f"identified match {match}" , True )
+
+        if match:
+            date_part = match.group(0)
+            self.Logger.debug_log( f"date part {date_part}" , True )
+
+            try:
+                # Parse the found date using the corresponding datetime format
+                parsed_date = datetime.strptime(date_part, date_format)
+                self.Logger.debug_log( f"parsed_date {parsed_date}" , True )
+
+                return parsed_date.strftime('%Y-%m-%d')
+
+            except ( ValueError , TypeError , IndexError ) as e:
+                self.Logger.log( f"Value error {e} found in {date_str} while running format_date" , True )
+                continue  # Try the next pattern if parsing fails
+
+
+    # Fallback: dateutil.parser for flexible parsing (e.g. "18 June 1798", "4 March 1809")
+    try:
+        parsed = parse(date_str.strip())
+        if parsed:
+            return parsed.strftime('%Y-%m-%d')
+    except (ValueError, TypeError):
+        pass
+
+    # If no date is found or if it cannot be parsed, return a default value
+    self.Logger.debug_log( f"invalid date in {date_str}" , True )
+    return 'Invalid date'
+
+
+  def parse_date_info( self , date_str, date_type ):
+
+
+      self.Logger.log( f"Running parse_date_info: {date_str} {date_type}" , True )
+
+      # remove footnotes and parenthesis from date fields
+      date_str = self.remove_footnote( date_str )
+      date_str = self.remove_parenthesis( date_str )
+      date_str = re.sub(r'\s*\[[^\]]*O\.?S\.[^\]]*\]', '', date_str, flags=re.IGNORECASE).strip()
+      date_str = re.sub(r'(\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2})\s+(\d{4}\b)', r'\1, \2', date_str)
+      date_range_patterns = [
+          r'\s*([A-Za-z]+ \d{1,2}, \d{4})(, (.*?))? – ([A-Za-z]+ \d{1,2}, \d{4})(, (.*?))?\)?'
+      ] # why is this not in format_date?
+
+      compiled_patterns = [re.compile(pattern) for pattern in date_range_patterns]
+
+
+      # Define delimiters for ranges and special cases to check after splitting
+      delimiters = ['–' , '-' , ' —<br/>',  ' to ' , ' – ' , ', to ' ]
+      special_cases = ["incumbent", "n/a", "present", "Incumbent"]
+
+      try:
+        if date_type == "both":
+          for delimiter in delimiters:
+            self.Logger.debug_log( f"found delimiter {delimiter}" , True )
+            if delimiter in date_str:
+
+                  parts = date_str.split(delimiter)
+                  self.Logger.debug_log( f"date parts {parts}" , True )
+                  start_str = parts[0].strip()
+                  end_str = parts[1].strip() if len(parts) > 1 else 'N/A'
+                  self.Logger.debug_log( f"date parts start: {start_str} end: {end_str}" , True )
+
+                  # Strip trailing footnote refs (e.g. "Incumbent [ t ]") before special-case check
+                  start_clean = re.sub(r'\s*\[\s*\w+\s*\]\s*$', '', start_str).strip()
+                  end_clean = re.sub(r'\s*\[\s*\w+\s*\]\s*$', '', end_str).strip()
+                  # Check if start or end part matches special cases
+                  start_date = start_clean if start_clean.lower() in special_cases else self.format_date(start_str)
+                  end_date = end_clean if end_clean.lower() in special_cases else self.format_date(end_str)
+
+                  self.Logger.debug_log(f"Range detected - Start: {start_date}, End: {end_date}" , True )
+                  return (start_date, end_date) if date_type == 'both' else (start_date, 'N/A') if date_type == 'start' else ('N/A', end_date)
+
+      except ( ValueError , IndexError , TypeError ) as e:
+                  self.Logger.log( f"Error {e} found in {date_str} while parsing by delimiter {delimiter}" , True )
+
+
+
+      if date_type == "both":
+        for pattern in compiled_patterns:
+            self.Logger.debug_log( f"trying to search compiled patterns {pattern}" , True )
+            try:
+                self.Logger.debug_log(f"pattern {pattern}" , True )
+                self.Logger.debug_log(f"date_str {date_str}" , True )
+                # Ensure date_str is a string; remove .text if date_str is already a string
+                match = pattern.search(date_str)
+                self.Logger.debug_log( f"match {match}" , True )
+                if match:
+                    self.Logger.debug_log(f"Found match within pattern {pattern.pattern}" , True )
+                    start_date_str = match.group(1)  # The start date
+                    end_date_str = match.group(4)  # The end date
+                    start_date = parse(start_date_str).strftime('%Y-%m-%d') if start_date_str else 'Invalid date'
+                    end_date = parse(end_date_str).strftime('%Y-%m-%d') if end_date_str else 'Invalid date'
+
+
+                    self.Logger.debug_log(f"Birth date: {start_date}, Death date: {end_date}" , True )
+            except ( ValueError , IndexError , TypeError ) as e:
+                  self.Logger.log( f"Value Error {e} found in {date_str} while parsing by date pattern" , True )
+
+
+      # If no range delimiter is found, or if the date_type is 'start' or 'end', process the whole string
+      if date_type in ['start', 'end']:
+
+          try:
+            self.Logger.debug_log( "no delimiter found"  , True )
+            date = date_str if date_str.lower().strip() in special_cases else self.format_date(date_str)
+            self.Logger.debug_log(f"Single date or special case: {date}" , True )
+            return date if date_type == 'start' else date if date_type == 'end' else date
+
+          except ( ValueError , IndexError , TypeError) as e:
+                  self.Logger.log( f"Error {e} found in {date_str} while parsing by date pattern" , True )
+
+
+
+      self.Logger.debug_log( f"invalid date found in {date_str}" , True )
+      return 'Invalid date', 'Invalid date'
+
+
+  def find_link_and_data_columns( self , row , max_column_index = None ):
+      # Dynamic identification of the link column and subsequent data columns.
+      # If max_column_index is set (0-based), only consider cells up to that index so we never
+      # pick a link from a non-data column (e.g. President column) when it appears after term dates.
+      for i, cell in enumerate(row):
+          if max_column_index is not None and i > max_column_index:
+              break
+          cell_str = str(cell)  # Convert BeautifulSoup object or similar to string, if necessary
+          has_wiki_link = 'href="/wiki/' in cell_str
+          has_file_link = 'href="/wiki/File:' in cell_str
+          if has_wiki_link and not has_file_link:
+              self.Logger.debug_log( f"Wiki link (not a file link) found at column {i}: {cell}" , True )
+              return i  # Return the index of the column containing the link
+      self.Logger.debug_log( f"Wiki did not find a link in {row}" , True )
+      return None  # If no matching link column is found, or data structure is different
+
+
+
+  def remove_footnote( self , content , extract_text=False , strip_text=False ):
+
+      self.Logger.debug_log ( "removing footnote" , False )
+
+      """
+      Remove footnote references from text and optionally extract and strip text from BeautifulSoup objects.
+
+      Args:
+      - content: The content from which to remove footnotes. This can be a string or a BeautifulSoup object.
+      - extract_text: Boolean indicating whether to extract text from a BeautifulSoup object.
+      - strip_text: Boolean indicating whether to strip the text of leading and trailing whitespace.
+
+      Returns:
+      - The cleaned text with footnotes removed.
+      """
+      try:
+
+        if extract_text and hasattr( content, 'get_text' ):
+            # If content is a BeautifulSoup object and text extraction is requested
+            text = content.get_text(strip=strip_text)
+        else:
+            text = content
+
+        # Remove footnote references
+        cleaned_text = re.sub(r'\[\w+\]', '', text)
+
+        if strip_text and not extract_text:
+            # If text stripping is requested but text was not extracted (meaning content was already a string)
+            cleaned_text = cleaned_text.strip()
+
+        self.Logger.debug_log( f" removed footnote \n\n before {content} \n\n after {cleaned_text}" , False )
+
+        return cleaned_text
+
+      except ( TypeError , ValueError , IndexError ) as e:
+        self.Logger.log( f"error {e} parsing footnote" , True )
+
+  def remove_parenthesis( self , content  ):
+
+    self.Logger.debug_log ( "removing parenthesis" , True )
+
+    try:
+        cleaned_text = re.sub(r'\([^)]*\)', '', content)
+
+
+        self.Logger.debug_log( f" removed parenthesis \n\n before {content} \n\n after {cleaned_text}" , False )
+
+        return cleaned_text
+
+    except ( TypeError , ValueError , IndexError ) as e:
+        self.Logger.log( f"error {e} parsing parenthesis" , True )
+
+class Offices:
+
+  def __init__(self , logger , biography , data_cleanup ):
+
+
+    self.Logger = logger
+    self.DataCleanup = data_cleanup
+    self.Biography = biography
+
+
+  def process_table(self, html_content, table_config, office_details, url, party_list):
+    self.Logger.log(f"---------------\n\n Processing table with config: {table_config}", True)
+
+    # Parse HTML content using BeautifulSoup
+    soup = BeautifulSoup(html_content, 'html.parser')
+    tables = soup.find_all('table')
+
+    # Check if specified table number is within bounds
+    if not (0 <= table_config['table_no'] - 1 < len(tables)):
+        self.Logger.log("Table number out of bounds.", False)
+        return []
+
+    target_table = tables[table_config['table_no'] - 1]
+    rows = target_table.find_all('tr')[1:]  # Exclude the header row
+    accumulated_results = []
+
+    # #region agent log
+    _log_path = Path(__file__).resolve().parent.parent.parent / ".cursor" / "debug.log"
+    try:
+        _f = open(_log_path, "a", encoding="utf-8")
+        _f.write(json.dumps({"location": "table_parser:process_table", "message": "table rows total", "data": {"total_rows": len(rows), "table_rows_config": table_config.get("table_rows"), "term_end_column": table_config.get("term_end_column")}, "timestamp": __import__("time").time() * 1000, "hypothesisId": "H3"}) + "\n")
+        _f.close()
+    except Exception:
+        pass
+    # #endregion
+
+    # tracks the previous entry --> this helps the rowspan function track
+    previous_row_wiki_link = None
+    previous_row_district = None
+    previous_row_party = None
+    table_rows_val = table_config.get("table_rows", 4)
+    term_end_col = table_config.get("term_end_column", -1)
+
+    for row_index, row in enumerate(rows):
+        try:
+            cells = row.find_all(['td', 'th'])
+            self.Logger.debug_log( f"cells from process table {cells}" , True )
+
+            cells_td = row.find_all('td')
+            row_result = self.parse_table_row(row, table_config, office_details, url,  previous_row_wiki_link, previous_row_district, previous_row_party, party_list)
+            self.Logger.debug_log( f"results from process table {row_result}" , True )
+            appended = bool(row_result)
+            if row_result:
+                accumulated_results.append(row_result)
+
+                # Update the "previous row" variables at the end of each iteration
+                previous_row_wiki_link = row_result.get('Wiki Link')
+                previous_row_district = row_result.get('District')
+                previous_row_party = row_result.get('Party')
+
+            # #region agent log
+            skip_reason = None
+            if not appended:
+                if len(cells_td) <= table_rows_val:
+                    skip_reason = "table_rows"
+                elif term_end_col >= 0 and len(cells_td) <= term_end_col:
+                    skip_reason = "term_end_col"
+                else:
+                    skip_reason = "other"
+            try:
+                _f = open(_log_path, "a", encoding="utf-8")
+                _f.write(json.dumps({"location": "table_parser:process_table", "message": "row", "data": {"row_index": row_index, "len_td": len(cells_td), "appended": appended, "skip_reason": skip_reason}, "timestamp": __import__("time").time() * 1000, "hypothesisId": "H1" if skip_reason == "table_rows" else "H2" if skip_reason == "term_end_col" else "H4"}) + "\n")
+                _f.close()
+            except Exception:
+                pass
+            # #endregion
+        except ( IndexError , AttributeError , TypeError , ValueError , UnicodeEncodeError , UnicodeDecodeError ) as e:
+            self.Logger.log( f" found error {e} when processing row {row_index}" , True )
+            # #region agent log
+            try:
+                _f = open(_log_path, "a", encoding="utf-8")
+                _f.write(json.dumps({"location": "table_parser:process_table", "message": "exception", "data": {"row_index": row_index, "error": str(e)}, "timestamp": __import__("time").time() * 1000, "hypothesisId": "H4"}) + "\n")
+                _f.close()
+            except Exception:
+                pass
+            # #endregion
+
+    # #region agent log
+    try:
+        _f = open(_log_path, "a", encoding="utf-8")
+        _f.write(json.dumps({"location": "table_parser:process_table", "message": "accumulated total", "data": {"accumulated": len(accumulated_results), "with_wiki_link": sum(1 for r in accumulated_results if (r.get("Wiki Link") or "").strip() and r.get("Wiki Link") != "No link")}, "timestamp": __import__("time").time() * 1000, "hypothesisId": "H3"}) + "\n")
+        _f.close()
+    except Exception:
+        pass
+    # #endregion
+
+    return accumulated_results
+
+
+
+  def parse_table_row( self , row , table_config , office_details , url , previous_row_wiki_link, previous_row_district, previous_row_party , party_list ):
+
+      '''
+      This function parses out the specific table.
+      '''
+
+      self.Logger.log( f"---------------\n\n table config in parse_table_row: \n\n {table_config} \n\n row: {row} " , True )
+
+      self.Logger.debug_log( f"previous values: \n wiki_link: {previous_row_wiki_link} \n district: {previous_row_district} \n party: {previous_row_party}" , True )
+
+      cells = row.find_all('td')
+      self.Logger.debug_log( f" cells {cells} \n\n" , True )
+
+      # total columns primarily works with right_to_left function
+      total_columns = len( cells )
+      self.Logger.log( f"total columns {total_columns}" , True )
+
+      # create a duplicate version of table_config. This duplicate version could be changed by other functions, without updating table_config
+      table_config_to_parse = copy.deepcopy(table_config)
+
+      self.Logger.debug_log( f"original table config {table_config} \n table config to parse {table_config_to_parse}" , True )
+
+
+      row_data = {}
+
+      '''
+      max_columns = max(table_config_to_parse['link_column'], table_config_to_parse['party_column'], table_config_to_parse['term_start_column'], table_config_to_parse['district_column'])
+      believe this is now obsolete (replaced by range_total_columns?)
+      '''
+
+      # variable to control rowspan function
+      found_rowspan = False
+
+      term_start, term_end = "Invalid date", "Invalid date"  # Default values before calling extract_term_dates
+      district = "No district"
+      party = "No party"
+
+      district_no_value = "No district"
+      party_no_value = "No party"
+
+
+
+      # Initialize the data structure for the row's results.
+      results = {
+          'Country': office_details['office_country'],
+          'Level': office_details['office_level'],
+          'Branch': office_details['office_branch'],
+          'Department': office_details['office_department'],
+          'Office Name': office_details['office_name'],
+          'State': office_details['office_state'],
+          'Office Notes': office_details['office_notes'],
+          'Wiki Link': None,
+          'Party': None,
+          'District': None,
+          'Term Start': None,
+          'Term End': None,
+      }
+
+
+      # columns_RTL function reads columns in reverse. This is primarily used for senate offices - which has the url at the rightmost end.
+
+      if table_config_to_parse["read_columns_right_to_left"] == True:
+          table_config_to_parse = self.process_columns_right_to_left( table_config_to_parse , total_columns )
+      else:
+        self.Logger.debug_log( "not running read_columns_right_to_left" , True )
+
+
+      # dynamic parse function to dynamically determine other columns based on url column
+      if table_config_to_parse["run_dynamic_parse"] == True:
+          success , table_config_to_parse = self.process_dynamic_parse(cells, table_config_to_parse)
+          self.Logger.debug_log( f"table config return in process_table_row after dynamic parse {table_config_to_parse} \n success: {success}" , True )
+
+          if not success:
+            # Skip processing this row as the link column wasn't found
+            return None
+
+      else:
+        self.Logger.debug_log( "not running run_dynamic_parse" , True )
+
+      # Ensure there are enough cells to avoid IndexError - do not use for rowspan, as it often will cause an error
+      if len(cells) <= table_config_to_parse["table_rows"] and table_config_to_parse["parse_rowspan"] == False :  # Adjust this number based on the expected minimum number of cells
+          self.Logger.log( 'issue with table rows' , True )
+          return None  # or some default data structure
+      # With rowspan, skip "continuation-only" rows (e.g. a row that only has the President cell from rowspan) so we don't emit the president as an office holder
+      if table_config_to_parse["parse_rowspan"] == True and len(cells) < 4:
+          self.Logger.log( 'skipping rowspan continuation row (too few cells)' , True )
+          return None
+      # Skip rows that don't have enough columns to include term_end (e.g. President-only continuation rows with 2 cells)
+      term_end_col = table_config_to_parse.get("term_end_column", -1)
+      if term_end_col >= 0 and len(cells) <= term_end_col:
+          self.Logger.log( 'skipping row (too few columns for term_end)' , True )
+          return None
+
+      self.Logger.debug_log( "column numbers determined, extracting information" , True )
+
+      # range total columns determines the number of columns in cells. This is used for the rowspan function.
+      range_total_columns = range(total_columns)
+      self.Logger.debug_log( f"range of columns: {range_total_columns}", True )
+
+
+
+      # Before iterating over columns, ensure you have the initial data or use last known values
+      wiki_link = self.find_link(table_config_to_parse, office_details, cells, party_list)
+      self.Logger.debug_log( f"wiki link results before iteration: {wiki_link} " , True )
+
+      # update wiki link on second iteration of rospan and beyond
+      if wiki_link == None and table_config_to_parse["parse_rowspan"] == True:
+        self.Logger.debug_log( f"No wiki link found in row" , True )
+        wiki_link = previous_row_wiki_link
+        self.Logger.debug_log( f"Adding previous link {previous_row_wiki_link} as link {wiki_link}" , True )
+        found_rowspan = True
+
+      '''
+      The following three logic chains deal with the rowspan function. Rowspan works for office holders with multiple terms.
+      Often the url is listed in the first column, but not repeated in subsequent column. The rowspan helps keep track of previous values.
+      When rowspan == true, it reviews each column in cells to find the value. If not value is found, it will apply previous value.
+      When rowspan == false. it will simply call the appropriate function based on the column_no.
+      '''
+
+      # figure out party
+      if found_rowspan == True :
+        self.Logger.debug_log( f"running parse rowspan on party" , True )
+        for col_no in range_total_columns:
+
+            self.Logger.debug_log( f"running parse iteration {col_no} with party" , True )
+            party  = self.extract_party( wiki_link , cells , office_details , table_config_to_parse , col_no , party_list , party_no_value )
+            if party not in ( None , "No Party" ):
+              self.Logger.debug_log( f"found results for party {party}" , True )
+              break
+            else:
+              party = previous_row_party
+              self.Logger.debug_log( f"could not find party, so keeping old version {previous_row_party}" , True )
+      else:
+        party  = self.extract_party( wiki_link , cells , office_details , table_config_to_parse , None , party_list , party_no_value )
+        self.Logger.debug_log( f"no rowspan, results for party: {party}" , True )
+
+      #figure out district
+      if found_rowspan == True :
+        self.Logger.debug_log( f"running parse rowspan on district" , True )
+        for col_no in range_total_columns:
+
+            self.Logger.debug_log( f"running parse iteration {col_no} with district" , True )
+            district  = self.extract_district( wiki_link , cells , office_details , table_config_to_parse , col_no , district_no_value )
+            if district not in ( None , "No district" ):
+              self.Logger.debug_log( f"found results for district {district}" , True )
+              break
+            else:
+              district = previous_row_district
+              self.Logger.debug_log( f"could not find district, so keeping old version {previous_row_district}" , True )
+      else:
+        district  = self.extract_district( wiki_link , cells , office_details , table_config_to_parse , None , district_no_value  )
+        self.Logger.debug_log( f"no rowspan, results for district: {district}" , True )
+
+      #figure out term dates
+      if found_rowspan == True :
+        self.Logger.debug_log("running parse rowspan on term", True)
+        for col_no in range_total_columns:  # Assuming total_columns is correctly calculated elsewhere
+
+              self.Logger.debug_log(f"running parse iteration {col_no} with term", True)
+              term_start, term_end = self.extract_term_dates( wiki_link , cells , office_details , table_config_to_parse , col_no , url , district )
+
+
+              # Check if both term_start and term_end are valid
+              ignore_terms = ( None , "Invalid date" )
+              if term_start not in ignore_terms and term_end not in ignore_terms:
+                  self.Logger.debug_log(f"found results for term start {term_start} and term end {term_end}", True)
+                  break  # Exit the loop if valid dates are found
+      else:
+          term_start, term_end = self.extract_term_dates( wiki_link , cells , office_details , table_config_to_parse , None , url , district )
+          self.Logger.debug_log(f"\n\n no rowspan, results for term start {term_start} and term end {term_end}", True)
+
+
+
+      results = {
+          'Country': office_details['office_country'] ,
+          'Level': office_details['office_level'] ,
+          'Branch': office_details['office_branch'] ,
+          'Department': office_details['office_department'] ,
+          'Office Name': office_details['office_name'] ,
+          'State': office_details['office_state'] ,
+          'Office Notes': office_details['office_notes'] ,
+          'Wiki Link': wiki_link,
+          'Term Start': term_start,
+          'Term End': term_end,
+          'Party': party,
+          'District': district
+      }
+      self.Logger.log( f"results {results}" , True )
+
+
+
+
+      return results
+
+  def patterns_to_ignore( self ):
+
+    '''
+    List of patterns to ignore if found by the find_link function.
+    '''
+
+    return (
+        r'/wiki/\d{1,3}(th|st|nd|rd)_United_States_Congress' ,
+        r"/wiki/([\w%]+)_\d{1,2}(th|st|nd|rd)_congressional_district",
+        r'/wiki/\d{4}_[\w\d]+_elections_in_[\w\d]+',
+        r'/wiki/\d{4}_[\w\d]+_election',
+        r'/wiki/(19|20)\d{2}(_\d)?$',  # year links e.g. /wiki/2024 from date columns
+    )
+
+  def column_present(self, column_index, cells):
+      """
+      Check if the specified column index is within the bounds of the cells in the current row.
+
+      :param column_index: The 1-based index of the column to check.
+      :param cells: The list of cells (<td> elements) in the current row.
+      :return: True if the column is present, False otherwise.
+      """
+      # Adjust for zero-based indexing
+
+      return column_index < len(cells)
+
+
+  def find_link(self, table_config_to_parse, office_details, cells, party_list):
+
+    self.Logger.debug_log("find link", True)
+
+    link_column = table_config_to_parse["link_column"]
+    country = office_details["office_country"]
+
+    self.Logger.debug_log(f"country in find_link: {country}", True)
+
+    if self.column_present(link_column, cells):
+        self.Logger.debug_log("url column present", True)
+        link_tags = cells[link_column].find_all('a', href=True)
+        try:
+          for link_tag in link_tags:
+              self.Logger.debug_log(f"looking at {link_tag} in {link_tags}", True)
+              if '/File:' not in link_tag['href']:
+                  full_url = f"https://en.wikipedia.org{link_tag['href']}"
+                  self.Logger.debug_log(f"found full url {full_url}", True)
+                  should_ignore = any(re.search(pattern, full_url) for pattern in self.patterns_to_ignore())
+                  party_links = {p.get('link') for p in party_list.get(country, []) if p.get('link')}
+                  if not should_ignore and full_url not in party_links:
+                      self.Logger.debug_log(f"URL passed all checks: {full_url}", True)
+                      return full_url
+
+        except ( ValueError , TypeError , IndexError , AttributeError ) as e:
+          self.Logger.log( f"found error when finding url for {full_url} in {cells}" , True )
+
+
+  def extract_term_dates( self , wiki_link , cells , office_details , table_config_to_parse , parse_row_no , url , district ):
+
+    self.Logger.debug_log( "running extract terms" , True )
+
+    # parse_row_no == None means the rowspan function is working and needs to iterate. Otherwise, choose the column_no.
+    if parse_row_no == None:
+      term_start_column = table_config_to_parse["term_start_column"]
+      term_end_column = table_config_to_parse["term_end_column"]
+    else:
+      term_start_column = parse_row_no
+      term_end_column = parse_row_no
+
+    # Extract and format the term start and end dates
+
+    try:
+      self.Logger.debug_log( f"start date column {term_start_column} results: {cells[term_start_column]}" , True )
+      self.Logger.debug_log( f"end date column {term_end_column} results: {cells[term_end_column]}" , True )
+
+      # this function is used to find the date in the infobox --> usually used if only years are found in the table
+      if table_config_to_parse["find_date_in_infobox"] == True:
+        self.Logger.debug_log( f" parse_table_row found TRUE in find_date_in_infobox \n\n about to process {cells[term_start_column]}" , True )
+        term_start , term_end = self.Biography.find_term_dates( wiki_link , url , table_config_to_parse , office_details , district )
+        self.Logger.debug_log( f" found date using find_term_dates {term_start} and {term_end}" , True )
+
+      # determine what to do if the term_start and term_end appear in the same columns
+      elif term_start_column == term_end_column:
+        self.Logger.debug_log( f"parse_table_row found start and end dates in same column" , True )
+        self.Logger.debug_log( f" cell with date {cells[term_start_column]}" , True )
+        self.Logger.debug_log( f" cell with date with separator {cells[term_start_column].get_text(separator=' ')}" , True )
+        term_start, term_end = self.DataCleanup.parse_date_info(cells[term_start_column].get_text(separator=' ') , "both" )  # Use separator to handle <br/>
+
+      else:
+        self.Logger.debug_log( f"parse_table_row found start and end dates not in same column" , True )
+        self.Logger.debug_log( f" cell with start date {cells[term_start_column]}" , True )
+        self.Logger.debug_log( f" cell with start date with get_text {cells[term_start_column]}" , True )
+        self.Logger.debug_log( f" cell with end date {cells[term_end_column].get_text(strip=True)}" , True )
+        self.Logger.debug_log( f" cell with end date with get_text {cells[term_end_column].get_text(strip=True)}" , True )
+        term_start = self.DataCleanup.parse_date_info(cells[ term_start_column ].get_text(strip=True) , "start" )
+        term_end = self.DataCleanup.parse_date_info(cells[ term_end_column ].get_text(strip=True) , "end" )
+
+      self.Logger.debug_log( f" finished extracting term start and end: {term_start} {term_end}  " , True )
+      return term_start , term_end
+
+    except ( ValueError , TypeError , AttributeError , IndexError ) as e:
+      self.Logger.log( f" error {e} when parsing {wiki_link}" , True )
+      term_start = "Invalid date"
+      term_end = "Invalid date"
+
+      return term_start  , term_end
+
+  def extract_party( self , wiki_link , cells , office_details , table_config_to_parse , parse_row_no , party_list , no_value_return  ):
+
+    self.Logger.debug_log( f"running extract_party \n table config {table_config_to_parse}" , True )
+
+    # parse_row_no == None means the rowspan function is working and needs to iterate. Otherwise, choose the column_no.
+    if parse_row_no == None:
+      party_column = table_config_to_parse["party_column"]
+    else:
+      party_column = parse_row_no
+
+    country = office_details["office_country"]
+    use_party_link = table_config_to_parse["party_link"]
+
+
+    # Ensure the column exists
+    if party_column >= len(cells):
+        return no_value_return
+
+    cell = cells[party_column]
+
+    if use_party_link == True:
+      link_tags = cell.find_all('a', href=True)
+
+      try:
+        for link_tag in link_tags:
+            full_url_unclean = f"https://en.wikipedia.org{link_tag['href']}"
+            full_url = self.DataCleanup.remove_footnote( full_url_unclean )
+            self.Logger.debug_log( f"full url in extract_party: {full_url} /n country in party list: {country in party_list}" , True )
+
+                # Check if the URL is in the party_list for the given country
+            if country in party_list:
+              for party_info in party_list[country]:
+                  self.Logger.debug_log(f"Checking party: {party_info['name']} with link: {party_info['link']} \n url: {full_url}", True)
+                  if full_url == party_info['link']:
+                      self.Logger.debug_log(f"Match found for party: {party_info['name']}", True)
+                      return party_info['name']
+      except ( ValueError , IndexError , TypeError ) as e:
+        self.Logger.log( f"found error {e} in party_extract when searching for party link" , True )
+
+      # Fallback: when party_link=True but cell has no link (or no match), match by text
+      if country in party_list:
+        party_text = cell.get_text(strip=True)
+        if party_text:
+          try:
+            for party_info in party_list[country]:
+              if re.search(re.escape(party_info["name"]), party_text, re.IGNORECASE):
+                self.Logger.debug_log(f"Match found for party (text fallback): {party_info['name']} in {party_text!r}", True)
+                return party_info['name']
+          except (ValueError, TypeError, IndexError):
+            pass
+
+    if use_party_link != True and country in party_list:
+        party_text = cells[party_column].get_text(strip=True)
+        self.Logger.debug_log(f"Extracted party text: {party_text}", True)
+
+        try:
+          for party_info in party_list[country]:
+            # Using case-insensitive search to improve matching chances
+            if re.search(re.escape(party_info["name"]), party_text, re.IGNORECASE):
+              self.Logger.debug_log(f"Match found for party: {party_info['name']} using text: {party_text}", True)
+              return party_info['name']
+          self.Logger.debug_log(f"No party match found in party list for text: {party_text}", True)
+
+        except (ValueError, TypeError, IndexError) as e:
+          self.Logger.log(f"Error {e} while searching for party text", True)
+
+
+    return no_value_return
+
+
+
+  def extract_district( self , wiki_link , cells , office_details , table_config_to_parse , parse_row_no , no_value_return ):
+
+      self.Logger.debug_log( f"running extract_district \n table config {table_config_to_parse}" , True )
+
+      # parse_row_no == None means the rowspan function is working and needs to iterate. Otherwise, choose the column_no.
+      if parse_row_no == None:
+        district_column = table_config_to_parse["district_column"]
+      else:
+        district_column = parse_row_no
+
+      self.Logger.debug_log( f"district column: {district_column} \n table config: {table_config_to_parse['district_column']} \n parse row no {parse_row_no}" , True )
+
+      # Initialize district to 'No district' by default
+      district = 'No district'
+
+      # Ensure the district_column index is within bounds
+      if 0 <= district_column < len(cells):
+          district_text = cells[district_column].get_text(strip=True)
+
+          # Check if district_text matches the pattern for ordinal numbers (1st, 2nd, 3rd, etc.) or "At-large"
+          ordinal_pattern = r'\b\d+(st|nd|rd|th)\b'
+          at_large_pattern = r'At-large'
+          territory_pattern = r'Territory'
+
+          # If district_text matches the ordinal pattern or is exactly "At-large"
+          if re.search(ordinal_pattern, district_text) or re.match(at_large_pattern, district_text, re.IGNORECASE) or re.match(territory_pattern, district_text, re.IGNORECASE) :
+              district = district_text
+          else:
+              self.Logger.debug_log(f"District text '{district_text}' does not match expected patterns.", True)
+      else:
+          self.Logger.debug_log("District column index is out of bounds.", True)
+
+      self.Logger.debug_log(f"Extracted district info: {district}", True)
+
+
+      return district
+
+
+  def process_columns_right_to_left( self , table_config_to_parse , total_columns ):
+
+    self.Logger.debug_log( f"running process_columns right to left" , True )
+
+    # define column_no variables. Add one as these are zero-based indices. Essentially this functions subtracts total_columns from the col_no.
+    link_column = table_config_to_parse["link_column"] + 1
+    party_column = table_config_to_parse["party_column"] + 1
+    term_start_column = table_config_to_parse["term_start_column"] + 1
+    term_end_column = table_config_to_parse["term_end_column"] + 1
+
+    link_column_old = link_column
+    link_column = total_columns - link_column_old
+    self.Logger.debug_log( f"new link column {link_column} after subtracting {total_columns} from {link_column_old}", True )
+
+    party_column_old = party_column
+    party_column = total_columns - party_column_old
+    self.Logger.debug_log( f"party column {party_column} after subtracting {total_columns} from {party_column_old}", True )
+
+    term_start_column_old = term_start_column
+    term_start_column = total_columns - term_start_column_old
+    self.Logger.debug_log( f"term start {term_start_column} after subtracting {total_columns} from {term_start_column_old}", True )
+
+    term_end_column_old = term_end_column
+    term_end_column = total_columns - term_end_column_old
+    self.Logger.debug_log( f"term end {term_end_column} after subtracting {total_columns} from {term_end_column_old}", True )
+
+    table_config_to_parse["link_column"] = link_column
+    table_config_to_parse["party_column"] = party_column
+    table_config_to_parse["term_start_column"] = term_start_column
+    table_config_to_parse["term_end_column"] = term_end_column
+
+    return table_config_to_parse
+
+  def process_dynamic_parse( self , cells , table_config_to_parse ):
+
+    self.Logger.debug_log( "running process_dynamic_parse" , True )
+
+    link_column = table_config_to_parse["link_column"]
+    party_column = table_config_to_parse["party_column"]
+    term_start_column = table_config_to_parse["term_start_column"]
+    term_end_column = table_config_to_parse["term_end_column"]
+    district_column = table_config_to_parse["district_column"]
+
+    # Only search columns up to and including term_end_column so we never pick the link from
+    # a column after the term dates (e.g. Lt. Governor or President column).
+    max_link_col = max(0, term_end_column) if term_end_column is not None and term_end_column >= 0 else None
+    link_column_old = link_column
+    link_column_result = self.DataCleanup.find_link_and_data_columns(cells, max_column_index=max_link_col)
+
+    # Stop loop if no link is found
+    if link_column_result is None:
+        self.Logger.debug_log("Link column not found, skipping this row.", True )
+        # Return False indicating the link column was not found, alongside original columns
+        table_config_to_parse["link_column"] = link_column
+        table_config_to_parse["party_column"] = party_column
+        table_config_to_parse["term_start_column"] = term_start_column
+        table_config_to_parse["term_end_column"] = term_end_column
+        table_config_to_parse["district_column"] = district_column
+
+        self.Logger.debug_log( f"returning table config {table_config_to_parse}" , True )
+
+        return False, table_config_to_parse
+
+    link_column = link_column_result
+
+    self.Logger.debug_log(f"Link column determined dynamically: {link_column} old link {link_column_old} \n table config {table_config_to_parse}" , True )
+
+
+    # When link_column_old was -1 (unconfigured), other columns are absolute indices — use as-is
+    if link_column_old < 0:
+        table_config_to_parse["link_column"] = link_column
+        table_config_to_parse["party_column"] = party_column
+        table_config_to_parse["term_start_column"] = term_start_column
+        table_config_to_parse["term_end_column"] = term_end_column
+        table_config_to_parse["district_column"] = district_column
+        return True, table_config_to_parse
+
+    # Calculate differences based on old link column
+    diff_term_start = term_start_column - link_column_old
+    self.Logger.debug_log( f" term_start current: {term_start_column} diff: {diff_term_start} " , True )
+    diff_term_end = term_end_column - link_column_old
+    self.Logger.debug_log( f" term_end current: {term_end_column} diff: {diff_term_end} " , True )
+    diff_district = district_column - link_column_old if district_column not in [0, 1000] else 0
+    self.Logger.debug_log( f" district current: {district_column} diff: {diff_district} " , True )
+    diff_party = party_column - link_column_old if party_column > 0 else 0
+    self.Logger.debug_log( f" party current: {party_column} diff: {diff_party} " , True )
+
+    # Update columns based on differences
+    party_column = link_column + diff_party if diff_party != 0 else party_column
+    self.Logger.debug_log( f"update party column: {party_column}" , True )
+    district_column = link_column + diff_district if diff_district != 0 else district_column
+    self.Logger.debug_log( f"update district column: {district_column}" , True )
+    term_start_column = link_column + diff_term_start
+    self.Logger.debug_log( f"update term start column: {term_start_column}" , True )
+    term_end_column = link_column + diff_term_end
+    self.Logger.debug_log( f"update term end column: {term_end_column}" , True )
+
+    '''
+    #Error handling when there are issues with parsing
+    party_column = "N/A" if party_column > len(cells) else party_column
+    district_column = "N/A" if district_column > len(cells) else district_column
+    term_start_column = "N/A" if term_start_column > len(cells) else term_start_column
+    term_end_column = "N/A" if term_end_column > len(cells) else term_end_column
+    self.Logger.debug_log( f" expected cells {len(cells)} " , True)
+    '''
+
+    # Return True indicating successful parsing, alongside updated columns
+    table_config_to_parse["link_column"] = link_column
+    table_config_to_parse["party_column"] = party_column
+    table_config_to_parse["term_start_column"] = term_start_column
+    table_config_to_parse["term_end_column"] = term_end_column
+    table_config_to_parse["district_column"] = district_column
+
+    self.Logger.debug_log( f"table config at the end of dynamic parse: \n {table_config_to_parse} \n\n" , True )
+
+    return True, table_config_to_parse
+
+
+
+class Biography:
+
+  def __init__( self, logger , data_cleanup ):
+
+
+    self.Logger = logger
+    self.DataCleanup = data_cleanup
+
+
+  def parse_infobox( self , infobox ):
+
+      '''
+      This function searches for information in the biography's infobox.
+      This function does not yet find birth_place and death_place.
+      '''
+
+      self.Logger.log( "start running parse_infobox" , False )
+
+      details = {
+          'full_name': None,
+          'name': None,
+          'birth_date': None,
+          'birth_place': None,
+          'death_date': None,
+          'death_place': None,
+      }
+
+      # Look for name within the infobox
+      name_row = infobox.find('th', {'class': 'infobox-above'})
+      if name_row:
+          details['name'] = self.DataCleanup.remove_footnote(name_row.get_text(strip=True))
+
+      # Nickname is not usually a nickname, but rather the full name
+      nickname_div = infobox.find('div', {'class': 'nickname'})
+      if nickname_div:
+          details['full_name'] = self.DataCleanup.remove_footnote(nickname_div.get_text(strip=True))
+      else:
+          details['full_name'] = details.get('name', None)
+
+      for tr in infobox.findAll('tr'):
+          th = tr.find('th')
+          td = tr.find('td')
+
+          if th and td:
+              if 'Born' in th.text:
+                  self.Logger.debug_log( th.text , False )
+                  birth_date_text = td.get_text(" ", strip=True)
+                  birth_date = self.DataCleanup.parse_date_info( birth_date_text , "start" )
+                  details['birth_date'] = birth_date
+
+              elif 'Died' in th.text:
+                  self.Logger.debug_log( th.text , False )
+                  death_date_text = td.get_text(" ", strip=True)
+                  death_date = self.DataCleanup.parse_date_info( death_date_text , "end" )
+                  details['death_date'] = death_date
+
+      self.Logger.log( "completd running parse_infobox" , False )
+      return details
+
+
+
+  def parse_first_paragraph( self , paragraph ):
+
+      self.Logger.log( "running first paragraphy method" , True )
+
+      self.Logger.debug_log( f"running first paragraph \n\n {paragraph}" , True )
+
+      '''
+      This function searches for information in the biography's first paragraphy.
+      This function does not yet find birth_place and death_place.
+      '''
+
+      details = {
+          'full_name': None,
+          'name': None,
+          'birth_date': None,
+          'birth_place': None,
+          'death_date': None,
+          'death_place': None,
+      }
+
+      # Find bold text for full name
+      bold_text = paragraph.find('b')
+      if bold_text:
+          details['full_name'] = self.DataCleanup.remove_footnote(bold_text.text)
+          self.Logger.debug_log( f" full name {details['full_name']} " , True )
+
+      details['birth_date'] , details['death_date'] = self.DataCleanup.parse_date_info( paragraph , "both" )
+
+      self.Logger.debug_log( f"first paragraph details {details}" , True )
+      return details
+
+
+
+
+  def biography_extract(self, wiki_link ):
+
+      self.Logger.log( "-------- \n\n Running biography extract", True )
+
+      normalized_link = normalize_wiki_url(wiki_link) or wiki_link
+      fetch_url = wiki_url_to_rest_html_url(normalized_link) or normalized_link
+      try:
+          response = requests.get(fetch_url, headers=WIKIPEDIA_REQUEST_HEADERS, timeout=30)
+          if response.status_code == 200:
+              html_content = response.text
+              soup = BeautifulSoup(html_content, 'html.parser')
+
+              infobox = soup.find('table', {'class': ['infobox vcard', 'infobox biography vcard']})
+              details = None
+              if infobox:
+                  details = self.parse_infobox(infobox)
+              else:
+                  first_paragraph = soup.find('p')
+                  if first_paragraph:
+                      details = self.parse_first_paragraph(first_paragraph)
+                  else:
+                      return {}
+
+              if details:
+                  details['page_path'] = urlparse(wiki_link).path.split('/')[-1].strip()
+                  if not details['full_name']:
+                      details['full_name'] = details.get('name', '')
+              else:
+                  details = {'page_path': urlparse(wiki_link).path.split('/')[-1].strip()}
+              return details
+          else:
+              self.Logger.log(f"Failed to fetch biography URL with status code: {response.status_code}" , True )
+              return {}
+      except requests.exceptions.RequestException as e:
+          self.Logger.log(f"Request failed: {e}" , True )
+          return {}
+
+  def find_term_dates(self, wiki_link, url, table_config_to_parse, office_details, district):
+
+      self.Logger.debug_log( f"running find_term_dates \n url value {url}" , True )
+
+      '''
+      Replink == true is used for US representative tables with only years in the table, such as New Jersey.
+      This function searches the infobox of the biographuies for dates.
+      '''
+
+      state = office_details["office_state"].replace( " " , "_" )
+      encoded_state = quote(state)
+      district = district.lower()
+
+      if table_config_to_parse["rep_link"] == True:
+        office_partial_url = f"/wiki/United_States_House_of_Representatives"
+        self.Logger.debug_log(f"Running find_term_dates for {wiki_link} with congressional URL {office_partial_url}", True )
+
+      elif table_config_to_parse["alt_link"] is not None:
+        office_partial_url = urlparse(table_config_to_parse["alt_link"]).path
+        self.Logger.debug_log(f"Running find_term_dates for {wiki_link} with alt_link URL {office_partial_url}", True )
+
+      else:
+        office_partial_url = urlparse(url).path
+        self.Logger.debug_log(f"Running find_term_dates for {wiki_link} with office URL {office_partial_url}", True )
+
+
+      current_office_holder = [ "assumed office" , "incumbent" , "invalid date" ]
+
+
+
+
+      fetch_url = wiki_url_to_rest_html_url(wiki_link) or wiki_link
+      try:
+          response = requests.get(fetch_url, headers=WIKIPEDIA_REQUEST_HEADERS, timeout=30)
+          if response.status_code == 200:
+              html_content = response.text
+              soup = BeautifulSoup(html_content, 'html.parser')
+              infobox = soup.find('table', {'class': ['infobox vcard', 'infobox biography vcard']})
+
+              if infobox:
+                  self.Logger.debug_log( f"Found infobox \n {infobox}" , True )
+                  for tr in infobox.find_all('tr'):
+                      self.Logger.debug_log( f"found tr \n {tr}" , True )
+                      a = tr.find('a', href=True)
+                      if a and office_partial_url in a['href']:
+                          # Examine the next two sibling rows for date information
+                          self.Logger.debug_log( f"found match. starting to iterate on {office_partial_url}" , True )
+                          for _ in range(2):  # Check the next row and the one after that
+                              tr = tr.find_next_sibling('tr')
+                              if tr:
+                                  self.Logger.debug_log(f"find next tr {tr}", True)
+                                  date_text = tr.get_text(" ", strip=True)
+                                  self.Logger.debug_log(f"date text {date_text}", True)
+                                  start_date, end_date = self.DataCleanup.parse_date_info(date_text, "both")
+                                  if start_date.lower() not in current_office_holder and end_date.lower() not in current_office_holder:
+                                      self.Logger.debug_log(f"Found term dates: {start_date}, {end_date}", True)
+                                      return start_date, end_date
+                                  start_date, end_date = self.DataCleanup.parse_date_info(date_text, "start")
+                                  if start_date.lower() not in current_office_holder :
+                                      self.Logger.debug_log(f"Found term dates: {start_date}", True)
+                                      return start_date, end_date
+                                  # If dates are invalid, continue to the next sibling row
+
+              self.Logger.log("Office URL or dates not found in the infobox.", False)
+          else:
+              self.Logger.log(f"Failed to fetch page: {response.status_code}", False)
+      except requests.exceptions.RequestException as e:
+          self.Logger.log(f"Request failed: {e}", False)
+
+      return "YYYY-00-00", "YYYY-00-00"
+
+
+

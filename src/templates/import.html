@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Bulk import offices – Office Holder{% endblock %}
+{% block content %}
+<h1>Bulk import offices</h1>
+<p>Import office configs from a CSV with columns: Country, Level, Branch, Department, Name, State, URL, Table No, Table Rows, Link Column, Party Column, Term Start Column, Term End Column, District, Dynamic Parse, Read columns right to left, Find Date, Parse Rowspan, Rep Link, Party Link, Notes, Alt Link.</p>
+<p>Example: <code>sample files/OfficeTables - Sheet1 (1).csv</code> (relative to project root).</p>
+{% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
+{% if imported is defined and errors is defined %}
+<div class="alert alert-success">Imported {{ imported }} rows. {{ errors }} errors.</div>
+{% endif %}
+<form method="post" action="/offices/import">
+  <div class="form-group">
+    <label>CSV file path (absolute or relative to project root)</label>
+    <input type="text" name="csv_path" value="sample files/OfficeTables - Sheet1 (1).csv" placeholder="path/to/offices.csv">
+  </div>
+  <button type="submit" class="btn">Import</button>
+  <a href="/offices" class="btn btn-secondary">Back to offices</a>
+</form>
+{% endblock %}

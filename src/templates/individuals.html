@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Individuals – Office Holder{% endblock %}
+{% block content %}
+<h1>Individuals</h1>
+{% if individuals %}
+<table>
+  <thead>
+    <tr><th>Full name</th><th>Wiki URL</th><th>Birth</th><th>Death</th></tr>
+  </thead>
+  <tbody>
+    {% for i in individuals %}
+    <tr>
+      <td>{{ i.full_name or '—' }}</td>
+      <td>{% if i.wiki_url %}<a href="{{ i.wiki_url }}" target="_blank" rel="noopener">{{ i.wiki_url[:50] }}…</a>{% else %}—{% endif %}</td>
+      <td>{{ i.birth_date or '—' }}{% if i.birth_date_imprecise %} <span class="imprecise-hint">(imprecise)</span>{% endif %}</td>
+      <td>{{ i.death_date or '—' }}{% if i.death_date_imprecise %} <span class="imprecise-hint">(imprecise)</span>{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+<p><small>Showing up to 100. Add limit/offset query params for more.</small></p>
+{% else %}
+<p>No individuals yet. Run the scraper with “Run biography” checked.</p>
+{% endif %}
+{% endblock %}

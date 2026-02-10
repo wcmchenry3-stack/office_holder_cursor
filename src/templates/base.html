@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Office Holder{% endblock %}</title>
+  <link rel="stylesheet" href="/static/css/theme.css">
+</head>
+<body>
+  <script>window.esc = function(s) { if (s == null || s === '') return ''; s = String(s); return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); };</script>
+  <script>
+  window.playJobCompleteSound = function() {
+    try {
+      var C = window.AudioContext || window.webkitAudioContext;
+      if (!C) return;
+      var ctx = new C();
+      var t0 = ctx.currentTime;
+      var interval = 1;
+      for (var i = 0; i < 5; i++) {
+        var osc = ctx.createOscillator();
+        var gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.frequency.value = 800;
+        osc.type = 'sine';
+        gain.gain.setValueAtTime(0.2, t0 + i * interval);
+        gain.gain.exponentialRampToValueAtTime(0.01, t0 + i * interval + 0.5);
+        osc.start(t0 + i * interval);
+        osc.stop(t0 + i * interval + 0.5);
+      }
+    } catch (e) {}
+  };
+  </script>
+  <nav>
+    <ul>
+      <li><a href="/offices">Offices</a></li>
+      <li><a href="/parties">Parties</a></li>
+      <li><a href="/run">Run</a></li>
+      <li><a href="/data/individuals">Individuals</a></li>
+      <li><a href="/data/office-terms">Office terms</a></li>
+    </ul>
+  </nav>
+  <main class="container">
+    {% block content %}{% endblock %}
+    <p class="storage-note"><small>All data (offices, parties, individuals, office terms) is saved locally in <code>data/office_holder.db</code> and persists after you close the browser or restart the app.</small></p>
+  </main>
+</body>
+</html>

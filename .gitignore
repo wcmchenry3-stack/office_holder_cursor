@@ -1,0 +1,29 @@
+# Data and generated content
+data/
+debug/
+*.db
+*.sqlite
+*.sqlite3
+logs/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+env/
+.env
+.env.local
+
+# IDE / editor
+.idea/
+.vscode/
+.cursor/
+*.swp
+*.swo
+
+# Optional local config overrides (keep example.json tracked)
+config/local.json

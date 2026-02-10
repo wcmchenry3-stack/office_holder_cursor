@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}{{ "Edit" if party else "New" }} party – Office Holder{% endblock %}
+{% block content %}
+<h1>{{ "Edit" if party else "New" }} party</h1>
+<form method="post" action="{% if party %}/parties/{{ party.id }}{% else %}/parties/new{% endif %}">
+  <div class="form-group">
+    <label>Country</label>
+    <select name="country_id" required>
+      <option value="">— Select country —</option>
+      {% for c in countries %}
+      <option value="{{ c.id }}" {% if party and party.country_id == c.id %}selected{% endif %}>{{ c.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="form-group"><label>Party name</label><input type="text" name="party_name" value="{{ party.party_name if party else '' }}" required></div>
+  <div class="form-group"><label>Party link (Wikipedia URL)</label><input type="url" name="party_link" value="{{ party.party_link if party else '' }}" required></div>
+  <div class="actions">
+    <button type="submit" class="btn">Save</button>
+    <a href="/parties" class="btn btn-secondary">Cancel</a>
+    {% if party %}
+    <form action="/parties/{{ party.id }}/delete" method="post" style="display:inline;" onsubmit="return confirm('Delete?');">
+      <button type="submit" class="btn btn-danger">Delete</button>
+    </form>
+    {% endif %}
+  </div>
+</form>
+{% endblock %}
