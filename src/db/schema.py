@@ -71,6 +71,11 @@ CREATE TABLE IF NOT EXISTS offices (
     party_link INTEGER NOT NULL DEFAULT 0,
     alt_link TEXT,
     use_full_page_for_table INTEGER NOT NULL DEFAULT 0,
+    years_only INTEGER NOT NULL DEFAULT 0,
+    term_dates_merged INTEGER NOT NULL DEFAULT 0,
+    party_ignore INTEGER NOT NULL DEFAULT 0,
+    district_ignore INTEGER NOT NULL DEFAULT 0,
+    district_at_large INTEGER NOT NULL DEFAULT 0,
     created_at TEXT DEFAULT (datetime('now'))
 );
 
@@ -92,11 +97,13 @@ CREATE TABLE IF NOT EXISTS office_terms (
     district TEXT,
     term_start TEXT,
     term_end TEXT,
+    term_start_year INTEGER,
+    term_end_year INTEGER,
     term_start_imprecise INTEGER NOT NULL DEFAULT 0,
     term_end_imprecise INTEGER NOT NULL DEFAULT 0,
     wiki_url TEXT NOT NULL,
     scraped_at TEXT DEFAULT (datetime('now')),
-    UNIQUE(office_id, wiki_url, term_start, term_end)
+    UNIQUE(office_id, wiki_url, term_start, term_end, term_start_year, term_end_year)
 );
 
 CREATE INDEX IF NOT EXISTS idx_office_terms_office_id ON office_terms(office_id);

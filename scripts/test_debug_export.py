@@ -39,7 +39,7 @@ def parse_debug_file(filepath: Path) -> tuple[dict, str]:
                     config[k] = int(v) if v and v != "None" else 0
                 except ValueError:
                     config[k] = 0
-            elif k in ("dynamic_parse", "find_date_in_infobox", "read_right_to_left",
+            elif k in ("dynamic_parse", "find_date_in_infobox", "years_only", "read_right_to_left",
                        "parse_rowspan", "party_link", "rep_link"):
                 config[k] = v and v.lower() in ("true", "1", "yes")
             else:
@@ -83,6 +83,7 @@ def main():
         "dynamic_parse": config.get("dynamic_parse", True),
         "read_right_to_left": config.get("read_right_to_left", False),
         "find_date_in_infobox": config.get("find_date_in_infobox", False),
+        "years_only": config.get("years_only", False),
         "parse_rowspan": config.get("parse_rowspan", False),
         "rep_link": config.get("rep_link", False),
         "party_link": config.get("party_link", False),
@@ -134,8 +135,11 @@ def main():
     for i, row in enumerate(table_data[:5]):
         ts = row.get("Term Start", "")
         te = row.get("Term End", "")
+        tsy = row.get("Term Start Year")
+        tey = row.get("Term End Year")
         link = (row.get("Wiki Link") or "")[:50]
-        print(f"  {i+1}. Term Start={ts!r}  Term End={te!r}  Link={link}...")
+        year_part = f"  Start year={tsy!r}  End year={tey!r}" if (tsy is not None or tey is not None) else ""
+        print(f"  {i+1}. Term Start={ts!r}  Term End={te!r}{year_part}  Link={link}...")
     invalid = sum(1 for r in table_data if r.get("Term Start") == "Invalid date" or r.get("Term End") == "Invalid date")
     if invalid:
         print(f"\nResult: {invalid} rows with Invalid date (ISSUE NOT RESOLVED)")

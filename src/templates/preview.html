@@ -15,6 +15,8 @@
       <th>District</th>
       <th>Term Start</th>
       <th>Term End</th>
+      <th>Start year</th>
+      <th>End year</th>
     </tr>
   </thead>
   <tbody>
@@ -25,6 +27,8 @@
       <td>{{ r.get('District') or '—' }}</td>
       <td>{{ r.get('Term Start') or '—' }}</td>
       <td>{{ r.get('Term End') or '—' }}</td>
+      <td>{{ r.get('Term Start Year') if r.get('Term Start Year') is not none else '—' }}</td>
+      <td>{{ r.get('Term End Year') if r.get('Term End Year') is not none else '—' }}</td>
     </tr>
     {% endfor %}
   </tbody>

@@ -96,6 +96,7 @@ def bulk_import_offices_from_csv(
                         "dynamic_parse": _bool_from_cell(row.get("Dynamic Parse")),
                         "read_right_to_left": _bool_from_cell(row.get("Read columns right to left")),
                         "find_date_in_infobox": _bool_from_cell(row.get("Find Date")),
+                        "years_only": _bool_from_cell(row.get("Years Only")),
                         "parse_rowspan": _bool_from_cell(row.get("Parse Rowspan")),
                         "rep_link": _bool_from_cell(row.get("Rep Link")),
                         "party_link": _bool_from_cell(row.get("Party Link")),

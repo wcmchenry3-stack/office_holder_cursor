@@ -8,6 +8,68 @@ from .connection import get_connection, get_db_path
 from .utils import _row_to_dict
 
 
+def _bool(data: dict, key: str) -> bool:
+    """Return True if data[key] is truthy (1, true, '1', 'true', etc.)."""
+    v = data.get(key)
+    return v is not None and str(v).strip().lower() in ("true", "1", "yes")
+
+
+def validate_office_table_config(
+    data: dict[str, Any],
+    *,
+    term_dates_merged: bool = False,
+    party_ignore: bool = False,
+    district_ignore: bool = False,
+    district_at_large: bool = False,
+) -> None:
+    """
+    Validate table_no, table_rows, and column settings. Raises ValueError with a clear message on failure.
+    Form/DB use 1-based column numbers; 0 means 'no column' for party/district.
+    When term_dates_merged is True, term_start and term_end may be equal.
+    When party_ignore is True, party_column is not required to be distinct.
+    When district_ignore or district_at_large is True, district_column is not required to be distinct.
+    """
+    try:
+        table_no = int(data.get("table_no", 1))
+        table_rows = int(data.get("table_rows", 4))
+    except (TypeError, ValueError):
+        raise ValueError("table_no and table_rows must be integers") from None
+    if table_no < 1 or table_rows < 1:
+        raise ValueError("table_no and table_rows must be at least 1")
+
+    try:
+        link_column = int(data.get("link_column", 1))
+        party_column = int(data.get("party_column", 0))
+        term_start_column = int(data.get("term_start_column", 4))
+        term_end_column = int(data.get("term_end_column", 5))
+        district_column = int(data.get("district_column", 0))
+    except (TypeError, ValueError):
+        raise ValueError("link, party, term start, term end, and district columns must be integers") from None
+
+    if link_column < 1:
+        raise ValueError("link column must be at least 1")
+    if term_start_column < 1 or term_end_column < 1:
+        raise ValueError("term start and term end columns must be at least 1")
+
+    # Build set of column numbers that must be pairwise distinct (only positive values count).
+    # When term_dates_merged, only one "term" column counts for distinctness.
+    if term_dates_merged:
+        used = [link_column, term_start_column]
+    else:
+        used = [link_column, term_start_column, term_end_column]
+    if not party_ignore:
+        used.append(party_column)
+    if not district_ignore and not district_at_large:
+        used.append(district_column)
+    # Require all positive values to be distinct
+    positive = [c for c in used if c > 0]
+    if len(positive) != len(set(positive)):
+        raise ValueError(
+            "link, party, term start, term end, and district columns must all be different "
+            "(when term dates merged, term start and end may be the same)"
+        )
+
+
 def list_offices(conn: sqlite3.Connection | None = None) -> list[dict[str, Any]]:
     """Return all office configs as list of dicts (with country_name, state_name, level_name, branch_name from FKs)."""
     own_conn = conn is None
@@ -22,7 +84,9 @@ def list_offices(conn: sqlite3.Connection | None = None) -> list[dict[str, Any]]
                       o.term_start_column, o.term_end_column, o.district_column,
                       o.dynamic_parse, o.read_right_to_left, o.find_date_in_infobox,
                       o.parse_rowspan, o.rep_link, o.party_link, o.alt_link,
-                      o.use_full_page_for_table, o.created_at
+                      o.use_full_page_for_table, o.years_only,
+                      o.term_dates_merged, o.party_ignore, o.district_ignore, o.district_at_large,
+                      o.created_at
                FROM offices o
                LEFT JOIN countries c ON c.id = o.country_id
                LEFT JOIN states s ON s.id = o.state_id
@@ -68,39 +132,60 @@ def create_office(data: dict[str, Any], conn: sqlite3.Connection | None = None) 
         country_id = int(data.get("country_id") or 0)
         if not country_id:
             raise ValueError("country_id required")
+        term_dates_merged = _bool(data, "term_dates_merged")
+        party_ignore = _bool(data, "party_ignore")
+        district_ignore = _bool(data, "district_ignore")
+        district_at_large = _bool(data, "district_at_large")
+        # When merged, force term_end = term_start
+        row_data = dict(data)
+        if term_dates_merged:
+            row_data["term_end_column"] = row_data.get("term_start_column", 4)
+        validate_office_table_config(
+            row_data,
+            term_dates_merged=term_dates_merged,
+            party_ignore=party_ignore,
+            district_ignore=district_ignore,
+            district_at_large=district_at_large,
+        )
         cur = conn.execute(
             """INSERT INTO offices (
                 country_id, state_id, level_id, branch_id, department, name, enabled, notes,
                 url, table_no, table_rows, link_column, party_column,
                 term_start_column, term_end_column, district_column,
                 dynamic_parse, read_right_to_left, find_date_in_infobox,
-                parse_rowspan, rep_link, party_link, alt_link, use_full_page_for_table
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                parse_rowspan, rep_link, party_link, alt_link, use_full_page_for_table, years_only,
+                term_dates_merged, party_ignore, district_ignore, district_at_large
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 country_id,
-                int(data.get("state_id") or 0) or None,
-                int(data.get("level_id") or 0) or None,
-                int(data.get("branch_id") or 0) or None,
-                data.get("department") or "",
-                data.get("name") or "",
-                1 if data.get("enabled") in (True, 1, "TRUE", "true", "1") else 1,  # default on
-                data.get("notes") or "",
-                data.get("url") or "",
-                int(data.get("table_no", 1)),
-                int(data.get("table_rows", 4)),
-                int(data.get("link_column", 1)),
-                int(data.get("party_column", 0)),
-                int(data.get("term_start_column", 4)),
-                int(data.get("term_end_column", 5)),
-                int(data.get("district_column", 0)),
-                1 if data.get("dynamic_parse") in (True, 1, "TRUE", "true", "1") else 0,
-                1 if data.get("read_right_to_left") in (True, 1, "TRUE", "true", "1") else 0,
-                1 if data.get("find_date_in_infobox") in (True, 1, "TRUE", "true", "1") else 0,
-                1 if data.get("parse_rowspan") in (True, 1, "TRUE", "true", "1") else 0,
-                1 if data.get("rep_link") in (True, 1, "TRUE", "true", "1") else 0,
-                1 if data.get("party_link") in (True, 1, "TRUE", "true", "1") else 0,
-                data.get("alt_link") or None,
-                1 if data.get("use_full_page_for_table") in (True, 1, "TRUE", "true", "1") else 0,
+                int(row_data.get("state_id") or 0) or None,
+                int(row_data.get("level_id") or 0) or None,
+                int(row_data.get("branch_id") or 0) or None,
+                row_data.get("department") or "",
+                row_data.get("name") or "",
+                1 if row_data.get("enabled") in (True, 1, "TRUE", "true", "1") else 1,
+                row_data.get("notes") or "",
+                row_data.get("url") or "",
+                int(row_data.get("table_no", 1)),
+                int(row_data.get("table_rows", 4)),
+                int(row_data.get("link_column", 1)),
+                int(row_data.get("party_column", 0)),
+                int(row_data.get("term_start_column", 4)),
+                int(row_data.get("term_end_column", 5)),
+                int(row_data.get("district_column", 0)),
+                1 if row_data.get("dynamic_parse") in (True, 1, "TRUE", "true", "1") else 0,
+                1 if row_data.get("read_right_to_left") in (True, 1, "TRUE", "true", "1") else 0,
+                1 if row_data.get("find_date_in_infobox") in (True, 1, "TRUE", "true", "1") else 0,
+                1 if row_data.get("parse_rowspan") in (True, 1, "TRUE", "true", "1") else 0,
+                1 if row_data.get("rep_link") in (True, 1, "TRUE", "true", "1") else 0,
+                1 if row_data.get("party_link") in (True, 1, "TRUE", "true", "1") else 0,
+                row_data.get("alt_link") or None,
+                1 if row_data.get("use_full_page_for_table") in (True, 1, "TRUE", "true", "1") else 0,
+                1 if row_data.get("years_only") in (True, 1, "TRUE", "true", "1") else 0,
+                1 if term_dates_merged else 0,
+                1 if party_ignore else 0,
+                1 if district_ignore else 0,
+                1 if district_at_large else 0,
             ),
         )
         conn.commit()
@@ -119,6 +204,20 @@ def update_office(office_id: int, data: dict[str, Any], conn: sqlite3.Connection
         country_id = int(data.get("country_id") or 0)
         if not country_id:
             raise ValueError("country_id required")
+        term_dates_merged = _bool(data, "term_dates_merged")
+        party_ignore = _bool(data, "party_ignore")
+        district_ignore = _bool(data, "district_ignore")
+        district_at_large = _bool(data, "district_at_large")
+        row_data = dict(data)
+        if term_dates_merged:
+            row_data["term_end_column"] = row_data.get("term_start_column", 4)
+        validate_office_table_config(
+            row_data,
+            term_dates_merged=term_dates_merged,
+            party_ignore=party_ignore,
+            district_ignore=district_ignore,
+            district_at_large=district_at_large,
+        )
         if "enabled" in data:
             enabled_val = 1 if data.get("enabled") in (True, 1, "TRUE", "true", "1") else 0
         else:
@@ -130,33 +229,39 @@ def update_office(office_id: int, data: dict[str, Any], conn: sqlite3.Connection
                 url=?, table_no=?, table_rows=?, link_column=?, party_column=?,
                 term_start_column=?, term_end_column=?, district_column=?,
                 dynamic_parse=?, read_right_to_left=?, find_date_in_infobox=?,
-                parse_rowspan=?, rep_link=?, party_link=?, alt_link=?, use_full_page_for_table=?
+                parse_rowspan=?, rep_link=?, party_link=?, alt_link=?, use_full_page_for_table=?, years_only=?,
+                term_dates_merged=?, party_ignore=?, district_ignore=?, district_at_large=?
             WHERE id=?""",
             (
                 country_id,
-                int(data.get("state_id") or 0) or None,
-                int(data.get("level_id") or 0) or None,
-                int(data.get("branch_id") or 0) or None,
-                data.get("department") or "",
-                data.get("name") or "",
+                int(row_data.get("state_id") or 0) or None,
+                int(row_data.get("level_id") or 0) or None,
+                int(row_data.get("branch_id") or 0) or None,
+                row_data.get("department") or "",
+                row_data.get("name") or "",
                 enabled_val,
-                data.get("notes") or "",
-                data.get("url") or "",
-                int(data.get("table_no", 1)),
-                int(data.get("table_rows", 4)),
-                int(data.get("link_column", 1)),
-                int(data.get("party_column", 0)),
-                int(data.get("term_start_column", 4)),
-                int(data.get("term_end_column", 5)),
-                int(data.get("district_column", 0)),
-                1 if data.get("dynamic_parse") in (True, 1, "TRUE", "true", "1") else 0,
-                1 if data.get("read_right_to_left") in (True, 1, "TRUE", "true", "1") else 0,
-                1 if data.get("find_date_in_infobox") in (True, 1, "TRUE", "true", "1") else 0,
-                1 if data.get("parse_rowspan") in (True, 1, "TRUE", "true", "1") else 0,
-                1 if data.get("rep_link") in (True, 1, "TRUE", "true", "1") else 0,
-                1 if data.get("party_link") in (True, 1, "TRUE", "true", "1") else 0,
-                data.get("alt_link") or None,
-                1 if data.get("use_full_page_for_table") in (True, 1, "TRUE", "true", "1") else 0,
+                row_data.get("notes") or "",
+                row_data.get("url") or "",
+                int(row_data.get("table_no", 1)),
+                int(row_data.get("table_rows", 4)),
+                int(row_data.get("link_column", 1)),
+                int(row_data.get("party_column", 0)),
+                int(row_data.get("term_start_column", 4)),
+                int(row_data.get("term_end_column", 5)),
+                int(row_data.get("district_column", 0)),
+                1 if row_data.get("dynamic_parse") in (True, 1, "TRUE", "true", "1") else 0,
+                1 if row_data.get("read_right_to_left") in (True, 1, "TRUE", "true", "1") else 0,
+                1 if row_data.get("find_date_in_infobox") in (True, 1, "TRUE", "true", "1") else 0,
+                1 if row_data.get("parse_rowspan") in (True, 1, "TRUE", "true", "1") else 0,
+                1 if row_data.get("rep_link") in (True, 1, "TRUE", "true", "1") else 0,
+                1 if row_data.get("party_link") in (True, 1, "TRUE", "true", "1") else 0,
+                row_data.get("alt_link") or None,
+                1 if row_data.get("use_full_page_for_table") in (True, 1, "TRUE", "true", "1") else 0,
+                1 if row_data.get("years_only") in (True, 1, "TRUE", "true", "1") else 0,
+                1 if term_dates_merged else 0,
+                1 if party_ignore else 0,
+                1 if district_ignore else 0,
+                1 if district_at_large else 0,
                 office_id,
             ),
         )
@@ -215,6 +320,16 @@ def _col_1based_to_0based(val: Any) -> int:
     return (v - 1) if v > 0 else -1
 
 
+def _alt_link_for_config(value: Any) -> str | None:
+    """Return alt_link for table_config; treat empty or literal 'None' as unset."""
+    if value is None:
+        return None
+    s = str(value).strip().lower()
+    if s in ("", "none"):
+        return None
+    return value if isinstance(value, str) else str(value)
+
+
 def office_row_to_table_config(row: dict[str, Any]) -> dict[str, Any]:
     """Convert DB office row to scraper table_config format (0-based columns, booleans)."""
     return {
@@ -227,11 +342,16 @@ def office_row_to_table_config(row: dict[str, Any]) -> dict[str, Any]:
         "district_column": _col_1based_to_0based(row.get("district_column")),
         "run_dynamic_parse": bool(row.get("dynamic_parse")),
         "find_date_in_infobox": bool(row.get("find_date_in_infobox")),
+        "years_only": bool(row.get("years_only")),
         "read_columns_right_to_left": bool(row.get("read_right_to_left")),
         "parse_rowspan": bool(row.get("parse_rowspan")),
         "rep_link": bool(row.get("rep_link")),
         "party_link": bool(row.get("party_link")),
-        "alt_link": row["alt_link"] if row.get("alt_link") else None,
+        "alt_link": _alt_link_for_config(row.get("alt_link")),
+        "term_dates_merged": bool(row.get("term_dates_merged")),
+        "party_ignore": bool(row.get("party_ignore")),
+        "district_ignore": bool(row.get("district_ignore")),
+        "district_at_large": bool(row.get("district_at_large")),
     }
 
 

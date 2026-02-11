@@ -48,6 +48,12 @@ def migrate_to_fk(conn=None):
         _migrate_offices_enabled(conn)
         # Add use_full_page_for_table to offices if missing
         _migrate_offices_use_full_page_for_table(conn)
+        # Add years_only to offices if missing
+        _migrate_offices_years_only(conn)
+        # Add term_start_year, term_end_year to office_terms and extend UNIQUE if missing
+        _migrate_office_terms_year_columns(conn)
+        # Add term_dates_merged, party_ignore, district_ignore, district_at_large to offices
+        _migrate_offices_parsing_options(conn)
     finally:
         if own_conn:
             conn.close()
@@ -206,6 +212,65 @@ def _migrate_offices_use_full_page_for_table(conn):
     if "use_full_page_for_table" not in offices_cols:
         conn.execute("ALTER TABLE offices ADD COLUMN use_full_page_for_table INTEGER NOT NULL DEFAULT 0")
         conn.commit()
+
+
+def _migrate_offices_years_only(conn):
+    """Add years_only to offices if missing (0 = full dates or infobox, 1 = table has years only)."""
+    offices_cols = _columns(conn, "offices")
+    if "years_only" not in offices_cols:
+        conn.execute("ALTER TABLE offices ADD COLUMN years_only INTEGER NOT NULL DEFAULT 0")
+        conn.commit()
+
+
+def _migrate_offices_parsing_options(conn):
+    """Add term_dates_merged, party_ignore, district_ignore, district_at_large to offices if missing."""
+    offices_cols = _columns(conn, "offices")
+    for col, default in (
+        ("term_dates_merged", 0),
+        ("party_ignore", 0),
+        ("district_ignore", 0),
+        ("district_at_large", 0),
+    ):
+        if col not in offices_cols:
+            conn.execute(f"ALTER TABLE offices ADD COLUMN {col} INTEGER NOT NULL DEFAULT {default}")
+    conn.commit()
+
+
+def _migrate_office_terms_year_columns(conn):
+    """Add term_start_year, term_end_year to office_terms and extend UNIQUE. Recreates table."""
+    ot_cols = _columns(conn, "office_terms")
+    if "term_start_year" in ot_cols and "term_end_year" in ot_cols:
+        return
+    conn.execute("""
+        CREATE TABLE office_terms_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            office_id INTEGER NOT NULL REFERENCES offices(id),
+            individual_id INTEGER REFERENCES individuals(id),
+            party_id INTEGER REFERENCES parties(id),
+            district TEXT,
+            term_start TEXT,
+            term_end TEXT,
+            term_start_year INTEGER,
+            term_end_year INTEGER,
+            term_start_imprecise INTEGER NOT NULL DEFAULT 0,
+            term_end_imprecise INTEGER NOT NULL DEFAULT 0,
+            wiki_url TEXT NOT NULL,
+            scraped_at TEXT DEFAULT (datetime('now')),
+            UNIQUE(office_id, wiki_url, term_start, term_end, term_start_year, term_end_year)
+        )
+    """)
+    conn.execute("""
+        INSERT INTO office_terms_new (id, office_id, individual_id, party_id, district, term_start, term_end, term_start_year, term_end_year, term_start_imprecise, term_end_imprecise, wiki_url, scraped_at)
+        SELECT id, office_id, individual_id, party_id, district, term_start, term_end, NULL, NULL, term_start_imprecise, term_end_imprecise, wiki_url, scraped_at
+        FROM office_terms
+    """)
+    conn.execute("DROP TABLE office_terms")
+    conn.execute("ALTER TABLE office_terms_new RENAME TO office_terms")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_office_terms_office_id ON office_terms(office_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_office_terms_individual_id ON office_terms(individual_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_office_terms_party_id ON office_terms(party_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_office_terms_wiki_url ON office_terms(wiki_url)")
+    conn.commit()
 
 
 def _migrate_imprecise_date_columns(conn):

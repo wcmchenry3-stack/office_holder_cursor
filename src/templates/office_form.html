@@ -12,6 +12,7 @@
 </p>
 {% endif %}
 {% if saved %}<div class="alert alert-success">Saved.</div>{% endif %}
+{% if validation_error %}<div class="alert alert-error">{{ validation_error }}</div>{% endif %}
 {% if office and terms_count is not none %}<p><small>Office terms: {{ terms_count }}</small></p>{% endif %}
 <form method="post" action="{% if office %}/offices/{{ office.id }}{% else %}/offices/new{% endif %}" id="officeForm">
   {% if office and nav_ids %}<input type="hidden" name="nav_ids" value="{{ nav_ids }}">{% endif %}
@@ -71,28 +72,77 @@
   </div>
   <div class="form-row">
     <div class="form-group"><label>Link column (1-based)</label><input type="number" name="link_column" value="{{ office.link_column if office else 1 }}" min="0"></div>
-    <div class="form-group"><label>Party column</label><input type="number" name="party_column" value="{{ office.party_column if office else 0 }}" min="0"></div>
-    <div class="form-group"><label>Term start column</label><input type="number" name="term_start_column" value="{{ office.term_start_column if office else 4 }}" min="0"></div>
-    <div class="form-group"><label>Term end column</label><input type="number" name="term_end_column" value="{{ office.term_end_column if office else 5 }}" min="0"></div>
-    <div class="form-group"><label>District column</label><input type="number" name="district_column" value="{{ office.district_column if office else 0 }}" min="0"></div>
+    <div class="form-group" id="partyColumnGroup"><label>Party column</label><input type="number" name="party_column" id="partyColumn" value="{{ office.party_column if office else 0 }}" min="0" placeholder="—"></div>
+    <div class="form-group"><label>Term start column</label><input type="number" name="term_start_column" id="termStartColumn" value="{{ office.term_start_column if office else 4 }}" min="0"></div>
+    <div class="form-group" id="termEndColumnGroup"><label>Term end column</label><input type="number" name="term_end_column" id="termEndColumn" value="{{ office.term_end_column if office else 5 }}" min="0" placeholder="—"></div>
+    <div class="form-group" id="districtColumnGroup"><label>District column</label><input type="number" name="district_column" id="districtColumn" value="{{ office.district_column if office else 0 }}" min="0" placeholder="—"></div>
   </div>
   <div class="form-row">
-    <div class="form-group checkbox-group"><label><input type="checkbox" name="dynamic_parse" value="1" {% if office and office.dynamic_parse %}checked{% endif %}> Dynamic parse</label></div>
-    <div class="form-group checkbox-group"><label><input type="checkbox" name="read_right_to_left" value="1" {% if office and office.read_right_to_left %}checked{% endif %}> Read right to left</label></div>
-    <div class="form-group checkbox-group"><label><input type="checkbox" name="find_date_in_infobox" value="1" {% if office and office.find_date_in_infobox %}checked{% endif %}> Find date in infobox</label></div>
-    <div class="form-group checkbox-group"><label><input type="checkbox" name="parse_rowspan" value="1" {% if office and office.parse_rowspan %}checked{% endif %}> Parse rowspan</label></div>
-    <div class="form-group checkbox-group"><label><input type="checkbox" name="rep_link" value="1" {% if office and office.rep_link %}checked{% endif %}> Rep link</label></div>
-    <div class="form-group checkbox-group"><label><input type="checkbox" name="party_link" value="1" {% if office and office.party_link %}checked{% endif %}> Party link</label></div>
-    <div class="form-group checkbox-group"><label><input type="checkbox" name="use_full_page_for_table" value="1" {% if office and office.use_full_page_for_table %}checked{% endif %}> Use full page for table fetch</label></div>
+    <div class="form-group checkbox-group">
+      <label><input type="checkbox" name="term_dates_merged" value="1" id="termDatesMerged" {% if office and office.term_dates_merged %}checked{% endif %}> Term dates merged</label>
+      <p class="form-note">When checked, one column holds both start and end; term end is grayed out and matches start.</p>
+    </div>
+    <div class="form-group checkbox-group">
+      <label><input type="checkbox" name="party_ignore" value="1" id="partyIgnore" {% if office and office.party_ignore %}checked{% endif %}> Ignore party</label>
+      <p class="form-note">Do not extract party; store null. Party column is grayed out — do not enter.</p>
+    </div>
+    <div class="form-group checkbox-group">
+      <label><input type="checkbox" name="district_ignore" value="1" id="districtIgnore" {% if office and office.district_ignore %}checked{% endif %}> District: Ignore (No District)</label>
+      <p class="form-note">Set district to &quot;No District&quot; for all rows. District column is grayed out — do not enter.</p>
+    </div>
+    <div class="form-group checkbox-group">
+      <label><input type="checkbox" name="district_at_large" value="1" id="districtAtLarge" {% if office and office.district_at_large %}checked{% endif %}> District: At-Large</label>
+      <p class="form-note">Set district to &quot;At-Large&quot; for all rows. District column is grayed out — do not enter.</p>
+    </div>
   </div>
-  <div class="form-group"><label>Alt link</label><input type="text" name="alt_link" value="{{ office.alt_link if office else '' }}"></div>
+  <div class="form-row">
+    <div class="form-group checkbox-group">
+      <label><input type="checkbox" name="dynamic_parse" value="1" {% if office and office.dynamic_parse %}checked{% endif %}> Dynamic parse</label>
+      <p class="form-note">Infer link, party, and term columns from the first row instead of using fixed column numbers.</p>
+    </div>
+    <div class="form-group checkbox-group">
+      <label><input type="checkbox" name="read_right_to_left" value="1" {% if office and office.read_right_to_left %}checked{% endif %}> Read right to left</label>
+      <p class="form-note">Use when the table&apos;s link column is on the right (e.g. some senate tables).</p>
+    </div>
+    <div class="form-group">
+      <label>Date source</label>
+      <select name="date_source">
+        <option value="not_applicable" {% if not office or (not office.find_date_in_infobox and not office.years_only) %}selected{% endif %}>Not applicable</option>
+        <option value="find_date_in_infobox" {% if office and office.find_date_in_infobox %}selected{% endif %}>Find date in infobox</option>
+        <option value="years_only" {% if office and office.years_only %}selected{% endif %}>Table has years only</option>
+      </select>
+      <p class="form-note">Find date in infobox: get full dates from bios. Table has years only: table has year ranges only (stores start/end year). Choose one or not applicable.</p>
+    </div>
+    <div class="form-group checkbox-group">
+      <label><input type="checkbox" name="parse_rowspan" value="1" {% if office and office.parse_rowspan %}checked{% endif %}> Parse rowspan</label>
+      <p class="form-note">Enable when the table uses rowspan so one cell spans multiple rows.</p>
+    </div>
+    <div class="form-group checkbox-group">
+      <label><input type="checkbox" name="rep_link" value="1" {% if office and office.rep_link %}checked{% endif %}> Rep link</label>
+      <p class="form-note">Use for US House tables: match infobox on the House of Representatives link.</p>
+    </div>
+    <div class="form-group checkbox-group">
+      <label><input type="checkbox" name="party_link" value="1" {% if office and office.party_link %}checked{% endif %}> Party link</label>
+      <p class="form-note">Resolve party from the link in the party column (e.g. to Democratic Party article).</p>
+    </div>
+    <div class="form-group checkbox-group">
+      <label><input type="checkbox" name="use_full_page_for_table" value="1" {% if office and office.use_full_page_for_table %}checked{% endif %}> Use full page for table fetch</label>
+      <p class="form-note">Fetch the full page HTML for the table (use when table number refers to the full page).</p>
+    </div>
+  </div>
+  <div class="form-group">
+    <label>Alt link</label>
+    <input type="text" name="alt_link" value="{{ office.alt_link if office else '' }}">
+    <p class="form-note">For Find date in infobox: exact Wikipedia path to match in bios (e.g. /wiki/Attorney_General_of_Alabama). Leave empty to use the office URL.</p>
+  </div>
   <div class="actions">
     <button type="submit" name="action" value="save" class="btn">Save</button>
     <button type="submit" name="action" value="save_and_close" class="btn">Save and close</button>
     <a href="/offices" class="btn btn-secondary">Cancel</a>
     {% if office %}
     <button type="button" class="btn btn-secondary" id="testConfigBtn">Test config</button>
-    <button type="button" class="btn btn-secondary" id="previewBtn">Preview</button>
+    <button type="button" class="btn btn-secondary" id="previewAllBtn">Preview all</button>
+    <button type="button" class="btn btn-secondary" id="previewTopXBtn">Preview top X</button>
     <button type="button" class="btn btn-secondary" id="showAllTablesBtn">Show all tables</button>
     <button type="button" class="btn btn-secondary" id="showSelectedTableBtn">Show selected table</button>
     <button type="button" class="btn btn-secondary" id="showTableHtmlBtn">Show table HTML</button>
@@ -110,7 +160,7 @@
 <button type="button" class="btn btn-secondary btn-sm" id="populateTermsStopBtn" style="display:none; margin-top:0.25rem;">Stop</button>
 <div id="previewPanel" class="preview-panel" style="display:none; margin-top:1rem;">
   <h2>Preview</h2>
-  <p><small>Top 10 records from the page (dry run — not saved).</small></p>
+  <p><small>Dry run — not saved. Use &quot;Preview all&quot; or &quot;Preview top X&quot;.</small></p>
   <div id="previewContent"></div>
   <div class="actions" style="margin-top:0.5rem;">
     <button type="button" class="btn btn-secondary btn-sm" id="previewClose">Close preview</button>
@@ -197,19 +247,86 @@
       link_column: parseInt(form.link_column?.value, 10) || 1,
       party_column: parseInt(form.party_column?.value, 10) || 0,
       term_start_column: parseInt(form.term_start_column?.value, 10) || 4,
-      term_end_column: parseInt(form.term_end_column?.value, 10) || 5,
+      term_end_column: (function() {
+        if (!!form.term_dates_merged?.checked) return parseInt(form.term_start_column?.value, 10) || 4;
+        return parseInt(form.term_end_column?.value, 10) || 5;
+      })(),
       district_column: parseInt(form.district_column?.value, 10) || 0,
       dynamic_parse: !!form.dynamic_parse?.checked,
       read_right_to_left: !!form.read_right_to_left?.checked,
-      find_date_in_infobox: !!form.find_date_in_infobox?.checked,
+      find_date_in_infobox: (form.date_source?.value || 'not_applicable') === 'find_date_in_infobox',
+      years_only: (form.date_source?.value || 'not_applicable') === 'years_only',
       parse_rowspan: !!form.parse_rowspan?.checked,
       rep_link: !!form.rep_link?.checked,
       party_link: !!form.party_link?.checked,
       alt_link: form.alt_link?.value || '',
-      use_full_page_for_table: !!form.use_full_page_for_table?.checked
+      use_full_page_for_table: !!form.use_full_page_for_table?.checked,
+      term_dates_merged: !!form.term_dates_merged?.checked,
+      party_ignore: !!form.party_ignore?.checked,
+      district_ignore: !!form.district_ignore?.checked,
+      district_at_large: !!form.district_at_large?.checked
     };
     return data;
   }
+  (function() {
+    var mergedCb = document.getElementById('termDatesMerged');
+    var termEndGroup = document.getElementById('termEndColumnGroup');
+    var termEndInput = document.getElementById('termEndColumn');
+    var termStartInput = document.getElementById('termStartColumn');
+    function syncTermMerged() {
+      if (!mergedCb || !termEndInput || !termStartInput) return;
+      if (mergedCb.checked) {
+        termEndInput.value = termStartInput.value;
+        termEndInput.disabled = true;
+        if (termEndGroup) { termEndGroup.style.opacity = '0.5'; termEndGroup.style.pointerEvents = 'none'; }
+      } else {
+        termEndInput.disabled = false;
+        if (termEndGroup) { termEndGroup.style.opacity = '1'; termEndGroup.style.pointerEvents = ''; }
+      }
+    }
+    if (mergedCb) mergedCb.addEventListener('change', syncTermMerged);
+    if (termStartInput && termEndInput) termStartInput.addEventListener('input', function() { if (mergedCb && mergedCb.checked) termEndInput.value = termStartInput.value; });
+    syncTermMerged();
+  })();
+  (function() {
+    var partyIgnoreCb = document.getElementById('partyIgnore');
+    var partyGroup = document.getElementById('partyColumnGroup');
+    var partyInput = document.getElementById('partyColumn');
+    function syncPartyIgnore() {
+      if (!partyIgnoreCb || !partyInput) return;
+      if (partyIgnoreCb.checked) {
+        partyInput.disabled = true;
+        if (partyGroup) { partyGroup.style.opacity = '0.5'; partyGroup.style.pointerEvents = 'none'; }
+      } else {
+        partyInput.disabled = false;
+        if (partyGroup) { partyGroup.style.opacity = '1'; partyGroup.style.pointerEvents = ''; }
+      }
+    }
+    if (partyIgnoreCb) partyIgnoreCb.addEventListener('change', syncPartyIgnore);
+    syncPartyIgnore();
+  })();
+  (function() {
+    var districtIgnoreCb = document.getElementById('districtIgnore');
+    var districtAtLargeCb = document.getElementById('districtAtLarge');
+    var districtGroup = document.getElementById('districtColumnGroup');
+    var districtInput = document.getElementById('districtColumn');
+    function syncDistrictOverride() {
+      if (!districtGroup || !districtInput) return;
+      var useOverride = (districtIgnoreCb && districtIgnoreCb.checked) || (districtAtLargeCb && districtAtLargeCb.checked);
+      if (useOverride) {
+        districtInput.disabled = true;
+        districtGroup.style.opacity = '0.5';
+        districtGroup.style.pointerEvents = 'none';
+      } else {
+        districtInput.disabled = false;
+        districtGroup.style.opacity = '1';
+        districtGroup.style.pointerEvents = '';
+      }
+    }
+    if (districtIgnoreCb) districtIgnoreCb.addEventListener('change', syncDistrictOverride);
+    if (districtAtLargeCb) districtAtLargeCb.addEventListener('change', syncDistrictOverride);
+    syncDistrictOverride();
+  })();
   document.getElementById('testConfigBtn')?.addEventListener('click', function() {
     var el = document.getElementById('testConfigResult');
     el.style.display = 'block';
@@ -230,7 +347,7 @@
         el.className = 'alert alert-error';
       });
   });
-  function renderPreviewResult(result, content, showAll) {
+  function renderPreviewResult(result, content) {
     var rows = result.preview_rows || [];
     var raw = result.raw_table_preview;
     var err = result.error;
@@ -239,38 +356,17 @@
       return;
     }
     if (rows.length) {
-      var caption = showAll ? ('<p><small>Showing all ' + rows.length + ' rows.</small></p>') : ('<p><small>Showing first ' + rows.length + ' rows.</small></p>');
-      var html = caption + '<table><thead><tr><th>Wiki Link</th><th>Party</th><th>District</th><th>Term Start</th><th>Term End</th></tr></thead><tbody>';
+      var caption = '<p><small>Showing all ' + rows.length + ' rows.</small></p>';
+      var html = caption + '<table><thead><tr><th>Wiki Link</th><th>Party</th><th>District</th><th>Term Start</th><th>Term End</th><th>Start year</th><th>End year</th></tr></thead><tbody>';
       rows.forEach(function(r) {
         var link = r['Wiki Link'];
         var linkCell = (link && link !== 'No link') ? '<a href="' + esc(link) + '" target="_blank" rel="noopener">' + esc(link.length > 50 ? link.slice(0, 50) + '…' : link) + '</a>' : esc(link || '—');
-        html += '<tr><td>' + linkCell + '</td><td>' + esc(r.Party || '—') + '</td><td>' + esc(r.District || '—') + '</td><td>' + esc(r['Term Start'] || '—') + '</td><td>' + esc(r['Term End'] || '—') + '</td></tr>';
+        var sy = r['Term Start Year'] != null && r['Term Start Year'] !== '' ? r['Term Start Year'] : '—';
+        var ey = r['Term End Year'] != null && r['Term End Year'] !== '' ? r['Term End Year'] : '—';
+        html += '<tr><td>' + linkCell + '</td><td>' + esc(r.Party || '—') + '</td><td>' + esc(r.District || '—') + '</td><td>' + esc(r['Term Start'] || '—') + '</td><td>' + esc(r['Term End'] || '—') + '</td><td>' + esc(sy) + '</td><td>' + esc(ey) + '</td></tr>';
       });
       html += '</tbody></table>';
-      var payload = getFormDraft();
-      var showAllBtn = '<button type="button" class="btn btn-secondary btn-sm preview-show-all" style="margin-top:0.5rem;">Show all</button>';
-      var showTop10Btn = '<button type="button" class="btn btn-secondary btn-sm preview-show-top10" style="margin-top:0.5rem;">Show top 10 only</button>';
-      if (showAll) {
-        html += '<div class="preview-actions">' + showTop10Btn + '</div>';
-      } else {
-        html += '<div class="preview-actions">' + showAllBtn + '</div>';
-      }
       content.innerHTML = html;
-      content.querySelector('.preview-show-all')?.addEventListener('click', function() {
-        content.innerHTML = '<p>Loading all rows…</p>';
-        payload.show_all = true;
-        fetch('/api/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
-          .then(function(r) { return r.json(); })
-          .then(function(res) { renderPreviewResult(res, content, true); })
-          .catch(function() { content.innerHTML = '<div class="alert alert-error">Request failed.</div>'; });
-      });
-      content.querySelector('.preview-show-top10')?.addEventListener('click', function() {
-        content.innerHTML = '<p>Loading…</p>';
-        fetch('/api/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(getFormDraft()) })
-          .then(function(r) { return r.json(); })
-          .then(function(res) { renderPreviewResult(res, content, false); })
-          .catch(function() { content.innerHTML = '<div class="alert alert-error">Request failed.</div>'; });
-      });
       return;
     }
     if (raw && raw.rows && raw.rows.length) {
@@ -290,23 +386,75 @@
     }
     content.innerHTML = '<p>No rows parsed. Check table number and column mapping.</p>';
   }
-  document.getElementById('previewBtn')?.addEventListener('click', function() {
+  function runPreview(opts) {
     var panel = document.getElementById('previewPanel');
     var content = document.getElementById('previewContent');
     panel.style.display = 'block';
     content.innerHTML = '<p>Loading preview…</p>';
+    var draft = getFormDraft();
+    if (opts.showAll) {
+      draft.show_all = true;
+    } else if (opts.maxRows != null) {
+      draft.max_rows = opts.maxRows;
+    }
     fetch('/api/preview', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(getFormDraft())
+      body: JSON.stringify(draft)
     })
-      .then(function(r) { return r.json(); })
-      .then(function(result) {
-        renderPreviewResult(result, content, false);
+      .then(function(r) {
+        if (r.status === 202) return r.json().then(function(d) { return { async: true, job_id: d.job_id }; });
+        return r.json().then(function(d) { return { async: false, result: d }; });
+      })
+      .then(function(data) {
+        if (data.async && data.job_id) {
+          var jobId = data.job_id;
+          var poll = function() {
+            fetch('/api/preview/status/' + jobId)
+              .then(function(r) { return r.json(); })
+              .then(function(s) {
+                var msg = s.message || 'Loading…';
+                if (s.total > 0) msg += ' (' + s.current + ' of ' + s.total + ')';
+                content.innerHTML = '<p>' + msg + '</p>';
+                if (s.status === 'complete') {
+                  renderPreviewResult(s.result || {}, content);
+                  return;
+                }
+                if (s.status === 'error') {
+                  content.innerHTML = '<div class="alert alert-error">' + (s.error || 'Preview failed') + '</div>';
+                  return;
+                }
+                setTimeout(poll, 800);
+              })
+              .catch(function() {
+                content.innerHTML = '<div class="alert alert-error">Request failed.</div>';
+              });
+          };
+          poll();
+        } else {
+          renderPreviewResult(data.result || {}, content);
+        }
       })
       .catch(function() {
         content.innerHTML = '<div class="alert alert-error">Request failed.</div>';
       });
+  }
+  document.getElementById('previewAllBtn')?.addEventListener('click', function() {
+    runPreview({ showAll: true });
+  });
+  document.getElementById('previewTopXBtn')?.addEventListener('click', function() {
+    var raw = window.prompt('Show how many rows?', '10');
+    if (raw == null) return;
+    var num = parseInt(raw, 10);
+    if (isNaN(num) || num < 1) {
+      alert('Please enter a number greater than 0.');
+      return;
+    }
+    if (num > 2000) {
+      alert('Maximum 2000 rows. Using 2000.');
+      num = 2000;
+    }
+    runPreview({ maxRows: num });
   });
   document.getElementById('previewClose')?.addEventListener('click', function() {
     document.getElementById('previewPanel').style.display = 'none';
@@ -538,6 +686,60 @@
     var officeName = (config.name || '').trim() || 'office';
     resultEl.style.display = 'block';
     resultEl.className = 'alert';
+    var useInfobox = !!config.find_date_in_infobox;
+    if (useInfobox) {
+      resultEl.textContent = 'Exporting…';
+      fetch('/api/office-debug-export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ office_name: officeName, config: config })
+      })
+        .then(function(r) {
+          if (r.status === 202) return r.json().then(function(d) { return { async: true, job_id: d.job_id }; });
+          return r.json().then(function(d) { return { async: false, data: d }; });
+        })
+        .then(function(res) {
+          if (res.async && res.job_id) {
+            var jobId = res.job_id;
+            var poll = function() {
+              fetch('/api/office-debug-export-status/' + jobId)
+                .then(function(r) { return r.json(); })
+                .then(function(s) {
+                  var msg = s.message || 'Exporting…';
+                  if (s.total > 0) msg += ' (' + s.current + ' of ' + s.total + ')';
+                  resultEl.textContent = msg;
+                  if (s.status === 'complete') {
+                    var data = s.result || {};
+                    resultEl.className = 'alert alert-success';
+                    var fn = data.filename || (data.path ? data.path.replace(/^[^/]*\//, '') : null) || 'debug file';
+                    resultEl.textContent = 'Debug file exported successfully. File: ' + fn;
+                    return;
+                  }
+                  if (s.status === 'error') {
+                    resultEl.className = 'alert alert-error';
+                    resultEl.textContent = 'Export failed: ' + (s.error || 'Unknown error');
+                    return;
+                  }
+                  setTimeout(poll, 600);
+                })
+                .catch(function() {
+                  resultEl.className = 'alert alert-error';
+                  resultEl.textContent = 'Export status request failed.';
+                });
+            };
+            poll();
+          } else {
+            resultEl.className = 'alert alert-success';
+            var fn = (res.data && res.data.filename) || (res.data && res.data.path ? res.data.path.replace(/^[^/]*\//, '') : null) || 'debug file';
+            resultEl.textContent = 'Debug file exported successfully. File: ' + fn;
+          }
+        })
+        .catch(function(err) {
+          resultEl.className = 'alert alert-error';
+          resultEl.textContent = err && err.message ? err.message : 'Export failed.';
+        });
+      return;
+    }
     resultEl.textContent = 'Exporting…';
     fetch('/api/preview', {
       method: 'POST',
@@ -634,7 +836,7 @@
                   if (window.playJobCompleteSound) window.playJobCompleteSound();
                   return;
                 }
-                setTimeout(poll, 400);
+                setTimeout(poll, 800);
               })
               .catch(function() {
                 resultEl.textContent = 'Request failed.';

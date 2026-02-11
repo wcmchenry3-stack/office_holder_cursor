@@ -15,11 +15,13 @@ def insert_office_term(
     district: str | None = None,
     term_start: str | None = None,
     term_end: str | None = None,
+    term_start_year: int | None = None,
+    term_end_year: int | None = None,
     term_start_imprecise: bool = False,
     term_end_imprecise: bool = False,
     conn: sqlite3.Connection | None = None,
 ) -> int:
-    """Insert one office term. Returns id. Party is referenced by party_id (FK) only."""
+    """Insert one office term. Returns id. Party is referenced by party_id (FK) only. For years-only terms use term_start_year/term_end_year and leave term_start/term_end None."""
     own_conn = conn is None
     if own_conn:
         conn = get_connection()
@@ -28,9 +30,9 @@ def insert_office_term(
         te_imp = 1 if term_end_imprecise else 0
         cur = conn.execute(
             """INSERT OR REPLACE INTO office_terms
-               (office_id, individual_id, party_id, district, term_start, term_end, term_start_imprecise, term_end_imprecise, wiki_url)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (office_id, individual_id, party_id, district or None, term_start, term_end, ts_imp, te_imp, wiki_url),
+               (office_id, individual_id, party_id, district, term_start, term_end, term_start_year, term_end_year, term_start_imprecise, term_end_imprecise, wiki_url)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (office_id, individual_id, party_id, district or None, term_start, term_end, term_start_year, term_end_year, ts_imp, te_imp, wiki_url),
         )
         conn.commit()
         return cur.lastrowid
@@ -74,7 +76,7 @@ def get_existing_terms_for_office(office_id: int, conn: sqlite3.Connection | Non
         conn = get_connection()
     try:
         cur = conn.execute(
-            """SELECT id, office_id, individual_id, party_id, district, term_start, term_end, wiki_url
+            """SELECT id, office_id, individual_id, party_id, district, term_start, term_end, term_start_year, term_end_year, wiki_url
                FROM office_terms WHERE office_id = ?""",
             (office_id,),
         )
@@ -140,7 +142,8 @@ def list_office_terms(
         if office_id is not None:
             cur = conn.execute(
                 """SELECT ot.id, ot.office_id, ot.individual_id, ot.party_id, ot.district,
-                          ot.term_start, ot.term_end, ot.term_start_imprecise, ot.term_end_imprecise,
+                          ot.term_start, ot.term_end, ot.term_start_year, ot.term_end_year,
+                          ot.term_start_imprecise, ot.term_end_imprecise,
                           ot.wiki_url, ot.scraped_at,
                           o.name AS office_name, c.name AS country,
                           p.party_name AS party_display
@@ -149,13 +152,14 @@ def list_office_terms(
                    LEFT JOIN countries c ON c.id = o.country_id
                    LEFT JOIN parties p ON p.id = ot.party_id
                    WHERE ot.office_id = ?
-                   ORDER BY ot.term_start DESC LIMIT ? OFFSET ?""",
+                   ORDER BY COALESCE(ot.term_start, ot.term_start_year) DESC LIMIT ? OFFSET ?""",
                 (office_id, limit, offset),
             )
         else:
             cur = conn.execute(
                 """SELECT ot.id, ot.office_id, ot.individual_id, ot.party_id, ot.district,
-                          ot.term_start, ot.term_end, ot.term_start_imprecise, ot.term_end_imprecise,
+                          ot.term_start, ot.term_end, ot.term_start_year, ot.term_end_year,
+                          ot.term_start_imprecise, ot.term_end_imprecise,
                           ot.wiki_url, ot.scraped_at,
                           o.name AS office_name, c.name AS country,
                           p.party_name AS party_display

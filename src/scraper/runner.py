@@ -30,10 +30,16 @@ from src.scraper.table_cache import get_table_html_cached
 from src.scraper import parse_core
 
 
-def parse_full_table_for_export(office_row: dict[str, Any], table_html: str, url: str) -> list[dict[str, Any]]:
+def parse_full_table_for_export(
+    office_row: dict[str, Any],
+    table_html: str,
+    url: str,
+    progress_callback: Callable[[str, int, int, str, dict], None] | None = None,
+) -> list[dict[str, Any]]:
     """
     Parse full table HTML with the given office config (no row limit).
     Used by debug export so the exported EXTRACTED TABLE shows all parsed rows, not just the first 10.
+    When progress_callback is provided, it is called during infobox processing (e.g. Processing x of y).
     Returns list of row dicts (same shape as preview_rows).
     """
     init_db()
@@ -43,20 +49,28 @@ def parse_full_table_for_export(office_row: dict[str, Any], table_html: str, url
     data_cleanup = parse_core.DataCleanup(logger)
     biography = parse_core.Biography(logger, data_cleanup)
     offices_parser = parse_core.Offices(logger, biography, data_cleanup)
-    table_data = _parse_office_html(office_row, "", url, party_list, offices_parser, cached_table_html=table_html)
+    table_data = _parse_office_html(
+        office_row, "", url, party_list, offices_parser,
+        cached_table_html=table_html, progress_callback=progress_callback,
+    )
+    years_only = bool(office_row.get("years_only"))
     rows_out = []
     for row in table_data:
-        normalized = _normalize_row_for_import(row)
+        normalized = _normalize_row_for_import(row, years_only=years_only)
         if normalized is None:
             continue
-        _, term_start_val, term_end_val, _ts_imp, _te_imp = normalized
-        rows_out.append({
+        _, term_start_val, term_end_val, _ts_imp, _te_imp, term_start_year, term_end_year = normalized
+        out = {
             "Wiki Link": row.get("Wiki Link") or "",
             "Party": row.get("Party") or "",
             "District": row.get("District") or "",
             "Term Start": term_start_val if term_start_val else "",
             "Term End": term_end_val if term_end_val else "",
-        })
+            "Term Start Year": term_start_year,
+            "Term End Year": term_end_year,
+            "Infobox items": row.get("Infobox items") or "",
+        }
+        rows_out.append(out)
     return rows_out
 
 
@@ -67,32 +81,54 @@ def _parse_office_html(
     party_list: list,
     offices_parser: Any,
     cached_table_html: str | None = None,
+    progress_callback: Callable[[str, int, int, str, dict], None] | None = None,
+    max_rows: int | None = None,
 ) -> list[dict[str, Any]]:
     """Single code path: build config from office_row and run parser. Returns list of row dicts (parser output).
-    When cached_table_html is provided, use it as the page content and table_no=1 (single table)."""
+    When cached_table_html is provided, use it as the page content and table_no=1 (single table).
+    progress_callback(phase, current, total, message, extra) is called when find_date_in_infobox and processing each row.
+    When max_rows is set, only the first max_rows table rows are parsed (so infobox is only fetched for those rows)."""
     table_config = db_offices.office_row_to_table_config(office_row)
     office_details = db_offices.office_row_to_office_details(office_row)
     if cached_table_html is not None:
         html_content = cached_table_html
         table_config = {**table_config, "table_no": 1}
+    def infobox_progress(current: int, total: int, message: str):
+        if progress_callback:
+            progress_callback("infobox", current, total, message, {})
     return offices_parser.process_table(
-        html_content, table_config, office_details, url, party_list
+        html_content, table_config, office_details, url, party_list,
+        progress_callback=infobox_progress if progress_callback else None,
+        max_rows=max_rows,
     )
 
 
-def _normalize_row_for_import(row: dict[str, Any]) -> tuple[dict, str | None, str | None, bool, bool] | None:
+def _normalize_row_for_import(row: dict[str, Any], years_only: bool = False) -> tuple[dict, str | None, str | None, bool, bool, int | None, int | None] | None:
     """
     Same filter/normalize logic as the DB write path. Returns None if row should be skipped,
-    else (row, term_start_val, term_end_val, term_start_imprecise, term_end_imprecise).
+    else (row, term_start_val, term_end_val, term_start_imprecise, term_end_imprecise, term_start_year, term_end_year).
+    When years_only is True (from row["_years_only"] or caller), accept rows with Term Start Year / Term End Year and leave dates null.
     """
     wiki_url = row.get("Wiki Link") or ""
     if not wiki_url or wiki_url == "No link":
         return None
+    use_years_only = years_only or bool(row.get("_years_only"))
+    if use_years_only:
+        term_start_year = row.get("Term Start Year")
+        term_end_year = row.get("Term End Year")
+        if term_start_year is None and term_end_year is None:
+            return None
+        return (row, None, None, False, False, term_start_year, term_end_year)
     term_start_val, term_start_imp = normalize_date(row.get("Term Start"))
     term_end_val, term_end_imp = normalize_date(row.get("Term End"))
     if term_start_val is None and term_end_val is None:
+        # find_date_in_infobox fallback: row has only year columns (same as years-only for this record)
+        term_start_year = row.get("Term Start Year")
+        term_end_year = row.get("Term End Year")
+        if term_start_year is not None or term_end_year is not None:
+            return (row, None, None, False, False, term_start_year, term_end_year)
         return None
-    return (row, term_start_val, term_end_val, term_start_imp, term_end_imp)
+    return (row, term_start_val, term_end_val, term_start_imp, term_end_imp, None, None)
 
 
 def run_with_db(
@@ -291,13 +327,15 @@ def run_with_db(
                     normalized = _normalize_row_for_import(row)
                     if normalized is None:
                         continue
-                    _, term_start_val, term_end_val, _ts_imp, _te_imp = normalized
+                    _, term_start_val, term_end_val, _ts_imp, _te_imp, term_start_year, term_end_year = normalized
                     preview_rows.append({
                         "Wiki Link": row.get("Wiki Link") or "",
                         "Party": row.get("Party") or "",
                         "District": row.get("District") or "",
                         "Term Start": term_start_val if term_start_val else "",
                         "Term End": term_end_val if term_end_val else "",
+                        "Term Start Year": term_start_year,
+                        "Term End Year": term_end_year,
                     })
                 preview_rows = preview_rows[:50]
             logger.close()
@@ -346,8 +384,11 @@ def run_with_db(
         html_content = cache_result.get("html") or ""
         cached_table_html = html_content if html_content else None
 
-        # Parse table (shared code path)
-        table_data = _parse_office_html(office_row, html_content, url, party_list, offices_parser, cached_table_html=cached_table_html)
+        # Parse table (shared code path); report infobox progress when find_date_in_infobox
+        table_data = _parse_office_html(
+            office_row, html_content, url, party_list, offices_parser,
+            cached_table_html=cached_table_html, progress_callback=report,
+        )
         if max_rows_per_table is not None and max_rows_per_table >= 0:
             table_data = table_data[: max_rows_per_table]
 
@@ -356,6 +397,7 @@ def run_with_db(
             if wiki_link and wiki_link != "No link":
                 unique_wiki_urls.add(wiki_link)
             row["_office_id"] = office_id
+            row["_years_only"] = bool(office_row.get("years_only"))
             all_office_data.append(row)
         total_terms += len(table_data)
 
@@ -373,7 +415,7 @@ def run_with_db(
                 normalized = _normalize_row_for_import(row)
                 if normalized is None:
                     continue
-                _, term_start_val, term_end_val, term_start_imp, term_end_imp = normalized
+                _, term_start_val, term_end_val, term_start_imp, term_end_imp, term_start_year, term_end_year = normalized
                 wiki_url = row.get("Wiki Link") or ""
                 # Resolve or create individual
                 ind = db_individuals.get_individual_by_wiki_url(wiki_url, conn=conn)
@@ -394,6 +436,8 @@ def run_with_db(
                     district=row.get("District"),
                     term_start=term_start_val,
                     term_end=term_end_val,
+                    term_start_year=term_start_year,
+                    term_end_year=term_end_year,
                     term_start_imprecise=term_start_imp,
                     term_end_imprecise=term_end_imp,
                     conn=conn,
@@ -531,13 +575,15 @@ def run_with_db(
             normalized = _normalize_row_for_import(row)
             if normalized is None:
                 continue
-            _, term_start_val, term_end_val, _ts_imp, _te_imp = normalized
+            _, term_start_val, term_end_val, _ts_imp, _te_imp, term_start_year, term_end_year = normalized
             preview_rows.append({
                 "Wiki Link": row.get("Wiki Link") or "",
                 "Party": row.get("Party") or "",
                 "District": row.get("District") or "",
                 "Term Start": term_start_val if term_start_val else "",
                 "Term End": term_end_val if term_end_val else "",
+                "Term Start Year": term_start_year,
+                "Term End Year": term_end_year,
             })
         preview_rows = preview_rows[:50]
 
@@ -558,7 +604,11 @@ def run_with_db(
     }
 
 
-def preview_with_config(office_row: dict[str, Any], max_rows: int | None = 10) -> dict[str, Any]:
+def preview_with_config(
+    office_row: dict[str, Any],
+    max_rows: int | None = 10,
+    progress_callback: Callable[[str, int, int, str, dict], None] | None = None,
+) -> dict[str, Any]:
     """
     Run preview for a single office config (e.g. draft from form). Uses same parse path as run_with_db
     and same filter/normalize as import so preview shows exactly what would be written to the table.
@@ -566,6 +616,7 @@ def preview_with_config(office_row: dict[str, Any], max_rows: int | None = 10) -
     term_end_column, district_column, and optional booleans; plus country_name, level_name, branch_name
     (and name, department, state_name, notes) for office_details.
     max_rows: cap on preview rows (default 10). None = return all rows.
+    progress_callback(phase, current, total, message, extra): optional; called when find_date_in_infobox (Processing x of y).
     Returns {"preview_rows": [...], "raw_table_preview": {...} or None, "error": None or str}.
     """
     init_db()
@@ -596,25 +647,32 @@ def preview_with_config(office_row: dict[str, Any], max_rows: int | None = 10) -
     cached_table_html = html_content if html_content else None
 
     try:
-        table_data = _parse_office_html(office_row, html_content, url, party_list, offices_parser, cached_table_html=cached_table_html)
+        table_data = _parse_office_html(
+            office_row, html_content, url, party_list, offices_parser,
+            cached_table_html=cached_table_html, progress_callback=progress_callback,
+            max_rows=max_rows,
+        )
     except Exception as e:
         raw_max = max_rows if max_rows is not None else 100
         raw = get_raw_table_preview(url, int(office_row.get("table_no") or 1), raw_max)
         return {"preview_rows": [], "raw_table_preview": raw, "error": str(e)}
 
-    # Same filter/normalize as import: only rows that would be inserted, with normalized Term Start/End
+    # Same filter/normalize as import: only rows that would be inserted, with normalized Term Start/End and optional years
+    years_only = bool(office_row.get("years_only"))
     preview_rows = []
     for row in table_data:
-        normalized = _normalize_row_for_import(row)
+        normalized = _normalize_row_for_import(row, years_only=years_only)
         if normalized is None:
             continue
-        _, term_start_val, term_end_val, _ts_imp, _te_imp = normalized
+        _, term_start_val, term_end_val, _ts_imp, _te_imp, term_start_year, term_end_year = normalized
         preview_rows.append({
             "Wiki Link": row.get("Wiki Link") or "",
             "Party": row.get("Party") or "",
             "District": row.get("District") or "",
             "Term Start": term_start_val if term_start_val else "",
             "Term End": term_end_val if term_end_val else "",
+            "Term Start Year": term_start_year,
+            "Term End Year": term_end_year,
         })
     if max_rows is not None:
         preview_rows = preview_rows[:max_rows]

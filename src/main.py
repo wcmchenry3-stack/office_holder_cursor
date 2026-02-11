@@ -45,6 +45,10 @@ _run_job_store: dict = {}
 _run_job_lock = threading.Lock()
 _populate_job_store: dict = {}
 _populate_job_lock = threading.Lock()
+_preview_job_store: dict = {}
+_preview_job_lock = threading.Lock()
+_export_job_store: dict = {}
+_export_job_lock = threading.Lock()
 
 # Stoppable process types: server-side (e.g. "run") have a cancel endpoint and job store with cancelled flag;
 # client-side (e.g. "preview_all") use a Stop button and a running/stopped flag (optional AbortController).
@@ -55,6 +59,12 @@ PROCESS_TYPES = ["run", "preview_all"]
 
 def _office_draft_from_body(body: dict, *, include_ref_names: bool = False) -> dict:
     """Build office draft dict from JSON body. If include_ref_names, add country_name, level_name, branch_name, state_name from db_refs."""
+    term_dates_merged = body.get("term_dates_merged") in (True, 1, "1", "true", "TRUE")
+    party_ignore = body.get("party_ignore") in (True, 1, "1", "true", "TRUE")
+    district_ignore = body.get("district_ignore") in (True, 1, "1", "true", "TRUE")
+    district_at_large = body.get("district_at_large") in (True, 1, "1", "true", "TRUE")
+    term_start = int(body.get("term_start_column") or 4)
+    term_end = int(body.get("term_end_column") or 5) if not term_dates_merged else term_start
     draft = {
         "url": (body.get("url") or "").strip(),
         "name": (body.get("name") or "").strip(),
@@ -64,17 +74,22 @@ def _office_draft_from_body(body: dict, *, include_ref_names: bool = False) -> d
         "table_rows": int(body.get("table_rows") or 4),
         "link_column": int(body.get("link_column") or 1),
         "party_column": int(body.get("party_column") or 0),
-        "term_start_column": int(body.get("term_start_column") or 4),
-        "term_end_column": int(body.get("term_end_column") or 5),
+        "term_start_column": term_start,
+        "term_end_column": term_end,
         "district_column": int(body.get("district_column") or 0),
         "dynamic_parse": body.get("dynamic_parse", True),
         "read_right_to_left": body.get("read_right_to_left", False),
         "find_date_in_infobox": body.get("find_date_in_infobox", False),
+        "years_only": body.get("years_only", False),
         "parse_rowspan": body.get("parse_rowspan", False),
         "rep_link": body.get("rep_link", False),
         "party_link": body.get("party_link", False),
         "alt_link": (body.get("alt_link") or "").strip() or None,
         "use_full_page_for_table": body.get("use_full_page_for_table", False),
+        "term_dates_merged": term_dates_merged,
+        "party_ignore": party_ignore,
+        "district_ignore": district_ignore,
+        "district_at_large": district_at_large,
     }
     if include_ref_names:
         country_id = int(body.get("country_id") or 0)
@@ -103,12 +118,13 @@ async def offices_list(request: Request):
     for o in offices:
         o["terms_count"] = counts.get(o["id"], 0)
     saved = request.query_params.get("saved") == "1"
+    validation_error = request.query_params.get("error") or None
     imported_count = request.query_params.get("count")
     imported_errors = request.query_params.get("errors")
     imported = request.query_params.get("imported") == "1"
     return templates.TemplateResponse(
         "offices.html",
-        {"request": request, "offices": offices, "saved": saved, "imported": imported, "imported_count": imported_count, "imported_errors": imported_errors},
+        {"request": request, "offices": offices, "saved": saved, "validation_error": validation_error, "imported": imported, "imported_count": imported_count, "imported_errors": imported_errors},
     )
 
 
@@ -143,12 +159,16 @@ async def office_create(
     district_column: int = Form(0),
     dynamic_parse: str = Form("0"),
     read_right_to_left: str = Form("0"),
-    find_date_in_infobox: str = Form("0"),
+    date_source: str = Form("not_applicable"),
     parse_rowspan: str = Form("0"),
     rep_link: str = Form("0"),
     party_link: str = Form("0"),
     alt_link: str = Form(""),
     use_full_page_for_table: str = Form("0"),
+    term_dates_merged: str = Form("0"),
+    party_ignore: str = Form("0"),
+    district_ignore: str = Form("0"),
+    district_at_large: str = Form("0"),
 ):
     data = {
         "country_id": country_id, "state_id": state_id or None, "level_id": level_id or None, "branch_id": branch_id or None,
@@ -159,14 +179,23 @@ async def office_create(
         "district_column": district_column,
         "dynamic_parse": dynamic_parse == "1",
         "read_right_to_left": read_right_to_left == "1",
-        "find_date_in_infobox": find_date_in_infobox == "1",
+        "find_date_in_infobox": date_source == "find_date_in_infobox",
+        "years_only": date_source == "years_only",
         "parse_rowspan": parse_rowspan == "1",
         "rep_link": rep_link == "1",
         "party_link": party_link == "1",
         "alt_link": alt_link or None,
         "use_full_page_for_table": use_full_page_for_table == "1",
+        "term_dates_merged": term_dates_merged == "1",
+        "party_ignore": party_ignore == "1",
+        "district_ignore": district_ignore == "1",
+        "district_at_large": district_at_large == "1",
     }
-    new_id = db_offices.create_office(data)
+    try:
+        new_id = db_offices.create_office(data)
+    except ValueError as e:
+        from urllib.parse import quote
+        return RedirectResponse("/offices?error=" + quote(str(e)), status_code=302)
     if action == "save":
         return RedirectResponse(f"/offices/{new_id}?saved=1", status_code=302)
     return RedirectResponse("/offices?saved=1", status_code=302)
@@ -207,6 +236,7 @@ async def office_edit_page(request: Request, office_id: int):
     if not office:
         raise HTTPException(status_code=404)
     saved = request.query_params.get("saved") == "1"
+    validation_error = request.query_params.get("error") or None
     nav_ids_raw = request.query_params.get("nav_ids") or ""
     nav_ids = [int(x.strip()) for x in nav_ids_raw.split(",") if x.strip().isdigit()]
     nav_prev_id = None
@@ -228,7 +258,7 @@ async def office_edit_page(request: Request, office_id: int):
     terms_count = db_office_terms.count_terms_for_office(office_id)
     return templates.TemplateResponse(
         "office_form.html",
-        {"request": request, "office": office, "countries": countries, "levels": levels, "branches": branches, "states": states, "nav_ids": nav_ids_raw, "nav_prev_id": nav_prev_id, "nav_next_id": nav_next_id, "nav_current": nav_current, "nav_total": nav_total, "terms_count": terms_count, "saved": saved},
+        {"request": request, "office": office, "countries": countries, "levels": levels, "branches": branches, "states": states, "nav_ids": nav_ids_raw, "nav_prev_id": nav_prev_id, "nav_next_id": nav_next_id, "nav_current": nav_current, "nav_total": nav_total, "terms_count": terms_count, "saved": saved, "validation_error": validation_error},
     )
 
 
@@ -255,12 +285,16 @@ async def office_update(
     district_column: int = Form(0),
     dynamic_parse: str = Form("0"),
     read_right_to_left: str = Form("0"),
-    find_date_in_infobox: str = Form("0"),
+    date_source: str = Form("not_applicable"),
     parse_rowspan: str = Form("0"),
     rep_link: str = Form("0"),
     party_link: str = Form("0"),
     alt_link: str = Form(""),
     use_full_page_for_table: str = Form("0"),
+    term_dates_merged: str = Form("0"),
+    party_ignore: str = Form("0"),
+    district_ignore: str = Form("0"),
+    district_at_large: str = Form("0"),
 ):
     data = {
         "country_id": country_id, "state_id": state_id or None, "level_id": level_id or None, "branch_id": branch_id or None,
@@ -271,14 +305,24 @@ async def office_update(
         "district_column": district_column,
         "dynamic_parse": dynamic_parse == "1",
         "read_right_to_left": read_right_to_left == "1",
-        "find_date_in_infobox": find_date_in_infobox == "1",
+        "find_date_in_infobox": date_source == "find_date_in_infobox",
+        "years_only": date_source == "years_only",
         "parse_rowspan": parse_rowspan == "1",
         "rep_link": rep_link == "1",
         "party_link": party_link == "1",
         "alt_link": alt_link or None,
         "use_full_page_for_table": use_full_page_for_table == "1",
+        "term_dates_merged": term_dates_merged == "1",
+        "party_ignore": party_ignore == "1",
+        "district_ignore": district_ignore == "1",
+        "district_at_large": district_at_large == "1",
     }
-    db_offices.update_office(office_id, data)
+    try:
+        db_offices.update_office(office_id, data)
+    except ValueError as e:
+        from urllib.parse import quote
+        q = "?error=" + quote(str(e)) + ("&nav_ids=" + nav_ids.strip() if nav_ids and nav_ids.strip() else "")
+        return RedirectResponse(f"/offices/{office_id}{q}", status_code=302)
     if action == "save":
         q = "?saved=1" + ("&nav_ids=" + nav_ids.strip() if nav_ids and nav_ids.strip() else "")
         return RedirectResponse(f"/offices/{office_id}{q}", status_code=302)
@@ -449,6 +493,16 @@ async def api_office_test_config_draft(request: Request):
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON")
     draft = _office_draft_from_body(body, include_ref_names=False)
+    try:
+        db_offices.validate_office_table_config(
+            draft,
+            term_dates_merged=draft.get("term_dates_merged", False),
+            party_ignore=draft.get("party_ignore", False),
+            district_ignore=draft.get("district_ignore", False),
+            district_at_large=draft.get("district_at_large", False),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     ok, message = test_office_config(draft)
     return JSONResponse({"ok": ok, "message": message})
 
@@ -807,10 +861,35 @@ async def api_preview(office_id: int):
     return JSONResponse(result)
 
 
+def _preview_job_worker(job_id: str, draft: dict, max_rows: int | None):
+    def progress_callback(phase: str, current: int, total: int, message: str, extra: dict):
+        with _preview_job_lock:
+            if job_id in _preview_job_store:
+                _preview_job_store[job_id].update({
+                    "phase": phase,
+                    "current": current,
+                    "total": total,
+                    "message": message,
+                    "extra": extra,
+                })
+    try:
+        result = preview_with_config(draft, max_rows=max_rows, progress_callback=progress_callback)
+        with _preview_job_lock:
+            if job_id in _preview_job_store:
+                _preview_job_store[job_id]["status"] = "complete"
+                _preview_job_store[job_id]["result"] = result
+    except Exception as e:
+        with _preview_job_lock:
+            if job_id in _preview_job_store:
+                _preview_job_store[job_id]["status"] = "error"
+                _preview_job_store[job_id]["error"] = str(e)
+
+
 @app.post("/api/preview")
 async def api_preview_draft(request: Request):
     """Preview using draft office config (unsaved form). Body: same fields as office form (country_id, url, table_no, etc.).
-    Optional: max_rows (default 10); use max_rows=0 or show_all=true to return all rows."""
+    Optional: max_rows (default 10); use max_rows=0 or show_all=true to return all rows.
+    When find_date_in_infobox is set, returns 202 with job_id; poll GET /api/preview/status/{job_id} for progress (Processing x of y)."""
     try:
         body = await request.json()
     except Exception:
@@ -819,21 +898,60 @@ async def api_preview_draft(request: Request):
     if not country_id:
         raise HTTPException(status_code=400, detail="country_id required")
     draft = _office_draft_from_body(body, include_ref_names=True)
+    try:
+        db_offices.validate_office_table_config(
+            draft,
+            term_dates_merged=draft.get("term_dates_merged", False),
+            party_ignore=draft.get("party_ignore", False),
+            district_ignore=draft.get("district_ignore", False),
+            district_at_large=draft.get("district_at_large", False),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     show_all = body.get("show_all") in (True, 1, "true", "1")
     max_rows_val = body.get("max_rows")
     if show_all or (max_rows_val is not None and int(max_rows_val) == 0):
         max_rows = None
     else:
         max_rows = int(max_rows_val) if max_rows_val is not None else 10
-    # #region agent log
-    import json
-    from pathlib import Path
-    _log_path = Path(__file__).resolve().parent.parent / ".cursor" / "debug.log"
-    with open(_log_path, "a", encoding="utf-8") as _f:
-        _f.write(json.dumps({"location": "main.py:api_preview_draft", "message": "preview draft using preview_with_config", "data": {"url": (draft.get("url") or "")[:80], "table_no": draft.get("table_no"), "max_rows": max_rows, "hypothesisId": "H3"}, "timestamp": __import__("time").time() * 1000}) + "\n")
-    # #endregion
+    use_infobox = bool(draft.get("find_date_in_infobox"))
+    if use_infobox:
+        job_id = str(uuid.uuid4())
+        with _preview_job_lock:
+            _preview_job_store[job_id] = {
+                "status": "running",
+                "phase": "infobox",
+                "current": 0,
+                "total": 1,
+                "message": "Starting preview…",
+                "extra": {},
+            }
+        thread = threading.Thread(target=_preview_job_worker, args=(job_id, draft, max_rows))
+        thread.start()
+        return JSONResponse({"job_id": job_id, "status": "running"}, status_code=202)
     result = preview_with_config(draft, max_rows=max_rows)
     return JSONResponse(result)
+
+
+@app.get("/api/preview/status/{job_id}")
+async def api_preview_status(job_id: str):
+    """Poll preview job progress. Returns status, phase, current, total, message; when complete includes result (preview_rows, etc.)."""
+    with _preview_job_lock:
+        if job_id not in _preview_job_store:
+            raise HTTPException(status_code=404, detail="Job not found")
+        job = _preview_job_store[job_id]
+        out = {
+            "status": job["status"],
+            "phase": job.get("phase", "init"),
+            "current": job.get("current", 0),
+            "total": job.get("total", 1),
+            "message": job.get("message", "Starting…"),
+            "extra": job.get("extra", {}),
+        }
+        if job["status"] in ("complete", "error"):
+            out["result"] = job.get("result")
+            out["error"] = job.get("error")
+    return JSONResponse(out)
 
 
 @app.post("/api/preview-all-tables")
@@ -892,9 +1010,166 @@ def _sanitize_debug_filename(name: str, max_len: int = 80) -> str:
     return s[:max_len] if len(s) > max_len else s
 
 
+def _config_bool_export(v) -> bool:
+    return v is not None and str(v).strip().lower() in ("true", "1", "yes")
+
+
+def _col_1_to_0_export(v):
+    val = int(v) if v is not None and v != "" else 0
+    return (val - 1) if val > 0 else -1
+
+
+def _export_job_worker(job_id: str, office_name: str, config: dict):
+    """Background worker for debug export when find_date_in_infobox: fetch table, parse with progress, write file."""
+    def progress_callback(phase: str, current: int, total: int, message: str, extra: dict):
+        with _export_job_lock:
+            if job_id in _export_job_store:
+                _export_job_store[job_id].update({
+                    "phase": phase, "current": current, "total": total, "message": message, "extra": extra or {},
+                })
+    try:
+        with _export_job_lock:
+            if job_id in _export_job_store:
+                _export_job_store[job_id].update({"message": "Fetching table…"})
+        url = (config.get("url") or "").strip()
+        if not url:
+            with _export_job_lock:
+                if job_id in _export_job_store:
+                    _export_job_store[job_id]["status"] = "error"
+                    _export_job_store[job_id]["error"] = "No URL in config"
+            return
+        table_no = int(config.get("table_no") or 1)
+        use_full_page = _config_bool_export(config.get("use_full_page_for_table"))
+        result = get_table_html(url, table_no=table_no, use_full_page=use_full_page)
+        if result.get("error"):
+            with _export_job_lock:
+                if job_id in _export_job_store:
+                    _export_job_store[job_id]["status"] = "error"
+                    _export_job_store[job_id]["error"] = str(result.get("error"))
+            return
+        table_html = result.get("html") or ""
+        table_html_result = {"html": table_html} if table_html else {"error": "No HTML"}
+        office_row = {
+            "url": url,
+            "name": (config.get("name") or "").strip(),
+            "department": (config.get("department") or "").strip(),
+            "notes": (config.get("notes") or "").strip(),
+            "table_no": table_no,
+            "table_rows": int(config.get("table_rows") or 4),
+            "link_column": int(config.get("link_column") or 0),
+            "party_column": int(config.get("party_column") or 0),
+            "term_start_column": int(config.get("term_start_column") or 4),
+            "term_end_column": int(config.get("term_end_column") or 5),
+            "district_column": int(config.get("district_column") or 0),
+            "dynamic_parse": _config_bool_export(config.get("dynamic_parse")),
+            "read_right_to_left": _config_bool_export(config.get("read_right_to_left")),
+            "find_date_in_infobox": _config_bool_export(config.get("find_date_in_infobox")),
+            "years_only": _config_bool_export(config.get("years_only")),
+            "parse_rowspan": _config_bool_export(config.get("parse_rowspan")),
+            "rep_link": _config_bool_export(config.get("rep_link")),
+            "party_link": _config_bool_export(config.get("party_link")),
+            "alt_link": config.get("alt_link"),
+            "use_full_page_for_table": use_full_page,
+            "term_dates_merged": _config_bool_export(config.get("term_dates_merged")),
+            "party_ignore": _config_bool_export(config.get("party_ignore")),
+            "district_ignore": _config_bool_export(config.get("district_ignore")),
+            "district_at_large": _config_bool_export(config.get("district_at_large")),
+            "country_name": "", "level_name": "", "branch_name": "", "state_name": "",
+        }
+        full_rows = parse_full_table_for_export(office_row, table_html, url, progress_callback=progress_callback)
+        timestamp = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
+        safe_name = _sanitize_debug_filename(office_name)
+        filename = f"{safe_name}_{timestamp}.txt"
+        debug_dir = ROOT / "debug"
+        debug_dir.mkdir(parents=True, exist_ok=True)
+        filepath = debug_dir / filename
+        header_cells = get_table_header_from_html(table_html) if table_html else []
+        link_1 = int(config.get("link_column") or 0)
+        term_start_1 = int(config.get("term_start_column") or 4)
+        term_end_1 = int(config.get("term_end_column") or 5)
+        link_0 = _col_1_to_0_export(link_1)
+        term_start_0 = _col_1_to_0_export(term_start_1)
+        term_end_0 = _col_1_to_0_export(term_end_1)
+        lines = [
+            "=== INSTRUCTIONS (when you share this file with Cursor) ===",
+            "Help me understand the configuration issue. The problem could be:",
+            "  1) I simply did not configure correctly — in that case, give me the correct configs.",
+            "  2) We came across a new scenario our parser cannot handle — in that case, propose a plan.",
+            "When investigating: test the HTML extract (RAW HTML section below) against our parser code",
+            "to see if the issue is resolved or still outstanding (e.g. run scripts/test_debug_export.py).",
+            "",
+            "=== Investigation context ===",
+            "Column indices: Form/DB store 1-based column numbers. The parser uses 0-based indices.",
+            "Conversion happens in src/db/offices.py in office_row_to_table_config (e.g. form term_start_column 5 -> parser column index 4).",
+            "How to verify: From project root run: python scripts/test_debug_export.py debug/" + filename,
+            "Code reference:",
+            "  - Config to 0-based: src/db/offices.py office_row_to_table_config, _col_1based_to_0based",
+            "  - Table parsing: src/scraper/table_parser.py process_table, parse_table_row, extract_term_dates",
+            "  - Date parsing: src/scraper/table_parser.py DataCleanup.format_date, DataCleanup.parse_date_info",
+            "  - Preview pipeline: src/scraper/runner.py preview_with_config",
+            "",
+            "Office: " + office_name,
+            "Exported: " + timestamp,
+            "",
+            "=== CONFIG (form values used for preview) ===",
+        ]
+        for k, v in sorted(config.items()):
+            lines.append(f"{k}: {v}")
+        mapping_parts = [
+            "Parser columns (0-based): link=%s, term_start=%s, term_end=%s (from form 1-based: link %s, term_start %s, term_end %s)."
+            % (link_0, term_start_0, term_end_0, link_1, term_start_1, term_end_1)
+        ]
+        if header_cells:
+            h_start = header_cells[term_start_0][1] if 0 <= term_start_0 < len(header_cells) else "?"
+            h_end = header_cells[term_end_0][1] if 0 <= term_end_0 < len(header_cells) else "?"
+            mapping_parts.append('Header at term_start: %r, at term_end: %r.' % (h_start, h_end))
+        lines.append(" ".join(mapping_parts))
+        lines.append("")
+        lines.append("=== TABLE STRUCTURE (header row, 0-based column index) ===")
+        if header_cells:
+            for i, text in header_cells:
+                lines.append("Column %s: %s" % (i, text))
+        else:
+            lines.append("Could not parse table header.")
+        lines.append("")
+        lines.append("=== EXTRACTED TABLE (full parse with above config) ===")
+        if full_rows:
+            headers = ["Wiki Link", "Party", "District", "Term Start", "Term End", "Term Start Year", "Term End Year", "Infobox items"]
+            lines.append("\t".join(headers))
+            for row in full_rows:
+                cells = [str(row.get(h) or "").replace("\t", " ").replace("\n", " ") for h in headers]
+                lines.append("\t".join(cells))
+        else:
+            lines.append("No rows parsed.")
+        lines.append("")
+        lines.append("=== RAW HTML (selected table) ===")
+        if table_html_result.get("error"):
+            lines.append(f"Error: {table_html_result.get('error')}")
+        else:
+            lines.append(table_html_result.get("html") or "(empty)")
+        try:
+            filepath.write_text("\n".join(lines), encoding="utf-8")
+        except Exception as e:
+            with _export_job_lock:
+                if job_id in _export_job_store:
+                    _export_job_store[job_id]["status"] = "error"
+                    _export_job_store[job_id]["error"] = str(e)
+            return
+        with _export_job_lock:
+            if job_id in _export_job_store:
+                _export_job_store[job_id]["status"] = "complete"
+                _export_job_store[job_id]["result"] = {"path": f"debug/{filename}", "filename": filename}
+    except Exception as e:
+        with _export_job_lock:
+            if job_id in _export_job_store:
+                _export_job_store[job_id]["status"] = "error"
+                _export_job_store[job_id]["error"] = str(e)
+
+
 @app.post("/api/office-debug-export")
 async def api_office_debug_export(request: Request):
-    """Write a debug text file with config, preview result, and table HTML. Body: office_name, config, preview_result, table_html_result."""
+    """Write a debug text file with config, preview result, and table HTML. Body: office_name, config, preview_result, table_html_result.
+    When find_date_in_infobox is true, returns 202 with job_id; poll GET /api/office-debug-export-status/{job_id} for progress."""
     try:
         body = await request.json()
     except Exception:
@@ -903,6 +1178,31 @@ async def api_office_debug_export(request: Request):
     config = body.get("config") or {}
     preview_result = body.get("preview_result") or {}
     table_html_result = body.get("table_html_result") or {}
+    try:
+        db_offices.validate_office_table_config(
+            config,
+            term_dates_merged=config.get("term_dates_merged") in (True, 1, "1", "true", "TRUE"),
+            party_ignore=config.get("party_ignore") in (True, 1, "1", "true", "TRUE"),
+            district_ignore=config.get("district_ignore") in (True, 1, "1", "true", "TRUE"),
+            district_at_large=config.get("district_at_large") in (True, 1, "1", "true", "TRUE"),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    use_infobox = _config_bool_export(config.get("find_date_in_infobox"))
+    if use_infobox:
+        job_id = str(uuid.uuid4())
+        with _export_job_lock:
+            _export_job_store[job_id] = {
+                "status": "running",
+                "phase": "infobox",
+                "current": 0,
+                "total": 1,
+                "message": "Starting export…",
+                "extra": {},
+            }
+        thread = threading.Thread(target=_export_job_worker, args=(job_id, office_name, config))
+        thread.start()
+        return JSONResponse({"job_id": job_id, "status": "running"}, status_code=202)
 
     timestamp = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
     safe_name = _sanitize_debug_filename(office_name)
@@ -993,10 +1293,16 @@ async def api_office_debug_export(request: Request):
                 "dynamic_parse": _config_bool(config.get("dynamic_parse")),
                 "read_right_to_left": _config_bool(config.get("read_right_to_left")),
                 "find_date_in_infobox": _config_bool(config.get("find_date_in_infobox")),
+                "years_only": _config_bool(config.get("years_only")),
                 "parse_rowspan": _config_bool(config.get("parse_rowspan")),
                 "rep_link": _config_bool(config.get("rep_link")),
                 "party_link": _config_bool(config.get("party_link")),
                 "alt_link": config.get("alt_link"),
+                "use_full_page_for_table": _config_bool(config.get("use_full_page_for_table")),
+                "term_dates_merged": _config_bool(config.get("term_dates_merged")),
+                "party_ignore": _config_bool(config.get("party_ignore")),
+                "district_ignore": _config_bool(config.get("district_ignore")),
+                "district_at_large": _config_bool(config.get("district_at_large")),
                 "country_name": "", "level_name": "", "branch_name": "", "state_name": "",
             }
             full_rows = parse_full_table_for_export(office_row, table_html, office_row["url"])
@@ -1004,7 +1310,7 @@ async def api_office_debug_export(request: Request):
             full_rows = []
             lines.append("Parse error: " + str(e))
     if full_rows:
-        headers = ["Wiki Link", "Party", "District", "Term Start", "Term End"]
+        headers = ["Wiki Link", "Party", "District", "Term Start", "Term End", "Term Start Year", "Term End Year", "Infobox items"]
         lines.append("\t".join(headers))
         for row in full_rows:
             cells = [str(row.get(h) or "").replace("\t", " ").replace("\n", " ") for h in headers]
@@ -1013,7 +1319,7 @@ async def api_office_debug_export(request: Request):
         preview_rows = preview_result.get("preview_rows") or []
         if preview_rows:
             lines.append("(Full parse produced no rows; showing preview sample below.)")
-            headers = ["Wiki Link", "Party", "District", "Term Start", "Term End"]
+            headers = ["Wiki Link", "Party", "District", "Term Start", "Term End", "Term Start Year", "Term End Year", "Infobox items"]
             lines.append("\t".join(headers))
             for row in preview_rows:
                 cells = [str(row.get(h) or "").replace("\t", " ").replace("\n", " ") for h in headers]
@@ -1043,6 +1349,27 @@ async def api_office_debug_export(request: Request):
         raise HTTPException(status_code=500, detail=f"Could not write file: {e}")
 
     return JSONResponse({"path": f"debug/{filename}", "filename": filename})
+
+
+@app.get("/api/office-debug-export-status/{job_id}")
+async def api_office_debug_export_status(job_id: str):
+    """Poll debug export job progress. Returns status, phase, current, total, message; when complete includes result (path, filename)."""
+    with _export_job_lock:
+        if job_id not in _export_job_store:
+            raise HTTPException(status_code=404, detail="Job not found")
+        job = _export_job_store[job_id]
+        out = {
+            "status": job["status"],
+            "phase": job.get("phase", "init"),
+            "current": job.get("current", 0),
+            "total": job.get("total", 1),
+            "message": job.get("message", "Starting…"),
+            "extra": job.get("extra", {}),
+        }
+        if job["status"] in ("complete", "error"):
+            out["result"] = job.get("result")
+            out["error"] = job.get("error")
+    return JSONResponse(out)
 
 
 @app.post("/api/preview-offices")
