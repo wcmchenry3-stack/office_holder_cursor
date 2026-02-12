@@ -46,7 +46,8 @@ def validate_office_table_config(
     except (TypeError, ValueError):
         raise ValueError("link, party, term start, term end, and district columns must be integers") from None
 
-    if link_column < 1:
+    dynamic_parse = data.get("dynamic_parse") in (True, 1, "1", "true", "TRUE")
+    if link_column < 1 and not dynamic_parse:
         raise ValueError("link column must be at least 1")
     if term_start_column < 1 or term_end_column < 1:
         raise ValueError("term start and term end columns must be at least 1")

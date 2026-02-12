@@ -20,7 +20,7 @@ def list_individuals(
         cur = conn.execute(
             """SELECT id, wiki_url, page_path, full_name, birth_date, death_date,
                       birth_date_imprecise, death_date_imprecise,
-                      birth_place, death_place, created_at, updated_at
+                      birth_place, death_place, is_dead_link, created_at, updated_at
                FROM individuals ORDER BY full_name LIMIT ? OFFSET ?""",
             (limit, offset),
         )
@@ -71,12 +71,13 @@ def upsert_individual(data: dict[str, Any], conn: sqlite3.Connection | None = No
         dd_imprecise = 1 if data.get("death_date_imprecise") else 0
         cur = conn.execute("SELECT id FROM individuals WHERE wiki_url = ?", (wiki_url,))
         row = cur.fetchone()
+        is_dead_link = 1 if data.get("is_dead_link") else 0
         if row:
             conn.execute(
                 """UPDATE individuals SET
                     page_path=?, full_name=?, birth_date=?, death_date=?,
                     birth_date_imprecise=?, death_date_imprecise=?,
-                    birth_place=?, death_place=?, updated_at=datetime('now')
+                    birth_place=?, death_place=?, is_dead_link=?, updated_at=datetime('now')
                 WHERE id=?""",
                 (
                     data.get("page_path"),
@@ -87,14 +88,15 @@ def upsert_individual(data: dict[str, Any], conn: sqlite3.Connection | None = No
                     dd_imprecise,
                     data.get("birth_place"),
                     data.get("death_place"),
+                    is_dead_link,
                     row["id"],
                 ),
             )
             conn.commit()
             return row["id"]
         cur = conn.execute(
-            """INSERT INTO individuals (wiki_url, page_path, full_name, birth_date, death_date, birth_date_imprecise, death_date_imprecise, birth_place, death_place)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            """INSERT INTO individuals (wiki_url, page_path, full_name, birth_date, death_date, birth_date_imprecise, death_date_imprecise, birth_place, death_place, is_dead_link)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 wiki_url,
                 data.get("page_path"),
@@ -105,6 +107,7 @@ def upsert_individual(data: dict[str, Any], conn: sqlite3.Connection | None = No
                 dd_imprecise,
                 data.get("birth_place"),
                 data.get("death_place"),
+                is_dead_link,
             ),
         )
         conn.commit()
@@ -150,6 +153,19 @@ def get_living_individual_wiki_urls(conn: sqlite3.Connection | None = None) -> s
         cur = conn.execute(
             "SELECT wiki_url FROM individuals WHERE death_date IS NULL OR death_date = '' OR death_date LIKE 'Invalid%'"
         )
+        return {row["wiki_url"] for row in cur.fetchall()}
+    finally:
+        if own_conn:
+            conn.close()
+
+
+def get_dead_link_wiki_urls(conn: sqlite3.Connection | None = None) -> set[str]:
+    """Return set of wiki_urls for individuals marked as dead link (no bio page)."""
+    own_conn = conn is None
+    if own_conn:
+        conn = get_connection()
+    try:
+        cur = conn.execute("SELECT wiki_url FROM individuals WHERE is_dead_link = 1")
         return {row["wiki_url"] for row in cur.fetchall()}
     finally:
         if own_conn:

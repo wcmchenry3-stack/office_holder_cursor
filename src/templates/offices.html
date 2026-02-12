@@ -581,7 +581,7 @@
 
     function renderResults(results) {
       var html = '';
-      var headers = ['Wiki Link', 'Party', 'District', 'Term Start', 'Term End', 'Start year', 'End year'];
+      var headers = ['Wiki Link', 'Dead link', 'Party', 'District', 'Term Start', 'Term End', 'Start year', 'End year'];
       results.forEach(function(item) {
         html += '<div class="preview-all-office" style="margin-bottom:1.5rem;">';
         html += '<h3 style="margin:0 0 0.5rem 0; font-size:1rem;"><a href="/offices/' + esc(item.office_id) + '">' + esc(item.name || 'Office ' + item.office_id) + '</a>';
@@ -595,10 +595,12 @@
           html += '</tr></thead><tbody>';
           item.preview_rows.forEach(function(r) {
             var link = r['Wiki Link'];
-            var linkCell = (link && link !== 'No link') ? '<a href="' + esc(link) + '" target="_blank" rel="noopener">' + esc(String(link).length > 50 ? String(link).slice(0, 50) + '…' : link) + '</a>' : esc(link || '—');
+            var nameNoLink = r['Name (no link)'];
+            var linkCell = (link && link !== 'No link') ? '<a href="' + esc(link) + '" target="_blank" rel="noopener">' + esc(String(link).length > 50 ? String(link).slice(0, 50) + '…' : link) + '</a>' : (nameNoLink ? esc(nameNoLink) + ' <small>(no link)</small>' : esc(link || '—'));
+            var deadCell = r['Dead link'] ? 'Yes' : '—';
             var sy = r['Term Start Year'] != null && r['Term Start Year'] !== '' ? r['Term Start Year'] : '—';
             var ey = r['Term End Year'] != null && r['Term End Year'] !== '' ? r['Term End Year'] : '—';
-            html += '<tr><td>' + linkCell + '</td><td>' + esc(r.Party || '—') + '</td><td>' + esc(r.District || '—') + '</td><td>' + esc(r['Term Start'] || '—') + '</td><td>' + esc(r['Term End'] || '—') + '</td><td>' + esc(sy) + '</td><td>' + esc(ey) + '</td></tr>';
+            html += '<tr><td>' + linkCell + '</td><td>' + deadCell + '</td><td>' + esc(r.Party || '—') + '</td><td>' + esc(r.District || '—') + '</td><td>' + esc(r['Term Start'] || '—') + '</td><td>' + esc(r['Term End'] || '—') + '</td><td>' + esc(sy) + '</td><td>' + esc(ey) + '</td></tr>';
           });
           html += '</tbody></table>';
         } else if (item.raw_table_preview && item.raw_table_preview.rows && item.raw_table_preview.rows.length) {

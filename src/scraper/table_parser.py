@@ -182,7 +182,7 @@ class DataCleanup:
           return (None, None)
       text = self.remove_footnote(text)
       text = text.strip()
-      year_match = re.search(r'\b(19|20)\d{2}\b', text)
+      year_match = re.search(r'\b(17|18|19|20)\d{2}\b', text)
       if not year_match:
           return (None, None)
       delimiters = ['–', '-', ' —<br/>', ' to ', ' – ', ', to ']
@@ -192,11 +192,11 @@ class DataCleanup:
               parts = text.split(d, 1)
               start_str = (parts[0].strip() if parts else "").strip()
               end_str = (parts[1].strip() if len(parts) > 1 else "").strip()
-              start_m = re.search(r'\b(19|20)\d{2}\b', start_str)
+              start_m = re.search(r'\b(17|18|19|20)\d{2}\b', start_str)
               start_year = int(start_m.group(0)) if start_m else None
               if not end_str or end_str.lower().strip() in present_cases:
                   return (start_year, None)
-              end_m = re.search(r'\b(19|20)\d{2}\b', end_str)
+              end_m = re.search(r'\b(17|18|19|20)\d{2}\b', end_str)
               end_year = int(end_m.group(0)) if end_m else None
               return (start_year, end_year)
       sy = int(year_match.group(0))
@@ -206,15 +206,57 @@ class DataCleanup:
       # Dynamic identification of the link column and subsequent data columns.
       # If max_column_index is set (0-based), only consider cells up to that index so we never
       # pick a link from a non-data column (e.g. President column) when it appears after term dates.
+      # #region agent log
+      try:
+          _log_path = Path(__file__).resolve().parent.parent.parent / ".cursor" / "debug.log"
+          open(_log_path, "a", encoding="utf-8").write(json.dumps({"location": "table_parser:find_link_and_data_columns", "message": "entry", "data": {"len_row": len(row), "max_column_index": max_column_index}, "timestamp": __import__("time").time() * 1000, "hypothesisId": "H2"}) + "\n")
+      except Exception:
+          pass
+      # #endregion
       for i, cell in enumerate(row):
           if max_column_index is not None and i > max_column_index:
               break
-          cell_str = str(cell)  # Convert BeautifulSoup object or similar to string, if necessary
-          has_wiki_link = 'href="/wiki/' in cell_str
-          has_file_link = 'href="/wiki/File:' in cell_str
+          try:
+              cell_str = str(cell)  # Convert BeautifulSoup object or similar to string, if necessary
+          except Exception as e:
+              # #region agent log
+              try:
+                  _log_path = Path(__file__).resolve().parent.parent.parent / ".cursor" / "debug.log"
+                  open(_log_path, "a", encoding="utf-8").write(json.dumps({"location": "table_parser:find_link_and_data_columns", "message": "str_cell_error", "data": {"i": i, "error": str(e), "type": type(e).__name__}, "timestamp": __import__("time").time() * 1000, "hypothesisId": "H3"}) + "\n")
+              except Exception:
+                  pass
+              # #endregion
+              raise
+          # Wiki article link: absolute path, relative (./), or full URL
+          has_absolute = 'href="/wiki/' in cell_str
+          has_relative = 'href="./' in cell_str and 'href="./File:' not in cell_str and 'href="./Special:' not in cell_str
+          has_full_url = 'en.wikipedia.org/wiki/' in cell_str and '/wiki/File:' not in cell_str and '/wiki/Special:' not in cell_str
+          has_wiki_link = has_absolute or has_relative or has_full_url
+          # Exclude file/special links in any form
+          has_file_link = (
+              'href="/wiki/File:' in cell_str
+              or 'href="./File:' in cell_str
+              or '/wiki/File:' in cell_str
+              or 'href="./Special:' in cell_str
+              or '/wiki/Special:' in cell_str
+          )
           if has_wiki_link and not has_file_link:
+              # #region agent log
+              try:
+                  _log_path = Path(__file__).resolve().parent.parent.parent / ".cursor" / "debug.log"
+                  open(_log_path, "a", encoding="utf-8").write(json.dumps({"location": "table_parser:find_link_and_data_columns", "message": "return_column", "data": {"column": i, "has_absolute": has_absolute, "has_relative": has_relative, "has_full_url": has_full_url, "cell_snippet": cell_str[:200]}, "timestamp": __import__("time").time() * 1000, "hypothesisId": "H1"}) + "\n")
+              except Exception:
+                  pass
+              # #endregion
               self.Logger.debug_log( f"Wiki link (not a file link) found at column {i}: {cell}" , True )
               return i  # Return the index of the column containing the link
+      # #region agent log
+      try:
+          _log_path = Path(__file__).resolve().parent.parent.parent / ".cursor" / "debug.log"
+          open(_log_path, "a", encoding="utf-8").write(json.dumps({"location": "table_parser:find_link_and_data_columns", "message": "return_none", "data": {"reason": "no_cell_matched"}, "timestamp": __import__("time").time() * 1000, "hypothesisId": "H4"}) + "\n")
+      except Exception:
+          pass
+      # #endregion
       self.Logger.debug_log( f"Wiki did not find a link in {row}" , True )
       return None  # If no matching link column is found, or data structure is different
 
@@ -312,6 +354,8 @@ class Offices:
         pass
     # #endregion
 
+    # Per-table cache so we only call find_term_dates once per wiki_link (same person in multiple rows)
+    self._infobox_cache = {}
     # tracks the previous entry --> this helps the rowspan function track
     previous_row_wiki_link = None
     previous_row_district = None
@@ -366,15 +410,6 @@ class Offices:
                 pass
             # #endregion
 
-    # #region agent log
-    try:
-        _f = open(_log_path, "a", encoding="utf-8")
-        _f.write(json.dumps({"location": "table_parser:process_table", "message": "accumulated total", "data": {"accumulated": len(accumulated_results), "with_wiki_link": sum(1 for r in accumulated_results if (r.get("Wiki Link") or "").strip() and r.get("Wiki Link") != "No link")}, "timestamp": __import__("time").time() * 1000, "hypothesisId": "H3"}) + "\n")
-        _f.close()
-    except Exception:
-        pass
-    # #endregion
-
     return accumulated_results
 
 
@@ -389,7 +424,7 @@ class Offices:
 
       self.Logger.debug_log( f"previous values: \n wiki_link: {previous_row_wiki_link} \n district: {previous_row_district} \n party: {previous_row_party}" , True )
 
-      cells = row.find_all('td')
+      cells = row.find_all(['td', 'th'])
       self.Logger.debug_log( f" cells {cells} \n\n" , True )
 
       # total columns primarily works with right_to_left function
@@ -490,6 +525,8 @@ class Offices:
         wiki_link = previous_row_wiki_link
         self.Logger.debug_log( f"Adding previous link {previous_row_wiki_link} as link {wiki_link}" , True )
         found_rowspan = True
+      if wiki_link is None or (wiki_link or "").strip() == "":
+        wiki_link = "No link"
 
       '''
       The following three logic chains deal with the rowspan function. Rowspan works for office holders with multiple terms.
@@ -575,6 +612,22 @@ class Offices:
 
 
 
+      link_column = table_config_to_parse.get("link_column", 0)
+      name_from_table = None
+      if 0 <= link_column < len(cells):
+          first_a = cells[link_column].find("a")
+          name_from_table = first_a.get_text(strip=True) if first_a else None
+          if name_from_table is None:
+              name_from_table = cells[link_column].get_text(strip=True) or None
+              # #region agent log
+              if name_from_table and (wiki_link or "").strip() in ("", "No link"):
+                  try:
+                      import json
+                      _dp = Path(__file__).resolve().parent.parent.parent / ".cursor" / "debug.log"
+                      open(_dp, "a", encoding="utf-8").write(json.dumps({"location": "table_parser:parse_table_row", "message": "name_from_table from cell text (no link)", "data": {"wiki_link": (wiki_link or "")[:60], "name_from_table": (name_from_table or "")[:80]}, "timestamp": __import__("time").time() * 1000, "hypothesisId": "H1"}) + "\n")
+                  except Exception:
+                      pass
+                  # #endregion
       infobox_debug = getattr(self, "_last_infobox_items", None)
       if infobox_debug is not None:
           self._last_infobox_items = None  # Consume so next row does not inherit
@@ -596,8 +649,17 @@ class Offices:
               'Party': party,
               'District': district
           }
+          row_dict["_name_from_table"] = name_from_table
+          last_dead_link = getattr(self.Biography, "_last_dead_link", False)
+          row_dict["_dead_link"] = bool(last_dead_link and wiki_link and wiki_link != "No link")
+          if last_dead_link:
+              self.Biography._last_dead_link = False  # Consume so next row does not inherit
           if infobox_debug is not None:
               row_dict['Infobox items'] = "\n".join(infobox_debug) if isinstance(infobox_debug, list) else str(infobox_debug)
+              last_bio = getattr(self.Biography, "_last_bio_details", None)
+              if last_bio is not None:
+                  row_dict["_bio_details"] = last_bio
+                  self.Biography._last_bio_details = None  # Attach only to first result row for this person
           results_list.append(row_dict)
       for results in results_list:
           self.Logger.log( f"results {results}" , True )
@@ -727,6 +789,14 @@ class Offices:
       term_start_column = parse_row_no
       term_end_column = parse_row_no
 
+    # #region agent log
+    try:
+        _log_path = Path(__file__).resolve().parent.parent.parent / ".cursor" / "debug.log"
+        open(_log_path, "a", encoding="utf-8").write(json.dumps({"location": "table_parser:extract_term_dates", "message": "entry", "data": {"term_start_column": term_start_column, "term_end_column": term_end_column, "len_cells": len(cells), "would_oob": term_start_column >= len(cells) or term_end_column >= len(cells)}, "timestamp": __import__("time").time() * 1000, "hypothesisId": "H2"}) + "\n")
+    except Exception:
+        pass
+    # #endregion
+
     # Extract and format the term start and end dates
 
     try:
@@ -743,8 +813,22 @@ class Offices:
       # Find date in infobox: fetch full dates from person's bio; collect all matching terms from infobox
       if table_config_to_parse["find_date_in_infobox"] == True:
         self.Logger.debug_log( f" parse_table_row found TRUE in find_date_in_infobox \n\n about to process {cells[term_start_column]}" , True )
-        terms_list, infobox_items = self.Biography.find_term_dates( wiki_link , url , table_config_to_parse , office_details , district )
-        self._last_infobox_items = infobox_items  # For debug export
+        cache = getattr(self, "_infobox_cache", None)
+        if cache is not None and wiki_link in cache:
+          cached = cache[wiki_link]
+          terms_list = cached["terms"]
+          infobox_items = cached["infobox_items"]
+          self._last_infobox_items = infobox_items
+          self.Biography._last_bio_details = cached.get("bio_details")
+        else:
+          terms_list, infobox_items = self.Biography.find_term_dates( wiki_link , url , table_config_to_parse , office_details , district )
+          self._last_infobox_items = infobox_items  # For debug export
+          if cache is not None:
+            cache[wiki_link] = {
+              "terms": terms_list,
+              "infobox_items": infobox_items,
+              "bio_details": getattr(self.Biography, "_last_bio_details", None),
+            }
         self.Logger.debug_log( f" find_term_dates returned {len(terms_list)} term(s) from infobox" , True )
         # When infobox had no dates (placeholder), use table years only for this record (same as "table has years only")
         if len(terms_list) == 1 and terms_list[0][0] == "YYYY-00-00" and terms_list[0][1] == "YYYY-00-00":
@@ -771,6 +855,13 @@ class Offices:
       return (term_start, term_end, None, None)
 
     except ( ValueError , TypeError , AttributeError , IndexError ) as e:
+      # #region agent log
+      try:
+          _log_path = Path(__file__).resolve().parent.parent.parent / ".cursor" / "debug.log"
+          open(_log_path, "a", encoding="utf-8").write(json.dumps({"location": "table_parser:extract_term_dates", "message": "caught_exception", "data": {"error": str(e), "type": type(e).__name__, "term_start_column": term_start_column, "term_end_column": term_end_column, "len_cells": len(cells)}, "timestamp": __import__("time").time() * 1000, "hypothesisId": "H2"}) + "\n")
+      except Exception:
+          pass
+      # #endregion
       self.Logger.log( f" error {e} when parsing {wiki_link}" , True )
       return ("Invalid date", "Invalid date", None, None)
 
@@ -996,6 +1087,14 @@ class Offices:
     table_config_to_parse["term_end_column"] = term_end_column
     table_config_to_parse["district_column"] = district_column
 
+    # #region agent log
+    try:
+        _log_path = Path(__file__).resolve().parent.parent.parent / ".cursor" / "debug.log"
+        open(_log_path, "a", encoding="utf-8").write(json.dumps({"location": "table_parser:process_dynamic_parse", "message": "columns_updated", "data": {"link_column": link_column, "term_start_column": term_start_column, "term_end_column": term_end_column, "len_cells": len(cells)}, "timestamp": __import__("time").time() * 1000, "hypothesisId": "H2"}) + "\n")
+    except Exception:
+        pass
+    # #endregion
+
     self.Logger.debug_log( f"table config at the end of dynamic parse: \n {table_config_to_parse} \n\n" , True )
 
     return True, table_config_to_parse
@@ -1176,6 +1275,8 @@ class Biography:
 
 
       infobox_items = []  # For debug export: what we found in the infobox
+      self._last_bio_details = None
+      self._last_dead_link = False
       fetch_url = wiki_url_to_rest_html_url(wiki_link) or wiki_link
       try:
           response = requests.get(fetch_url, headers=WIKIPEDIA_REQUEST_HEADERS, timeout=30)
@@ -1199,6 +1300,41 @@ class Biography:
                           return "/wiki" + h
                       return "/wiki/" + h
                   office_slug = (office_partial_url or "").rstrip("/").split("/")[-1]
+                  # Person infoboxes may link to either "X_of_State" or "State_X" form. Derive generically.
+                  office_slug_alt = None
+                  office_slug_alt2 = None
+                  _slug_to_check = office_slug
+                  if office_slug.startswith("List_of_"):
+                      _slug_to_check = office_slug[len("List_of_"):]
+                      office_slug_alt = _slug_to_check  # match list-style rest if infobox links to it
+                  if "_of_" in _slug_to_check:
+                      parts = _slug_to_check.rsplit("_of_", 1)
+                      prefix, state_part = parts[0], parts[1]
+                      office_slug_alt2 = state_part + "_" + prefix
+                      # List pages often use plural prefix (e.g. secretaries_of_state); infobox may use singular.
+                      if office_slug.startswith("List_of_") and prefix:
+                          _segments = prefix.split("_")
+                          _title_parts = [
+                              "of" if p.lower() == "of" else (p.title() if p.islower() else p)
+                              for p in _segments
+                          ]
+                          if _title_parts:
+                              _first = _title_parts[0].lower()
+                              if _first.endswith("ies") and len(_first) > 3:
+                                  _title_parts[0] = (_first[:-3] + "y").title()
+                              elif _first.endswith("s") and not _first.endswith("ss") and len(_first) > 1:
+                                  _title_parts[0] = (_first[:-1]).title()
+                              _title = "_".join(_title_parts)
+                              if _title != prefix:
+                                  office_slug_alt = (office_slug_alt or prefix + "_of_" + state_part)
+                                  office_slug_alt2 = state_part + "_" + _title
+                  # #region agent log
+                  try:
+                      _log_path = Path(__file__).resolve().parent.parent.parent / ".cursor" / "debug.log"
+                      open(_log_path, "a", encoding="utf-8").write(json.dumps({"location": "table_parser:find_term_dates", "message": "office_slugs", "data": {"office_partial_url": office_partial_url, "office_slug": office_slug, "office_slug_alt": office_slug_alt, "office_slug_alt2": office_slug_alt2}, "timestamp": __import__("time").time() * 1000, "hypothesisId": "infobox_match"}) + "\n")
+                  except Exception:
+                      pass
+                  # #endregion
                   all_terms = []  # Collect all matching term (start, end) from every matching row in the infobox
                   for tr in infobox.find_all('tr'):
                       self.Logger.debug_log( f"found tr \n {tr}" , True )
@@ -1206,7 +1342,12 @@ class Biography:
                       row_text = tr.get_text(" ", strip=True)
                       raw_href = a.get("href", "") if a else ""
                       norm_path = _normalize_infobox_href(raw_href)
-                      link_matches = a and (office_partial_url in norm_path or (office_slug and office_slug in norm_path))
+                      link_matches = a and (
+                          office_partial_url in norm_path
+                          or (office_slug and office_slug in norm_path)
+                          or (office_slug_alt and office_slug_alt in norm_path)
+                          or (office_slug_alt2 and office_slug_alt2 in norm_path)
+                      )
                       if link_matches:
                           # Examine the next two sibling rows for date information
                           self.Logger.debug_log( f"found match. starting to iterate on {office_partial_url}" , True )
@@ -1214,7 +1355,7 @@ class Biography:
                           row_desc = "Office row: %r" % (row_text[:80] + ("..." if len(row_text) > 80 else ""))
                           term_added_this_tr = False
                           for _ in range(2):  # Check the next row and the one after that
-                              tr_cur = tr_cur.find_next_sibling('tr')
+                              tr_cur = tr_cur.find_next_sibling('tr') if tr_cur else None
                               if tr_cur:
                                   self.Logger.debug_log(f"find next tr {tr_cur}", True)
                                   date_text = tr_cur.get_text(" ", strip=True)
@@ -1266,18 +1407,46 @@ class Biography:
                                   # If dates are invalid, continue to the next sibling row
                           if not term_added_this_tr:
                               infobox_items.append("%s -> checked 2 sibling rows; no valid dates" % row_desc)
+                  # Single fetch: also collect birth/death from same infobox so runner can skip second fetch
+                  details = self.parse_infobox(infobox)
+                  details["wiki_url"] = normalize_wiki_url(wiki_link) or wiki_link
+                  details["page_path"] = (urlparse(wiki_link).path.split("/")[-1] or "").strip()
+                  if not details.get("full_name"):
+                      details["full_name"] = details.get("name") or ""
+                  self._last_bio_details = details
                   if all_terms:
                       return (all_terms, infobox_items if infobox_items else ["Infobox: matched rows returned terms above."])
 
               if not infobox:
+                  self._last_bio_details = None
                   infobox_items.append("No infobox in page.")
               elif not infobox_items:
                   infobox_items.append("Infobox found; no rows matching office link/name.")
           else:
+              self._last_bio_details = None
               infobox_items.append("Failed to fetch page: HTTP %s" % response.status_code)
+              if (wiki_link or "").strip() and (wiki_link or "").strip() != "No link":
+                  self._last_dead_link = True
+                  # #region agent log
+                  try:
+                      _log_path = Path(__file__).resolve().parent.parent.parent / ".cursor" / "debug.log"
+                      open(_log_path, "a", encoding="utf-8").write(json.dumps({"location": "table_parser:find_term_dates", "message": "dead_link_reason", "data": {"wiki_link": (wiki_link or "")[:120], "reason": "http_error", "status": response.status_code}, "timestamp": __import__("time").time() * 1000, "hypothesisId": "H3"}) + "\n")
+                  except Exception:
+                      pass
+                  # #endregion
       except requests.exceptions.RequestException as e:
+          self._last_bio_details = None
           self.Logger.log(f"Request failed: {e}", False)
           infobox_items.append("Request failed: %s" % str(e))
+          if (wiki_link or "").strip() and (wiki_link or "").strip() != "No link":
+              self._last_dead_link = True
+              # #region agent log
+              try:
+                  _log_path = Path(__file__).resolve().parent.parent.parent / ".cursor" / "debug.log"
+                  open(_log_path, "a", encoding="utf-8").write(json.dumps({"location": "table_parser:find_term_dates", "message": "dead_link_reason", "data": {"wiki_link": (wiki_link or "")[:120], "reason": "request_exception", "error": str(e)[:100]}, "timestamp": __import__("time").time() * 1000, "hypothesisId": "H5"}) + "\n")
+              except Exception:
+                  pass
+              # #endregion
           # #region agent log
           try:
               _f = open(_log_path, "a", encoding="utf-8")
@@ -1287,10 +1456,13 @@ class Biography:
               pass
           # #endregion
 
+      # Placeholder return: no infobox or no matching terms. Do NOT set dead link here — dead link means
+      # the page does not exist (404, request failed). Missing/mismatched infobox means the page exists.
       # #region agent log
       try:
           _f = open(_log_path, "a", encoding="utf-8")
-          _f.write(json.dumps({"location": "table_parser:find_term_dates", "message": "placeholder return", "data": {"term_start": "YYYY-00-00", "term_end": "YYYY-00-00"}, "timestamp": __import__("time").time() * 1000, "hypothesisId": "H3"}) + "\n")
+          infobox_reason = (infobox_items[-1][:150] if infobox_items else "no_items") if isinstance(infobox_items, list) else str(infobox_items)[:150]
+          _f.write(json.dumps({"location": "table_parser:find_term_dates", "message": "placeholder return", "data": {"term_start": "YYYY-00-00", "term_end": "YYYY-00-00", "wiki_link": (wiki_link or "")[:120], "dead_link_set": False, "infobox_reason": infobox_reason}, "timestamp": __import__("time").time() * 1000, "hypothesisId": "H3"}) + "\n")
           _f.close()
       except Exception:
           pass

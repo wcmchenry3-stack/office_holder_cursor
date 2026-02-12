@@ -54,6 +54,8 @@ def migrate_to_fk(conn=None):
         _migrate_office_terms_year_columns(conn)
         # Add term_dates_merged, party_ignore, district_ignore, district_at_large to offices
         _migrate_offices_parsing_options(conn)
+        # Add is_dead_link to individuals if missing
+        _migrate_individuals_dead_link(conn)
     finally:
         if own_conn:
             conn.close()
@@ -301,3 +303,11 @@ def _migrate_imprecise_date_columns(conn):
         if te is not None and not valid_date.match(str(te).strip()):
             conn.execute("UPDATE office_terms SET term_end = NULL, term_end_imprecise = 1 WHERE id = ?", (oid,))
     conn.commit()
+
+
+def _migrate_individuals_dead_link(conn):
+    """Add is_dead_link to individuals if missing."""
+    ind_cols = _columns(conn, "individuals")
+    if "is_dead_link" not in ind_cols:
+        conn.execute("ALTER TABLE individuals ADD COLUMN is_dead_link INTEGER NOT NULL DEFAULT 0")
+        conn.commit()
