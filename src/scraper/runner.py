@@ -26,6 +26,7 @@ from src.db.date_utils import normalize_date
 from src.scraper.logger import HTTP_USER_AGENT, Logger
 from src.scraper.config_test import get_raw_table_preview
 from src.scraper.table_cache import get_table_html_cached
+from src.scraper.wiki_fetch import normalize_wiki_url
 
 from src.scraper import parse_core
 
@@ -56,7 +57,7 @@ def parse_full_table_for_export(
     years_only = bool(office_row.get("years_only"))
     rows_out = []
     for row in table_data:
-        normalized = _normalize_row_for_import(row, years_only=years_only)
+        normalized = _normalize_row_for_import(row, years_only=years_only, include_no_link=True)
         if normalized is None:
             continue
         _, term_start_val, term_end_val, _ts_imp, _te_imp, term_start_year, term_end_year = normalized
@@ -103,15 +104,19 @@ def _parse_office_html(
     )
 
 
-def _normalize_row_for_import(row: dict[str, Any], years_only: bool = False) -> tuple[dict, str | None, str | None, bool, bool, int | None, int | None] | None:
+def _normalize_row_for_import(
+    row: dict[str, Any], years_only: bool = False, include_no_link: bool = False
+) -> tuple[dict, str | None, str | None, bool, bool, int | None, int | None] | None:
     """
     Same filter/normalize logic as the DB write path. Returns None if row should be skipped,
     else (row, term_start_val, term_end_val, term_start_imprecise, term_end_imprecise, term_start_year, term_end_year).
     When years_only is True (from row["_years_only"] or caller), accept rows with Term Start Year / Term End Year and leave dates null.
+    When include_no_link is True (e.g. debug export), include rows with Wiki Link "No link" using their term dates/years.
     """
     wiki_url = row.get("Wiki Link") or ""
     if not wiki_url or wiki_url == "No link":
-        return None
+        if not include_no_link:
+            return None
     use_years_only = years_only or bool(row.get("_years_only"))
     if use_years_only:
         term_start_year = row.get("Term Start Year")
@@ -127,6 +132,9 @@ def _normalize_row_for_import(row: dict[str, Any], years_only: bool = False) -> 
         term_end_year = row.get("Term End Year")
         if term_start_year is not None or term_end_year is not None:
             return (row, None, None, False, False, term_start_year, term_end_year)
+        # include_no_link: include name-only rows even with no parseable dates so they appear in preview and DB
+        if include_no_link and row.get("_name_from_table"):
+            return (row, None, None, False, False, None, None)
         return None
     return (row, term_start_val, term_end_val, term_start_imp, term_end_imp, None, None)
 
@@ -324,18 +332,24 @@ def run_with_db(
             if dry_run or test_run:
                 preview_rows = []
                 for row in all_office_data:
-                    normalized = _normalize_row_for_import(row)
+                    normalized = _normalize_row_for_import(row, years_only=bool(row.get("_years_only")))
+                    if normalized is None and (row.get("Wiki Link") or "") in ("", "No link") and row.get("_name_from_table"):
+                        normalized = _normalize_row_for_import(row, years_only=bool(row.get("_years_only")), include_no_link=True)
                     if normalized is None:
                         continue
                     _, term_start_val, term_end_val, _ts_imp, _te_imp, term_start_year, term_end_year = normalized
+                    wiki_link = row.get("Wiki Link") or ""
+                    dead_link = bool(row.get("_dead_link") or (wiki_link in ("", "No link") and row.get("_name_from_table")))
                     preview_rows.append({
-                        "Wiki Link": row.get("Wiki Link") or "",
+                        "Wiki Link": wiki_link,
                         "Party": row.get("Party") or "",
                         "District": row.get("District") or "",
                         "Term Start": term_start_val if term_start_val else "",
                         "Term End": term_end_val if term_end_val else "",
                         "Term Start Year": term_start_year,
                         "Term End Year": term_end_year,
+                        "Dead link": dead_link,
+                        "Name (no link)": row.get("_name_from_table") if dead_link and wiki_link in ("", "No link") else None,
                     })
                 preview_rows = preview_rows[:50]
             logger.close()
@@ -368,13 +382,6 @@ def run_with_db(
 
         table_no = int(office_row.get("table_no") or 1)
         use_full_page = bool(office_row.get("use_full_page_for_table"))
-        # #region agent log
-        import json
-        from pathlib import Path
-        _log_path = Path(__file__).resolve().parent.parent.parent / ".cursor" / "debug.log"
-        with open(_log_path, "a", encoding="utf-8") as _f:
-            _f.write(json.dumps({"location": "runner.py:run_with_db", "message": "before get_table_html_cached", "data": {"office_id": office_id, "url": (url or "")[:80], "table_no": table_no, "refresh_table_cache": refresh_table_cache, "use_full_page": use_full_page, "hypothesisId": "H3"}, "timestamp": __import__("time").time() * 1000}) + "\n")
-        # #endregion
         cache_result = get_table_html_cached(url.strip(), table_no, refresh=refresh_table_cache, use_full_page=use_full_page)
         if "error" in cache_result:
             logger.log(f"Failed to get table for {url}: {cache_result['error']}", True)
@@ -413,19 +420,29 @@ def run_with_db(
                 if office_id is None:
                     continue
                 normalized = _normalize_row_for_import(row)
+                # Include "No link" rows that have a name (e.g. Charles W. Wright) as dead-link individuals
+                if normalized is None and (row.get("Wiki Link") or "") in ("", "No link") and row.get("_name_from_table"):
+                    normalized = _normalize_row_for_import(row, include_no_link=True)
                 if normalized is None:
                     continue
                 _, term_start_val, term_end_val, term_start_imp, term_end_imp, term_start_year, term_end_year = normalized
                 wiki_url = row.get("Wiki Link") or ""
+                no_link_placeholder = wiki_url in ("", "No link") and row.get("_name_from_table")
+                if no_link_placeholder:
+                    wiki_url = "No link:" + str(office_id) + ":" + (row.get("_name_from_table") or "Unknown")
                 # Resolve or create individual
                 ind = db_individuals.get_individual_by_wiki_url(wiki_url, conn=conn)
                 individual_id = ind["id"] if ind else None
                 if not ind:
-                    # Create placeholder individual so we can link office_term
-                    individual_id = db_individuals.upsert_individual(
-                        {"wiki_url": wiki_url, "page_path": wiki_url.split("/")[-1] if wiki_url else None},
-                        conn=conn,
-                    )
+                    # Create placeholder or dead-link individual so we can link office_term
+                    payload = {
+                        "wiki_url": wiki_url,
+                        "page_path": wiki_url.split("/")[-1] if "/" in wiki_url else None,
+                    }
+                    if row.get("_dead_link") or no_link_placeholder:
+                        payload["full_name"] = row.get("_name_from_table")
+                        payload["is_dead_link"] = 1
+                    individual_id = db_individuals.upsert_individual(payload, conn=conn)
                 party_text = row.get("Party")
                 party_id = db_parties.resolve_party_id(office_id, party_text, conn=conn)
                 db_office_terms.insert_office_term(
@@ -493,18 +510,26 @@ def run_with_db(
                 logger.log(f"Skipping {bio_skipped_count} individuals (already in DB); fetching bio for {len(to_fetch)} new.", True)
                 report("bio", 0, len(to_fetch), f"Skipped {bio_skipped_count} (in DB). Fetching {len(to_fetch)} new…", {"bio_skipped": bio_skipped_count})
             total_bios = len(to_fetch)
+            # Build bio cache from table parse so we skip re-fetch when find_date_in_infobox was used (key by normalized URL)
+            bio_cache: dict[str, dict] = {}
+            for row in all_office_data:
+                wiki_url_row = row.get("Wiki Link")
+                if wiki_url_row and wiki_url_row != "No link" and row.get("_bio_details"):
+                    key = normalize_wiki_url(wiki_url_row) or wiki_url_row
+                    if key not in bio_cache:
+                        bio_cache[key] = row["_bio_details"]
             bio_fetched_this_run: set[str] = set()
             for bio_idx, wiki_url in enumerate(to_fetch):
                 report("bio", bio_idx + 1, total_bios, "Fetching biographies (new individuals)…", {"current": bio_idx + 1, "total": total_bios, "bio_skipped": bio_skipped_count})
                 if wiki_url in bio_fetched_this_run:
                     continue
-                if bio_idx > 0:
-                    time.sleep(1.5)
                 try:
-                    bio_info = biography.biography_extract(wiki_url)
-                    bio_fetched_this_run.add(wiki_url)
-                    if bio_info:
+                    bio_cache_key = normalize_wiki_url(wiki_url) or wiki_url
+                    if bio_cache_key in bio_cache:
+                        bio_info = dict(bio_cache[bio_cache_key])
                         bio_info["wiki_url"] = wiki_url
+                        if bio_info.get("page_path") is None:
+                            bio_info["page_path"] = (wiki_url or "").rstrip("/").split("/")[-1] or ""
                         bd, bd_imp = normalize_date(bio_info.get("birth_date"))
                         dd, dd_imp = normalize_date(bio_info.get("death_date"))
                         bio_info["birth_date"] = bd
@@ -512,12 +537,28 @@ def run_with_db(
                         bio_info["birth_date_imprecise"] = bd_imp
                         bio_info["death_date_imprecise"] = dd_imp
                         db_individuals.upsert_individual(bio_info)
+                        bio_fetched_this_run.add(wiki_url)
                         bio_success_count += 1
                     else:
-                        bio_error_count += 1
-                        err_msg = "No bio data extracted (e.g. 403 or empty page)"
-                        logger.log(f"Bio failed for {wiki_url}: {err_msg}", True)
-                        bio_errors.append({"url": wiki_url, "error": err_msg})
+                        if bio_idx > 0:
+                            time.sleep(1.5)
+                        bio_info = biography.biography_extract(wiki_url)
+                        bio_fetched_this_run.add(wiki_url)
+                        if bio_info:
+                            bio_info["wiki_url"] = wiki_url
+                            bd, bd_imp = normalize_date(bio_info.get("birth_date"))
+                            dd, dd_imp = normalize_date(bio_info.get("death_date"))
+                            bio_info["birth_date"] = bd
+                            bio_info["death_date"] = dd
+                            bio_info["birth_date_imprecise"] = bd_imp
+                            bio_info["death_date_imprecise"] = dd_imp
+                            db_individuals.upsert_individual(bio_info)
+                            bio_success_count += 1
+                        else:
+                            bio_error_count += 1
+                            err_msg = "No bio data extracted (e.g. 403 or empty page)"
+                            logger.log(f"Bio failed for {wiki_url}: {err_msg}", True)
+                            bio_errors.append({"url": wiki_url, "error": err_msg})
                 except Exception as e:
                     bio_fetched_this_run.add(wiki_url)
                     bio_error_count += 1
@@ -567,23 +608,29 @@ def run_with_db(
     logger.close()
     report("complete", 1, 1, "Done", {"terms_parsed": total_terms, "unique_wiki_urls": len(unique_wiki_urls)})
 
-    # Preview rows: same filter/normalize as import so UI shows exactly what would be in the table
+    # Preview rows: same filter/normalize as import so UI shows exactly what would be in the table (include dead-link / name-only rows)
     preview_rows = None
     if dry_run or test_run:
         preview_rows = []
         for row in all_office_data:
-            normalized = _normalize_row_for_import(row)
+            normalized = _normalize_row_for_import(row, years_only=bool(row.get("_years_only")))
+            if normalized is None and (row.get("Wiki Link") or "") in ("", "No link") and row.get("_name_from_table"):
+                normalized = _normalize_row_for_import(row, years_only=bool(row.get("_years_only")), include_no_link=True)
             if normalized is None:
                 continue
             _, term_start_val, term_end_val, _ts_imp, _te_imp, term_start_year, term_end_year = normalized
+            wiki_link = row.get("Wiki Link") or ""
+            dead_link = bool(row.get("_dead_link") or (wiki_link in ("", "No link") and row.get("_name_from_table")))
             preview_rows.append({
-                "Wiki Link": row.get("Wiki Link") or "",
+                "Wiki Link": wiki_link,
                 "Party": row.get("Party") or "",
                 "District": row.get("District") or "",
                 "Term Start": term_start_val if term_start_val else "",
                 "Term End": term_end_val if term_end_val else "",
                 "Term Start Year": term_start_year,
                 "Term End Year": term_end_year,
+                "Dead link": dead_link,
+                "Name (no link)": row.get("_name_from_table") if dead_link and wiki_link in ("", "No link") else None,
             })
         preview_rows = preview_rows[:50]
 
@@ -633,13 +680,6 @@ def preview_with_config(
 
     table_no = int(office_row.get("table_no") or 1)
     use_full_page = bool(office_row.get("use_full_page_for_table"))
-    # #region agent log
-    import json
-    from pathlib import Path
-    _log_path = Path(__file__).resolve().parent.parent.parent / ".cursor" / "debug.log"
-    with open(_log_path, "a", encoding="utf-8") as _f:
-        _f.write(json.dumps({"location": "runner.py:preview_with_config", "message": "before get_table_html_cached", "data": {"url": url[:80], "table_no": table_no, "use_full_page": use_full_page, "hypothesisId": "H3"}, "timestamp": __import__("time").time() * 1000}) + "\n")
-    # #endregion
     cache_result = get_table_html_cached(url, table_no, refresh=False, use_full_page=use_full_page)
     if "error" in cache_result:
         return {"preview_rows": [], "raw_table_preview": None, "error": cache_result["error"]}
@@ -657,22 +697,38 @@ def preview_with_config(
         raw = get_raw_table_preview(url, int(office_row.get("table_no") or 1), raw_max)
         return {"preview_rows": [], "raw_table_preview": raw, "error": str(e)}
 
-    # Same filter/normalize as import: only rows that would be inserted, with normalized Term Start/End and optional years
+    # Same filter/normalize as import: only rows that would be inserted (include dead-link / name-only rows)
     years_only = bool(office_row.get("years_only"))
     preview_rows = []
     for row in table_data:
         normalized = _normalize_row_for_import(row, years_only=years_only)
+        if normalized is None and (row.get("Wiki Link") or "") in ("", "No link") and row.get("_name_from_table"):
+            normalized = _normalize_row_for_import(row, years_only=years_only, include_no_link=True)
         if normalized is None:
             continue
         _, term_start_val, term_end_val, _ts_imp, _te_imp, term_start_year, term_end_year = normalized
+        wiki_link = row.get("Wiki Link") or ""
+        dead_link = bool(row.get("_dead_link") or (wiki_link in ("", "No link") and row.get("_name_from_table")))
+        # #region agent log
+        if dead_link and wiki_link in ("", "No link"):
+            try:
+                import json
+                from pathlib import Path
+                _dp = Path(__file__).resolve().parent.parent.parent / ".cursor" / "debug.log"
+                open(_dp, "a", encoding="utf-8").write(json.dumps({"location": "runner:preview_with_config", "message": "adding no-link row to preview", "data": {"name_from_table": (row.get("_name_from_table") or "")[:80], "term_start_year": term_start_year, "term_end_year": term_end_year}, "timestamp": __import__("time").time() * 1000, "hypothesisId": "H2"}) + "\n")
+            except Exception:
+                pass
+        # #endregion
         preview_rows.append({
-            "Wiki Link": row.get("Wiki Link") or "",
+            "Wiki Link": wiki_link,
             "Party": row.get("Party") or "",
             "District": row.get("District") or "",
             "Term Start": term_start_val if term_start_val else "",
             "Term End": term_end_val if term_end_val else "",
             "Term Start Year": term_start_year,
             "Term End Year": term_end_year,
+            "Dead link": dead_link,
+            "Name (no link)": row.get("_name_from_table") if dead_link and wiki_link in ("", "No link") else None,
         })
     if max_rows is not None:
         preview_rows = preview_rows[:max_rows]

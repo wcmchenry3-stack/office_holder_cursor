@@ -1178,6 +1178,9 @@ async def api_office_debug_export(request: Request):
     config = body.get("config") or {}
     preview_result = body.get("preview_result") or {}
     table_html_result = body.get("table_html_result") or {}
+    export_mode = (body.get("export_mode") or "full").strip().lower()
+    if export_mode not in ("preview", "full"):
+        export_mode = "full"
     try:
         db_offices.validate_office_table_config(
             config,
@@ -1189,7 +1192,93 @@ async def api_office_debug_export(request: Request):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     use_infobox = _config_bool_export(config.get("find_date_in_infobox"))
-    if use_infobox:
+
+    # Preview mode: no full parse, no infobox; require preview_result and table_html_result from client
+    if export_mode == "preview":
+        table_html = (table_html_result.get("html") or "") if not table_html_result.get("error") else ""
+        header_cells = get_table_header_from_html(table_html) if table_html else []
+        timestamp = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
+        safe_name = _sanitize_debug_filename(office_name)
+        filename = f"{safe_name}_{timestamp}.txt"
+        debug_dir = ROOT / "debug"
+        debug_dir.mkdir(parents=True, exist_ok=True)
+        filepath = debug_dir / filename
+        link_1 = int(config.get("link_column") or 0)
+        term_start_1 = int(config.get("term_start_column") or 4)
+        term_end_1 = int(config.get("term_end_column") or 5)
+        def _col_1_to_0(v):
+            val = int(v) if v is not None and v != "" else 0
+            return (val - 1) if val > 0 else -1
+        link_0 = _col_1_to_0(link_1)
+        term_start_0 = _col_1_to_0(term_start_1)
+        term_end_0 = _col_1_to_0(term_end_1)
+        lines = [
+            "=== INSTRUCTIONS (when you share this file with Cursor) ===",
+            "Help me understand the configuration issue. The problem could be:",
+            "  1) I simply did not configure correctly — in that case, give me the correct configs.",
+            "  2) We came across a new scenario our parser cannot handle — in that case, propose a plan.",
+            "When investigating: test the HTML extract (RAW HTML section below) against our parser code",
+            "to see if the issue is resolved or still outstanding (e.g. run scripts/test_debug_export.py).",
+            "",
+            "=== Investigation context ===",
+            "Column indices: Form/DB store 1-based column numbers. The parser uses 0-based indices.",
+            "Conversion happens in src/db/offices.py in office_row_to_table_config (e.g. form term_start_column 5 -> parser column index 4).",
+            "How to verify: From project root run: python scripts/test_debug_export.py debug/" + filename,
+            "Code reference:",
+            "  - Config to 0-based: src/db/offices.py office_row_to_table_config, _col_1based_to_0based",
+            "  - Table parsing: src/scraper/table_parser.py process_table, parse_table_row, extract_term_dates",
+            "  - Date parsing: src/scraper/table_parser.py DataCleanup.format_date, DataCleanup.parse_date_info",
+            "  - Preview pipeline: src/scraper/runner.py preview_with_config",
+            "",
+            "Office: " + office_name,
+            "Exported: " + timestamp,
+            "Export mode: Preview (offices only — no full parse, no infobox fetches)",
+            "",
+            "=== CONFIG (form values used for preview) ===",
+        ]
+        for k, v in sorted(config.items()):
+            lines.append(f"{k}: {v}")
+        mapping_parts = [
+            "Parser columns (0-based): link=%s, term_start=%s, term_end=%s (from form 1-based: link %s, term_start %s, term_end %s)."
+            % (link_0, term_start_0, term_end_0, link_1, term_start_1, term_end_1)
+        ]
+        if header_cells:
+            h_start = header_cells[term_start_0][1] if 0 <= term_start_0 < len(header_cells) else "?"
+            h_end = header_cells[term_end_0][1] if 0 <= term_end_0 < len(header_cells) else "?"
+            mapping_parts.append('Header at term_start: %r, at term_end: %r.' % (h_start, h_end))
+        lines.append(" ".join(mapping_parts))
+        lines.append("")
+        lines.append("=== TABLE STRUCTURE (header row, 0-based column index) ===")
+        if header_cells:
+            for i, text in header_cells:
+                lines.append("Column %s: %s" % (i, text))
+        else:
+            lines.append("Could not parse table header.")
+        lines.append("")
+        lines.append("=== EXTRACTED TABLE (Preview - offices only) ===")
+        preview_rows = preview_result.get("preview_rows") or []
+        if preview_rows:
+            headers = ["Wiki Link", "Party", "District", "Term Start", "Term End", "Term Start Year", "Term End Year", "Infobox items"]
+            lines.append("\t".join(headers))
+            for row in preview_rows:
+                cells = [str(row.get(h) or "").replace("\t", " ").replace("\n", " ") for h in headers]
+                lines.append("\t".join(cells))
+        else:
+            lines.append("No preview rows.")
+        lines.append("")
+        lines.append("=== RAW HTML (selected table) ===")
+        if table_html_result.get("error"):
+            lines.append(f"Error: {table_html_result.get('error')}")
+        else:
+            lines.append(table_html_result.get("html") or "(empty)")
+        try:
+            filepath.write_text("\n".join(lines), encoding="utf-8")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Could not write file: {e}")
+        return JSONResponse({"path": f"debug/{filename}", "filename": filename})
+
+    # Full export: async when find_date_in_infobox, else sync with full parse
+    if export_mode == "full" and use_infobox:
         job_id = str(uuid.uuid4())
         with _export_job_lock:
             _export_job_store[job_id] = {

@@ -147,6 +147,10 @@
     <button type="button" class="btn btn-secondary" id="showSelectedTableBtn">Show selected table</button>
     <button type="button" class="btn btn-secondary" id="showTableHtmlBtn">Show table HTML</button>
     <button type="button" class="btn btn-secondary" id="refreshTableCacheBtn">Refresh table from Wikipedia</button>
+    <select id="exportDebugMode" class="form-select form-select-sm" style="width:auto; display:inline-block;">
+      <option value="preview">Offices only (preview)</option>
+      <option value="full" selected>Office + bio (full parse)</option>
+    </select>
     <button type="button" class="btn btn-secondary" id="exportDebugBtn">Export debug file</button>
     <button type="button" class="btn btn-secondary" id="populateTermsBtn" data-office-id="{{ office.id }}">Populate terms</button>
     <form action="/offices/{{ office.id }}/delete" method="post" style="display:inline;" onsubmit="return confirm('Delete this office?');">
@@ -357,13 +361,15 @@
     }
     if (rows.length) {
       var caption = '<p><small>Showing all ' + rows.length + ' rows.</small></p>';
-      var html = caption + '<table><thead><tr><th>Wiki Link</th><th>Party</th><th>District</th><th>Term Start</th><th>Term End</th><th>Start year</th><th>End year</th></tr></thead><tbody>';
+      var html = caption + '<table><thead><tr><th>Wiki Link</th><th>Dead link</th><th>Party</th><th>District</th><th>Term Start</th><th>Term End</th><th>Start year</th><th>End year</th></tr></thead><tbody>';
       rows.forEach(function(r) {
         var link = r['Wiki Link'];
-        var linkCell = (link && link !== 'No link') ? '<a href="' + esc(link) + '" target="_blank" rel="noopener">' + esc(link.length > 50 ? link.slice(0, 50) + '…' : link) + '</a>' : esc(link || '—');
+        var nameNoLink = r['Name (no link)'];
+        var linkCell = (link && link !== 'No link') ? '<a href="' + esc(link) + '" target="_blank" rel="noopener">' + esc(link.length > 50 ? link.slice(0, 50) + '…' : link) + '</a>' : (nameNoLink ? esc(nameNoLink) + ' <small>(no link)</small>' : esc(link || '—'));
+        var deadCell = r['Dead link'] ? 'Yes' : '—';
         var sy = r['Term Start Year'] != null && r['Term Start Year'] !== '' ? r['Term Start Year'] : '—';
         var ey = r['Term End Year'] != null && r['Term End Year'] !== '' ? r['Term End Year'] : '—';
-        html += '<tr><td>' + linkCell + '</td><td>' + esc(r.Party || '—') + '</td><td>' + esc(r.District || '—') + '</td><td>' + esc(r['Term Start'] || '—') + '</td><td>' + esc(r['Term End'] || '—') + '</td><td>' + esc(sy) + '</td><td>' + esc(ey) + '</td></tr>';
+        html += '<tr><td>' + linkCell + '</td><td>' + deadCell + '</td><td>' + esc(r.Party || '—') + '</td><td>' + esc(r.District || '—') + '</td><td>' + esc(r['Term Start'] || '—') + '</td><td>' + esc(r['Term End'] || '—') + '</td><td>' + esc(sy) + '</td><td>' + esc(ey) + '</td></tr>';
       });
       html += '</tbody></table>';
       content.innerHTML = html;
@@ -684,15 +690,17 @@
     }
     var config = getFormDraft();
     var officeName = (config.name || '').trim() || 'office';
+    var exportMode = (document.getElementById('exportDebugMode')?.value || 'full');
     resultEl.style.display = 'block';
     resultEl.className = 'alert';
     var useInfobox = !!config.find_date_in_infobox;
-    if (useInfobox) {
+    // Office + bio (full): when find_date_in_infobox, use async worker
+    if (exportMode === 'full' && useInfobox) {
       resultEl.textContent = 'Exporting…';
       fetch('/api/office-debug-export', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ office_name: officeName, config: config })
+        body: JSON.stringify({ office_name: officeName, config: config, export_mode: 'full' })
       })
         .then(function(r) {
           if (r.status === 202) return r.json().then(function(d) { return { async: true, job_id: d.job_id }; });
@@ -740,6 +748,7 @@
         });
       return;
     }
+    // Offices only (preview) or Office + bio without infobox: get preview + table HTML, then POST
     resultEl.textContent = 'Exporting…';
     fetch('/api/preview', {
       method: 'POST',
@@ -768,7 +777,8 @@
             office_name: officeName,
             config: config,
             preview_result: _.previewResult,
-            table_html_result: _.tableHtmlResult
+            table_html_result: _.tableHtmlResult,
+            export_mode: exportMode
           })
         }).then(function(r) { return r.json(); });
       })

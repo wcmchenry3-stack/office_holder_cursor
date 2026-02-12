@@ -11,6 +11,7 @@
   <thead>
     <tr>
       <th>Wiki Link</th>
+      <th>Dead link</th>
       <th>Party</th>
       <th>District</th>
       <th>Term Start</th>
@@ -22,7 +23,8 @@
   <tbody>
     {% for r in rows %}
     <tr>
-      <td>{% if r.get('Wiki Link') and r.get('Wiki Link') != 'No link' %}<a href="{{ r['Wiki Link'] }}" target="_blank" rel="noopener">{% if r['Wiki Link']|length > 50 %}{{ r['Wiki Link'][:50] }}…{% else %}{{ r['Wiki Link'] }}{% endif %}</a>{% else %}{{ r.get('Wiki Link', '—') }}{% endif %}</td>
+      <td>{% if r.get('Wiki Link') and r.get('Wiki Link') != 'No link' %}<a href="{{ r['Wiki Link'] }}" target="_blank" rel="noopener">{% if r['Wiki Link']|length > 50 %}{{ r['Wiki Link'][:50] }}…{% else %}{{ r['Wiki Link'] }}{% endif %}</a>{% elif r.get('Name (no link)') %}{{ r.get('Name (no link)') }} <small>(no link)</small>{% else %}{{ r.get('Wiki Link', '—') }}{% endif %}</td>
+      <td>{% if r.get('Dead link') %}Yes{% else %}—{% endif %}</td>
       <td>{{ r.get('Party') or '—' }}</td>
       <td>{{ r.get('District') or '—' }}</td>
       <td>{{ r.get('Term Start') or '—' }}</td>
