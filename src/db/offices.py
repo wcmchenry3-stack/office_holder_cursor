@@ -85,7 +85,7 @@ def list_offices(conn: sqlite3.Connection | None = None) -> list[dict[str, Any]]
                       o.table_no, o.table_rows, o.link_column, o.party_column,
                       o.term_start_column, o.term_end_column, o.district_column,
                       o.dynamic_parse, o.read_right_to_left, o.find_date_in_infobox,
-                      o.parse_rowspan, o.rep_link, o.party_link, o.alt_link_include_main,
+                      o.parse_rowspan, o.consolidate_rowspan_terms, o.rep_link, o.party_link, o.alt_link_include_main,
                       o.use_full_page_for_table, o.years_only,
                       o.term_dates_merged, o.party_ignore, o.district_ignore, o.district_at_large,
                       o.created_at
@@ -155,9 +155,9 @@ def create_office(data: dict[str, Any], conn: sqlite3.Connection | None = None) 
                 url, table_no, table_rows, link_column, party_column,
                 term_start_column, term_end_column, district_column,
                 dynamic_parse, read_right_to_left, find_date_in_infobox,
-                parse_rowspan, rep_link, party_link, alt_link_include_main, use_full_page_for_table, years_only,
+                parse_rowspan, consolidate_rowspan_terms, rep_link, party_link, alt_link_include_main, use_full_page_for_table, years_only,
                 term_dates_merged, party_ignore, district_ignore, district_at_large
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 country_id,
                 int(row_data.get("state_id") or 0) or None,
@@ -179,6 +179,7 @@ def create_office(data: dict[str, Any], conn: sqlite3.Connection | None = None) 
                 1 if row_data.get("read_right_to_left") in (True, 1, "TRUE", "true", "1") else 0,
                 1 if row_data.get("find_date_in_infobox") in (True, 1, "TRUE", "true", "1") else 0,
                 1 if row_data.get("parse_rowspan") in (True, 1, "TRUE", "true", "1") else 0,
+                1 if row_data.get("consolidate_rowspan_terms") in (True, 1, "TRUE", "true", "1") else 0,
                 1 if row_data.get("rep_link") in (True, 1, "TRUE", "true", "1") else 0,
                 1 if row_data.get("party_link") in (True, 1, "TRUE", "true", "1") else 0,
                 1 if row_data.get("alt_link_include_main") in (True, 1, "TRUE", "true", "1") else 0,
@@ -233,7 +234,7 @@ def update_office(office_id: int, data: dict[str, Any], conn: sqlite3.Connection
                 url=?, table_no=?, table_rows=?, link_column=?, party_column=?,
                 term_start_column=?, term_end_column=?, district_column=?,
                 dynamic_parse=?, read_right_to_left=?, find_date_in_infobox=?,
-                parse_rowspan=?, rep_link=?, party_link=?, alt_link_include_main=?, use_full_page_for_table=?, years_only=?,
+                parse_rowspan=?, consolidate_rowspan_terms=?, rep_link=?, party_link=?, alt_link_include_main=?, use_full_page_for_table=?, years_only=?,
                 term_dates_merged=?, party_ignore=?, district_ignore=?, district_at_large=?
             WHERE id=?""",
             (
@@ -257,6 +258,7 @@ def update_office(office_id: int, data: dict[str, Any], conn: sqlite3.Connection
                 1 if row_data.get("read_right_to_left") in (True, 1, "TRUE", "true", "1") else 0,
                 1 if row_data.get("find_date_in_infobox") in (True, 1, "TRUE", "true", "1") else 0,
                 1 if row_data.get("parse_rowspan") in (True, 1, "TRUE", "true", "1") else 0,
+                1 if row_data.get("consolidate_rowspan_terms") in (True, 1, "TRUE", "true", "1") else 0,
                 1 if row_data.get("rep_link") in (True, 1, "TRUE", "true", "1") else 0,
                 1 if row_data.get("party_link") in (True, 1, "TRUE", "true", "1") else 0,
                 1 if row_data.get("alt_link_include_main") in (True, 1, "TRUE", "true", "1") else 0,
@@ -391,6 +393,7 @@ def office_row_to_table_config(row: dict[str, Any], alt_links: list[str] | None 
         "years_only": bool(row.get("years_only")),
         "read_columns_right_to_left": bool(row.get("read_right_to_left")),
         "parse_rowspan": bool(row.get("parse_rowspan")),
+        "consolidate_rowspan_terms": bool(row.get("consolidate_rowspan_terms")),
         "rep_link": bool(row.get("rep_link")),
         "party_link": bool(row.get("party_link")),
         "alt_links": list(alt_links) if alt_links is not None else [],

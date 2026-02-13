@@ -57,6 +57,10 @@ _export_job_lock = threading.Lock()
 PROCESS_TYPES = ["run", "preview_all"]
 
 
+class PreviewCancelled(Exception):
+    """Raised when the user cancels an async preview job."""
+
+
 def _office_draft_from_body(body: dict, *, include_ref_names: bool = False) -> dict:
     """Build office draft dict from JSON body. If include_ref_names, add country_name, level_name, branch_name, state_name from db_refs."""
     term_dates_merged = body.get("term_dates_merged") in (True, 1, "1", "true", "TRUE")
@@ -82,6 +86,7 @@ def _office_draft_from_body(body: dict, *, include_ref_names: bool = False) -> d
         "find_date_in_infobox": body.get("find_date_in_infobox", False),
         "years_only": body.get("years_only", False),
         "parse_rowspan": body.get("parse_rowspan", False),
+        "consolidate_rowspan_terms": body.get("consolidate_rowspan_terms", False),
         "rep_link": body.get("rep_link", False),
         "party_link": body.get("party_link", False),
         "alt_links": body.get("alt_links") if isinstance(body.get("alt_links"), list) else ([(body.get("alt_link") or "").strip()] if (body.get("alt_link") or "").strip() else []),
@@ -158,6 +163,7 @@ async def office_create(request: Request):
         "find_date_in_infobox": form.get("date_source") == "find_date_in_infobox",
         "years_only": form.get("date_source") == "years_only",
         "parse_rowspan": form.get("parse_rowspan") == "1",
+        "consolidate_rowspan_terms": form.get("consolidate_rowspan_terms") == "1",
         "rep_link": form.get("rep_link") == "1",
         "party_link": form.get("party_link") == "1",
         "alt_links": alt_links,
@@ -259,6 +265,7 @@ async def office_update(request: Request, office_id: int):
         "find_date_in_infobox": form.get("date_source") == "find_date_in_infobox",
         "years_only": form.get("date_source") == "years_only",
         "parse_rowspan": form.get("parse_rowspan") == "1",
+        "consolidate_rowspan_terms": form.get("consolidate_rowspan_terms") == "1",
         "rep_link": form.get("rep_link") == "1",
         "party_link": form.get("party_link") == "1",
         "alt_links": alt_links,
@@ -318,6 +325,7 @@ async def office_duplicate(office_id: int):
         "find_date_in_infobox": bool(office.get("find_date_in_infobox")),
         "years_only": bool(office.get("years_only")),
         "parse_rowspan": bool(office.get("parse_rowspan")),
+        "consolidate_rowspan_terms": bool(office.get("consolidate_rowspan_terms")),
         "rep_link": bool(office.get("rep_link")),
         "party_link": bool(office.get("party_link")),
         "alt_links": db_offices.list_alt_links(office_id),
@@ -357,7 +365,10 @@ async def api_office_test_config(office_id: int):
     return JSONResponse({"ok": ok, "message": message})
 
 
-def _populate_job_worker(job_id: str, office_id: int):
+REVALIDATE_MSG_MISSING_HOLDERS = "New list is missing office holders that were in existing data. Kept existing terms."
+
+
+def _populate_job_worker(job_id: str, office_id: int, force_override: bool = False):
     def progress_callback(phase: str, current: int, total: int, message: str, extra: dict):
         with _populate_job_lock:
             if job_id in _populate_job_store:
@@ -382,8 +393,6 @@ def _populate_job_worker(job_id: str, office_id: int):
         return
     existing = db_office_terms.get_existing_terms_for_office(office_id)
     reprocessed = len(existing) > 0
-    if reprocessed:
-        db_office_terms.delete_office_terms_for_office(office_id)
     try:
         result = run_with_db(
             run_mode="delta",
@@ -393,6 +402,7 @@ def _populate_job_worker(job_id: str, office_id: int):
             office_ids=[office_id],
             progress_callback=progress_callback,
             cancel_check=cancel_check,
+            force_replace_office_ids=[office_id] if force_override else None,
         )
         terms_parsed = result.get("terms_parsed") or 0
         with _populate_job_lock:
@@ -408,10 +418,15 @@ def _populate_job_worker(job_id: str, office_id: int):
                 }
                 return
         err = result.get("message") or (result.get("error") if not result.get("office_count") else None)
+        revalidate_failed = result.get("revalidate_failed") and terms_parsed == 0
+        revalidate_msg = result.get("revalidate_message")
+        can_force_override = revalidate_msg == REVALIDATE_MSG_MISSING_HOLDERS
         with _populate_job_lock:
             if job_id in _populate_job_store:
                 _populate_job_store[job_id]["status"] = "complete"
-                if err and terms_parsed == 0:
+                if revalidate_failed and revalidate_msg:
+                    _populate_job_store[job_id]["result"] = {"ok": False, "message": revalidate_msg, "can_force_override": can_force_override}
+                elif err and terms_parsed == 0:
                     _populate_job_store[job_id]["result"] = {"ok": False, "message": err}
                 else:
                     msg = "Terms reprocessed (%s terms)." % terms_parsed if reprocessed else "Terms populated (%s terms)." % terms_parsed
@@ -424,11 +439,19 @@ def _populate_job_worker(job_id: str, office_id: int):
 
 
 @app.post("/api/offices/{office_id}/populate-terms")
-async def api_office_populate_terms(office_id: int):
-    """Start populate-terms job. Returns 202 with job_id; poll status endpoint for progress."""
+async def api_office_populate_terms(office_id: int, request: Request):
+    """Start populate-terms job. Returns 202 with job_id; poll status endpoint for progress.
+    Optional JSON body: {\"force_override\": true} to replace even when new list is missing existing holders."""
     office = db_offices.get_office(office_id)
     if not office:
         raise HTTPException(status_code=404, detail="Office not found")
+    force_override = False
+    if request.headers.get("content-type", "").strip().startswith("application/json"):
+        try:
+            body = await request.json()
+            force_override = body.get("force_override") in (True, 1, "true", "1")
+        except Exception:
+            pass
     job_id = str(uuid.uuid4())
     with _populate_job_lock:
         _populate_job_store[job_id] = {
@@ -443,7 +466,7 @@ async def api_office_populate_terms(office_id: int):
             "office_id": office_id,
             "cancelled": False,
         }
-    thread = threading.Thread(target=_populate_job_worker, args=(job_id, office_id))
+    thread = threading.Thread(target=_populate_job_worker, args=(job_id, office_id, force_override))
     thread.start()
     return JSONResponse({"job_id": job_id}, status_code=202)
 
@@ -863,7 +886,13 @@ async def api_preview(office_id: int):
 
 
 def _preview_job_worker(job_id: str, draft: dict, max_rows: int | None):
+    def cancel_check() -> bool:
+        with _preview_job_lock:
+            return _preview_job_store.get(job_id, {}).get("cancelled", False)
+
     def progress_callback(phase: str, current: int, total: int, message: str, extra: dict):
+        if cancel_check():
+            raise PreviewCancelled("Stopped.")
         with _preview_job_lock:
             if job_id in _preview_job_store:
                 _preview_job_store[job_id].update({
@@ -879,6 +908,11 @@ def _preview_job_worker(job_id: str, draft: dict, max_rows: int | None):
             if job_id in _preview_job_store:
                 _preview_job_store[job_id]["status"] = "complete"
                 _preview_job_store[job_id]["result"] = result
+    except PreviewCancelled:
+        with _preview_job_lock:
+            if job_id in _preview_job_store:
+                _preview_job_store[job_id]["status"] = "cancelled"
+                _preview_job_store[job_id]["result"] = {"cancelled": True, "message": "Stopped."}
     except Exception as e:
         with _preview_job_lock:
             if job_id in _preview_job_store:
@@ -926,6 +960,7 @@ async def api_preview_draft(request: Request):
                 "total": 1,
                 "message": "Starting preview…",
                 "extra": {},
+                "cancelled": False,
             }
         thread = threading.Thread(target=_preview_job_worker, args=(job_id, draft, max_rows))
         thread.start()
@@ -949,10 +984,23 @@ async def api_preview_status(job_id: str):
             "message": job.get("message", "Starting…"),
             "extra": job.get("extra", {}),
         }
-        if job["status"] in ("complete", "error"):
+        if job["status"] in ("complete", "error", "cancelled"):
             out["result"] = job.get("result")
             out["error"] = job.get("error")
     return JSONResponse(out)
+
+
+@app.post("/api/preview/cancel/{job_id}")
+async def api_preview_cancel(job_id: str):
+    """Request cancellation of an async preview job."""
+    with _preview_job_lock:
+        if job_id not in _preview_job_store:
+            raise HTTPException(status_code=404, detail="Job not found")
+        job = _preview_job_store[job_id]
+        if job.get("status") != "running":
+            return JSONResponse({"ok": False, "message": "Job is not running"}, status_code=409)
+        job["cancelled"] = True
+    return JSONResponse({"ok": True})
 
 
 @app.post("/api/preview-all-tables")
@@ -1067,6 +1115,7 @@ def _export_job_worker(job_id: str, office_name: str, config: dict):
             "find_date_in_infobox": _config_bool_export(config.get("find_date_in_infobox")),
             "years_only": _config_bool_export(config.get("years_only")),
             "parse_rowspan": _config_bool_export(config.get("parse_rowspan")),
+            "consolidate_rowspan_terms": _config_bool_export(config.get("consolidate_rowspan_terms")),
             "rep_link": _config_bool_export(config.get("rep_link")),
             "party_link": _config_bool_export(config.get("party_link")),
             "alt_links": config.get("alt_links") if isinstance(config.get("alt_links"), list) else [],
@@ -1386,6 +1435,7 @@ async def api_office_debug_export(request: Request):
                 "find_date_in_infobox": _config_bool(config.get("find_date_in_infobox")),
                 "years_only": _config_bool(config.get("years_only")),
                 "parse_rowspan": _config_bool(config.get("parse_rowspan")),
+                "consolidate_rowspan_terms": _config_bool(config.get("consolidate_rowspan_terms")),
                 "rep_link": _config_bool(config.get("rep_link")),
                 "party_link": _config_bool(config.get("party_link")),
                 "alt_links": config.get("alt_links") if isinstance(config.get("alt_links"), list) else [],

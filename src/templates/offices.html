@@ -53,6 +53,14 @@
       <option value="gt0">&gt;0</option>
     </select>
   </div>
+  <div class="form-group" style="margin:0; min-width:8rem;">
+    <label for="filterEnabled">On/Off</label>
+    <select id="filterEnabled" class="office-col-filter">
+      <option value="">Both</option>
+      <option value="1">On</option>
+      <option value="0">Off</option>
+    </select>
+  </div>
   <div class="form-group" style="margin:0;">
     <label>&nbsp;</label>
     <button type="button" id="removeFilters" class="btn btn-secondary btn-sm">Remove filters</button>
@@ -147,7 +155,8 @@
     var b = document.getElementById('filterBranch');
     var n = document.getElementById('filterName');
     var t = document.getElementById('filterTerms');
-    return (c && c.value !== '') || (s && s.value !== '') || (l && l.value !== '') || (b && b.value !== '') || (n && (n.value || '').trim().length > 0) || (t && t.value !== '');
+    var e = document.getElementById('filterEnabled');
+    return (c && c.value !== '') || (s && s.value !== '') || (l && l.value !== '') || (b && b.value !== '') || (n && (n.value || '').trim().length > 0) || (t && t.value !== '') || (e && e.value !== '');
   }
 
   var FILTER_STORAGE_KEY = 'office_holder_office_filters';
@@ -183,13 +192,15 @@
       var b = document.getElementById('filterBranch');
       var n = document.getElementById('filterName');
       var t = document.getElementById('filterTerms');
+      var e = document.getElementById('filterEnabled');
       var o = {
         country: (c && c.value) || '',
         state: (s && s.value) || '',
         level: (l && l.value) || '',
         branch: (b && b.value) || '',
         name: (n && n.value) ? n.value.trim() : '',
-        terms: (t && t.value) || ''
+        terms: (t && t.value) || '',
+        enabled: (e && e.value) || ''
       };
       sessionStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(o));
     } catch (e) {}
@@ -212,6 +223,8 @@
       if (n && o.name) n.value = o.name;
       var t = document.getElementById('filterTerms');
       if (t && o.terms && (o.terms === '' || o.terms === '0' || o.terms === 'gt0')) t.value = o.terms;
+      var e = document.getElementById('filterEnabled');
+      if (e && (o.enabled === undefined || o.enabled === '' || o.enabled === '0' || o.enabled === '1')) e.value = (o.enabled || '');
     } catch (e) {}
   }
 
@@ -223,12 +236,14 @@
     var b = document.getElementById('filterBranch');
     var n = document.getElementById('filterName');
     var t = document.getElementById('filterTerms');
+    var e = document.getElementById('filterEnabled');
     if (c) c.value = '';
     if (s) s.value = '';
     if (l) l.value = '';
     if (b) b.value = '';
     if (n) n.value = '';
     if (t) t.value = '';
+    if (e) e.value = '';
     applyFilter();
   }
 
@@ -239,6 +254,7 @@
     var selBranch = (document.getElementById('filterBranch') && document.getElementById('filterBranch').value) || '';
     var nameQ = (document.getElementById('filterName') && document.getElementById('filterName').value || '').trim().toLowerCase();
     var selTerms = (document.getElementById('filterTerms') && document.getElementById('filterTerms').value) || '';
+    var selEnabled = (document.getElementById('filterEnabled') && document.getElementById('filterEnabled').value) || '';
     document.querySelectorAll('#officesTable tbody tr[data-office-id]').forEach(function(tr) {
       var countryMatch = !selCountry || (tr.dataset.country || '') === selCountry;
       var stateMatch = !selState || (tr.dataset.state || '') === selState;
@@ -248,7 +264,10 @@
       var termsMatch = true;
       if (selTerms === '0') termsMatch = parseInt(tr.dataset.termsCount || '0', 10) === 0;
       else if (selTerms === 'gt0') termsMatch = parseInt(tr.dataset.termsCount || '0', 10) > 0;
-      tr.style.display = (countryMatch && stateMatch && levelMatch && branchMatch && nameMatch && termsMatch) ? '' : 'none';
+      var enabledMatch = true;
+      if (selEnabled === '1') enabledMatch = (tr.dataset.enabled || '') === '1';
+      else if (selEnabled === '0') enabledMatch = (tr.dataset.enabled || '') === '0';
+      tr.style.display = (countryMatch && stateMatch && levelMatch && branchMatch && nameMatch && termsMatch && enabledMatch) ? '' : 'none';
     });
     saveFilters();
     applyTopN();
@@ -435,11 +454,60 @@
     });
   });
 
-  function showPopulateResult(id, ok, message) {
+  function showPopulateResult(id, ok, message, canForceOverride) {
     var msgEl = document.querySelector('.office-populate-msg[data-office-id="' + id + '"]');
     if (!msgEl) return;
-    msgEl.textContent = message || (ok ? 'Done' : 'Failed');
+    msgEl.innerHTML = '';
+    msgEl.appendChild(document.createTextNode(message || (ok ? 'Done' : 'Failed')));
     msgEl.style.color = ok ? 'var(--success)' : 'var(--danger)';
+    if (canForceOverride) {
+      var forceBtn = document.createElement('button');
+      forceBtn.type = 'button';
+      forceBtn.className = 'btn btn-secondary btn-sm';
+      forceBtn.style.marginLeft = '0.25rem';
+      forceBtn.textContent = 'Force override';
+      forceBtn.onclick = function() {
+        forceBtn.disabled = true;
+        var msgE = document.querySelector('.office-populate-msg[data-office-id="' + id + '"]');
+        var stopB = document.querySelector('.office-populate-stop-btn[data-office-id="' + id + '"]');
+        if (msgE) msgE.textContent = 'Starting…';
+        fetch('/api/offices/' + id + '/populate-terms', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ force_override: true }) })
+          .then(function(r) { return r.json().then(function(d) { return { status: r.status, data: d }; }); })
+          .then(function(res) {
+            if (res.status === 202 && res.data.job_id) {
+              var jobId = res.data.job_id;
+              if (stopB) { stopB.style.display = 'inline-block'; stopB.disabled = false; stopB.onclick = function() { stopB.disabled = true; fetch('/api/offices/' + id + '/populate-terms/cancel/' + jobId, { method: 'POST' }).catch(function() {}); }; }
+              var pollF = function() {
+                fetch('/api/offices/' + id + '/populate-terms/status/' + jobId).then(function(r) { return r.json(); }).then(function(s) {
+                  if (msgE) msgE.textContent = s.message || 'Processing…';
+                  if (s.status === 'complete' || s.status === 'cancelled') {
+                    var r = s.result;
+                    showPopulateResult(id, r && r.ok, (r && r.message) ? r.message : (s.error || 'Done'), false);
+                    if (stopB) stopB.style.display = 'none';
+                    btn.disabled = false;
+                    if (window.playJobCompleteSound) window.playJobCompleteSound();
+                    return;
+                  }
+                  if (s.status === 'error') {
+                    showPopulateResult(id, false, s.error || 'Failed', false);
+                    if (stopB) stopB.style.display = 'none';
+                    btn.disabled = false;
+                    if (window.playJobCompleteSound) window.playJobCompleteSound();
+                    return;
+                  }
+                  setTimeout(pollF, 800);
+                }).catch(function() { showPopulateResult(id, false, 'Request failed', false); btn.disabled = false; if (stopB) stopB.style.display = 'none'; if (window.playJobCompleteSound) window.playJobCompleteSound(); });
+              };
+              pollF();
+            } else {
+              showPopulateResult(id, false, res.data.detail || res.data.message || 'Failed to start', false);
+              forceBtn.disabled = false;
+            }
+          }).catch(function() { showPopulateResult(id, false, 'Request failed', false); forceBtn.disabled = false; });
+      };
+      msgEl.appendChild(document.createTextNode(' '));
+      msgEl.appendChild(forceBtn);
+    }
   }
   document.querySelectorAll('.office-populate-terms-btn').forEach(function(btn) {
     btn.addEventListener('click', function() {
@@ -473,9 +541,9 @@
                   if (s.status === 'complete' || s.status === 'cancelled') {
                     var r = s.result;
                     if (r && r.ok) {
-                      showPopulateResult(id, true, r.message);
+                      showPopulateResult(id, true, r.message, false);
                     } else {
-                      showPopulateResult(id, false, (r && r.message) ? r.message : s.error || 'Failed');
+                      showPopulateResult(id, false, (r && r.message) ? r.message : s.error || 'Failed', r && r.can_force_override);
                     }
                     btn.disabled = false;
                     if (stopBtn) stopBtn.style.display = 'none';
@@ -629,10 +697,12 @@
     function fetchNext() {
       if (previewAllStopped) {
         content.innerHTML = '<p>Stopped.</p>' + renderResults(results);
+        if (window.playJobCompleteSound) window.playJobCompleteSound();
         return;
       }
       if (index >= total) {
         content.innerHTML = renderResults(results);
+        if (window.playJobCompleteSound) window.playJobCompleteSound();
         return;
       }
       content.innerHTML = '<p>Loading… ' + (index + 1) + ' of ' + total + ' tables</p><button type="button" class="btn btn-secondary btn-sm" id="previewAllStopBtn">Stop</button>';
@@ -651,6 +721,7 @@
           index++;
           if (previewAllStopped) {
             content.innerHTML = '<p>Stopped.</p>' + renderResults(results);
+            if (window.playJobCompleteSound) window.playJobCompleteSound();
             return;
           }
           if (index < total) {
@@ -658,21 +729,27 @@
             fetchNext();
           } else {
             content.innerHTML = renderResults(results);
+            if (window.playJobCompleteSound) window.playJobCompleteSound();
           }
         })
         .catch(function(err) {
           if (err.name === 'AbortError') {
             content.innerHTML = '<p>Stopped.</p>' + renderResults(results);
+            if (window.playJobCompleteSound) window.playJobCompleteSound();
             return;
           }
           results.push({ office_id: officeIds[index], name: null, url: null, error: 'Request failed', preview_rows: null, raw_table_preview: null });
           index++;
           if (previewAllStopped) {
             content.innerHTML = '<p>Stopped.</p>' + renderResults(results);
+            if (window.playJobCompleteSound) window.playJobCompleteSound();
             return;
           }
           if (index < total) fetchNext();
-          else content.innerHTML = renderResults(results);
+          else {
+            content.innerHTML = renderResults(results);
+            if (window.playJobCompleteSound) window.playJobCompleteSound();
+          }
         });
     }
     fetchNext();
