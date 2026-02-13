@@ -70,17 +70,24 @@ class DataCleanup:
                 continue  # Try the next pattern if parsing fails
 
 
-    # Fallback: dateutil.parser for flexible parsing (e.g. "18 June 1798", "4 March 1809")
+    # Never use today for missing parts: year-only must not become a full date; use imprecise path instead.
+    s = date_str.strip() if date_str else ""
+    if re.match(r"^\s*(17|18|19|20)\d{2}\s*$", s):
+        self.Logger.debug_log("year-only date in format_date; returning Invalid date so year+imprecise path is used", True)
+        return "Invalid date"
+
+    # Fallback: dateutil.parser for flexible parsing (e.g. "18 June 1798", "4 March 1809"). Use fixed default so missing day/month are never today.
+    _parse_default = datetime(2000, 1, 1)
     try:
-        parsed = parse(date_str.strip())
+        parsed = parse(s, default=_parse_default)
         if parsed:
-            return parsed.strftime('%Y-%m-%d')
+            return parsed.strftime("%Y-%m-%d")
     except (ValueError, TypeError):
         pass
 
     # If no date is found or if it cannot be parsed, return a default value
     self.Logger.debug_log( f"invalid date in {date_str}" , True )
-    return 'Invalid date'
+    return "Invalid date"
 
 
   def parse_date_info( self , date_str, date_type ):
@@ -149,8 +156,18 @@ class DataCleanup:
                     self.Logger.debug_log(f"Found match within pattern {pattern.pattern}" , True )
                     start_date_str = match.group(1)  # The start date
                     end_date_str = match.group(4)  # The end date
-                    start_date = parse(start_date_str).strftime('%Y-%m-%d') if start_date_str else 'Invalid date'
-                    end_date = parse(end_date_str).strftime('%Y-%m-%d') if end_date_str else 'Invalid date'
+                    _def = datetime(2000, 1, 1)  # Never use today for missing parts
+                    def _safe_parse(s):
+                        if not s or not s.strip():
+                            return "Invalid date"
+                        if re.match(r"^\s*(17|18|19|20)\d{2}\s*$", s.strip()):
+                            return "Invalid date"
+                        try:
+                            return parse(s.strip(), default=_def).strftime("%Y-%m-%d")
+                        except (ValueError, TypeError):
+                            return "Invalid date"
+                    start_date = _safe_parse(start_date_str)
+                    end_date = _safe_parse(end_date_str)
                     self.Logger.debug_log(f"Birth date: {start_date}, Death date: {end_date}" , True )
                     if date_type == 'both':
                         return (start_date, end_date)
@@ -832,9 +849,15 @@ class Offices:
         self.Logger.debug_log( f" find_term_dates returned {len(terms_list)} term(s) from infobox" , True )
         # When infobox had no dates (placeholder), use table years only for this record (same as "table has years only")
         if len(terms_list) == 1 and terms_list[0][0] == "YYYY-00-00" and terms_list[0][1] == "YYYY-00-00":
-          cell_text = cells[term_start_column].get_text(separator=' ').strip()
-          term_start_year, term_end_year = self.DataCleanup.parse_year_range(cell_text)
-          self.Logger.debug_log( f" find_date_in_infobox: no infobox dates; using table years only for this record {term_start_year}–{term_end_year} from {cell_text!r}" , True )
+          cell_text_start = cells[term_start_column].get_text(separator=' ').strip()
+          same_column = (term_start_column == term_end_column)
+          cell_text_end = cells[term_end_column].get_text(separator=' ').strip() if not same_column and term_end_column < len(cells) else None
+          term_start_year, term_end_year = self.DataCleanup.parse_year_range(cell_text_start)
+          # When start and end are in different columns, parse end cell for term_end_year instead of reusing start
+          if not same_column and cell_text_end is not None:
+              _sy_end, _ey_end = self.DataCleanup.parse_year_range(cell_text_end)
+              term_end_year = _ey_end if _ey_end is not None else _sy_end
+          self.Logger.debug_log( f" find_date_in_infobox: no infobox dates; using table years only for this record {term_start_year}–{term_end_year} from {cell_text_start!r}" , True )
           return [(None, None, term_start_year, term_end_year)]
         return [(s, e, None, None) for (s, e) in terms_list]
 
@@ -1256,18 +1279,22 @@ class Biography:
       encoded_state = quote(state)
       district = district.lower()
 
-      alt_link = table_config_to_parse.get("alt_link")
-      alt_ok = alt_link is not None and str(alt_link).strip().lower() not in ("", "none")
+      # Build list of partial URLs to try (main and/or alt_links); then build match_candidates from all
+      urls_to_try = []
       if table_config_to_parse["rep_link"] == True:
-        office_partial_url = f"/wiki/United_States_House_of_Representatives"
-        self.Logger.debug_log(f"Running find_term_dates for {wiki_link} with congressional URL {office_partial_url}", True )
-      elif alt_ok:
-        office_partial_url = urlparse(alt_link).path
-        self.Logger.debug_log(f"Running find_term_dates for {wiki_link} with alt_link URL {office_partial_url}", True )
+        urls_to_try = [f"/wiki/United_States_House_of_Representatives"]
+        self.Logger.debug_log(f"Running find_term_dates for {wiki_link} with congressional URL", True )
       else:
-        office_partial_url = urlparse(url).path
-        self.Logger.debug_log(f"Running find_term_dates for {wiki_link} with office URL {office_partial_url}", True )
-
+        alt_links = table_config_to_parse.get("alt_links") or []
+        alt_ok = bool(alt_links)
+        if alt_ok:
+          urls_to_try = [(p if p.startswith("/") else "/wiki/" + p.lstrip("/")) for p in alt_links if (p or "").strip()]
+          if table_config_to_parse.get("alt_link_include_main"):
+            urls_to_try = urls_to_try + [urlparse(url).path]
+          self.Logger.debug_log(f"Running find_term_dates for {wiki_link} with alt_links %r" % (urls_to_try[:3],), True )
+        if not urls_to_try:
+          urls_to_try = [urlparse(url).path]
+          self.Logger.debug_log(f"Running find_term_dates for {wiki_link} with office URL {urls_to_try[0]}", True )
 
       current_office_holder = [ "assumed office" , "incumbent" , "invalid date" ]
 
@@ -1287,7 +1314,6 @@ class Biography:
 
               if infobox:
                   self.Logger.debug_log( f"Found infobox \n {infobox}" , True )
-                  # Normalize infobox hrefs (e.g. ./Attorney_General_of_Alabama) so they match office_partial_url
                   def _normalize_infobox_href(href: str) -> str:
                       if not href:
                           return ""
@@ -1299,42 +1325,51 @@ class Biography:
                       if h.startswith("/"):
                           return "/wiki" + h
                       return "/wiki/" + h
-                  office_slug = (office_partial_url or "").rstrip("/").split("/")[-1]
-                  # Person infoboxes may link to either "X_of_State" or "State_X" form. Derive generically.
-                  office_slug_alt = None
-                  office_slug_alt2 = None
-                  _slug_to_check = office_slug
-                  if office_slug.startswith("List_of_"):
-                      _slug_to_check = office_slug[len("List_of_"):]
-                      office_slug_alt = _slug_to_check  # match list-style rest if infobox links to it
-                  if "_of_" in _slug_to_check:
-                      parts = _slug_to_check.rsplit("_of_", 1)
-                      prefix, state_part = parts[0], parts[1]
-                      office_slug_alt2 = state_part + "_" + prefix
-                      # List pages often use plural prefix (e.g. secretaries_of_state); infobox may use singular.
-                      if office_slug.startswith("List_of_") and prefix:
-                          _segments = prefix.split("_")
-                          _title_parts = [
-                              "of" if p.lower() == "of" else (p.title() if p.islower() else p)
-                              for p in _segments
-                          ]
-                          if _title_parts:
-                              _first = _title_parts[0].lower()
-                              if _first.endswith("ies") and len(_first) > 3:
-                                  _title_parts[0] = (_first[:-3] + "y").title()
-                              elif _first.endswith("s") and not _first.endswith("ss") and len(_first) > 1:
-                                  _title_parts[0] = (_first[:-1]).title()
-                              _title = "_".join(_title_parts)
-                              if _title != prefix:
-                                  office_slug_alt = (office_slug_alt or prefix + "_of_" + state_part)
-                                  office_slug_alt2 = state_part + "_" + _title
-                  # #region agent log
-                  try:
-                      _log_path = Path(__file__).resolve().parent.parent.parent / ".cursor" / "debug.log"
-                      open(_log_path, "a", encoding="utf-8").write(json.dumps({"location": "table_parser:find_term_dates", "message": "office_slugs", "data": {"office_partial_url": office_partial_url, "office_slug": office_slug, "office_slug_alt": office_slug_alt, "office_slug_alt2": office_slug_alt2}, "timestamp": __import__("time").time() * 1000, "hypothesisId": "infobox_match"}) + "\n")
-                  except Exception:
-                      pass
-                  # #endregion
+                  def _slug_variants_for_path(partial_url: str) -> set:
+                      """Return set of lowercased strings to match (path, slug, slug_alt, slug_alt2)."""
+                      s = set()
+                      path = (partial_url or "").strip()
+                      if not path:
+                          return s
+                      path_lower = path.lower()
+                      s.add(path_lower)
+                      office_slug = path.rstrip("/").split("/")[-1]
+                      if office_slug:
+                          s.add(office_slug.lower())
+                      office_slug_alt = None
+                      office_slug_alt2 = None
+                      _slug_to_check = office_slug
+                      if office_slug.startswith("List_of_"):
+                          _slug_to_check = office_slug[len("List_of_"):]
+                          office_slug_alt = _slug_to_check
+                      if "_of_" in _slug_to_check:
+                          parts = _slug_to_check.rsplit("_of_", 1)
+                          prefix, state_part = parts[0], parts[1]
+                          office_slug_alt2 = state_part + "_" + prefix
+                          if office_slug.startswith("List_of_") and prefix:
+                              _segments = prefix.split("_")
+                              _title_parts = [
+                                  "of" if p.lower() == "of" else (p.title() if p.islower() else p)
+                                  for p in _segments
+                              ]
+                              if _title_parts:
+                                  _first = _title_parts[0].lower()
+                                  if _first.endswith("ies") and len(_first) > 3:
+                                      _title_parts[0] = (_first[:-3] + "y").title()
+                                  elif _first.endswith("s") and not _first.endswith("ss") and len(_first) > 1:
+                                      _title_parts[0] = (_first[:-1]).title()
+                                  _title = "_".join(_title_parts)
+                                  if _title != prefix:
+                                      office_slug_alt = (office_slug_alt or prefix + "_of_" + state_part)
+                                      office_slug_alt2 = state_part + "_" + _title
+                      if office_slug_alt:
+                          s.add(office_slug_alt.lower())
+                      if office_slug_alt2:
+                          s.add(office_slug_alt2.lower())
+                      return s
+                  match_candidates = set()
+                  for partial_url in urls_to_try:
+                      match_candidates |= _slug_variants_for_path(partial_url)
                   all_terms = []  # Collect all matching term (start, end) from every matching row in the infobox
                   for tr in infobox.find_all('tr'):
                       self.Logger.debug_log( f"found tr \n {tr}" , True )
@@ -1342,15 +1377,11 @@ class Biography:
                       row_text = tr.get_text(" ", strip=True)
                       raw_href = a.get("href", "") if a else ""
                       norm_path = _normalize_infobox_href(raw_href)
-                      link_matches = a and (
-                          office_partial_url in norm_path
-                          or (office_slug and office_slug in norm_path)
-                          or (office_slug_alt and office_slug_alt in norm_path)
-                          or (office_slug_alt2 and office_slug_alt2 in norm_path)
-                      )
+                      norm_path_lower = (norm_path or "").lower()
+                      link_matches = a and any(cand in norm_path_lower for cand in match_candidates)
                       if link_matches:
                           # Examine the next two sibling rows for date information
-                          self.Logger.debug_log( f"found match. starting to iterate on {office_partial_url}" , True )
+                          self.Logger.debug_log( f"found match. starting to iterate" , True )
                           tr_cur = tr
                           row_desc = "Office row: %r" % (row_text[:80] + ("..." if len(row_text) > 80 else ""))
                           term_added_this_tr = False

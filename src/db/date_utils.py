@@ -5,12 +5,15 @@ import re
 _VALID_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
+_PLACEHOLDER_DATE_STRINGS = frozenset({"present", "n/a", "incumbent", "invalid date"})
+
+
 def normalize_date(value: str | None) -> tuple[str | None, bool]:
-    """Return (date_or_none, imprecise). If value is invalid or not YYYY-MM-DD, return (None, True)."""
+    """Return (date_or_none, imprecise). If value is invalid or not YYYY-MM-DD, return (None, True). Never use today's date."""
     if value is None or (isinstance(value, str) and value.strip() == ""):
         return (None, True)
     s = value.strip()
-    if s == "Invalid date":
+    if s.lower() in _PLACEHOLDER_DATE_STRINGS:
         return (None, True)
     if not _VALID_DATE.match(s):
         return (None, True)

@@ -20,7 +20,8 @@ def test_office_config(office_row: dict) -> tuple[bool, str]:
     if not url:
         return (False, "No URL configured")
 
-    table_config = db_offices.office_row_to_table_config(office_row)
+    alt_links = office_row.get("alt_links") if "alt_links" in office_row else (db_offices.list_alt_links(office_row["id"]) if office_row.get("id") else [])
+    table_config = db_offices.office_row_to_table_config(office_row, alt_links=alt_links)
     table_no = int(table_config.get("table_no", 1))
 
     result = get_table_html_cached(url, table_no, refresh=False)

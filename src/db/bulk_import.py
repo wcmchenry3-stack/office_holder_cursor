@@ -100,7 +100,8 @@ def bulk_import_offices_from_csv(
                         "parse_rowspan": _bool_from_cell(row.get("Parse Rowspan")),
                         "rep_link": _bool_from_cell(row.get("Rep Link")),
                         "party_link": _bool_from_cell(row.get("Party Link")),
-                        "alt_link": (row.get("Alt Link") or "").strip() or None,
+                        "alt_links": [x.strip() for x in (row.get("Alt Link") or "").split(",") if x.strip()],
+                        "alt_link_include_main": _bool_from_cell(row.get("Alt Link Include Main")),
                     }
                     if not data["url"] or not data["name"]:
                         errors += 1

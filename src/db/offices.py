@@ -3,6 +3,7 @@
 import sqlite3
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from .connection import get_connection, get_db_path
 from .utils import _row_to_dict
@@ -84,7 +85,7 @@ def list_offices(conn: sqlite3.Connection | None = None) -> list[dict[str, Any]]
                       o.table_no, o.table_rows, o.link_column, o.party_column,
                       o.term_start_column, o.term_end_column, o.district_column,
                       o.dynamic_parse, o.read_right_to_left, o.find_date_in_infobox,
-                      o.parse_rowspan, o.rep_link, o.party_link, o.alt_link,
+                      o.parse_rowspan, o.rep_link, o.party_link, o.alt_link_include_main,
                       o.use_full_page_for_table, o.years_only,
                       o.term_dates_merged, o.party_ignore, o.district_ignore, o.district_at_large,
                       o.created_at
@@ -154,7 +155,7 @@ def create_office(data: dict[str, Any], conn: sqlite3.Connection | None = None) 
                 url, table_no, table_rows, link_column, party_column,
                 term_start_column, term_end_column, district_column,
                 dynamic_parse, read_right_to_left, find_date_in_infobox,
-                parse_rowspan, rep_link, party_link, alt_link, use_full_page_for_table, years_only,
+                parse_rowspan, rep_link, party_link, alt_link_include_main, use_full_page_for_table, years_only,
                 term_dates_merged, party_ignore, district_ignore, district_at_large
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
@@ -164,7 +165,7 @@ def create_office(data: dict[str, Any], conn: sqlite3.Connection | None = None) 
                 int(row_data.get("branch_id") or 0) or None,
                 row_data.get("department") or "",
                 row_data.get("name") or "",
-                1 if row_data.get("enabled") in (True, 1, "TRUE", "true", "1") else 1,
+                1 if row_data.get("enabled") in (True, 1, "TRUE", "true", "1") else 0,
                 row_data.get("notes") or "",
                 row_data.get("url") or "",
                 int(row_data.get("table_no", 1)),
@@ -180,7 +181,7 @@ def create_office(data: dict[str, Any], conn: sqlite3.Connection | None = None) 
                 1 if row_data.get("parse_rowspan") in (True, 1, "TRUE", "true", "1") else 0,
                 1 if row_data.get("rep_link") in (True, 1, "TRUE", "true", "1") else 0,
                 1 if row_data.get("party_link") in (True, 1, "TRUE", "true", "1") else 0,
-                row_data.get("alt_link") or None,
+                1 if row_data.get("alt_link_include_main") in (True, 1, "TRUE", "true", "1") else 0,
                 1 if row_data.get("use_full_page_for_table") in (True, 1, "TRUE", "true", "1") else 0,
                 1 if row_data.get("years_only") in (True, 1, "TRUE", "true", "1") else 0,
                 1 if term_dates_merged else 0,
@@ -190,7 +191,9 @@ def create_office(data: dict[str, Any], conn: sqlite3.Connection | None = None) 
             ),
         )
         conn.commit()
-        return cur.lastrowid
+        new_id = cur.lastrowid
+        set_alt_links_for_office(new_id, row_data.get("alt_links") or [], conn=conn)
+        return new_id
     finally:
         if own_conn:
             conn.close()
@@ -230,7 +233,7 @@ def update_office(office_id: int, data: dict[str, Any], conn: sqlite3.Connection
                 url=?, table_no=?, table_rows=?, link_column=?, party_column=?,
                 term_start_column=?, term_end_column=?, district_column=?,
                 dynamic_parse=?, read_right_to_left=?, find_date_in_infobox=?,
-                parse_rowspan=?, rep_link=?, party_link=?, alt_link=?, use_full_page_for_table=?, years_only=?,
+                parse_rowspan=?, rep_link=?, party_link=?, alt_link_include_main=?, use_full_page_for_table=?, years_only=?,
                 term_dates_merged=?, party_ignore=?, district_ignore=?, district_at_large=?
             WHERE id=?""",
             (
@@ -256,7 +259,7 @@ def update_office(office_id: int, data: dict[str, Any], conn: sqlite3.Connection
                 1 if row_data.get("parse_rowspan") in (True, 1, "TRUE", "true", "1") else 0,
                 1 if row_data.get("rep_link") in (True, 1, "TRUE", "true", "1") else 0,
                 1 if row_data.get("party_link") in (True, 1, "TRUE", "true", "1") else 0,
-                row_data.get("alt_link") or None,
+                1 if row_data.get("alt_link_include_main") in (True, 1, "TRUE", "true", "1") else 0,
                 1 if row_data.get("use_full_page_for_table") in (True, 1, "TRUE", "true", "1") else 0,
                 1 if row_data.get("years_only") in (True, 1, "TRUE", "true", "1") else 0,
                 1 if term_dates_merged else 0,
@@ -267,6 +270,7 @@ def update_office(office_id: int, data: dict[str, Any], conn: sqlite3.Connection
             ),
         )
         conn.commit()
+        set_alt_links_for_office(office_id, row_data.get("alt_links") or [], conn=conn)
         return cur.rowcount > 0
     finally:
         if own_conn:
@@ -302,11 +306,12 @@ def set_all_offices_enabled(enabled: bool, conn: sqlite3.Connection | None = Non
 
 
 def delete_office(office_id: int, conn: sqlite3.Connection | None = None) -> bool:
-    """Delete office by id. Returns True if a row was deleted."""
+    """Delete office by id (and its alt_links). Returns True if a row was deleted."""
     own_conn = conn is None
     if own_conn:
         conn = get_connection()
     try:
+        conn.execute("DELETE FROM alt_links WHERE office_id = ?", (office_id,))
         cur = conn.execute("DELETE FROM offices WHERE id = ?", (office_id,))
         conn.commit()
         return cur.rowcount > 0
@@ -315,24 +320,64 @@ def delete_office(office_id: int, conn: sqlite3.Connection | None = None) -> boo
             conn.close()
 
 
+def list_alt_links(office_id: int, conn: sqlite3.Connection | None = None) -> list[str]:
+    """Return list of link_path strings for the office (from alt_links table)."""
+    own_conn = conn is None
+    if own_conn:
+        conn = get_connection()
+    try:
+        cur = conn.execute(
+            "SELECT link_path FROM alt_links WHERE office_id = ? ORDER BY id",
+            (office_id,),
+        )
+        return [row["link_path"] for row in cur.fetchall()]
+    finally:
+        if own_conn:
+            conn.close()
+
+
+def set_alt_links_for_office(office_id: int, paths: list[str], conn: sqlite3.Connection | None = None) -> None:
+    """Replace all alt links for the office with the given list of paths (normalized)."""
+    own_conn = conn is None
+    if own_conn:
+        conn = get_connection()
+    try:
+        conn.execute("DELETE FROM alt_links WHERE office_id = ?", (office_id,))
+        for raw in paths:
+            path = _normalize_alt_link_path(raw)
+            if path:
+                conn.execute(
+                    "INSERT OR IGNORE INTO alt_links (office_id, link_path) VALUES (?, ?)",
+                    (office_id, path),
+                )
+        conn.commit()
+    finally:
+        if own_conn:
+            conn.close()
+
+
+def _normalize_alt_link_path(raw: Any) -> str:
+    """Normalize to a path (e.g. /wiki/Foo)."""
+    if raw is None:
+        return ""
+    s = str(raw).strip()
+    if not s or s.lower() in ("none", ""):
+        return ""
+    if s.startswith("http"):
+        return urlparse(s).path or ""
+    if not s.startswith("/"):
+        return "/wiki/" + s.lstrip("/")
+    return s if s.startswith("/wiki/") else "/wiki/" + s.lstrip("/")
+
+
 def _col_1based_to_0based(val: Any) -> int:
     """CSV/DB: 1-based column index; 0 means 'no column'. Scraper: 0-based; use -1 for none."""
     v = int(val or 0)
     return (v - 1) if v > 0 else -1
 
 
-def _alt_link_for_config(value: Any) -> str | None:
-    """Return alt_link for table_config; treat empty or literal 'None' as unset."""
-    if value is None:
-        return None
-    s = str(value).strip().lower()
-    if s in ("", "none"):
-        return None
-    return value if isinstance(value, str) else str(value)
-
-
-def office_row_to_table_config(row: dict[str, Any]) -> dict[str, Any]:
-    """Convert DB office row to scraper table_config format (0-based columns, booleans)."""
+def office_row_to_table_config(row: dict[str, Any], alt_links: list[str] | None = None) -> dict[str, Any]:
+    """Convert DB office row to scraper table_config format (0-based columns, booleans). alt_links from list_alt_links(office_id)."""
     return {
         "table_no": int(row["table_no"]),
         "table_rows": int(row["table_rows"]),
@@ -348,7 +393,8 @@ def office_row_to_table_config(row: dict[str, Any]) -> dict[str, Any]:
         "parse_rowspan": bool(row.get("parse_rowspan")),
         "rep_link": bool(row.get("rep_link")),
         "party_link": bool(row.get("party_link")),
-        "alt_link": _alt_link_for_config(row.get("alt_link")),
+        "alt_links": list(alt_links) if alt_links is not None else [],
+        "alt_link_include_main": bool(row.get("alt_link_include_main")),
         "term_dates_merged": bool(row.get("term_dates_merged")),
         "party_ignore": bool(row.get("party_ignore")),
         "district_ignore": bool(row.get("district_ignore")),

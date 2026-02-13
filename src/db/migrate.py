@@ -56,6 +56,8 @@ def migrate_to_fk(conn=None):
         _migrate_offices_parsing_options(conn)
         # Add is_dead_link to individuals if missing
         _migrate_individuals_dead_link(conn)
+        # Alt links: new table, backfill from offices.alt_link, verify, then drop offices.alt_link
+        _migrate_alt_links(conn)
     finally:
         if own_conn:
             conn.close()
@@ -311,3 +313,124 @@ def _migrate_individuals_dead_link(conn):
     if "is_dead_link" not in ind_cols:
         conn.execute("ALTER TABLE individuals ADD COLUMN is_dead_link INTEGER NOT NULL DEFAULT 0")
         conn.commit()
+
+
+def _normalize_alt_link_path(raw: str) -> str:
+    """Normalize alt link to a path (e.g. /wiki/Foo or /wiki/Bar)."""
+    if not raw or not isinstance(raw, str):
+        return ""
+    s = raw.strip()
+    if not s or s.lower() in ("none", ""):
+        return ""
+    if s.startswith("http"):
+        from urllib.parse import urlparse
+        return urlparse(s).path or ""
+    if not s.startswith("/"):
+        return "/wiki/" + s.lstrip("/")
+    return s if s.startswith("/wiki/") else "/wiki/" + s.lstrip("/")
+
+
+def _migrate_alt_links(conn):
+    """
+    1) Create alt_links table if missing.
+    2) Add alt_link_include_main to offices if missing.
+    3) If offices has alt_link: backfill into alt_links (split comma/newline), verify, then drop alt_link column.
+    """
+    import re
+    offices_cols = _columns(conn, "offices")
+
+    # Ensure alt_links table exists (schema may have created it; CREATE IF NOT EXISTS for old DBs)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS alt_links (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            office_id INTEGER NOT NULL REFERENCES offices(id),
+            link_path TEXT NOT NULL,
+            UNIQUE(office_id, link_path)
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_alt_links_office_id ON alt_links(office_id)")
+
+    # Add alt_link_include_main to offices if missing
+    if "alt_link_include_main" not in offices_cols:
+        conn.execute("ALTER TABLE offices ADD COLUMN alt_link_include_main INTEGER NOT NULL DEFAULT 0")
+        conn.commit()
+
+    if "alt_link" not in offices_cols:
+        conn.commit()
+        return
+
+    # Backfill: copy offices.alt_link into alt_links (split on comma and newline)
+    for row in conn.execute("SELECT id, alt_link FROM offices WHERE alt_link IS NOT NULL AND trim(alt_link) != ''").fetchall():
+        office_id = row["id"]
+        raw = (row["alt_link"] or "").strip()
+        if not raw:
+            continue
+        parts = re.split(r"[,\n]+", raw)
+        for part in parts:
+            path = _normalize_alt_link_path(part)
+            if path:
+                try:
+                    conn.execute("INSERT OR IGNORE INTO alt_links (office_id, link_path) VALUES (?, ?)", (office_id, path))
+                except Exception:
+                    pass
+    conn.commit()
+
+    # Verify: every office that had non-empty alt_link must have at least one row in alt_links
+    count_offices_with_alt = conn.execute(
+        "SELECT COUNT(*) FROM offices WHERE alt_link IS NOT NULL AND trim(alt_link) != ''"
+    ).fetchone()[0]
+    count_alt_rows = conn.execute("SELECT COUNT(*) FROM alt_links").fetchone()[0]
+    # If any office had alt_link, we must have at least that many rows (each office >= 1)
+    if count_offices_with_alt > 0 and count_alt_rows < count_offices_with_alt:
+        # Verification failed: do not drop alt_link (backfill already committed)
+        return
+
+    # Drop alt_link: create offices_new without alt_link, copy data, replace
+    all_cols = _columns(conn, "offices")
+    cols_without_alt = [c for c in all_cols if c != "alt_link"]
+    cols_without_alt_set = set(cols_without_alt)
+
+    conn.execute("""
+        CREATE TABLE offices_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            country_id INTEGER NOT NULL REFERENCES countries(id),
+            state_id INTEGER REFERENCES states(id),
+            level_id INTEGER REFERENCES levels(id),
+            branch_id INTEGER REFERENCES branches(id),
+            department TEXT,
+            name TEXT NOT NULL,
+            enabled INTEGER NOT NULL DEFAULT 1,
+            notes TEXT,
+            url TEXT NOT NULL,
+            table_no INTEGER NOT NULL DEFAULT 1,
+            table_rows INTEGER NOT NULL DEFAULT 4,
+            link_column INTEGER NOT NULL DEFAULT 1,
+            party_column INTEGER NOT NULL DEFAULT 0,
+            term_start_column INTEGER NOT NULL DEFAULT 4,
+            term_end_column INTEGER NOT NULL DEFAULT 5,
+            district_column INTEGER NOT NULL DEFAULT 0,
+            dynamic_parse INTEGER NOT NULL DEFAULT 1,
+            read_right_to_left INTEGER NOT NULL DEFAULT 0,
+            find_date_in_infobox INTEGER NOT NULL DEFAULT 0,
+            parse_rowspan INTEGER NOT NULL DEFAULT 0,
+            rep_link INTEGER NOT NULL DEFAULT 0,
+            party_link INTEGER NOT NULL DEFAULT 0,
+            alt_link_include_main INTEGER NOT NULL DEFAULT 0,
+            use_full_page_for_table INTEGER NOT NULL DEFAULT 0,
+            years_only INTEGER NOT NULL DEFAULT 0,
+            term_dates_merged INTEGER NOT NULL DEFAULT 0,
+            party_ignore INTEGER NOT NULL DEFAULT 0,
+            district_ignore INTEGER NOT NULL DEFAULT 0,
+            district_at_large INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT DEFAULT (datetime('now'))
+        )
+    """)
+    sel = ", ".join(c for c in all_cols if c != "alt_link")
+    conn.execute(f"INSERT INTO offices_new ({sel}) SELECT {sel} FROM offices")
+    conn.execute("DROP TABLE offices")
+    conn.execute("ALTER TABLE offices_new RENAME TO offices")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_offices_country_id ON offices(country_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_offices_state_id ON offices(state_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_offices_level_id ON offices(level_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_offices_branch_id ON offices(branch_id)")
+    conn.commit()
