@@ -53,7 +53,7 @@ def bulk_import_offices_from_csv(
     """Import office rows from CSV. Returns (imported_count, error_count).
     CSV must have headers: Country, Level, Branch, Department, Name, State, URL,
     Table No, Table Rows, Link Column, Party Column, Term Start Column, Term End Column,
-    District, Dynamic Parse, Read columns right to left, Find Date, Parse Rowspan,
+    District, Dynamic Parse, Read columns right to left, Find Date, Parse Rowspan, Consolidate Rowspan Terms,
     Rep Link, Party Link, Notes, Alt Link.
     """
     csv_path = Path(csv_path)
@@ -98,6 +98,7 @@ def bulk_import_offices_from_csv(
                         "find_date_in_infobox": _bool_from_cell(row.get("Find Date")),
                         "years_only": _bool_from_cell(row.get("Years Only")),
                         "parse_rowspan": _bool_from_cell(row.get("Parse Rowspan")),
+                        "consolidate_rowspan_terms": _bool_from_cell(row.get("Consolidate Rowspan Terms")),
                         "rep_link": _bool_from_cell(row.get("Rep Link")),
                         "party_link": _bool_from_cell(row.get("Party Link")),
                         "alt_links": [x.strip() for x in (row.get("Alt Link") or "").split(",") if x.strip()],

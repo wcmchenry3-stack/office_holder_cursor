@@ -3,7 +3,7 @@
 import copy
 import json
 import re
-from datetime import datetime
+from datetime import datetime, date
 from pathlib import Path
 from urllib.parse import urlparse, quote
 
@@ -12,6 +12,80 @@ import requests
 from src.scraper.wiki_fetch import WIKIPEDIA_REQUEST_HEADERS, normalize_wiki_url, wiki_url_to_rest_html_url
 from bs4 import BeautifulSoup
 from dateutil.parser import parse
+
+
+def _parse_date(s):
+  """Parse term date string to date or None. Handles None, 'Invalid date', and YYYY-MM-DD."""
+  if not s or (isinstance(s, str) and s.strip() in ("", "Invalid date")):
+    return None
+  try:
+    if isinstance(s, date):
+      return s
+    if isinstance(s, datetime):
+      return s.date()
+    parsed = parse(str(s).strip(), default=datetime(2000, 1, 1))
+    return parsed.date() if parsed else None
+  except (ValueError, TypeError):
+    return None
+
+
+def _dates_from_cell_data_sort_value(cell):
+  """Extract (start_str, end_str) from data-sort-value in cell (Wikipedia sortable tables). Returns (None, None) if none found."""
+  if cell is None:
+    return (None, None)
+  # Find all elements with data-sort-value (e.g. "000000001964-01-06")
+  vals = []
+  for el in cell.find_all(attrs={"data-sort-value": True}):
+    v = (el.get("data-sort-value") or "").strip()
+    m = re.search(r"(\d{4})-(\d{2})-(\d{2})", v)
+    if m:
+      vals.append(m.group(0))
+  if not vals:
+    return (None, None)
+  if len(vals) == 1:
+    return (vals[0], vals[0])
+  return (vals[0], vals[-1])
+
+
+def _emit_merged_run(run, years_only, out):
+  """Merge a run of consecutive term rows into one row; append to out."""
+  # #region agent log
+  _log_path = Path(__file__).resolve().parent.parent.parent / ".cursor" / "debug.log"
+  try:
+    with open(_log_path, "a", encoding="utf-8") as _f: _f.write(json.dumps({"location": "table_parser:_emit_merged_run", "message": "emit run", "data": {"run_len": len(run), "first_start": run[0].get("Term Start") if run else None, "last_end": run[-1].get("Term End") if run else None}, "timestamp": __import__("time").time() * 1000, "hypothesisId": "H5"}) + "\n")
+  except Exception:
+    pass
+  # #endregion
+  if not run:
+    return
+  merged = copy.deepcopy(run[0])
+  if len(run) == 1:
+    out.append(merged)
+    return
+  if years_only:
+    starts = [r.get("Term Start Year") for r in run if r.get("Term Start Year") is not None]
+    ends = [r.get("Term End Year") for r in run if r.get("Term End Year") is not None]
+    merged["Term Start Year"] = min(starts) if starts else run[0].get("Term Start Year")
+    merged["Term End Year"] = max(ends) if ends else run[-1].get("Term End Year")
+    merged["Term Start"] = run[0].get("Term Start")
+    merged["Term End"] = run[-1].get("Term End")
+  else:
+    dates_start = [_parse_date(r.get("Term Start")) for r in run]
+    dates_end = [_parse_date(r.get("Term End")) for r in run]
+    ds = min(d for d in dates_start if d is not None) if any(dates_start) else None
+    de = max(d for d in dates_end if d is not None) if any(dates_end) else None
+    merged["Term Start"] = ds.strftime("%Y-%m-%d") if ds else run[0].get("Term Start")
+    merged["Term End"] = de.strftime("%Y-%m-%d") if de else run[-1].get("Term End")
+    merged["Term Start Year"] = ds.year if ds else run[0].get("Term Start Year")
+    merged["Term End Year"] = de.year if de else run[-1].get("Term End Year")
+  # #region agent log
+  try:
+    with open(_log_path, "a", encoding="utf-8") as _f: _f.write(json.dumps({"location": "table_parser:_emit_merged_run", "message": "merged output", "data": {"merged_term_start": merged.get("Term Start"), "merged_term_end": merged.get("Term End")}, "timestamp": __import__("time").time() * 1000, "hypothesisId": "H5"}) + "\n")
+  except Exception:
+    pass
+  # #endregion
+  out.append(merged)
+
 
 class DataCleanup:
 
@@ -427,8 +501,90 @@ class Offices:
                 pass
             # #endregion
 
+    if table_config.get("consolidate_rowspan_terms"):
+        accumulated_results = self._consolidate_rowspan_terms(accumulated_results, table_config)
+
     return accumulated_results
 
+  def _consolidate_rowspan_terms(self, rows: list, table_config: dict) -> list:
+    """Group rows by holder (Wiki Link or _name_from_table), sort by term start, merge consecutive terms (gap <= 1 day or year)."""
+    # #region agent log
+    _log_path = Path(__file__).resolve().parent.parent.parent / ".cursor" / "debug.log"
+    try:
+      with open(_log_path, "a", encoding="utf-8") as _f: _f.write(json.dumps({"location": "table_parser:_consolidate_rowspan_terms", "message": "input rows", "data": {"n": len(rows), "rows": [{"holder": (r.get("Wiki Link") or "").strip() or ("_name_:" + (r.get("_name_from_table") or "")), "term_start": r.get("Term Start"), "term_end": r.get("Term End")} for r in rows]}, "timestamp": __import__("time").time() * 1000, "hypothesisId": "H1"}) + "\n")
+    except Exception:
+      pass
+    # #endregion
+    if not rows:
+      return rows
+    years_only = table_config.get("years_only", False)
+
+    def holder_key(r):
+      link = (r.get("Wiki Link") or "").strip()
+      if link and link != "No link":
+        return link
+      return "_name_:" + (r.get("_name_from_table") or "")
+
+    def sort_key(r):
+      if years_only:
+        sy = r.get("Term Start Year")
+        ey = r.get("Term End Year")
+        return (sy if sy is not None else 0, ey if ey is not None else 0)
+      start = r.get("Term Start")
+      end = r.get("Term End")
+      ds = _parse_date(start)
+      de = _parse_date(end)
+      return (ds or date(9999, 12, 31), de or date(9999, 12, 31))
+
+    def gap_consecutive(prev, curr):
+      if years_only:
+        pey = prev.get("Term End Year")
+        csy = curr.get("Term Start Year")
+        if pey is None or csy is None:
+          return False
+        return (csy - pey) <= 1
+      pe = _parse_date(prev.get("Term End"))
+      cs = _parse_date(curr.get("Term Start"))
+      if pe is None or cs is None:
+        return False
+      return (cs - pe).days <= 1
+
+    grouped = {}
+    for r in rows:
+      k = holder_key(r)
+      grouped.setdefault(k, []).append(copy.deepcopy(r))
+
+    # #region agent log
+    try:
+      with open(_log_path, "a", encoding="utf-8") as _f: _f.write(json.dumps({"location": "table_parser:_consolidate_rowspan_terms", "message": "grouped", "data": {"groups": {k: [{"term_start": r.get("Term Start"), "term_end": r.get("Term End")} for r in v] for k, v in grouped.items()}}, "timestamp": __import__("time").time() * 1000, "hypothesisId": "H2"}) + "\n")
+    except Exception:
+      pass
+    # #endregion
+
+    out = []
+    for group in grouped.values():
+      group.sort(key=sort_key)
+      # #region agent log
+      try:
+        with open(_log_path, "a", encoding="utf-8") as _f: _f.write(json.dumps({"location": "table_parser:_consolidate_rowspan_terms", "message": "after sort", "data": {"ordered": [{"term_start": r.get("Term Start"), "term_end": r.get("Term End")} for r in group]}, "timestamp": __import__("time").time() * 1000, "hypothesisId": "H4"}) + "\n")
+      except Exception:
+        pass
+      # #endregion
+      run = [group[0]]
+      for i in range(1, len(group)):
+        if gap_consecutive(run[-1], group[i]):
+          run.append(group[i])
+        else:
+          # #region agent log
+          try:
+            with open(_log_path, "a", encoding="utf-8") as _f: _f.write(json.dumps({"location": "table_parser:_consolidate_rowspan_terms", "message": "gap break", "data": {"prev_end": run[-1].get("Term End"), "curr_start": group[i].get("Term Start"), "prev_end_parsed": str(_parse_date(run[-1].get("Term End"))), "curr_start_parsed": str(_parse_date(group[i].get("Term Start"))), "run_len": len(run)}, "timestamp": __import__("time").time() * 1000, "hypothesisId": "H3"}) + "\n")
+          except Exception:
+            pass
+          # #endregion
+          _emit_merged_run(run, years_only, out)
+          run = [group[i]]
+      _emit_merged_run(run, years_only, out)
+    return out
 
 
   def parse_table_row( self , row , table_config , office_details , url , previous_row_wiki_link, previous_row_district, previous_row_party , party_list ):
@@ -450,6 +606,8 @@ class Offices:
 
       # create a duplicate version of table_config. This duplicate version could be changed by other functions, without updating table_config
       table_config_to_parse = copy.deepcopy(table_config)
+      # Keep original term_end_column for short-row continuation check (before RTL or dynamic_parse change it)
+      term_end_column_orig = table_config.get("term_end_column", -1)
 
       self.Logger.debug_log( f"original table config {table_config} \n table config to parse {table_config_to_parse}" , True )
 
@@ -499,7 +657,15 @@ class Offices:
 
 
       # dynamic parse function to dynamically determine other columns based on url column
-      if table_config_to_parse["run_dynamic_parse"] == True:
+      # When parse_rowspan and this row has too few cells for the full table layout, skip dynamic_parse so we don't return None on failure; treat as continuation below.
+      # Use term_end_column_orig (before RTL/dynamic_parse) so short-row detection is reliable.
+      is_short_continuation = (
+          table_config_to_parse.get("parse_rowspan")
+          and previous_row_wiki_link
+          and term_end_column_orig >= 0
+          and len(cells) <= term_end_column_orig
+      )
+      if table_config_to_parse["run_dynamic_parse"] == True and not is_short_continuation:
           success , table_config_to_parse = self.process_dynamic_parse(cells, table_config_to_parse)
           self.Logger.debug_log( f"table config return in process_table_row after dynamic parse {table_config_to_parse} \n success: {success}" , True )
 
@@ -514,13 +680,13 @@ class Offices:
       if len(cells) <= table_config_to_parse["table_rows"] and table_config_to_parse["parse_rowspan"] == False :  # Adjust this number based on the expected minimum number of cells
           self.Logger.log( 'issue with table rows' , True )
           return None  # or some default data structure
-      # With rowspan, skip "continuation-only" rows (e.g. a row that only has the President cell from rowspan) so we don't emit the president as an office holder
-      if table_config_to_parse["parse_rowspan"] == True and len(cells) < 4:
+      # With rowspan, skip only rows that have too few cells to parse any term (need at least 2 to try; continuation rows often have 3)
+      if table_config_to_parse["parse_rowspan"] == True and len(cells) < 2:
           self.Logger.log( 'skipping rowspan continuation row (too few cells)' , True )
           return None
-      # Skip rows that don't have enough columns to include term_end (e.g. President-only continuation rows with 2 cells)
+      # Skip rows that don't have enough columns to include term_end (e.g. President-only continuation rows). When parse_rowspan, continuation rows have fewer cells so column indices don't align—skip check.
       term_end_col = table_config_to_parse.get("term_end_column", -1)
-      if term_end_col >= 0 and len(cells) <= term_end_col:
+      if term_end_col >= 0 and len(cells) <= term_end_col and not table_config_to_parse.get("parse_rowspan"):
           self.Logger.log( 'skipping row (too few columns for term_end)' , True )
           return None
 
@@ -541,6 +707,11 @@ class Offices:
         self.Logger.debug_log( f"No wiki link found in row" , True )
         wiki_link = previous_row_wiki_link
         self.Logger.debug_log( f"Adding previous link {previous_row_wiki_link} as link {wiki_link}" , True )
+        found_rowspan = True
+      # When parse_rowspan and this row has too few cells for the configured term columns, treat as continuation row
+      # (otherwise dynamic_parse may find a link in a date cell and we skip rowspan term loop, then IndexError on cells[term_end_column])
+      if table_config_to_parse.get("parse_rowspan") and previous_row_wiki_link and term_end_col >= 0 and len(cells) <= term_end_col:
+        wiki_link = previous_row_wiki_link
         found_rowspan = True
       if wiki_link is None or (wiki_link or "").strip() == "":
         wiki_link = "No link"
@@ -601,6 +772,7 @@ class Offices:
       if found_rowspan == True :
         self.Logger.debug_log("running parse rowspan on term", True)
         term_tuples = []
+        best_single = None  # fallback when no range found
         for col_no in range_total_columns:  # Assuming total_columns is correctly calculated elsewhere
 
               self.Logger.debug_log(f"running parse iteration {col_no} with term", True)
@@ -618,8 +790,27 @@ class Offices:
                       break
               elif term_start not in ignore_terms and term_end not in ignore_terms:
                   self.Logger.debug_log(f"found results for term start {term_start} and term end {term_end}", True)
-                  term_tuples = [(term_start, term_end, term_start_year, term_end_year)]
-                  break  # Exit the loop if valid dates are found
+                  # Prefer a range (start != end); otherwise keep as fallback and try next column
+                  if term_start != term_end:
+                      term_tuples = [(term_start, term_end, term_start_year, term_end_year)]
+                      break
+                  if best_single is None:
+                      best_single = (term_start, term_end, term_start_year, term_end_year)
+        # For short rowspan rows: try start from one cell, end from next (e.g. 3-cell row has start col0, end col1)
+        n_cells = len(cells)
+        if (not term_tuples or (len(term_tuples) == 1 and term_tuples[0][0] == term_tuples[0][1])) and n_cells >= 2:
+          for (sc, ec) in [(0, 1), (1, 2)]:
+            if ec >= n_cells:
+              continue
+            raw = self.extract_term_dates(wiki_link, cells, office_details, table_config_to_parse, (sc, ec), url, district)
+            if isinstance(raw, list):
+              continue
+            term_start, term_end, _, _ = raw
+            if term_start and term_end and term_start != "Invalid date" and term_end != "Invalid date" and term_start != term_end:
+              term_tuples = [(term_start, term_end, None, None)]
+              break
+        if not term_tuples and best_single is not None:
+            term_tuples = [best_single]
         if not term_tuples:
             term_tuples = [(None, None, None, None)]
       else:
@@ -799,9 +990,12 @@ class Offices:
     self._last_infobox_items = None  # Cleared each call; set only when find_date_in_infobox used
 
     # parse_row_no == None means the rowspan function is working and needs to iterate. Otherwise, choose the column_no.
-    if parse_row_no == None:
+    # parse_row_no can be a tuple (start_col, end_col) for adjacent-column date range in short rowspan rows.
+    if parse_row_no is None:
       term_start_column = table_config_to_parse["term_start_column"]
       term_end_column = table_config_to_parse["term_end_column"]
+    elif isinstance(parse_row_no, (list, tuple)) and len(parse_row_no) == 2:
+      term_start_column, term_end_column = parse_row_no[0], parse_row_no[1]
     else:
       term_start_column = parse_row_no
       term_end_column = parse_row_no
@@ -865,8 +1059,15 @@ class Offices:
       if term_start_column == term_end_column:
         self.Logger.debug_log( f"parse_table_row found start and end dates in same column" , True )
         self.Logger.debug_log( f" cell with date {cells[term_start_column]}" , True )
-        self.Logger.debug_log( f" cell with date with separator {cells[term_start_column].get_text(separator=' ')}" , True )
-        term_start, term_end = self.DataCleanup.parse_date_info(cells[term_start_column].get_text(separator=' ') , "both" )  # Use separator to handle <br/>
+        cell = cells[term_start_column]
+        cell_text = cell.get_text(separator=' ').strip() if cell else ""
+        self.Logger.debug_log( f" cell with date with separator {cell_text}" , True )
+        term_start, term_end = self.DataCleanup.parse_date_info(cell_text , "both" )  # Use separator to handle <br/>
+        # Fallback: Wikipedia sortable tables often put dates in data-sort-value when visible text is template/empty
+        if (not term_start or term_start == "Invalid date" or not term_end or term_end == "Invalid date") and cell:
+          ds, de = _dates_from_cell_data_sort_value(cell)
+          if ds and de:
+            term_start, term_end = ds, de
         return (term_start, term_end, None, None)
 
       self.Logger.debug_log( f"parse_table_row found start and end dates not in same column" , True )
@@ -874,6 +1075,15 @@ class Offices:
       self.Logger.debug_log( f" cell with end date {cells[term_end_column].get_text(strip=True)}" , True )
       term_start = self.DataCleanup.parse_date_info(cells[ term_start_column ].get_text(strip=True) , "start" )
       term_end = self.DataCleanup.parse_date_info(cells[ term_end_column ].get_text(strip=True) , "end" )
+      # Fallback: data-sort-value when visible text is template/empty (e.g. continuation rows)
+      if (not term_start or term_start == "Invalid date") and term_start_column < len(cells):
+        ds, _ = _dates_from_cell_data_sort_value(cells[term_start_column])
+        if ds:
+          term_start = ds
+      if (not term_end or term_end == "Invalid date") and term_end_column < len(cells):
+        _, de = _dates_from_cell_data_sort_value(cells[term_end_column])
+        if de:
+          term_end = de
       self.Logger.debug_log( f" finished extracting term start and end: {term_start} {term_end}  " , True )
       return (term_start, term_end, None, None)
 

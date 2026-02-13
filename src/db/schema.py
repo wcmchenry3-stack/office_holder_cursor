@@ -68,6 +68,7 @@ CREATE TABLE IF NOT EXISTS offices (
     read_right_to_left INTEGER NOT NULL DEFAULT 0,
     find_date_in_infobox INTEGER NOT NULL DEFAULT 0,
     parse_rowspan INTEGER NOT NULL DEFAULT 0,
+    consolidate_rowspan_terms INTEGER NOT NULL DEFAULT 0,
     rep_link INTEGER NOT NULL DEFAULT 0,
     party_link INTEGER NOT NULL DEFAULT 0,
     alt_link_include_main INTEGER NOT NULL DEFAULT 0,

@@ -140,6 +140,71 @@ def _normalize_row_for_import(
     return (row, term_start_val, term_end_val, term_start_imp, term_end_imp, None, None)
 
 
+def _holder_key_from_existing_term(term: dict[str, Any]) -> tuple[str, str, str]:
+    """Build a comparable key (wiki_url, start_key, end_key) from an existing office_term row."""
+    url = (term.get("wiki_url") or "").strip()
+    start = term.get("term_start")
+    end = term.get("term_end")
+    if start is None:
+        start = term.get("term_start_year")
+    if end is None:
+        end = term.get("term_end_year")
+    start_key = str(start) if start is not None else ""
+    end_key = str(end) if end is not None else ""
+    return (url, start_key, end_key)
+
+
+def _holder_key_from_existing_term_years(term: dict[str, Any]) -> tuple[str, str, str]:
+    """Build a year-only key for table-first validation (no infobox)."""
+    url = (term.get("wiki_url") or "").strip()
+    start = term.get("term_start")
+    end = term.get("term_end")
+    start_year = term.get("term_start_year")
+    end_year = term.get("term_end_year")
+    if start_year is None and start and isinstance(start, str) and len(start) >= 4:
+        try:
+            start_year = int(start[:4])
+        except (ValueError, TypeError):
+            pass
+    if end_year is None and end and isinstance(end, str) and len(end) >= 4:
+        try:
+            end_year = int(end[:4])
+        except (ValueError, TypeError):
+            pass
+    start_key = str(start_year) if start_year is not None else ""
+    end_key = str(end_year) if end_year is not None else ""
+    return (url, start_key, end_key)
+
+
+def _holder_keys_from_parsed_rows(
+    table_data: list[dict],
+    office_id: int,
+    years_only: bool,
+    key_years_only: bool = False,
+) -> set[tuple[str, str, str]]:
+    """Build set of holder keys from parsed table rows (same normalize as write path).
+    When key_years_only is True, use only term_start_year/term_end_year for the key (for table-only pre-validation)."""
+    keys: set[tuple[str, str, str]] = set()
+    for row in table_data:
+        normalized = _normalize_row_for_import(row, years_only=years_only)
+        if normalized is None and (row.get("Wiki Link") or "") in ("", "No link") and row.get("_name_from_table"):
+            normalized = _normalize_row_for_import(row, years_only=years_only, include_no_link=True)
+        if normalized is None:
+            continue
+        _, term_start_val, term_end_val, _ts_imp, _te_imp, term_start_year, term_end_year = normalized
+        wiki_url = row.get("Wiki Link") or ""
+        if wiki_url in ("", "No link") and row.get("_name_from_table"):
+            wiki_url = "No link:" + str(office_id) + ":" + (row.get("_name_from_table") or "Unknown")
+        if key_years_only:
+            start_key = str(term_start_year) if term_start_year is not None else ""
+            end_key = str(term_end_year) if term_end_year is not None else ""
+        else:
+            start_key = (term_start_val if term_start_val is not None else "") or (str(term_start_year) if term_start_year is not None else "")
+            end_key = (term_end_val if term_end_val is not None else "") or (str(term_end_year) if term_end_year is not None else "")
+        keys.add((wiki_url, start_key, end_key))
+    return keys
+
+
 def run_with_db(
     run_mode: str = "delta",  # full | delta | live_person | single_bio | bios_only
     run_bio: bool = False,
@@ -152,6 +217,7 @@ def run_with_db(
     individual_ref: str | None = None,
     progress_callback: Callable[[str, int, int, str, dict], None] | None = None,
     cancel_check: Callable[[], bool] | None = None,
+    force_replace_office_ids: list[int] | None = None,
 ) -> dict[str, Any]:
     """
     Main entry: load offices and party list from DB, run scraper, write to DB (unless dry_run/test_run).
@@ -305,9 +371,8 @@ def run_with_db(
     biography = parse_core.Biography(logger, data_cleanup)
     offices_parser = parse_core.Offices(logger, biography, data_cleanup)
 
-    # Full run: purge office_terms and individuals first
+    # Full run: purge individuals only; office_terms are replaced per-office after validation
     if run_mode == "full" and not dry_run and not test_run:
-        db_office_terms.purge_all_office_terms()
         db_individuals.purge_all_individuals()
         existing_individual_wiki_urls: set[str] = set()
     else:
@@ -316,6 +381,9 @@ def run_with_db(
     total_terms = 0
     unique_wiki_urls: set[str] = set()
     all_office_data: list[dict] = []
+    replaceable_office_ids: set[int] = set()
+    revalidate_failed_offices: list[tuple[int, str]] = []
+    cancelled_early = False
     bio_success_count = 0
     bio_error_count = 0
     bio_errors: list[dict[str, str]] = []
@@ -323,6 +391,7 @@ def run_with_db(
     living_success_count = 0
     living_error_count = 0
     living_errors: list[dict[str, str]] = []
+    bio_cancelled = False
 
     for idx, office_row in enumerate(offices):
         if cancel_check and cancel_check():
@@ -354,6 +423,8 @@ def run_with_db(
                     })
                 preview_rows = preview_rows[:50]
             logger.close()
+            rf = len(revalidate_failed_offices) > 0
+            rm = revalidate_failed_offices[0][1] if revalidate_failed_offices else None
             return {
                 "office_count": idx,
                 "terms_parsed": total_terms,
@@ -370,6 +441,8 @@ def run_with_db(
                 "preview_rows": preview_rows,
                 "cancelled": True,
                 "message": f"Stopped after {idx} offices.",
+                "revalidate_failed": rf,
+                "revalidate_message": rm,
             }
         office_id = office_row["id"]
         url = office_row.get("url") or ""
@@ -381,16 +454,48 @@ def run_with_db(
         report("office", idx + 1, len(offices), office_name, {"terms_so_far": total_terms})
         logger.log(f"Processing office {idx+1}/{len(offices)}: {office_name} ({url})", True)
 
+        existing_terms = db_office_terms.get_existing_terms_for_office(office_id)
+        has_existing = len(existing_terms) > 0
+
         table_no = int(office_row.get("table_no") or 1)
         use_full_page = bool(office_row.get("use_full_page_for_table"))
         cache_result = get_table_html_cached(url.strip(), table_no, refresh=refresh_table_cache, use_full_page=use_full_page)
         if "error" in cache_result:
             logger.log(f"Failed to get table for {url}: {cache_result['error']}", True)
+            if has_existing:
+                revalidate_failed_offices.append((office_id, f"Page or table failed: {cache_result['error']}. Kept existing terms."))
             continue
+        if cancel_check and cancel_check():
+            logger.log("Run cancelled by user.", True)
+            cancelled_early = True
+            break
         if "cache_file" in cache_result:
             logger.log(f"Cached table: {cache_result['cache_file']}", True)
         html_content = cache_result.get("html") or ""
         cached_table_html = html_content if html_content else None
+
+        # When office has existing terms and find_date_in_infobox is on: validate from table-only parse first
+        # so we don't fetch infoboxes only to fail validation later.
+        use_infobox = bool(office_row.get("find_date_in_infobox"))
+        if has_existing and use_infobox:
+            office_row_no_infobox = {**office_row, "find_date_in_infobox": False}
+            table_data_pre = _parse_office_html(
+                office_row_no_infobox, html_content, url, party_list, offices_parser,
+                cached_table_html=cached_table_html, progress_callback=None,
+                max_rows=max_rows_per_table,
+            )
+            if len(table_data_pre) == 0:
+                logger.log(f"Repopulate validation failed for {office_name}: table parsed to zero rows (existing had {len(existing_terms)}). Keeping existing terms.", True)
+                revalidate_failed_offices.append((office_id, "Table parsed to zero rows. Kept existing terms."))
+                continue
+            old_holders_years = {_holder_key_from_existing_term_years(t) for t in existing_terms}
+            years_only_pre = bool(office_row.get("years_only"))
+            new_holders_years = _holder_keys_from_parsed_rows(table_data_pre, office_id, years_only_pre, key_years_only=True)
+            missing_years = old_holders_years - new_holders_years
+            if missing_years:
+                logger.log(f"Repopulate validation failed for {office_name}: table-only check found new list missing {len(missing_years)} office holder(s). Skipping infobox fetch. Keeping existing terms.", True)
+                revalidate_failed_offices.append((office_id, "New list is missing office holders that were in existing data. Kept existing terms."))
+                continue
 
         # Parse table (shared code path); report infobox progress when find_date_in_infobox
         table_data = _parse_office_html(
@@ -399,6 +504,32 @@ def run_with_db(
         )
         if max_rows_per_table is not None and max_rows_per_table >= 0:
             table_data = table_data[: max_rows_per_table]
+
+        if has_existing and len(table_data) == 0:
+            logger.log(f"Repopulate validation failed for {office_name}: table parsed to zero rows (existing had {len(existing_terms)}). Keeping existing terms.", True)
+            revalidate_failed_offices.append((office_id, "Table parsed to zero rows. Kept existing terms."))
+            continue
+
+        if has_existing and table_data:
+            force_replace = force_replace_office_ids and office_id in force_replace_office_ids
+            old_holders = {_holder_key_from_existing_term(t) for t in existing_terms}
+            years_only = bool(office_row.get("years_only"))
+            new_holders = _holder_keys_from_parsed_rows(table_data, office_id, years_only)
+            missing = old_holders - new_holders
+            if missing:
+                if force_replace:
+                    logger.log(f"Force override for {office_name}: replacing despite {len(missing)} holder(s) missing from new list.", True)
+                    replaceable_office_ids.add(office_id)
+                else:
+                    logger.log(f"Repopulate validation failed for {office_name}: new list is missing {len(missing)} office holder(s) that were in existing data. Keeping existing terms.", True)
+                    revalidate_failed_offices.append((office_id, "New list is missing office holders that were in existing data. Kept existing terms."))
+                    continue
+            else:
+                replaceable_office_ids.add(office_id)
+        if cancel_check and cancel_check():
+            logger.log("Run cancelled by user.", True)
+            cancelled_early = True
+            break
 
         for row in table_data:
             wiki_link = row.get("Wiki Link")
@@ -409,6 +540,55 @@ def run_with_db(
             all_office_data.append(row)
         total_terms += len(table_data)
 
+    if cancelled_early:
+        report("office", idx, len(offices), "Cancelled", {"terms_so_far": total_terms})
+        preview_rows = None
+        if dry_run or test_run:
+            preview_rows = []
+            for row in all_office_data:
+                normalized = _normalize_row_for_import(row, years_only=bool(row.get("_years_only")))
+                if normalized is None and (row.get("Wiki Link") or "") in ("", "No link") and row.get("_name_from_table"):
+                    normalized = _normalize_row_for_import(row, years_only=bool(row.get("_years_only")), include_no_link=True)
+                if normalized is None:
+                    continue
+                _, term_start_val, term_end_val, _ts_imp, _te_imp, term_start_year, term_end_year = normalized
+                wiki_link = row.get("Wiki Link") or ""
+                dead_link = bool(row.get("_dead_link") or (wiki_link in ("", "No link") and row.get("_name_from_table")))
+                preview_rows.append({
+                    "Wiki Link": wiki_link,
+                    "Party": row.get("Party") or "",
+                    "District": row.get("District") or "",
+                    "Term Start": term_start_val if term_start_val else "",
+                    "Term End": term_end_val if term_end_val else "",
+                    "Term Start Year": term_start_year,
+                    "Term End Year": term_end_year,
+                    "Dead link": dead_link,
+                    "Name (no link)": row.get("_name_from_table") if dead_link and wiki_link in ("", "No link") else None,
+                })
+            preview_rows = preview_rows[:50]
+        logger.close()
+        rf = len(revalidate_failed_offices) > 0
+        rm = revalidate_failed_offices[0][1] if revalidate_failed_offices else None
+        return {
+            "office_count": idx,
+            "terms_parsed": total_terms,
+            "unique_wiki_urls": len(unique_wiki_urls),
+            "bio_success_count": 0,
+            "bio_error_count": 0,
+            "bio_errors": [],
+            "bio_skipped_count": 0,
+            "living_success_count": 0,
+            "living_error_count": 0,
+            "living_errors": [],
+            "dry_run": dry_run,
+            "test_run": test_run,
+            "preview_rows": preview_rows,
+            "cancelled": True,
+            "message": f"Stopped after {idx} offices.",
+            "revalidate_failed": rf,
+            "revalidate_message": rm,
+        }
+
     report("office", len(offices), len(offices), "All offices parsed", {"terms_so_far": total_terms})
 
     # Write to DB unless dry_run or test_run (same filter/normalize as preview via _normalize_row_for_import)
@@ -416,6 +596,8 @@ def run_with_db(
         report("saving", 0, 1, "Writing to database…", {"terms": total_terms})
         conn = get_connection()
         try:
+            for oid in replaceable_office_ids:
+                db_office_terms.delete_office_terms_for_office(oid, conn=conn)
             for row in all_office_data:
                 office_id = row.get("_office_id")
                 if office_id is None:
@@ -474,6 +656,10 @@ def run_with_db(
             total_bios = len(to_fetch)
             bio_fetched_this_run: set[str] = set()
             for bio_idx, wiki_url in enumerate(to_fetch):
+                if cancel_check and cancel_check():
+                    logger.log("Run cancelled by user (during living update).", True)
+                    bio_cancelled = True
+                    break
                 report("living", bio_idx + 1, total_bios, "Updating living individuals…", {"current": bio_idx + 1, "total": total_bios})
                 if wiki_url in bio_fetched_this_run:
                     continue
@@ -521,6 +707,10 @@ def run_with_db(
                         bio_cache[key] = row["_bio_details"]
             bio_fetched_this_run: set[str] = set()
             for bio_idx, wiki_url in enumerate(to_fetch):
+                if cancel_check and cancel_check():
+                    logger.log("Run cancelled by user (during bio fetch).", True)
+                    bio_cancelled = True
+                    break
                 report("bio", bio_idx + 1, total_bios, "Fetching biographies (new individuals)…", {"current": bio_idx + 1, "total": total_bios, "bio_skipped": bio_skipped_count})
                 if wiki_url in bio_fetched_this_run:
                     continue
@@ -576,6 +766,10 @@ def run_with_db(
                     report("living", 0, total_living, f"Updating {total_living} living individuals…", {})
                     living_fetched_this_run: set[str] = set()
                     for liv_idx, wiki_url in enumerate(to_fetch_living):
+                        if cancel_check and cancel_check():
+                            logger.log("Run cancelled by user (during living update).", True)
+                            bio_cancelled = True
+                            break
                         report("living", liv_idx + 1, total_living, "Updating living individuals…", {"current": liv_idx + 1, "total": total_living})
                         if wiki_url in living_fetched_this_run:
                             continue
@@ -606,6 +800,55 @@ def run_with_db(
                             logger.log(f"Living update exception for {wiki_url}: {err_msg}", True)
                             living_errors.append({"url": wiki_url, "error": err_msg})
 
+    if bio_cancelled:
+        logger.close()
+        report("complete", 1, 1, "Stopped (bio)", {"terms_parsed": total_terms, "unique_wiki_urls": len(unique_wiki_urls)})
+        preview_rows = None
+        if dry_run or test_run:
+            preview_rows = []
+            for row in all_office_data:
+                normalized = _normalize_row_for_import(row, years_only=bool(row.get("_years_only")))
+                if normalized is None and (row.get("Wiki Link") or "") in ("", "No link") and row.get("_name_from_table"):
+                    normalized = _normalize_row_for_import(row, years_only=bool(row.get("_years_only")), include_no_link=True)
+                if normalized is None:
+                    continue
+                _, term_start_val, term_end_val, _ts_imp, _te_imp, term_start_year, term_end_year = normalized
+                wiki_link = row.get("Wiki Link") or ""
+                dead_link = bool(row.get("_dead_link") or (wiki_link in ("", "No link") and row.get("_name_from_table")))
+                preview_rows.append({
+                    "Wiki Link": wiki_link,
+                    "Party": row.get("Party") or "",
+                    "District": row.get("District") or "",
+                    "Term Start": term_start_val if term_start_val else "",
+                    "Term End": term_end_val if term_end_val else "",
+                    "Term Start Year": term_start_year,
+                    "Term End Year": term_end_year,
+                    "Dead link": dead_link,
+                    "Name (no link)": row.get("_name_from_table") if dead_link and wiki_link in ("", "No link") else None,
+                })
+            preview_rows = preview_rows[:50]
+        rf = len(revalidate_failed_offices) > 0
+        rm = revalidate_failed_offices[0][1] if revalidate_failed_offices else None
+        return {
+            "office_count": len(offices),
+            "terms_parsed": total_terms,
+            "unique_wiki_urls": len(unique_wiki_urls),
+            "bio_success_count": bio_success_count,
+            "bio_error_count": bio_error_count,
+            "bio_errors": bio_errors,
+            "bio_skipped_count": bio_skipped_count,
+            "living_success_count": living_success_count,
+            "living_error_count": living_error_count,
+            "living_errors": living_errors,
+            "dry_run": dry_run,
+            "test_run": test_run,
+            "preview_rows": preview_rows,
+            "cancelled": True,
+            "message": "Stopped during bio/living update.",
+            "revalidate_failed": rf,
+            "revalidate_message": rm,
+        }
+
     logger.close()
     report("complete", 1, 1, "Done", {"terms_parsed": total_terms, "unique_wiki_urls": len(unique_wiki_urls)})
 
@@ -635,6 +878,11 @@ def run_with_db(
             })
         preview_rows = preview_rows[:50]
 
+    revalidate_failed = len(revalidate_failed_offices) > 0
+    revalidate_message = revalidate_failed_offices[0][1] if revalidate_failed_offices else None
+    if revalidate_failed and len(revalidate_failed_offices) > 1:
+        revalidate_message = f"{len(revalidate_failed_offices)} office(s) skipped (validation failed). {revalidate_message}"
+
     return {
         "office_count": len(offices),
         "terms_parsed": total_terms,
@@ -649,6 +897,8 @@ def run_with_db(
         "dry_run": dry_run,
         "test_run": test_run,
         "preview_rows": preview_rows,
+        "revalidate_failed": revalidate_failed,
+        "revalidate_message": revalidate_message,
     }
 
 

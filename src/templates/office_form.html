@@ -113,7 +113,11 @@
     </div>
     <div class="form-group checkbox-group">
       <label><input type="checkbox" name="parse_rowspan" value="1" {% if office and office.parse_rowspan %}checked{% endif %}> Parse rowspan</label>
-      <p class="form-note">Enable when the table uses rowspan so one cell spans multiple rows.</p>
+      <p class="form-note">When the table uses rowspan: carry forward name, party, and district when the name cell is empty; one result row per table row.</p>
+    </div>
+    <div class="form-group checkbox-group">
+      <label><input type="checkbox" name="consolidate_rowspan_terms" value="1" {% if office and office.consolidate_rowspan_terms %}checked{% endif %}> Consolidate consecutive terms (rowspan)</label>
+      <p class="form-note">After parsing, merge consecutive terms for the same person when the gap is 1 day or less (e.g. same-day handoff). Use with Parse rowspan.</p>
     </div>
     <div class="form-group checkbox-group">
       <label><input type="checkbox" name="rep_link" value="1" {% if office and office.rep_link %}checked{% endif %}> Rep link</label>
@@ -183,6 +187,7 @@
   <h2>Preview</h2>
   <p><small>Dry run — not saved. Use &quot;Preview all&quot; or &quot;Preview top X&quot;.</small></p>
   <div id="previewContent"></div>
+  <button type="button" class="btn btn-secondary btn-sm" id="previewStopBtn" style="display:none; margin-top:0.25rem;">Stop</button>
   <div class="actions" style="margin-top:0.5rem;">
     <button type="button" class="btn btn-secondary btn-sm" id="previewClose">Close preview</button>
   </div>
@@ -278,6 +283,7 @@
       find_date_in_infobox: (form.date_source?.value || 'not_applicable') === 'find_date_in_infobox',
       years_only: (form.date_source?.value || 'not_applicable') === 'years_only',
       parse_rowspan: !!form.parse_rowspan?.checked,
+      consolidate_rowspan_terms: !!form.consolidate_rowspan_terms?.checked,
       rep_link: !!form.rep_link?.checked,
       party_link: !!form.party_link?.checked,
       alt_links: Array.from(form.querySelectorAll('input[name="alt_links"]')).map(function(inp) { return inp.value.trim(); }).filter(Boolean),
@@ -431,8 +437,10 @@
   function runPreview(opts) {
     var panel = document.getElementById('previewPanel');
     var content = document.getElementById('previewContent');
+    var previewStopBtn = document.getElementById('previewStopBtn');
     panel.style.display = 'block';
     content.innerHTML = '<p>Loading preview…</p>';
+    if (previewStopBtn) previewStopBtn.style.display = 'none';
     var draft = getFormDraft();
     if (opts.showAll) {
       draft.show_all = true;
@@ -451,6 +459,14 @@
       .then(function(data) {
         if (data.async && data.job_id) {
           var jobId = data.job_id;
+          if (previewStopBtn) {
+            previewStopBtn.style.display = 'inline-block';
+            previewStopBtn.disabled = false;
+            previewStopBtn.onclick = function() {
+              previewStopBtn.disabled = true;
+              fetch('/api/preview/cancel/' + jobId, { method: 'POST' }).catch(function() {});
+            };
+          }
           var poll = function() {
             fetch('/api/preview/status/' + jobId)
               .then(function(r) { return r.json(); })
@@ -459,26 +475,40 @@
                 if (s.total > 0) msg += ' (' + s.current + ' of ' + s.total + ')';
                 content.innerHTML = '<p>' + msg + '</p>';
                 if (s.status === 'complete') {
+                  if (previewStopBtn) previewStopBtn.style.display = 'none';
                   renderPreviewResult(s.result || {}, content);
+                  if (window.playJobCompleteSound) window.playJobCompleteSound();
+                  return;
+                }
+                if (s.status === 'cancelled') {
+                  if (previewStopBtn) previewStopBtn.style.display = 'none';
+                  content.innerHTML = '<p>Stopped.</p>';
+                  if (window.playJobCompleteSound) window.playJobCompleteSound();
                   return;
                 }
                 if (s.status === 'error') {
+                  if (previewStopBtn) previewStopBtn.style.display = 'none';
                   content.innerHTML = '<div class="alert alert-error">' + (s.error || 'Preview failed') + '</div>';
+                  if (window.playJobCompleteSound) window.playJobCompleteSound();
                   return;
                 }
                 setTimeout(poll, 800);
               })
               .catch(function() {
+                if (previewStopBtn) previewStopBtn.style.display = 'none';
                 content.innerHTML = '<div class="alert alert-error">Request failed.</div>';
+                if (window.playJobCompleteSound) window.playJobCompleteSound();
               });
           };
           poll();
         } else {
           renderPreviewResult(data.result || {}, content);
+          if (window.playJobCompleteSound) window.playJobCompleteSound();
         }
       })
       .catch(function() {
         content.innerHTML = '<div class="alert alert-error">Request failed.</div>';
+        if (window.playJobCompleteSound) window.playJobCompleteSound();
       });
   }
   document.getElementById('previewAllBtn')?.addEventListener('click', function() {
@@ -868,6 +898,55 @@
                   } else {
                     resultEl.textContent = (r && r.message) ? r.message : ('Error: ' + (s.error || 'Failed'));
                     resultEl.className = 'alert alert-error';
+                    if (r && r.can_force_override) {
+                      var forceBtn = document.createElement('button');
+                      forceBtn.type = 'button';
+                      forceBtn.className = 'btn btn-secondary btn-sm';
+                      forceBtn.style.marginLeft = '0.5rem';
+                      forceBtn.textContent = 'Force override';
+                      forceBtn.onclick = function() {
+                        forceBtn.disabled = true;
+                        resultEl.textContent = 'Starting…';
+                        fetch('/api/offices/' + officeId + '/populate-terms', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ force_override: true }) })
+                          .then(function(res) { return res.json().then(function(d) { return { status: res.status, data: d }; }); })
+                          .then(function(initRes) {
+                            if (initRes.status === 202 && initRes.data.job_id) {
+                              var jid = initRes.data.job_id;
+                              if (stopBtn) { stopBtn.style.display = 'inline-block'; stopBtn.disabled = false; stopBtn.onclick = function() { stopBtn.disabled = true; fetch('/api/offices/' + officeId + '/populate-terms/cancel/' + jid, { method: 'POST' }).catch(function() {}); }; }
+                              var pollForce = function() {
+                                fetch('/api/offices/' + officeId + '/populate-terms/status/' + jid).then(function(res) { return res.json(); }).then(function(st) {
+                                  resultEl.textContent = st.message || 'Processing…';
+                                  if (st.status === 'complete' || st.status === 'cancelled') {
+                                    var rr = st.result;
+                                    resultEl.textContent = rr && rr.message ? rr.message : (st.error || 'Done');
+                                    resultEl.className = rr && rr.ok ? 'alert alert-success' : 'alert alert-error';
+                                    if (stopBtn) stopBtn.style.display = 'none';
+                                    btn.disabled = false;
+                                    if (window.playJobCompleteSound) window.playJobCompleteSound();
+                                    return;
+                                  }
+                                  if (st.status === 'error') {
+                                    resultEl.textContent = 'Error: ' + (st.error || 'Failed');
+                                    resultEl.className = 'alert alert-error';
+                                    if (stopBtn) stopBtn.style.display = 'none';
+                                    btn.disabled = false;
+                                    if (window.playJobCompleteSound) window.playJobCompleteSound();
+                                    return;
+                                  }
+                                  setTimeout(pollForce, 800);
+                                }).catch(function() { resultEl.textContent = 'Request failed.'; resultEl.className = 'alert alert-error'; btn.disabled = false; if (stopBtn) stopBtn.style.display = 'none'; if (window.playJobCompleteSound) window.playJobCompleteSound(); });
+                              };
+                              pollForce();
+                            } else {
+                              resultEl.textContent = 'Error: ' + (initRes.data.detail || initRes.data.message || 'Failed to start');
+                              resultEl.className = 'alert alert-error';
+                              forceBtn.disabled = false;
+                            }
+                          }).catch(function() { resultEl.textContent = 'Request failed.'; resultEl.className = 'alert alert-error'; forceBtn.disabled = false; });
+                      };
+                      resultEl.appendChild(document.createTextNode(' '));
+                      resultEl.appendChild(forceBtn);
+                    }
                   }
                   btn.disabled = false;
                   if (stopBtn) stopBtn.style.display = 'none';

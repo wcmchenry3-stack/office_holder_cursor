@@ -227,13 +227,14 @@ def _migrate_offices_years_only(conn):
 
 
 def _migrate_offices_parsing_options(conn):
-    """Add term_dates_merged, party_ignore, district_ignore, district_at_large to offices if missing."""
+    """Add term_dates_merged, party_ignore, district_ignore, district_at_large, consolidate_rowspan_terms to offices if missing."""
     offices_cols = _columns(conn, "offices")
     for col, default in (
         ("term_dates_merged", 0),
         ("party_ignore", 0),
         ("district_ignore", 0),
         ("district_at_large", 0),
+        ("consolidate_rowspan_terms", 0),
     ):
         if col not in offices_cols:
             conn.execute(f"ALTER TABLE offices ADD COLUMN {col} INTEGER NOT NULL DEFAULT {default}")
@@ -413,6 +414,7 @@ def _migrate_alt_links(conn):
             read_right_to_left INTEGER NOT NULL DEFAULT 0,
             find_date_in_infobox INTEGER NOT NULL DEFAULT 0,
             parse_rowspan INTEGER NOT NULL DEFAULT 0,
+            consolidate_rowspan_terms INTEGER NOT NULL DEFAULT 0,
             rep_link INTEGER NOT NULL DEFAULT 0,
             party_link INTEGER NOT NULL DEFAULT 0,
             alt_link_include_main INTEGER NOT NULL DEFAULT 0,
