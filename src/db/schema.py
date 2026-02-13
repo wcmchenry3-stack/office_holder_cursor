@@ -70,7 +70,7 @@ CREATE TABLE IF NOT EXISTS offices (
     parse_rowspan INTEGER NOT NULL DEFAULT 0,
     rep_link INTEGER NOT NULL DEFAULT 0,
     party_link INTEGER NOT NULL DEFAULT 0,
-    alt_link TEXT,
+    alt_link_include_main INTEGER NOT NULL DEFAULT 0,
     use_full_page_for_table INTEGER NOT NULL DEFAULT 0,
     years_only INTEGER NOT NULL DEFAULT 0,
     term_dates_merged INTEGER NOT NULL DEFAULT 0,
@@ -79,6 +79,15 @@ CREATE TABLE IF NOT EXISTS offices (
     district_at_large INTEGER NOT NULL DEFAULT 0,
     created_at TEXT DEFAULT (datetime('now'))
 );
+
+-- Alt links: one row per office alternate infobox link (offices may have many)
+CREATE TABLE IF NOT EXISTS alt_links (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    office_id INTEGER NOT NULL REFERENCES offices(id),
+    link_path TEXT NOT NULL,
+    UNIQUE(office_id, link_path)
+);
+CREATE INDEX IF NOT EXISTS idx_alt_links_office_id ON alt_links(office_id);
 
 -- Parties: party list for resolving party links (before office_terms for FK)
 CREATE TABLE IF NOT EXISTS parties (

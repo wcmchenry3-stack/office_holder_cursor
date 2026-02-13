@@ -84,7 +84,8 @@ def _office_draft_from_body(body: dict, *, include_ref_names: bool = False) -> d
         "parse_rowspan": body.get("parse_rowspan", False),
         "rep_link": body.get("rep_link", False),
         "party_link": body.get("party_link", False),
-        "alt_link": (body.get("alt_link") or "").strip() or None,
+        "alt_links": body.get("alt_links") if isinstance(body.get("alt_links"), list) else ([(body.get("alt_link") or "").strip()] if (body.get("alt_link") or "").strip() else []),
+        "alt_link_include_main": body.get("alt_link_include_main", False),
         "use_full_page_for_table": body.get("use_full_page_for_table", False),
         "term_dates_merged": term_dates_merged,
         "party_ignore": party_ignore,
@@ -140,56 +141,32 @@ async def office_new(request: Request):
 
 
 @app.post("/offices/new")
-async def office_create(
-    action: str = Form("save_and_close"),
-    country_id: int = Form(0),
-    state_id: int = Form(0),
-    level_id: int = Form(0),
-    branch_id: int = Form(0),
-    department: str = Form(""),
-    name: str = Form(""),
-    notes: str = Form(""),
-    url: str = Form(""),
-    table_no: int = Form(1),
-    table_rows: int = Form(4),
-    link_column: int = Form(1),
-    party_column: int = Form(0),
-    term_start_column: int = Form(4),
-    term_end_column: int = Form(5),
-    district_column: int = Form(0),
-    dynamic_parse: str = Form("0"),
-    read_right_to_left: str = Form("0"),
-    date_source: str = Form("not_applicable"),
-    parse_rowspan: str = Form("0"),
-    rep_link: str = Form("0"),
-    party_link: str = Form("0"),
-    alt_link: str = Form(""),
-    use_full_page_for_table: str = Form("0"),
-    term_dates_merged: str = Form("0"),
-    party_ignore: str = Form("0"),
-    district_ignore: str = Form("0"),
-    district_at_large: str = Form("0"),
-):
+async def office_create(request: Request):
+    form = await request.form()
+    action = form.get("action", "save_and_close")
+    alt_links = [v.strip() for v in form.getlist("alt_links") if v and isinstance(v, str) and v.strip()]
+    alt_link_include_main = form.get("alt_link_include_main") == "1"
     data = {
-        "country_id": country_id, "state_id": state_id or None, "level_id": level_id or None, "branch_id": branch_id or None,
-        "department": department, "name": name, "notes": notes, "url": url,
-        "table_no": table_no, "table_rows": table_rows,
-        "link_column": link_column, "party_column": party_column,
-        "term_start_column": term_start_column, "term_end_column": term_end_column,
-        "district_column": district_column,
-        "dynamic_parse": dynamic_parse == "1",
-        "read_right_to_left": read_right_to_left == "1",
-        "find_date_in_infobox": date_source == "find_date_in_infobox",
-        "years_only": date_source == "years_only",
-        "parse_rowspan": parse_rowspan == "1",
-        "rep_link": rep_link == "1",
-        "party_link": party_link == "1",
-        "alt_link": alt_link or None,
-        "use_full_page_for_table": use_full_page_for_table == "1",
-        "term_dates_merged": term_dates_merged == "1",
-        "party_ignore": party_ignore == "1",
-        "district_ignore": district_ignore == "1",
-        "district_at_large": district_at_large == "1",
+        "country_id": int(form.get("country_id") or 0), "state_id": int(form.get("state_id") or 0) or None, "level_id": int(form.get("level_id") or 0) or None, "branch_id": int(form.get("branch_id") or 0) or None,
+        "department": (form.get("department") or "").strip(), "name": (form.get("name") or "").strip(), "enabled": form.get("enabled") == "1", "notes": (form.get("notes") or "").strip(), "url": (form.get("url") or "").strip(),
+        "table_no": int(form.get("table_no") or 1), "table_rows": int(form.get("table_rows") or 4),
+        "link_column": int(form.get("link_column") or 1), "party_column": int(form.get("party_column") or 0),
+        "term_start_column": int(form.get("term_start_column") or 4), "term_end_column": int(form.get("term_end_column") or 5),
+        "district_column": int(form.get("district_column") or 0),
+        "dynamic_parse": form.get("dynamic_parse") == "1",
+        "read_right_to_left": form.get("read_right_to_left") == "1",
+        "find_date_in_infobox": form.get("date_source") == "find_date_in_infobox",
+        "years_only": form.get("date_source") == "years_only",
+        "parse_rowspan": form.get("parse_rowspan") == "1",
+        "rep_link": form.get("rep_link") == "1",
+        "party_link": form.get("party_link") == "1",
+        "alt_links": alt_links,
+        "alt_link_include_main": alt_link_include_main,
+        "use_full_page_for_table": form.get("use_full_page_for_table") == "1",
+        "term_dates_merged": form.get("term_dates_merged") == "1",
+        "party_ignore": form.get("party_ignore") == "1",
+        "district_ignore": form.get("district_ignore") == "1",
+        "district_at_large": form.get("district_at_large") == "1",
     }
     try:
         new_id = db_offices.create_office(data)
@@ -235,6 +212,7 @@ async def office_edit_page(request: Request, office_id: int):
     office = db_offices.get_office(office_id)
     if not office:
         raise HTTPException(status_code=404)
+    office["alt_links"] = db_offices.list_alt_links(office_id)
     saved = request.query_params.get("saved") == "1"
     validation_error = request.query_params.get("error") or None
     nav_ids_raw = request.query_params.get("nav_ids") or ""
@@ -263,59 +241,33 @@ async def office_edit_page(request: Request, office_id: int):
 
 
 @app.post("/offices/{office_id}")
-async def office_update(
-    office_id: int,
-    action: str = Form("save_and_close"),
-    nav_ids: str = Form(""),
-    country_id: int = Form(0),
-    state_id: int = Form(0),
-    level_id: int = Form(0),
-    branch_id: int = Form(0),
-    department: str = Form(""),
-    name: str = Form(""),
-    enabled: str = Form("0"),
-    notes: str = Form(""),
-    url: str = Form(""),
-    table_no: int = Form(1),
-    table_rows: int = Form(4),
-    link_column: int = Form(1),
-    party_column: int = Form(0),
-    term_start_column: int = Form(4),
-    term_end_column: int = Form(5),
-    district_column: int = Form(0),
-    dynamic_parse: str = Form("0"),
-    read_right_to_left: str = Form("0"),
-    date_source: str = Form("not_applicable"),
-    parse_rowspan: str = Form("0"),
-    rep_link: str = Form("0"),
-    party_link: str = Form("0"),
-    alt_link: str = Form(""),
-    use_full_page_for_table: str = Form("0"),
-    term_dates_merged: str = Form("0"),
-    party_ignore: str = Form("0"),
-    district_ignore: str = Form("0"),
-    district_at_large: str = Form("0"),
-):
+async def office_update(request: Request, office_id: int):
+    form = await request.form()
+    action = form.get("action", "save_and_close")
+    nav_ids = (form.get("nav_ids") or "").strip()
+    alt_links = [v.strip() for v in form.getlist("alt_links") if v and isinstance(v, str) and v.strip()]
+    alt_link_include_main = form.get("alt_link_include_main") == "1"
     data = {
-        "country_id": country_id, "state_id": state_id or None, "level_id": level_id or None, "branch_id": branch_id or None,
-        "department": department, "name": name, "enabled": enabled == "1", "notes": notes, "url": url,
-        "table_no": table_no, "table_rows": table_rows,
-        "link_column": link_column, "party_column": party_column,
-        "term_start_column": term_start_column, "term_end_column": term_end_column,
-        "district_column": district_column,
-        "dynamic_parse": dynamic_parse == "1",
-        "read_right_to_left": read_right_to_left == "1",
-        "find_date_in_infobox": date_source == "find_date_in_infobox",
-        "years_only": date_source == "years_only",
-        "parse_rowspan": parse_rowspan == "1",
-        "rep_link": rep_link == "1",
-        "party_link": party_link == "1",
-        "alt_link": alt_link or None,
-        "use_full_page_for_table": use_full_page_for_table == "1",
-        "term_dates_merged": term_dates_merged == "1",
-        "party_ignore": party_ignore == "1",
-        "district_ignore": district_ignore == "1",
-        "district_at_large": district_at_large == "1",
+        "country_id": int(form.get("country_id") or 0), "state_id": int(form.get("state_id") or 0) or None, "level_id": int(form.get("level_id") or 0) or None, "branch_id": int(form.get("branch_id") or 0) or None,
+        "department": (form.get("department") or "").strip(), "name": (form.get("name") or "").strip(), "enabled": form.get("enabled") == "1", "notes": (form.get("notes") or "").strip(), "url": (form.get("url") or "").strip(),
+        "table_no": int(form.get("table_no") or 1), "table_rows": int(form.get("table_rows") or 4),
+        "link_column": int(form.get("link_column") or 1), "party_column": int(form.get("party_column") or 0),
+        "term_start_column": int(form.get("term_start_column") or 4), "term_end_column": int(form.get("term_end_column") or 5),
+        "district_column": int(form.get("district_column") or 0),
+        "dynamic_parse": form.get("dynamic_parse") == "1",
+        "read_right_to_left": form.get("read_right_to_left") == "1",
+        "find_date_in_infobox": form.get("date_source") == "find_date_in_infobox",
+        "years_only": form.get("date_source") == "years_only",
+        "parse_rowspan": form.get("parse_rowspan") == "1",
+        "rep_link": form.get("rep_link") == "1",
+        "party_link": form.get("party_link") == "1",
+        "alt_links": alt_links,
+        "alt_link_include_main": alt_link_include_main,
+        "use_full_page_for_table": form.get("use_full_page_for_table") == "1",
+        "term_dates_merged": form.get("term_dates_merged") == "1",
+        "party_ignore": form.get("party_ignore") == "1",
+        "district_ignore": form.get("district_ignore") == "1",
+        "district_at_large": form.get("district_at_large") == "1",
     }
     try:
         db_offices.update_office(office_id, data)
@@ -333,6 +285,55 @@ async def office_update(
 async def office_delete(office_id: int):
     db_offices.delete_office(office_id)
     return RedirectResponse("/offices", status_code=302)
+
+
+@app.post("/offices/{office_id}/duplicate")
+async def office_duplicate(office_id: int):
+    """Create a copy of the office (same config, new name) and redirect to the new office's edit page."""
+    office = db_offices.get_office(office_id)
+    if not office:
+        raise HTTPException(status_code=404)
+    copy_name = (office.get("name") or "Office").strip()
+    if not copy_name.lower().startswith("copy of"):
+        copy_name = "Copy of " + copy_name
+    data = {
+        "country_id": office.get("country_id") or 0,
+        "state_id": office.get("state_id"),
+        "level_id": office.get("level_id"),
+        "branch_id": office.get("branch_id"),
+        "department": office.get("department") or "",
+        "name": copy_name,
+        "enabled": False,
+        "notes": office.get("notes") or "",
+        "url": office.get("url") or "",
+        "table_no": int(office.get("table_no") or 1),
+        "table_rows": int(office.get("table_rows") or 4),
+        "link_column": int(office.get("link_column") or 1),
+        "party_column": int(office.get("party_column") or 0),
+        "term_start_column": int(office.get("term_start_column") or 4),
+        "term_end_column": int(office.get("term_end_column") or 5),
+        "district_column": int(office.get("district_column") or 0),
+        "dynamic_parse": bool(office.get("dynamic_parse")),
+        "read_right_to_left": bool(office.get("read_right_to_left")),
+        "find_date_in_infobox": bool(office.get("find_date_in_infobox")),
+        "years_only": bool(office.get("years_only")),
+        "parse_rowspan": bool(office.get("parse_rowspan")),
+        "rep_link": bool(office.get("rep_link")),
+        "party_link": bool(office.get("party_link")),
+        "alt_links": db_offices.list_alt_links(office_id),
+        "alt_link_include_main": bool(office.get("alt_link_include_main")),
+        "use_full_page_for_table": bool(office.get("use_full_page_for_table")),
+        "term_dates_merged": bool(office.get("term_dates_merged")),
+        "party_ignore": bool(office.get("party_ignore")),
+        "district_ignore": bool(office.get("district_ignore")),
+        "district_at_large": bool(office.get("district_at_large")),
+    }
+    try:
+        new_id = db_offices.create_office(data)
+    except ValueError as e:
+        from urllib.parse import quote
+        return RedirectResponse("/offices/" + str(office_id) + "?error=" + quote(str(e)), status_code=302)
+    return RedirectResponse(f"/offices/{new_id}?saved=1", status_code=302)
 
 
 @app.post("/api/offices/{office_id}/enabled")
@@ -1068,7 +1069,8 @@ def _export_job_worker(job_id: str, office_name: str, config: dict):
             "parse_rowspan": _config_bool_export(config.get("parse_rowspan")),
             "rep_link": _config_bool_export(config.get("rep_link")),
             "party_link": _config_bool_export(config.get("party_link")),
-            "alt_link": config.get("alt_link"),
+            "alt_links": config.get("alt_links") if isinstance(config.get("alt_links"), list) else [],
+            "alt_link_include_main": _config_bool_export(config.get("alt_link_include_main")),
             "use_full_page_for_table": use_full_page,
             "term_dates_merged": _config_bool_export(config.get("term_dates_merged")),
             "party_ignore": _config_bool_export(config.get("party_ignore")),
@@ -1386,7 +1388,8 @@ async def api_office_debug_export(request: Request):
                 "parse_rowspan": _config_bool(config.get("parse_rowspan")),
                 "rep_link": _config_bool(config.get("rep_link")),
                 "party_link": _config_bool(config.get("party_link")),
-                "alt_link": config.get("alt_link"),
+                "alt_links": config.get("alt_links") if isinstance(config.get("alt_links"), list) else [],
+                "alt_link_include_main": _config_bool(config.get("alt_link_include_main")),
                 "use_full_page_for_table": _config_bool(config.get("use_full_page_for_table")),
                 "term_dates_merged": _config_bool(config.get("term_dates_merged")),
                 "party_ignore": _config_bool(config.get("party_ignore")),

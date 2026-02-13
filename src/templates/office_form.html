@@ -60,9 +60,7 @@
     <div class="form-group"><label>Department</label><input type="text" name="department" value="{{ office.department if office else '' }}"></div>
     <div class="form-group"><label>Office name</label><input type="text" name="name" value="{{ office.name if office else '' }}" required></div>
   </div>
-  {% if office %}
-  <div class="form-group checkbox-group"><label><input type="checkbox" name="enabled" value="1" {% if office.enabled %}checked{% endif %}> Include in runs</label></div>
-  {% endif %}
+  <div class="form-group checkbox-group"><label><input type="checkbox" name="enabled" value="1" {% if office and office.enabled %}checked{% endif %}> Include in runs</label></div>
   <div class="form-group"><label>URL</label><input type="url" name="url" value="{{ office.url if office else '' }}" required></div>
   <div class="form-group"><label>Notes</label><input type="text" name="notes" value="{{ office.notes if office else '' }}"></div>
   <h2>Table parsing</h2>
@@ -130,10 +128,22 @@
       <p class="form-note">Fetch the full page HTML for the table (use when table number refers to the full page).</p>
     </div>
   </div>
-  <div class="form-group">
-    <label>Alt link</label>
-    <input type="text" name="alt_link" value="{{ office.alt_link if office else '' }}">
-    <p class="form-note">For Find date in infobox: exact Wikipedia path to match in bios (e.g. /wiki/Attorney_General_of_Alabama). Leave empty to use the office URL.</p>
+  <div class="form-group" id="altLinksGroup">
+    <label>Alt links</label>
+    <p class="form-note">For Find date in infobox: Wikipedia paths to match in bios (e.g. /wiki/Mayor_of_Chicago). One per row; add as many as needed. Leave all empty to use the office URL only.</p>
+    <div id="altLinksList">
+      {% for link in (office.alt_links if office and office.alt_links else ['']) %}
+      <div class="alt-link-row" style="margin-bottom:0.25rem;">
+        <input type="text" name="alt_links" value="{{ link }}" placeholder="/wiki/...">
+        <button type="button" class="btn btn-secondary btn-sm alt-link-remove" aria-label="Remove">Remove</button>
+      </div>
+      {% endfor %}
+    </div>
+    <button type="button" class="btn btn-secondary btn-sm" id="altLinkAdd">Add another alt link</button>
+  </div>
+  <div class="form-group checkbox-group">
+    <label><input type="checkbox" name="alt_link_include_main" value="1" {% if office and office.alt_link_include_main %}checked{% endif %}> Include main office link in search</label>
+    <p class="form-note">When using alt link(s), also match the main office list URL in the infobox (match any of the alt links or the main link).</p>
   </div>
   <div class="actions">
     <button type="submit" name="action" value="save" class="btn">Save</button>
@@ -153,12 +163,19 @@
     </select>
     <button type="button" class="btn btn-secondary" id="exportDebugBtn">Export debug file</button>
     <button type="button" class="btn btn-secondary" id="populateTermsBtn" data-office-id="{{ office.id }}">Populate terms</button>
-    <form action="/offices/{{ office.id }}/delete" method="post" style="display:inline;" onsubmit="return confirm('Delete this office?');">
-      <button type="submit" class="btn btn-danger">Delete</button>
-    </form>
     {% endif %}
   </div>
 </form>
+{% if office %}
+<div class="actions" style="margin-top:0.25rem;">
+  <form action="/offices/{{ office.id }}/duplicate" method="post" style="display:inline;">
+    <button type="submit" class="btn btn-secondary">Duplicate</button>
+  </form>
+  <form action="/offices/{{ office.id }}/delete" method="post" style="display:inline;" onsubmit="return confirm('Delete this office?');">
+    <button type="submit" class="btn btn-danger">Delete</button>
+  </form>
+</div>
+{% endif %}
 {% if office %}
 <div id="testConfigResult" class="alert" style="display:none; margin-top:0.5rem;"></div>
 <button type="button" class="btn btn-secondary btn-sm" id="populateTermsStopBtn" style="display:none; margin-top:0.25rem;">Stop</button>
@@ -263,7 +280,8 @@
       parse_rowspan: !!form.parse_rowspan?.checked,
       rep_link: !!form.rep_link?.checked,
       party_link: !!form.party_link?.checked,
-      alt_link: form.alt_link?.value || '',
+      alt_links: Array.from(form.querySelectorAll('input[name="alt_links"]')).map(function(inp) { return inp.value.trim(); }).filter(Boolean),
+      alt_link_include_main: !!form.alt_link_include_main?.checked,
       use_full_page_for_table: !!form.use_full_page_for_table?.checked,
       term_dates_merged: !!form.term_dates_merged?.checked,
       party_ignore: !!form.party_ignore?.checked,
@@ -330,6 +348,24 @@
     if (districtIgnoreCb) districtIgnoreCb.addEventListener('change', syncDistrictOverride);
     if (districtAtLargeCb) districtAtLargeCb.addEventListener('change', syncDistrictOverride);
     syncDistrictOverride();
+  })();
+  (function() {
+    var list = document.getElementById('altLinksList');
+    var addBtn = document.getElementById('altLinkAdd');
+    if (!list || !addBtn) return;
+    addBtn.addEventListener('click', function() {
+      var row = document.createElement('div');
+      row.className = 'alt-link-row';
+      row.style.marginBottom = '0.25rem';
+      row.innerHTML = '<input type="text" name="alt_links" value="" placeholder="/wiki/..."> <button type="button" class="btn btn-secondary btn-sm alt-link-remove" aria-label="Remove">Remove</button>';
+      row.querySelector('.alt-link-remove').addEventListener('click', function() {
+        if (list.querySelectorAll('.alt-link-row').length > 1) row.remove();
+      });
+      list.appendChild(row);
+    });
+    list.addEventListener('click', function(e) {
+      if (e.target.classList.contains('alt-link-remove') && list.querySelectorAll('.alt-link-row').length > 1) e.target.closest('.alt-link-row').remove();
+    });
   })();
   document.getElementById('testConfigBtn')?.addEventListener('click', function() {
     var el = document.getElementById('testConfigResult');

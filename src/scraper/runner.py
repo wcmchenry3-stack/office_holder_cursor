@@ -89,7 +89,8 @@ def _parse_office_html(
     When cached_table_html is provided, use it as the page content and table_no=1 (single table).
     progress_callback(phase, current, total, message, extra) is called when find_date_in_infobox and processing each row.
     When max_rows is set, only the first max_rows table rows are parsed (so infobox is only fetched for those rows)."""
-    table_config = db_offices.office_row_to_table_config(office_row)
+    alt_links = office_row.get("alt_links") if "alt_links" in office_row else (db_offices.list_alt_links(office_row["id"]) if office_row.get("id") else [])
+    table_config = db_offices.office_row_to_table_config(office_row, alt_links=alt_links)
     office_details = db_offices.office_row_to_office_details(office_row)
     if cached_table_html is not None:
         html_content = cached_table_html
