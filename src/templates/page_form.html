@@ -63,6 +63,12 @@
       </select>
     </div>
   </div>
+  <div class="actions">
+    <button type="submit" name="action" value="save" class="btn">Save</button>
+    <button type="submit" name="action" value="save_and_close" class="btn">Save and close</button>
+    <a href="/offices" class="btn btn-secondary">Cancel</a>
+    <button type="button" class="btn btn-secondary" id="showAllTablesBtn">Show all tables</button>
+  </div>
 
   <h2>Office</h2>
   <p class="form-note">Office definition on this page.</p>
@@ -162,14 +168,10 @@
     </div>
   </div>
   <div class="actions">
-    <button type="submit" name="action" value="save" class="btn">Save</button>
-    <button type="submit" name="action" value="save_and_close" class="btn">Save and close</button>
-    <a href="/offices" class="btn btn-secondary">Cancel</a>
     {% if office %}
     <button type="button" class="btn btn-secondary" id="testConfigBtn">Test config</button>
     <button type="button" class="btn btn-secondary" id="previewAllBtn">Preview all</button>
     <button type="button" class="btn btn-secondary" id="previewTopXBtn">Preview top X</button>
-    <button type="button" class="btn btn-secondary" id="showAllTablesBtn">Show all tables</button>
     <button type="button" class="btn btn-secondary" id="showSelectedTableBtn">Show selected table</button>
     <button type="button" class="btn btn-secondary" id="showTableHtmlBtn">Show table HTML</button>
     <button type="button" class="btn btn-secondary" id="refreshTableCacheBtn">Refresh table from Wikipedia</button>
