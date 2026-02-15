@@ -72,6 +72,23 @@
   </div>
   <div class="form-group checkbox-group"><label><input type="checkbox" name="enabled" value="1" {% if office and office.enabled %}checked{% endif %}> Include in runs</label></div>
   <div class="form-group"><label>Notes</label><input type="text" name="notes" value="{{ office.notes if office else '' }}"></div>
+  <div class="form-group" id="altLinksGroup">
+    <label>Alt links</label>
+    <p class="form-note">For Find date in infobox: Wikipedia paths to match in bios (e.g. /wiki/Mayor_of_Chicago). One per row; add as many as needed. Leave all empty to use the office URL only.</p>
+    <div id="altLinksList">
+      {% for link in (office.alt_links if office and office.alt_links else ['']) %}
+      <div class="alt-link-row" style="margin-bottom:0.25rem;">
+        <input type="text" name="alt_links" value="{{ link }}" placeholder="/wiki/...">
+        <button type="button" class="btn btn-secondary btn-sm alt-link-remove" aria-label="Remove">Remove</button>
+      </div>
+      {% endfor %}
+    </div>
+    <button type="button" class="btn btn-secondary btn-sm" id="altLinkAdd">Add another alt link</button>
+  </div>
+  <div class="form-group checkbox-group">
+    <label><input type="checkbox" name="alt_link_include_main" value="1" {% if office and office.alt_link_include_main %}checked{% endif %}> Include main office link in search</label>
+    <p class="form-note">When using alt link(s), also match the main office list URL in the infobox (match any of the alt links or the main link).</p>
+  </div>
 
   <h3>Table parsing</h3>
   <p class="form-note">Which table and how to parse it.</p>
@@ -142,23 +159,6 @@
       <label><input type="checkbox" name="use_full_page_for_table" value="1" {% if office and office.use_full_page_for_table %}checked{% endif %}> Use full page for table fetch</label>
       <p class="form-note">Fetch the full page HTML for the table (use when table number refers to the full page).</p>
     </div>
-  </div>
-  <div class="form-group" id="altLinksGroup">
-    <label>Alt links</label>
-    <p class="form-note">For Find date in infobox: Wikipedia paths to match in bios (e.g. /wiki/Mayor_of_Chicago). One per row; add as many as needed. Leave all empty to use the office URL only.</p>
-    <div id="altLinksList">
-      {% for link in (office.alt_links if office and office.alt_links else ['']) %}
-      <div class="alt-link-row" style="margin-bottom:0.25rem;">
-        <input type="text" name="alt_links" value="{{ link }}" placeholder="/wiki/...">
-        <button type="button" class="btn btn-secondary btn-sm alt-link-remove" aria-label="Remove">Remove</button>
-      </div>
-      {% endfor %}
-    </div>
-    <button type="button" class="btn btn-secondary btn-sm" id="altLinkAdd">Add another alt link</button>
-  </div>
-  <div class="form-group checkbox-group">
-    <label><input type="checkbox" name="alt_link_include_main" value="1" {% if office and office.alt_link_include_main %}checked{% endif %}> Include main office link in search</label>
-    <p class="form-note">When using alt link(s), also match the main office list URL in the infobox (match any of the alt links or the main link).</p>
   </div>
   <div class="actions">
     <button type="submit" name="action" value="save" class="btn">Save</button>
