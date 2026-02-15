@@ -34,6 +34,7 @@ from src.scraper.runner import run_with_db, preview_with_config, parse_full_tabl
 from src.scraper.config_test import test_office_config, get_raw_table_preview, get_all_tables_preview, get_table_html, get_table_header_from_html
 
 app = FastAPI(title="Office Holder")
+# Resolve to absolute path so template dir is correct regardless of process cwd
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
@@ -140,8 +141,8 @@ async def office_new(request: Request):
     levels = db_refs.list_levels()
     branches = db_refs.list_branches()
     return templates.TemplateResponse(
-        "office_form.html",
-        {"request": request, "office": None, "countries": countries, "levels": levels, "branches": branches, "states": [], "nav_ids": "", "nav_prev_id": None, "nav_next_id": None, "terms_count": 0},
+        "page_form.html",
+        {"request": request, "office": None, "countries": countries, "levels": levels, "branches": branches, "states": [], "nav_ids": "", "nav_prev_id": None, "nav_next_id": None, "terms_count": 0, "form_template": "page_form"},
     )
 
 
@@ -241,8 +242,8 @@ async def office_edit_page(request: Request, office_id: int):
     states = db_refs.list_states(office.get("country_id") or 0) if office.get("country_id") else []
     terms_count = db_office_terms.count_terms_for_office(office_id)
     return templates.TemplateResponse(
-        "office_form.html",
-        {"request": request, "office": office, "countries": countries, "levels": levels, "branches": branches, "states": states, "nav_ids": nav_ids_raw, "nav_prev_id": nav_prev_id, "nav_next_id": nav_next_id, "nav_current": nav_current, "nav_total": nav_total, "terms_count": terms_count, "saved": saved, "validation_error": validation_error},
+        "page_form.html",
+        {"request": request, "office": office, "countries": countries, "levels": levels, "branches": branches, "states": states, "nav_ids": nav_ids_raw, "nav_prev_id": nav_prev_id, "nav_next_id": nav_next_id, "nav_current": nav_current, "nav_total": nav_total, "terms_count": terms_count, "saved": saved, "validation_error": validation_error, "form_template": "page_form"},
     )
 
 

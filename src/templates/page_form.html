@@ -1,7 +1,11 @@
 {% extends "base.html" %}
 {% block title %}{{ "Edit" if office else "New" }} office – Office Holder{% endblock %}
 {% block content %}
-<h1>{{ "Edit" if office else "New" }} office</h1>
+{% if form_template == "page_form" %}
+<p role="status" style="background:var(--bg2, #f0f0f0); border:1px solid var(--border, #ccc); border-radius:4px; padding:0.35rem 0.75rem; margin-bottom:1rem; font-size:0.9rem;">Form: <strong>page_form</strong> (template: page_form.html)</p>
+{% endif %}
+<h1>Office</h1>
+<p class="form-note" style="margin-top:0.25rem;">{{ "Edit" if office else "New" }} office</p>
 {% if office and (nav_prev_id or nav_next_id) %}
 <p class="nav-row" style="margin-bottom:1rem;">
   {% if nav_prev_id %}<a href="/offices/{{ nav_prev_id }}{% if nav_ids %}?nav_ids={{ nav_ids }}{% endif %}" class="btn btn-secondary btn-sm">Previous</a>{% endif %}
