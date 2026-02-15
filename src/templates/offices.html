@@ -454,12 +454,28 @@
     });
   });
 
-  function showPopulateResult(id, ok, message, canForceOverride) {
+  function showPopulateResult(id, ok, message, canForceOverride, revalidateMissingHolders) {
     var msgEl = document.querySelector('.office-populate-msg[data-office-id="' + id + '"]');
     if (!msgEl) return;
     msgEl.innerHTML = '';
     msgEl.appendChild(document.createTextNode(message || (ok ? 'Done' : 'Failed')));
     msgEl.style.color = ok ? 'var(--success)' : 'var(--danger)';
+    if (revalidateMissingHolders && revalidateMissingHolders.length > 0) {
+      var viewListBtn = document.createElement('button');
+      viewListBtn.type = 'button';
+      viewListBtn.className = 'btn btn-secondary btn-sm';
+      viewListBtn.style.marginLeft = '0.25rem';
+      viewListBtn.textContent = 'View full list';
+      viewListBtn.onclick = function() {
+        var list = revalidateMissingHolders;
+        var html = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Missing office holders</title></head><body><h1>Missing office holders</h1><p>These were in existing data but not in the new list.</p><ul>' + list.map(function(x) { return '<li>' + x.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }).join('') + '</ul></body></html>';
+        var w = window.open('', '_blank');
+        w.document.write(html);
+        w.document.close();
+      };
+      msgEl.appendChild(document.createTextNode(' '));
+      msgEl.appendChild(viewListBtn);
+    }
     if (canForceOverride) {
       var forceBtn = document.createElement('button');
       forceBtn.type = 'button';
@@ -538,12 +554,12 @@
                   if (s.total > 0) msg += ' (' + s.current + ' of ' + s.total + ')';
                   if (s.extra && s.extra.terms_so_far !== undefined) msg += ' — ' + s.extra.terms_so_far + ' terms';
                   if (msgEl) msgEl.textContent = msg;
-                  if (s.status === 'complete' || s.status === 'cancelled') {
+                    if (s.status === 'complete' || s.status === 'cancelled') {
                     var r = s.result;
                     if (r && r.ok) {
                       showPopulateResult(id, true, r.message, false);
                     } else {
-                      showPopulateResult(id, false, (r && r.message) ? r.message : s.error || 'Failed', r && r.can_force_override);
+                      showPopulateResult(id, false, (r && r.message) ? r.message : s.error || 'Failed', r && r.can_force_override, r && r.revalidate_missing_holders);
                     }
                     btn.disabled = false;
                     if (stopBtn) stopBtn.style.display = 'none';

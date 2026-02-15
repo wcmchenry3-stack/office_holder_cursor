@@ -176,6 +176,36 @@ def _holder_key_from_existing_term_years(term: dict[str, Any]) -> tuple[str, str
     return (url, start_key, end_key)
 
 
+def _format_missing_holders(labels: list[str], max_show: int = 20) -> str:
+    """Format a list of missing holder labels; truncate with '… and N more' if long."""
+    if not labels:
+        return ""
+    if len(labels) <= max_show:
+        return ", ".join(labels)
+    return ", ".join(labels[:max_show]) + f" … and {len(labels) - max_show} more"
+
+
+def _missing_holders_display(
+    existing_terms: list[dict[str, Any]],
+    missing_keys: set[tuple[str, str, str]],
+    key_from_term: Callable[[dict[str, Any]], tuple[str, str, str]],
+) -> list[str]:
+    """Return human-readable labels for existing terms whose key is in missing_keys."""
+    labels: list[str] = []
+    for t in existing_terms:
+        if key_from_term(t) not in missing_keys:
+            continue
+        url = (t.get("wiki_url") or "").strip()
+        name = url.split("/")[-1].replace("_", " ") if url else "(no link)"
+        start = t.get("term_start") or t.get("term_start_year")
+        end = t.get("term_end") or t.get("term_end_year")
+        if start is not None or end is not None:
+            labels.append(f"{name} ({start or '?'}–{end or '?'})")
+        else:
+            labels.append(name)
+    return labels
+
+
 def _holder_keys_from_parsed_rows(
     table_data: list[dict],
     office_id: int,
@@ -351,9 +381,10 @@ def run_with_db(
 
     # Get party list from DB (scraper format: { country: [ {name, link}, ... ] })
     party_list = db_parties.get_party_list_for_scraper()
-    # Get offices from DB (only enabled ones are included in runs)
-    offices = db_offices.list_offices()
-    offices = [o for o in offices if o.get("enabled", 1) == 1]
+    # Get runnable units from DB (hierarchy: page + office + table all enabled; else legacy offices)
+    offices = db_offices.list_runnable_units()
+    if not offices:
+        offices = [o for o in db_offices.list_offices() if o.get("enabled", 1) == 1]
     if office_ids:
         offices = [o for o in offices if o["id"] in office_ids]
     if not offices:
@@ -383,6 +414,7 @@ def run_with_db(
     all_office_data: list[dict] = []
     replaceable_office_ids: set[int] = set()
     revalidate_failed_offices: list[tuple[int, str]] = []
+    revalidate_missing_holders_list: list[list[str]] = []  # full list per office when failure is "missing holders"
     cancelled_early = False
     bio_success_count = 0
     bio_error_count = 0
@@ -425,6 +457,7 @@ def run_with_db(
             logger.close()
             rf = len(revalidate_failed_offices) > 0
             rm = revalidate_failed_offices[0][1] if revalidate_failed_offices else None
+            r_missing = revalidate_missing_holders_list[0] if revalidate_missing_holders_list else None
             return {
                 "office_count": idx,
                 "terms_parsed": total_terms,
@@ -443,6 +476,7 @@ def run_with_db(
                 "message": f"Stopped after {idx} offices.",
                 "revalidate_failed": rf,
                 "revalidate_message": rm,
+                "revalidate_missing_holders": r_missing,
             }
         office_id = office_row["id"]
         url = office_row.get("url") or ""
@@ -493,8 +527,11 @@ def run_with_db(
             new_holders_years = _holder_keys_from_parsed_rows(table_data_pre, office_id, years_only_pre, key_years_only=True)
             missing_years = old_holders_years - new_holders_years
             if missing_years:
-                logger.log(f"Repopulate validation failed for {office_name}: table-only check found new list missing {len(missing_years)} office holder(s). Skipping infobox fetch. Keeping existing terms.", True)
+                missing_list = _missing_holders_display(existing_terms, missing_years, _holder_key_from_existing_term_years)
+                missing_str = _format_missing_holders(missing_list)
+                logger.log(f"Repopulate validation failed for {office_name}: table-only check found new list missing {len(missing_years)} office holder(s). Skipping infobox fetch. Keeping existing terms. Missing: {missing_str}", True)
                 revalidate_failed_offices.append((office_id, "New list is missing office holders that were in existing data. Kept existing terms."))
+                revalidate_missing_holders_list.append(missing_list)
                 continue
 
         # Parse table (shared code path); report infobox progress when find_date_in_infobox
@@ -517,12 +554,15 @@ def run_with_db(
             new_holders = _holder_keys_from_parsed_rows(table_data, office_id, years_only)
             missing = old_holders - new_holders
             if missing:
+                missing_list = _missing_holders_display(existing_terms, missing, _holder_key_from_existing_term)
+                missing_str = _format_missing_holders(missing_list)
                 if force_replace:
-                    logger.log(f"Force override for {office_name}: replacing despite {len(missing)} holder(s) missing from new list.", True)
+                    logger.log(f"Force override for {office_name}: replacing despite {len(missing)} holder(s) missing from new list. Missing: {missing_str}", True)
                     replaceable_office_ids.add(office_id)
                 else:
-                    logger.log(f"Repopulate validation failed for {office_name}: new list is missing {len(missing)} office holder(s) that were in existing data. Keeping existing terms.", True)
+                    logger.log(f"Repopulate validation failed for {office_name}: new list is missing {len(missing)} office holder(s) that were in existing data. Keeping existing terms. Missing: {missing_str}", True)
                     revalidate_failed_offices.append((office_id, "New list is missing office holders that were in existing data. Kept existing terms."))
+                    revalidate_missing_holders_list.append(missing_list)
                     continue
             else:
                 replaceable_office_ids.add(office_id)
@@ -536,6 +576,10 @@ def run_with_db(
             if wiki_link and wiki_link != "No link":
                 unique_wiki_urls.add(wiki_link)
             row["_office_id"] = office_id
+            if office_row.get("office_details_id") is not None:
+                row["_office_details_id"] = office_row["office_details_id"]
+                row["_office_table_config_id"] = office_row.get("office_table_config_id") or office_id
+                row["_country_id"] = office_row.get("country_id")
             row["_years_only"] = bool(office_row.get("years_only"))
             all_office_data.append(row)
         total_terms += len(table_data)
@@ -569,6 +613,7 @@ def run_with_db(
         logger.close()
         rf = len(revalidate_failed_offices) > 0
         rm = revalidate_failed_offices[0][1] if revalidate_failed_offices else None
+        r_missing = revalidate_missing_holders_list[0] if revalidate_missing_holders_list else None
         return {
             "office_count": idx,
             "terms_parsed": total_terms,
@@ -587,6 +632,7 @@ def run_with_db(
             "message": f"Stopped after {idx} offices.",
             "revalidate_failed": rf,
             "revalidate_message": rm,
+            "revalidate_missing_holders": r_missing,
         }
 
     report("office", len(offices), len(offices), "All offices parsed", {"terms_so_far": total_terms})
@@ -627,21 +673,42 @@ def run_with_db(
                         payload["is_dead_link"] = 1
                     individual_id = db_individuals.upsert_individual(payload, conn=conn)
                 party_text = row.get("Party")
-                party_id = db_parties.resolve_party_id(office_id, party_text, conn=conn)
-                db_office_terms.insert_office_term(
-                    office_id=office_id,
-                    individual_id=individual_id,
-                    wiki_url=wiki_url,
-                    party_id=party_id,
-                    district=row.get("District"),
-                    term_start=term_start_val,
-                    term_end=term_end_val,
-                    term_start_year=term_start_year,
-                    term_end_year=term_end_year,
-                    term_start_imprecise=term_start_imp,
-                    term_end_imprecise=term_end_imp,
-                    conn=conn,
-                )
+                od_id = row.get("_office_details_id")
+                tc_id = row.get("_office_table_config_id")
+                country_id = row.get("_country_id")
+                if od_id is not None and tc_id is not None and country_id is not None:
+                    party_id = db_parties.resolve_party_id_by_country(country_id, party_text, conn=conn)
+                    db_office_terms.insert_office_term(
+                        office_details_id=od_id,
+                        office_table_config_id=tc_id,
+                        individual_id=individual_id,
+                        wiki_url=wiki_url,
+                        party_id=party_id,
+                        district=row.get("District"),
+                        term_start=term_start_val,
+                        term_end=term_end_val,
+                        term_start_year=term_start_year,
+                        term_end_year=term_end_year,
+                        term_start_imprecise=term_start_imp,
+                        term_end_imprecise=term_end_imp,
+                        conn=conn,
+                    )
+                else:
+                    party_id = db_parties.resolve_party_id(office_id, party_text, conn=conn)
+                    db_office_terms.insert_office_term(
+                        office_id=office_id,
+                        individual_id=individual_id,
+                        wiki_url=wiki_url,
+                        party_id=party_id,
+                        district=row.get("District"),
+                        term_start=term_start_val,
+                        term_end=term_end_val,
+                        term_start_year=term_start_year,
+                        term_end_year=term_end_year,
+                        term_start_imprecise=term_start_imp,
+                        term_end_imprecise=term_end_imp,
+                        conn=conn,
+                    )
         finally:
             conn.close()
 
@@ -829,6 +896,7 @@ def run_with_db(
             preview_rows = preview_rows[:50]
         rf = len(revalidate_failed_offices) > 0
         rm = revalidate_failed_offices[0][1] if revalidate_failed_offices else None
+        r_missing = revalidate_missing_holders_list[0] if revalidate_missing_holders_list else None
         return {
             "office_count": len(offices),
             "terms_parsed": total_terms,
@@ -847,6 +915,7 @@ def run_with_db(
             "message": "Stopped during bio/living update.",
             "revalidate_failed": rf,
             "revalidate_message": rm,
+            "revalidate_missing_holders": r_missing,
         }
 
     logger.close()
@@ -882,6 +951,7 @@ def run_with_db(
     revalidate_message = revalidate_failed_offices[0][1] if revalidate_failed_offices else None
     if revalidate_failed and len(revalidate_failed_offices) > 1:
         revalidate_message = f"{len(revalidate_failed_offices)} office(s) skipped (validation failed). {revalidate_message}"
+    revalidate_missing_holders = revalidate_missing_holders_list[0] if revalidate_missing_holders_list else None
 
     return {
         "office_count": len(offices),
@@ -899,6 +969,7 @@ def run_with_db(
         "preview_rows": preview_rows,
         "revalidate_failed": revalidate_failed,
         "revalidate_message": revalidate_message,
+        "revalidate_missing_holders": revalidate_missing_holders,
     }
 
 

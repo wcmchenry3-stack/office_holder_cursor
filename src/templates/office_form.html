@@ -166,6 +166,7 @@
       <option value="full" selected>Office + bio (full parse)</option>
     </select>
     <button type="button" class="btn btn-secondary" id="exportDebugBtn">Export debug file</button>
+    <a href="/data/office-terms?office_id={{ office.id }}" class="btn btn-secondary" target="_blank" rel="noopener">View current terms</a>
     <button type="button" class="btn btn-secondary" id="populateTermsBtn" data-office-id="{{ office.id }}">Populate terms</button>
     {% endif %}
   </div>
@@ -898,6 +899,22 @@
                   } else {
                     resultEl.textContent = (r && r.message) ? r.message : ('Error: ' + (s.error || 'Failed'));
                     resultEl.className = 'alert alert-error';
+                    if (r && r.revalidate_missing_holders && r.revalidate_missing_holders.length > 0) {
+                      var viewListBtn = document.createElement('button');
+                      viewListBtn.type = 'button';
+                      viewListBtn.className = 'btn btn-secondary btn-sm';
+                      viewListBtn.style.marginLeft = '0.5rem';
+                      viewListBtn.textContent = 'View full list';
+                      viewListBtn.onclick = function() {
+                        var list = r.revalidate_missing_holders;
+                        var html = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Missing office holders</title></head><body><h1>Missing office holders</h1><p>These were in existing data but not in the new list.</p><ul>' + list.map(function(x) { return '<li>' + x.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }).join('') + '</ul></body></html>';
+                        var w = window.open('', '_blank');
+                        w.document.write(html);
+                        w.document.close();
+                      };
+                      resultEl.appendChild(document.createTextNode(' '));
+                      resultEl.appendChild(viewListBtn);
+                    }
                     if (r && r.can_force_override) {
                       var forceBtn = document.createElement('button');
                       forceBtn.type = 'button';

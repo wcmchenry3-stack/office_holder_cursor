@@ -94,12 +94,37 @@ def update_party(party_id: int, data: dict[str, Any], conn: sqlite3.Connection |
             conn.close()
 
 
+def resolve_party_id_by_country(
+    country_id: int,
+    party_name_or_link: str | None,
+    conn: sqlite3.Connection | None = None,
+) -> int | None:
+    """Resolve scraped party text to party id by country. Returns None if no match."""
+    if not party_name_or_link or not str(party_name_or_link).strip():
+        return None
+    if not country_id:
+        return None
+    own_conn = conn is None
+    if own_conn:
+        conn = get_connection()
+    try:
+        cur = conn.execute(
+            """SELECT id FROM parties WHERE country_id = ? AND (party_name = ? OR party_link = ?) LIMIT 1""",
+            (country_id, party_name_or_link.strip(), party_name_or_link.strip()),
+        )
+        r = cur.fetchone()
+        return r["id"] if r else None
+    finally:
+        if own_conn:
+            conn.close()
+
+
 def resolve_party_id(
     office_id: int,
     party_name_or_link: str | None,
     conn: sqlite3.Connection | None = None,
 ) -> int | None:
-    """Resolve scraped party text to party id using office's country. Returns None if no match."""
+    """Resolve scraped party text to party id using office's country (office_details_id -> source_pages in hierarchy). Returns None if no match."""
     if not party_name_or_link or not str(party_name_or_link).strip():
         return None
     own_conn = conn is None
@@ -107,18 +132,18 @@ def resolve_party_id(
         conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT o.country_id FROM offices o WHERE o.id = ? LIMIT 1",
+            "SELECT sp.country_id FROM office_details od JOIN source_pages sp ON sp.id = od.source_page_id WHERE od.id = ? LIMIT 1",
             (office_id,),
         ).fetchone()
         if not row:
+            row = conn.execute(
+                "SELECT o.country_id FROM offices o WHERE o.id = ? LIMIT 1",
+                (office_id,),
+            ).fetchone()
+        if not row:
             return None
         country_id = row["country_id"]
-        cur = conn.execute(
-            """SELECT id FROM parties WHERE country_id = ? AND (party_name = ? OR party_link = ?) LIMIT 1""",
-            (country_id, party_name_or_link.strip(), party_name_or_link.strip()),
-        )
-        r = cur.fetchone()
-        return r["id"] if r else None
+        return resolve_party_id_by_country(country_id, party_name_or_link, conn=conn)
     finally:
         if own_conn:
             conn.close()
