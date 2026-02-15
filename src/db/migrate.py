@@ -58,6 +58,8 @@ def migrate_to_fk(conn=None):
         _migrate_individuals_dead_link(conn)
         # Alt links: new table, backfill from offices.alt_link, verify, then drop offices.alt_link
         _migrate_alt_links(conn)
+        # Page -> office_details -> office_table_config hierarchy: add columns and backfill from offices
+        _migrate_to_page_office_table_hierarchy(conn)
     finally:
         if own_conn:
             conn.close()
@@ -435,4 +437,139 @@ def _migrate_alt_links(conn):
     conn.execute("CREATE INDEX IF NOT EXISTS idx_offices_state_id ON offices(state_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_offices_level_id ON offices(level_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_offices_branch_id ON offices(branch_id)")
+    conn.commit()
+
+
+def _migrate_to_page_office_table_hierarchy(conn):
+    """
+    Add office_details_id to alt_links and office_terms; add office_table_config_id to office_terms.
+    Backfill from offices into source_pages, office_details, office_table_config (1:1), then set new FKs.
+    Does not drop offices or office_id columns.
+    """
+    alt_cols = _columns(conn, "alt_links")
+    if "office_details_id" not in alt_cols:
+        conn.execute("ALTER TABLE alt_links ADD COLUMN office_details_id INTEGER REFERENCES office_details(id)")
+        conn.commit()
+        # Recreate alt_links so office_id is nullable (hierarchy uses office_details_id only)
+        conn.execute(
+            """CREATE TABLE alt_links_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                office_id INTEGER REFERENCES offices(id),
+                office_details_id INTEGER REFERENCES office_details(id),
+                link_path TEXT NOT NULL
+            )"""
+        )
+        conn.execute(
+            "INSERT INTO alt_links_new (id, office_id, office_details_id, link_path) SELECT id, office_id, office_details_id, link_path FROM alt_links"
+        )
+        conn.execute("DROP TABLE alt_links")
+        conn.execute("ALTER TABLE alt_links_new RENAME TO alt_links")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_alt_links_office_id ON alt_links(office_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_alt_links_office_details_id ON alt_links(office_details_id)")
+        conn.commit()
+    ot_cols = _columns(conn, "office_terms")
+    if "office_details_id" not in ot_cols:
+        conn.execute("ALTER TABLE office_terms ADD COLUMN office_details_id INTEGER REFERENCES office_details(id)")
+        conn.commit()
+    if "office_table_config_id" not in ot_cols:
+        conn.execute("ALTER TABLE office_terms ADD COLUMN office_table_config_id INTEGER REFERENCES office_table_config(id)")
+        conn.commit()
+
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_alt_links_office_details_id ON alt_links(office_details_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_office_terms_office_details_id ON office_terms(office_details_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_office_terms_office_table_config_id ON office_terms(office_table_config_id)")
+
+    # Ensure office_details has variant_name and department (schema may have been created without them)
+    od_cols = _columns(conn, "office_details")
+    if "variant_name" not in od_cols:
+        conn.execute("ALTER TABLE office_details ADD COLUMN variant_name TEXT NOT NULL DEFAULT ''")
+        conn.commit()
+    if "department" not in od_cols:
+        conn.execute("ALTER TABLE office_details ADD COLUMN department TEXT")
+        conn.commit()
+
+    # Backfill only when offices has rows and source_pages is empty
+    n_offices = conn.execute("SELECT COUNT(*) FROM offices").fetchone()[0]
+    n_pages = conn.execute("SELECT COUNT(*) FROM source_pages").fetchone()[0]
+    if n_offices == 0 or n_pages > 0:
+        conn.commit()
+        return
+
+    offices_rows = conn.execute(
+        """SELECT id, country_id, state_id, level_id, branch_id, department, name, enabled, notes, url,
+                  table_no, table_rows, link_column, party_column, term_start_column, term_end_column, district_column,
+                  dynamic_parse, read_right_to_left, find_date_in_infobox, parse_rowspan, consolidate_rowspan_terms,
+                  rep_link, party_link, alt_link_include_main, use_full_page_for_table, years_only,
+                  term_dates_merged, party_ignore, district_ignore, district_at_large, created_at
+           FROM offices ORDER BY id"""
+    ).fetchall()
+
+    for o in offices_rows:
+        oid = o["id"]
+        conn.execute(
+            """INSERT INTO source_pages (country_id, state_id, level_id, branch_id, url, notes, enabled, last_scraped_at, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, datetime('now'))""",
+            (
+                o["country_id"],
+                o["state_id"] or None,
+                o["level_id"] or None,
+                o["branch_id"] or None,
+                o["url"] or "",
+                o["notes"] or "",
+                1 if o["enabled"] else 0,
+                o["created_at"] or None,
+            ),
+        )
+        page_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        conn.execute(
+            """INSERT INTO office_details (source_page_id, name, variant_name, department, notes, alt_link_include_main, enabled, created_at, updated_at)
+               VALUES (?, ?, '', ?, ?, ?, ?, datetime('now'), datetime('now'))""",
+            (
+                page_id,
+                o["name"] or "",
+                o["department"] or None,
+                o["notes"] or None,
+                1 if o["alt_link_include_main"] else 0,
+                1 if o["enabled"] else 0,
+            ),
+        )
+        od_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        conn.execute(
+            """INSERT INTO office_table_config (office_details_id, table_no, table_rows, link_column, party_column,
+                  term_start_column, term_end_column, district_column, dynamic_parse, read_right_to_left, find_date_in_infobox,
+                  parse_rowspan, rep_link, party_link, enabled, use_full_page_for_table, years_only,
+                  term_dates_merged, party_ignore, district_ignore, district_at_large, consolidate_rowspan_terms, notes, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))""",
+            (
+                od_id,
+                int(o["table_no"] or 1),
+                int(o["table_rows"] or 4),
+                int(o["link_column"] or 1),
+                int(o["party_column"] or 0),
+                int(o["term_start_column"] or 4),
+                int(o["term_end_column"] or 5),
+                int(o["district_column"] or 0),
+                1 if o["dynamic_parse"] else 0,
+                1 if o["read_right_to_left"] else 0,
+                1 if o["find_date_in_infobox"] else 0,
+                1 if o["parse_rowspan"] else 0,
+                1 if o["rep_link"] else 0,
+                1 if o["party_link"] else 0,
+                1 if o["enabled"] else 0,
+                1 if o["use_full_page_for_table"] else 0,
+                1 if o["years_only"] else 0,
+                1 if o["term_dates_merged"] else 0,
+                1 if o["party_ignore"] else 0,
+                1 if o["district_ignore"] else 0,
+                1 if o["district_at_large"] else 0,
+                1 if o["consolidate_rowspan_terms"] else 0,
+                o["notes"] or None,
+            ),
+        )
+        tc_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        conn.execute("UPDATE alt_links SET office_details_id = ? WHERE office_id = ?", (od_id, oid))
+        conn.execute(
+            "UPDATE office_terms SET office_details_id = ?, office_table_config_id = ? WHERE office_id = ?",
+            (od_id, tc_id, oid),
+        )
     conn.commit()

@@ -34,6 +34,7 @@ from src.scraper.runner import run_with_db, preview_with_config, parse_full_tabl
 from src.scraper.config_test import test_office_config, get_raw_table_preview, get_all_tables_preview, get_table_html, get_table_header_from_html
 
 app = FastAPI(title="Office Holder")
+# Resolve to absolute path so template dir is correct regardless of process cwd
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
@@ -140,8 +141,8 @@ async def office_new(request: Request):
     levels = db_refs.list_levels()
     branches = db_refs.list_branches()
     return templates.TemplateResponse(
-        "office_form.html",
-        {"request": request, "office": None, "countries": countries, "levels": levels, "branches": branches, "states": [], "nav_ids": "", "nav_prev_id": None, "nav_next_id": None, "terms_count": 0},
+        "page_form.html",
+        {"request": request, "office": None, "countries": countries, "levels": levels, "branches": branches, "states": [], "nav_ids": "", "nav_prev_id": None, "nav_next_id": None, "terms_count": 0, "form_template": "page_form"},
     )
 
 
@@ -171,8 +172,8 @@ async def office_create(request: Request):
         "use_full_page_for_table": form.get("use_full_page_for_table") == "1",
         "term_dates_merged": form.get("term_dates_merged") == "1",
         "party_ignore": form.get("party_ignore") == "1",
-        "district_ignore": form.get("district_ignore") == "1",
-        "district_at_large": form.get("district_at_large") == "1",
+        "district_ignore": (form.get("district_mode") or "column") == "no_district",
+        "district_at_large": (form.get("district_mode") or "column") == "at_large",
     }
     try:
         new_id = db_offices.create_office(data)
@@ -241,8 +242,8 @@ async def office_edit_page(request: Request, office_id: int):
     states = db_refs.list_states(office.get("country_id") or 0) if office.get("country_id") else []
     terms_count = db_office_terms.count_terms_for_office(office_id)
     return templates.TemplateResponse(
-        "office_form.html",
-        {"request": request, "office": office, "countries": countries, "levels": levels, "branches": branches, "states": states, "nav_ids": nav_ids_raw, "nav_prev_id": nav_prev_id, "nav_next_id": nav_next_id, "nav_current": nav_current, "nav_total": nav_total, "terms_count": terms_count, "saved": saved, "validation_error": validation_error},
+        "page_form.html",
+        {"request": request, "office": office, "countries": countries, "levels": levels, "branches": branches, "states": states, "nav_ids": nav_ids_raw, "nav_prev_id": nav_prev_id, "nav_next_id": nav_next_id, "nav_current": nav_current, "nav_total": nav_total, "terms_count": terms_count, "saved": saved, "validation_error": validation_error, "form_template": "page_form"},
     )
 
 
@@ -273,8 +274,8 @@ async def office_update(request: Request, office_id: int):
         "use_full_page_for_table": form.get("use_full_page_for_table") == "1",
         "term_dates_merged": form.get("term_dates_merged") == "1",
         "party_ignore": form.get("party_ignore") == "1",
-        "district_ignore": form.get("district_ignore") == "1",
-        "district_at_large": form.get("district_at_large") == "1",
+        "district_ignore": (form.get("district_mode") or "column") == "no_district",
+        "district_at_large": (form.get("district_mode") or "column") == "at_large",
     }
     try:
         db_offices.update_office(office_id, data)
@@ -391,7 +392,8 @@ def _populate_job_worker(job_id: str, office_id: int, force_override: bool = Fal
                 _populate_job_store[job_id]["status"] = "error"
                 _populate_job_store[job_id]["error"] = "Office not found"
         return
-    existing = db_office_terms.get_existing_terms_for_office(office_id)
+    unit_ids = db_offices.get_runnable_unit_ids_for_office(office_id) or [office_id]
+    existing = db_office_terms.get_existing_terms_for_office(unit_ids[0])
     reprocessed = len(existing) > 0
     try:
         result = run_with_db(
@@ -399,10 +401,10 @@ def _populate_job_worker(job_id: str, office_id: int, force_override: bool = Fal
             run_bio=False,
             dry_run=False,
             test_run=False,
-            office_ids=[office_id],
+            office_ids=unit_ids,
             progress_callback=progress_callback,
             cancel_check=cancel_check,
-            force_replace_office_ids=[office_id] if force_override else None,
+            force_replace_office_ids=unit_ids if force_override else None,
         )
         terms_parsed = result.get("terms_parsed") or 0
         with _populate_job_lock:
@@ -421,11 +423,15 @@ def _populate_job_worker(job_id: str, office_id: int, force_override: bool = Fal
         revalidate_failed = result.get("revalidate_failed") and terms_parsed == 0
         revalidate_msg = result.get("revalidate_message")
         can_force_override = revalidate_msg == REVALIDATE_MSG_MISSING_HOLDERS
+        revalidate_missing_holders = result.get("revalidate_missing_holders")  # full list for "View full list" in new window
         with _populate_job_lock:
             if job_id in _populate_job_store:
                 _populate_job_store[job_id]["status"] = "complete"
                 if revalidate_failed and revalidate_msg:
-                    _populate_job_store[job_id]["result"] = {"ok": False, "message": revalidate_msg, "can_force_override": can_force_override}
+                    res = {"ok": False, "message": revalidate_msg, "can_force_override": can_force_override}
+                    if revalidate_missing_holders:
+                        res["revalidate_missing_holders"] = revalidate_missing_holders
+                    _populate_job_store[job_id]["result"] = res
                 elif err and terms_parsed == 0:
                     _populate_job_store[job_id]["result"] = {"ok": False, "message": err}
                 else:
@@ -830,13 +836,14 @@ async def office_preview_page(request: Request, office_id: int):
     with open(_log_path, "a", encoding="utf-8") as _f:
         _f.write(json.dumps({"location": "main.py:office_preview_page", "message": "preview page using run_with_db", "data": {"office_id": office_id, "url": (office.get("url") or "")[:80], "table_no": office.get("table_no"), "hypothesisId": "H3"}, "timestamp": __import__("time").time() * 1000}) + "\n")
     # #endregion
+    unit_ids = db_offices.get_runnable_unit_ids_for_office(office_id) or [office_id]
     result = run_with_db(
         run_mode="delta",
         run_bio=False,
         dry_run=True,
         test_run=False,
         max_rows_per_table=10,
-        office_ids=[office_id],
+        office_ids=unit_ids,
     )
     rows = result.get("preview_rows") or []
     raw_table_preview = result.get("raw_table_preview")
@@ -860,13 +867,14 @@ async def api_preview(office_id: int):
     office = db_offices.get_office(office_id)
     if not office:
         raise HTTPException(status_code=404)
+    unit_ids = db_offices.get_runnable_unit_ids_for_office(office_id) or [office_id]
     result = run_with_db(
         run_mode="delta",
         run_bio=False,
         dry_run=True,
         test_run=False,
         max_rows_per_table=10,
-        office_ids=[office_id],
+        office_ids=unit_ids,
     )
     # When parse returned no rows, attach raw table for troubleshooting
     if not result.get("preview_rows") and office.get("url"):

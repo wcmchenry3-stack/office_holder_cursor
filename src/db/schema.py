@@ -45,7 +45,72 @@ CREATE TABLE IF NOT EXISTS individuals (
     updated_at TEXT DEFAULT (datetime('now'))
 );
 
--- Offices: office definitions (what we scrape); link by FK to countries, states, levels, branches
+-- Source pages: Wikipedia page (one per URL; country/state/level/branch from refs)
+CREATE TABLE IF NOT EXISTS source_pages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    country_id INTEGER REFERENCES countries(id),
+    state_id INTEGER REFERENCES states(id),
+    level_id INTEGER REFERENCES levels(id),
+    branch_id INTEGER REFERENCES branches(id),
+    url TEXT NOT NULL,
+    notes TEXT,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    last_scraped_at TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_source_pages_country_id ON source_pages(country_id);
+CREATE INDEX IF NOT EXISTS idx_source_pages_enabled ON source_pages(enabled);
+
+-- Office details: logical office on a page (name, variant, alt_link behavior)
+CREATE TABLE IF NOT EXISTS office_details (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_page_id INTEGER NOT NULL REFERENCES source_pages(id),
+    name TEXT NOT NULL,
+    variant_name TEXT NOT NULL DEFAULT '',
+    department TEXT,
+    notes TEXT,
+    alt_link_include_main INTEGER NOT NULL DEFAULT 0,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_office_details_source_page_id ON office_details(source_page_id);
+CREATE INDEX IF NOT EXISTS idx_office_details_enabled ON office_details(enabled);
+
+-- Office table config: one table's parsing config per office
+CREATE TABLE IF NOT EXISTS office_table_config (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    office_details_id INTEGER NOT NULL REFERENCES office_details(id),
+    table_no INTEGER NOT NULL DEFAULT 1,
+    table_rows INTEGER NOT NULL DEFAULT 4,
+    link_column INTEGER NOT NULL DEFAULT 1,
+    party_column INTEGER NOT NULL DEFAULT 0,
+    term_start_column INTEGER NOT NULL DEFAULT 4,
+    term_end_column INTEGER NOT NULL DEFAULT 5,
+    district_column INTEGER NOT NULL DEFAULT 0,
+    dynamic_parse INTEGER NOT NULL DEFAULT 1,
+    read_right_to_left INTEGER NOT NULL DEFAULT 0,
+    find_date_in_infobox INTEGER NOT NULL DEFAULT 0,
+    parse_rowspan INTEGER NOT NULL DEFAULT 0,
+    rep_link INTEGER NOT NULL DEFAULT 0,
+    party_link INTEGER NOT NULL DEFAULT 0,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    use_full_page_for_table INTEGER NOT NULL DEFAULT 0,
+    years_only INTEGER NOT NULL DEFAULT 0,
+    term_dates_merged INTEGER NOT NULL DEFAULT 0,
+    party_ignore INTEGER NOT NULL DEFAULT 0,
+    district_ignore INTEGER NOT NULL DEFAULT 0,
+    district_at_large INTEGER NOT NULL DEFAULT 0,
+    consolidate_rowspan_terms INTEGER NOT NULL DEFAULT 0,
+    notes TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_office_table_config_office_details_id ON office_table_config(office_details_id);
+CREATE INDEX IF NOT EXISTS idx_office_table_config_enabled ON office_table_config(enabled);
+
+-- Offices: office definitions (what we scrape); link by FK to countries, states, levels, branches (legacy; migrated to hierarchy)
 CREATE TABLE IF NOT EXISTS offices (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     country_id INTEGER NOT NULL REFERENCES countries(id),
