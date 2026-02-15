@@ -172,8 +172,8 @@ async def office_create(request: Request):
         "use_full_page_for_table": form.get("use_full_page_for_table") == "1",
         "term_dates_merged": form.get("term_dates_merged") == "1",
         "party_ignore": form.get("party_ignore") == "1",
-        "district_ignore": form.get("district_ignore") == "1",
-        "district_at_large": form.get("district_at_large") == "1",
+        "district_ignore": (form.get("district_mode") or "column") == "no_district",
+        "district_at_large": (form.get("district_mode") or "column") == "at_large",
     }
     try:
         new_id = db_offices.create_office(data)
@@ -274,8 +274,8 @@ async def office_update(request: Request, office_id: int):
         "use_full_page_for_table": form.get("use_full_page_for_table") == "1",
         "term_dates_merged": form.get("term_dates_merged") == "1",
         "party_ignore": form.get("party_ignore") == "1",
-        "district_ignore": form.get("district_ignore") == "1",
-        "district_at_large": form.get("district_at_large") == "1",
+        "district_ignore": (form.get("district_mode") or "column") == "no_district",
+        "district_at_large": (form.get("district_mode") or "column") == "at_large",
     }
     try:
         db_offices.update_office(office_id, data)

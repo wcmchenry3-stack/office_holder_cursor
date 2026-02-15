@@ -112,13 +112,14 @@
       <label><input type="checkbox" name="party_ignore" value="1" id="partyIgnore" {% if office and office.party_ignore %}checked{% endif %}> Ignore party</label>
       <p class="form-note">Do not extract party; store null. Party column is grayed out — do not enter.</p>
     </div>
-    <div class="form-group checkbox-group">
-      <label><input type="checkbox" name="district_ignore" value="1" id="districtIgnore" {% if office and office.district_ignore %}checked{% endif %}> District: Ignore (No District)</label>
-      <p class="form-note">Set district to &quot;No District&quot; for all rows. District column is grayed out — do not enter.</p>
-    </div>
-    <div class="form-group checkbox-group">
-      <label><input type="checkbox" name="district_at_large" value="1" id="districtAtLarge" {% if office and office.district_at_large %}checked{% endif %}> District: At-Large</label>
-      <p class="form-note">Set district to &quot;At-Large&quot; for all rows. District column is grayed out — do not enter.</p>
+    <div class="form-group" id="districtModeGroup">
+      <label>District</label>
+      <select name="district_mode" id="districtMode">
+        <option value="column" {% if office and not office.district_ignore and not office.district_at_large %}selected{% endif %}{% if not office %} selected{% endif %}>Use district column</option>
+        <option value="at_large" {% if office and office.district_at_large %}selected{% endif %}>At-Large (ignore column)</option>
+        <option value="no_district" {% if office and office.district_ignore %}selected{% endif %}>No District (ignore column)</option>
+      </select>
+      <p class="form-note">Use the column number above to read district from the table; set all rows to At-Large; or set all to No District and ignore the column.</p>
     </div>
   </div>
   <div class="form-row">
@@ -303,8 +304,8 @@
       use_full_page_for_table: !!form.use_full_page_for_table?.checked,
       term_dates_merged: !!form.term_dates_merged?.checked,
       party_ignore: !!form.party_ignore?.checked,
-      district_ignore: !!form.district_ignore?.checked,
-      district_at_large: !!form.district_at_large?.checked
+      district_ignore: (form.district_mode?.value || 'column') === 'no_district',
+      district_at_large: (form.district_mode?.value || 'column') === 'at_large'
     };
     return data;
   }
@@ -346,13 +347,12 @@
     syncPartyIgnore();
   })();
   (function() {
-    var districtIgnoreCb = document.getElementById('districtIgnore');
-    var districtAtLargeCb = document.getElementById('districtAtLarge');
+    var districtModeSelect = document.getElementById('districtMode');
     var districtGroup = document.getElementById('districtColumnGroup');
     var districtInput = document.getElementById('districtColumn');
     function syncDistrictOverride() {
       if (!districtGroup || !districtInput) return;
-      var useOverride = (districtIgnoreCb && districtIgnoreCb.checked) || (districtAtLargeCb && districtAtLargeCb.checked);
+      var useOverride = districtModeSelect && districtModeSelect.value !== 'column';
       if (useOverride) {
         districtInput.disabled = true;
         districtGroup.style.opacity = '0.5';
@@ -363,8 +363,7 @@
         districtGroup.style.pointerEvents = '';
       }
     }
-    if (districtIgnoreCb) districtIgnoreCb.addEventListener('change', syncDistrictOverride);
-    if (districtAtLargeCb) districtAtLargeCb.addEventListener('change', syncDistrictOverride);
+    if (districtModeSelect) districtModeSelect.addEventListener('change', syncDistrictOverride);
     syncDistrictOverride();
   })();
   (function() {
