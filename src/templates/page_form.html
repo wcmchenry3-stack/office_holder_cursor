@@ -5,7 +5,7 @@
 <p role="status" style="background:var(--bg2, #f0f0f0); border:1px solid var(--border, #ccc); border-radius:4px; padding:0.35rem 0.75rem; margin-bottom:1rem; font-size:0.9rem;">Form: <strong>page_form</strong> (template: page_form.html)</p>
 {% endif %}
 <p class="form-note" style="margin-bottom:1rem;">{{ "Edit" if office else "New" }} office</p>
-{% if office and (nav_prev_id or nav_next_id) %}
+{% if office and (nav_prev_id or nav_next_id) and not (source_page_id is not none and page_data) %}
 <p class="nav-row" style="margin-bottom:1rem;">
   {% if nav_prev_id %}<a href="/offices/{{ nav_prev_id }}{% if nav_ids %}?nav_ids={{ nav_ids }}{% endif %}" class="btn btn-secondary btn-sm">Previous</a>{% endif %}
   {% if nav_prev_id and nav_current and nav_total %} | {% endif %}
@@ -16,8 +16,205 @@
 {% endif %}
 {% if saved %}<div class="alert alert-success">Saved.</div>{% endif %}
 {% if validation_error %}<div class="alert alert-error">{{ validation_error }}</div>{% endif %}
+
+{% if source_page_id is not none and page_data and offices_on_page %}
+{# Multi-office: one page config, multiple office sections, floating outline to jump #}
+<aside class="page-outline" aria-label="Page sections" style="position:fixed; right:1rem; top:6rem; width:11rem; max-height:calc(100vh - 8rem); overflow:auto; background:var(--bg2, #f5f5f5); border:1px solid var(--border, #ccc); border-radius:6px; padding:0.75rem; font-size:0.9rem; z-index:10;">
+  <strong style="display:block; margin-bottom:0.5rem;">Sections</strong>
+  <ul style="list-style:none; margin:0; padding:0;">
+    <li style="margin-bottom:0.35rem;"><a href="#section-page">{% if page_data.enabled %}<span style="color:green;" aria-label="Enabled">✓</span>{% else %}<span style="color:red;" aria-label="Disabled">✗</span>{% endif %} Page</a></li>
+    {% for o in offices_on_page %}
+    <li style="margin-bottom:0.35rem;"><a href="#section-office-{{ o.id }}">{% if o.enabled %}<span style="color:green;" aria-label="Enabled">✓</span>{% else %}<span style="color:red;" aria-label="Disabled">✗</span>{% endif %} {{ o.name or 'Office' }}</a></li>
+    {% set tclist_outline = o.table_configs if o.table_configs and o.table_configs|length > 0 else [] %}
+    {% for tc in tclist_outline %}
+    <li style="margin-bottom:0.25rem; margin-left:0.75rem; font-size:0.85rem;"><a href="#section-table-{{ tc.id if tc.id else (o.id ~ '-t' ~ loop.index) }}">{% if tc.enabled %}<span style="color:green;" aria-label="Enabled">✓</span>{% else %}<span style="color:red;" aria-label="Disabled">✗</span>{% endif %} {{ tc.name or ('Table ' ~ loop.index) }}</a></li>
+    {% endfor %}
+    {% endfor %}
+    <li style="margin-top:0.5rem; padding-top:0.5rem; border-top:1px solid var(--border, #ccc);">
+      <form method="post" action="/offices/add-office-to-page">
+        <input type="hidden" name="source_page_id" value="{{ source_page_id }}">
+        <button type="submit" class="btn btn-secondary btn-sm" style="width:100%;">Add office</button>
+      </form>
+    </li>
+  </ul>
+</aside>
+<div class="page-edit-main" style="margin-right:13rem;">
+  <div class="save-all-bar" style="margin-bottom:1rem;" data-source-page-id="{{ source_page_id }}">
+    <button type="button" class="btn save-all-btn" id="saveAllBtn">Save</button>
+    <span class="save-all-status" id="saveAllStatus" style="margin-left:0.5rem; font-size:0.9rem; color:var(--muted, #666);"></span>
+  </div>
+  <section id="section-page" style="margin-bottom:2rem;" data-page-url="{{ (page_data.url or '')|e }}">
+    <h1>Page</h1>
+    <p class="form-note">Source page (URL and location). Shared by all offices below.</p>
+    <form method="post" action="/pages/{{ source_page_id }}" id="pageForm">
+      <div class="form-group"><label>URL</label><input type="url" name="url" value="{{ page_data.url or '' }}" required placeholder="https://en.wikipedia.org/wiki/..."></div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Country</label>
+          <select name="country_id" required>
+            <option value="">— Select country —</option>
+            {% for c in countries %}
+            <option value="{{ c.id }}" {% if page_data.country_id == c.id %}selected{% endif %}>{{ c.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>State / Province / Territory</label>
+          <select name="state_id">
+            <option value="">— None —</option>
+            {% for s in states %}
+            <option value="{{ s.id }}" {% if page_data.state_id == s.id %}selected{% endif %}>{{ s.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Level</label>
+          <select name="level_id">
+            <option value="">— None —</option>
+            {% for l in levels %}
+            <option value="{{ l.id }}" {% if page_data.level_id == l.id %}selected{% endif %}>{{ l.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Branch</label>
+          <select name="branch_id">
+            <option value="">— None —</option>
+            {% for b in branches %}
+            <option value="{{ b.id }}" {% if page_data.branch_id == b.id %}selected{% endif %}>{{ b.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <div class="form-group"><label>Notes</label><input type="text" name="notes" value="{{ page_data.notes or '' }}"></div>
+      <div class="form-group checkbox-group"><label><input type="checkbox" name="enabled" value="1" {% if page_data.enabled %}checked{% endif %}> Page enabled</label></div>
+      <div class="form-group checkbox-group"><label><input type="checkbox" name="allow_reuse_tables" value="1" {% if page_data.allow_reuse_tables %}checked{% endif %}> Allow reuse of tables</label></div>
+      <p class="form-note">When checked, table numbers must be unique per page. When unchecked, different offices can use the same table number.</p>
+      <div class="actions">
+        <button type="submit" class="btn btn-secondary save-page-btn">Save page only</button>
+        <a href="/offices" class="btn btn-secondary">Cancel</a>
+        <form method="post" action="/pages/{{ source_page_id }}/delete" style="display:inline;" onsubmit="return confirm('Delete this page and all its offices and tables? This cannot be undone.');">
+          <button type="submit" class="btn btn-danger">Delete page</button>
+        </form>
+        <button type="button" class="btn btn-secondary" id="showAllTablesBtnMulti" data-action="show-all-tables" data-url-source="page">Show all tables</button>
+        <span id="showAllTablesDebugMulti" style="display:none; margin-left:0.5rem; font-size:0.8rem; color:var(--muted);"></span>
+      </div>
+    </form>
+  </section>
+  {% for o in offices_on_page %}
+  <section id="section-office-{{ o.id }}" style="margin-bottom:2rem; padding-top:1rem; border-top:1px solid var(--border, #ccc);">
+    <h2>{{ o.name or 'Office' }}</h2>
+    {% if o.terms_count is not none %}<p><small>Office terms: {{ o.terms_count }}</small></p>{% endif %}
+    <form method="post" action="/offices/{{ o.id }}" class="office-form" data-office-id="{{ o.id }}">
+      <input type="hidden" name="office_only" value="1">
+      <input type="hidden" name="action" value="save">
+      <div class="form-row">
+        <div class="form-group"><label>Department</label><input type="text" name="department" value="{{ o.department or '' }}"></div>
+        <div class="form-group"><label>Office name</label><input type="text" name="name" value="{{ o.name or '' }}" required></div>
+      </div>
+      <div class="form-group checkbox-group"><label><input type="checkbox" name="enabled" value="1" {% if o.enabled %}checked{% endif %}> Include in runs</label></div>
+      <div class="form-group"><label>Notes</label><input type="text" name="notes" value="{{ o.notes or '' }}"></div>
+      <div class="form-group">
+        <label>Alt links</label>
+        <div class="alt-links-container">
+          {% for link in (o.alt_links if o.alt_links else ['']) %}
+          <div class="alt-link-row" style="margin-bottom:0.25rem;"><input type="text" name="alt_links" value="{{ link }}" placeholder="/wiki/..."> <button type="button" class="btn btn-secondary btn-sm alt-link-remove" aria-label="Remove">Remove</button></div>
+          {% endfor %}
+        </div>
+        <button type="button" class="btn btn-secondary btn-sm alt-link-add" aria-label="Add alt link">Add another alt link</button>
+      </div>
+      <div class="form-group checkbox-group"><label><input type="checkbox" name="alt_link_include_main" value="1" {% if o.alt_link_include_main %}checked{% endif %}> Include main office link in search</label></div>
+      <h3>Table parsing</h3>
+      {% set tclist = o.table_configs if o.table_configs and o.table_configs|length > 0 else [{'id': none, 'name': '', 'table_no': o.table_no or 1, 'table_rows': o.table_rows or 4, 'link_column': o.link_column or 1, 'party_column': o.party_column or 0, 'term_start_column': o.term_start_column or 4, 'term_end_column': o.term_end_column or 5, 'district_column': o.district_column or 0, 'dynamic_parse': o.dynamic_parse, 'read_right_to_left': o.read_right_to_left, 'find_date_in_infobox': o.find_date_in_infobox, 'years_only': o.years_only, 'parse_rowspan': o.parse_rowspan, 'consolidate_rowspan_terms': o.consolidate_rowspan_terms, 'rep_link': o.rep_link, 'party_link': o.party_link, 'enabled': o.enabled, 'use_full_page_for_table': o.use_full_page_for_table, 'term_dates_merged': o.term_dates_merged, 'party_ignore': o.party_ignore, 'district_ignore': o.district_ignore, 'district_at_large': o.district_at_large, 'notes': o.notes or ''}] %}
+      <div class="table-config-blocks" data-office-id="{{ o.id }}">
+      {% for tc in tclist %}
+      <div class="table-config-block" id="section-table-{{ tc.id if tc.id else (o.id ~ '-t' ~ loop.index) }}" data-tc-id="{{ tc.id or '' }}" style="margin-bottom:1.5rem; padding:1rem; border:1px solid var(--border, #ccc); border-radius:6px;">
+        <input type="hidden" name="tc_id" value="{{ tc.id or '' }}">
+        <h4 style="margin-top:0;">Table {{ loop.index }}</h4>
+        <div class="form-row">
+          <div class="form-group"><label>Table name</label><input type="text" name="tc_name" value="{{ tc.name or '' }}" placeholder="e.g. Current members"></div>
+          <div class="form-group"><label>Table no</label><input type="number" name="tc_table_no" value="{{ tc.table_no or 1 }}" min="1"></div>
+          <div class="form-group"><label>Table rows (min)</label><input type="number" name="tc_table_rows" value="{{ tc.table_rows or 4 }}" min="1"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Link column</label><input type="number" name="tc_link_column" value="{{ tc.link_column or 1 }}" min="0"></div>
+          <div class="form-group"><label>Party column</label><input type="number" name="tc_party_column" value="{{ tc.party_column or 0 }}" min="0"></div>
+          <div class="form-group"><label>Term start column</label><input type="number" name="tc_term_start_column" value="{{ tc.term_start_column or 4 }}" min="0"></div>
+          <div class="form-group"><label>Term end column</label><input type="number" name="tc_term_end_column" value="{{ tc.term_end_column or 5 }}" min="0"></div>
+          <div class="form-group"><label>District column</label><input type="number" name="tc_district_column" value="{{ tc.district_column or 0 }}" min="0"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group checkbox-group"><label><input type="checkbox" name="tc_term_dates_merged" value="1" {% if tc.term_dates_merged %}checked{% endif %}> Term dates merged</label></div>
+          <div class="form-group checkbox-group"><label><input type="checkbox" name="tc_party_ignore" value="1" {% if tc.party_ignore %}checked{% endif %}> Ignore party</label></div>
+          <div class="form-group">
+            <label>District</label>
+            <select name="tc_district_mode">
+              <option value="column" {% if not tc.district_ignore and not tc.district_at_large %}selected{% endif %}>Use district column</option>
+              <option value="at_large" {% if tc.district_at_large %}selected{% endif %}>At-Large</option>
+              <option value="no_district" {% if tc.district_ignore %}selected{% endif %}>No District</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group checkbox-group"><label><input type="checkbox" name="tc_dynamic_parse" value="1" {% if tc.dynamic_parse %}checked{% endif %}> Dynamic parse</label></div>
+          <div class="form-group checkbox-group"><label><input type="checkbox" name="tc_read_right_to_left" value="1" {% if tc.read_right_to_left %}checked{% endif %}> Read right to left</label></div>
+          <div class="form-group">
+            <label>Date source</label>
+            <select name="tc_date_source">
+              <option value="not_applicable" {% if not tc.find_date_in_infobox and not tc.years_only %}selected{% endif %}>Not applicable</option>
+              <option value="find_date_in_infobox" {% if tc.find_date_in_infobox %}selected{% endif %}>Find date in infobox</option>
+              <option value="years_only" {% if tc.years_only %}selected{% endif %}>Table has years only</option>
+            </select>
+          </div>
+          <div class="form-group checkbox-group"><label><input type="checkbox" name="tc_parse_rowspan" value="1" {% if tc.parse_rowspan %}checked{% endif %}> Parse rowspan</label></div>
+          <div class="form-group checkbox-group"><label><input type="checkbox" name="tc_consolidate_rowspan_terms" value="1" {% if tc.consolidate_rowspan_terms %}checked{% endif %}> Consolidate rowspan terms</label></div>
+          <div class="form-group checkbox-group"><label><input type="checkbox" name="tc_rep_link" value="1" {% if tc.rep_link %}checked{% endif %}> Rep link</label></div>
+          <div class="form-group checkbox-group"><label><input type="checkbox" name="tc_party_link" value="1" {% if tc.party_link %}checked{% endif %}> Party link</label></div>
+          <div class="form-group checkbox-group"><label><input type="checkbox" name="tc_use_full_page_for_table" value="1" {% if tc.use_full_page_for_table %}checked{% endif %}> Use full page for table</label></div>
+          <div class="form-group checkbox-group"><label><input type="checkbox" name="tc_enabled" value="1" {% if tc.enabled %}checked{% endif %}> Table enabled</label></div>
+        </div>
+        <div class="form-group"><label>Notes</label><input type="text" name="tc_notes" value="{{ tc.notes or '' }}"></div>
+        <div class="actions" style="margin-top:0.5rem;">
+          <button type="button" class="btn btn-secondary btn-sm remove-table-btn">Remove table</button>
+          {% if tc.id %}
+          <button type="button" class="btn btn-danger btn-sm delete-table-btn" data-office-id="{{ o.id }}" data-tc-id="{{ tc.id }}">Delete table</button>
+          {% endif %}
+          <button type="button" class="btn btn-secondary btn-sm" data-action="test-config">Test config</button>
+          <button type="button" class="btn btn-secondary btn-sm" data-action="preview-all">Preview all</button>
+          <button type="button" class="btn btn-secondary btn-sm" data-action="preview-top-x">Preview top X</button>
+          <button type="button" class="btn btn-secondary btn-sm" data-action="show-selected-table">Show selected table</button>
+          <button type="button" class="btn btn-secondary btn-sm" data-action="show-table-html">Show table HTML</button>
+          <button type="button" class="btn btn-secondary btn-sm" data-action="refresh-table-cache">Refresh table from Wikipedia</button>
+          <select class="form-select form-select-sm export-debug-mode" style="width:auto; display:inline-block;" data-action="export-debug-mode">
+            <option value="preview">Offices only (preview)</option>
+            <option value="full" selected>Office + bio (full parse)</option>
+          </select>
+          <button type="button" class="btn btn-secondary btn-sm" data-action="export-debug">Export debug file</button>
+          <a href="/data/office-terms?office_id={{ o.id }}" class="btn btn-secondary btn-sm" target="_blank" rel="noopener">View current terms</a>
+          <button type="button" class="btn btn-secondary btn-sm" data-action="populate-terms" data-office-id="{{ o.id }}">Populate terms</button>
+        </div>
+      </div>
+      {% endfor %}
+      </div>
+      <button type="button" class="btn btn-secondary add-table-btn" data-office-id="{{ o.id }}" style="margin-bottom:1rem;">Add table</button>
+      <div class="actions">
+        <button type="submit" class="btn btn-secondary save-office-btn">Save this office only</button>
+        <a href="/offices" class="btn btn-secondary">Cancel</a>
+      </div>
+    </form>
+    <div class="actions" style="margin-top:0.25rem;">
+      <form action="/offices/{{ o.id }}/duplicate" method="post" style="display:inline;"><button type="submit" class="btn btn-secondary">Duplicate</button></form>
+      <form action="/offices/{{ o.id }}/delete" method="post" style="display:inline;" onsubmit="return confirm('Delete this office and all its tables? This cannot be undone.');"><button type="submit" class="btn btn-danger">Delete</button></form>
+    </div>
+  </section>
+  {% endfor %}
+</div>
+{% else %}
+{# Single office or new: one combined form (page + office + table) #}
 {% if office and terms_count is not none %}<p><small>Office terms: {{ terms_count }}</small></p>{% endif %}
-<form method="post" action="{% if office %}/offices/{{ office.id }}{% else %}/offices/new{% endif %}" id="officeForm">
+<form method="post" action="{% if office %}/offices/{{ office.id }}{% else %}/offices/new{% endif %}" id="officeForm" class="office-form">
   {% if office and nav_ids %}<input type="hidden" name="nav_ids" value="{{ nav_ids }}">{% endif %}
 
   <h1>Page</h1>
@@ -185,28 +382,35 @@
     {% endif %}
   </div>
 </form>
-{% if office %}
+{% endif %}
+{% if office and not (source_page_id is not none and page_data and offices_on_page) %}
 <div class="actions" style="margin-top:0.25rem;">
   <form action="/offices/{{ office.id }}/duplicate" method="post" style="display:inline;">
     <button type="submit" class="btn btn-secondary">Duplicate</button>
   </form>
-  <form action="/offices/{{ office.id }}/delete" method="post" style="display:inline;" onsubmit="return confirm('Delete this office?');">
+  <form action="/offices/{{ office.id }}/delete" method="post" style="display:inline;" onsubmit="return confirm('Delete this office and all its tables? This cannot be undone.');">
     <button type="submit" class="btn btn-danger">Delete</button>
   </form>
 </div>
 {% endif %}
-{% if office %}
-<div id="testConfigResult" class="alert" style="display:none; margin-top:0.5rem;"></div>
-<button type="button" class="btn btn-secondary btn-sm" id="populateTermsStopBtn" style="display:none; margin-top:0.25rem;">Stop</button>
-<div id="previewPanel" class="preview-panel" style="display:none; margin-top:1rem;">
-  <h2>Preview</h2>
-  <p><small>Dry run — not saved. Use &quot;Preview all&quot; or &quot;Preview top X&quot;.</small></p>
-  <div id="previewContent"></div>
-  <button type="button" class="btn btn-secondary btn-sm" id="previewStopBtn" style="display:none; margin-top:0.25rem;">Stop</button>
-  <div class="actions" style="margin-top:0.5rem;">
-    <button type="button" class="btn btn-secondary btn-sm" id="previewClose">Close preview</button>
-  </div>
+{% if office and source_page_id is not none and not (page_data and offices_on_page) %}
+<div class="offices-on-page" style="margin-top:1rem;">
+  <form method="post" action="/offices/add-office-to-page" style="display:inline;">
+    <input type="hidden" name="source_page_id" value="{{ source_page_id }}">
+    <button type="submit" class="btn btn-secondary">Add office</button>
+  </form>
+  {% if offices_on_page and offices_on_page|length > 1 %}
+  <p style="margin-top:0.75rem; margin-bottom:0.25rem;">Offices on this page:</p>
+  <ul style="margin:0; padding-left:1.25rem;">
+  {% for o in offices_on_page %}
+  {% if o.id != office.id %}
+  <li><a href="/offices/{{ o.id }}">{{ o.name or 'Office' }}</a></li>
+  {% endif %}
+  {% endfor %}
+  </ul>
+  {% endif %}
 </div>
+{% endif %}
 <div id="allTablesPanel" class="preview-panel" style="display:none; margin-top:1rem;">
   <h2>All tables on page</h2>
   <p><small>Top 10 rows per table (from current URL).</small></p>
@@ -219,6 +423,18 @@
   <div class="actions" style="margin-top:0.5rem;">
     <button type="button" class="btn btn-secondary btn-sm" id="allTablesClear">Clear</button>
     <button type="button" class="btn btn-secondary btn-sm" id="allTablesClose">Close</button>
+  </div>
+</div>
+{% if office %}
+<div id="testConfigResult" class="alert" style="display:none; margin-top:0.5rem;"></div>
+<button type="button" class="btn btn-secondary btn-sm" id="populateTermsStopBtn" style="display:none; margin-top:0.25rem;">Stop</button>
+<div id="previewPanel" class="preview-panel" style="display:none; margin-top:1rem;">
+  <h2>Preview</h2>
+  <p><small>Dry run — not saved. Use &quot;Preview all&quot; or &quot;Preview top X&quot;.</small></p>
+  <div id="previewContent"></div>
+  <button type="button" class="btn btn-secondary btn-sm" id="previewStopBtn" style="display:none; margin-top:0.25rem;">Stop</button>
+  <div class="actions" style="margin-top:0.5rem;">
+    <button type="button" class="btn btn-secondary btn-sm" id="previewClose">Close preview</button>
   </div>
 </div>
 <div id="rawTablePanel" class="preview-panel" style="display:none; margin-top:1rem;">
@@ -249,6 +465,7 @@
   var selectedStateId = {% if office and office.state_id %}{{ office.state_id }}{% else %}null{% endif %};
 
   function loadStates(countryId) {
+    if (!stateSelect) return;
     stateSelect.innerHTML = '<option value="">— None —</option>';
     if (!countryId) return;
     fetch('/api/states?country_id=' + encodeURIComponent(countryId))
@@ -264,16 +481,136 @@
       });
   }
 
-  countrySelect.addEventListener('change', function() {
+  if (countrySelect) countrySelect.addEventListener('change', function() {
     selectedStateId = null;
     loadStates(countrySelect.value);
   });
 
-  if (countrySelect.value) loadStates(countrySelect.value);
+  if (countrySelect && countrySelect.value) loadStates(countrySelect.value);
+
+  var allTablesPendingUrl = null;
+  function renderAllTables(data) {
+    var content = document.getElementById('allTablesContent');
+    if (data.error) {
+      if (content) content.innerHTML = '<div class="alert alert-error">' + esc(data.error) + '</div>';
+      return;
+    }
+    var tables = data.tables || [];
+    var html = '';
+    tables.forEach(function(tbl) {
+      var rows = tbl.rows || [];
+      var maxCols = 0;
+      rows.forEach(function(r) { if (r.length > maxCols) maxCols = r.length; });
+      if (maxCols === 0) maxCols = 1;
+      html += '<h3 style="margin-top:1rem;">Table ' + tbl.table_index + '</h3>';
+      html += '<table><thead><tr>';
+      for (var c = 1; c <= maxCols; c++) html += '<th>Column ' + c + '</th>';
+      html += '</tr></thead><tbody>';
+      rows.forEach(function(row) {
+        html += '<tr>';
+        for (var i = 0; i < maxCols; i++) html += '<td>' + esc(row[i] || '') + '</td>';
+        html += '</tr>';
+      });
+      html += '</tbody></table>';
+    });
+    if (content) content.innerHTML = html || '<p>No tables found.</p>';
+  }
+  function runShowAllTables(url) {
+    var panel = document.getElementById('allTablesPanel');
+    var debugEl = document.getElementById('showAllTablesDebugMulti');
+    if (debugEl) { debugEl.style.display = 'inline'; debugEl.textContent = (debugEl.textContent || '') + ' | runShowAllTables(urlLen=' + (url ? url.length : 0) + ', panel=' + (panel ? 'yes' : 'no') + ')'; }
+    if (!url) { alert('Enter a URL first.'); return; }
+    var content = document.getElementById('allTablesContent');
+    var confirmDiv = document.getElementById('allTablesConfirm');
+    if (panel) {
+      panel.style.display = 'block';
+      panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    if (confirmDiv) confirmDiv.style.display = 'none';
+    if (content) content.innerHTML = '<p>Loading…</p>';
+    fetch('/api/preview-all-tables', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: url }) })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data.confirm_required && data.num_tables) {
+          allTablesPendingUrl = url;
+          var countEl = document.getElementById('allTablesCount');
+          if (countEl) countEl.textContent = data.num_tables;
+          if (content) content.innerHTML = '';
+          if (confirmDiv) confirmDiv.style.display = 'block';
+          return;
+        }
+        renderAllTables(data);
+      })
+      .catch(function() { if (content) content.innerHTML = '<div class="alert alert-error">Request failed.</div>'; });
+  }
+  document.getElementById('showAllTablesBtn')?.addEventListener('click', function() {
+    var url = document.getElementById('officeForm')?.url?.value?.trim();
+    runShowAllTables(url);
+  });
+  document.body.addEventListener('click', function(e) {
+    var btn = e.target.closest ? e.target.closest('[data-action="show-all-tables"]') : null;
+    if (!btn) return;
+    e.preventDefault();
+    var url = '';
+    if (btn.getAttribute('data-url-source') === 'page') {
+      var sectionPage = document.getElementById('section-page');
+      if (sectionPage) {
+        var inp = sectionPage.querySelector('input[type="url"]') || sectionPage.querySelector('input[name="url"]');
+        if (inp && inp.value) url = inp.value.trim();
+        if (!url && sectionPage.getAttribute('data-page-url')) url = sectionPage.getAttribute('data-page-url').trim();
+      }
+      if (!url) {
+        var pf = document.getElementById('pageForm');
+        if (pf && pf.elements && pf.elements['url'] && pf.elements['url'].value) url = String(pf.elements['url'].value).trim();
+      }
+      var debugEl = document.getElementById('showAllTablesDebugMulti');
+      if (debugEl) { debugEl.style.display = 'inline'; debugEl.textContent = 'urlLen=' + (url ? url.length : 0); }
+    } else {
+      var of = document.getElementById('officeForm');
+      if (of && of.url && of.url.value) url = of.url.value.trim();
+    }
+    runShowAllTables(url);
+  });
+  document.getElementById('allTablesConfirmLoad')?.addEventListener('click', function() {
+    if (!allTablesPendingUrl) return;
+    var content = document.getElementById('allTablesContent');
+    var confirmDiv = document.getElementById('allTablesConfirm');
+    content.innerHTML = '<p>Loading…</p>';
+    if (confirmDiv) confirmDiv.style.display = 'none';
+    fetch('/api/preview-all-tables', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: allTablesPendingUrl, confirm: true }) })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        allTablesPendingUrl = null;
+        renderAllTables(data);
+      })
+      .catch(function() { if (content) content.innerHTML = '<div class="alert alert-error">Request failed.</div>'; });
+  });
+  document.getElementById('allTablesConfirmCancel')?.addEventListener('click', function() {
+    allTablesPendingUrl = null;
+    var confirmEl = document.getElementById('allTablesConfirm');
+    var contentEl = document.getElementById('allTablesContent');
+    if (confirmEl) confirmEl.style.display = 'none';
+    if (contentEl) contentEl.innerHTML = '';
+  });
+  document.getElementById('allTablesClose')?.addEventListener('click', function() {
+    var p = document.getElementById('allTablesPanel');
+    if (p) p.style.display = 'none';
+  });
+  document.getElementById('allTablesClear')?.addEventListener('click', function() {
+    var contentEl = document.getElementById('allTablesContent');
+    var confirmEl = document.getElementById('allTablesConfirm');
+    if (contentEl) contentEl.innerHTML = '';
+    if (confirmEl) confirmEl.style.display = 'none';
+    allTablesPendingUrl = null;
+  });
 
   {% if office %}
   function getFormDraft() {
     var form = document.getElementById('officeForm');
+    var firstBlock = form && form.querySelector('.table-config-block');
+    if (firstBlock && firstBlock.querySelector('[name="tc_table_no"]')) {
+      return getFormDraftFromOfficeForm(form, firstBlock);
+    }
     var data = {
       country_id: form.country_id?.value || '',
       state_id: form.state_id?.value || '',
@@ -311,6 +648,114 @@
     };
     return data;
   }
+  function getFormDraftFromOfficeForm(officeForm, tableBlock) {
+    var pageForm = document.getElementById('pageForm');
+    var pf = pageForm || officeForm;
+    var of = officeForm;
+    var block = tableBlock || of;
+    function el(name, tcName) {
+      var b = block.querySelector && block.querySelector('[name="' + tcName + '"]');
+      if (b) return b;
+      return of[name] || block[name];
+    }
+    function elVal(name, tcName, def) {
+      var n = el(name, tcName);
+      if (!n) return def;
+      var v = n.value;
+      if (v === '' || v == null) return def;
+      return parseInt(v, 10);
+    }
+    function elChecked(name, tcName) {
+      var n = el(name, tcName);
+      return n && n.checked;
+    }
+    function dateSource() {
+      var n = el('date_source', 'tc_date_source');
+      return n ? n.value : 'not_applicable';
+    }
+    function distMode() {
+      var n = el('district_mode', 'tc_district_mode');
+      return n ? n.value : 'column';
+    }
+    return {
+      country_id: (pf.country_id && pf.country_id.value) || '',
+      state_id: (pf.state_id && pf.state_id.value) || '',
+      level_id: (pf.level_id && pf.level_id.value) || '',
+      branch_id: (pf.branch_id && pf.branch_id.value) || '',
+      department: (of.department && of.department.value) || '',
+      name: (of.name && of.name.value) || '',
+      notes: (of.notes && of.notes.value) || '',
+      url: (pf.url && pf.url.value) || '',
+      table_no: elVal('table_no', 'tc_table_no', 1),
+      table_rows: elVal('table_rows', 'tc_table_rows', 4),
+      link_column: elVal('link_column', 'tc_link_column', 1),
+      party_column: elVal('party_column', 'tc_party_column', 0),
+      term_start_column: elVal('term_start_column', 'tc_term_start_column', 4),
+      term_end_column: elChecked('term_dates_merged', 'tc_term_dates_merged') ? elVal('term_start_column', 'tc_term_start_column', 4) : elVal('term_end_column', 'tc_term_end_column', 5),
+      district_column: elVal('district_column', 'tc_district_column', 0),
+      dynamic_parse: elChecked('dynamic_parse', 'tc_dynamic_parse'),
+      read_right_to_left: elChecked('read_right_to_left', 'tc_read_right_to_left'),
+      find_date_in_infobox: dateSource() === 'find_date_in_infobox',
+      years_only: dateSource() === 'years_only',
+      parse_rowspan: elChecked('parse_rowspan', 'tc_parse_rowspan'),
+      consolidate_rowspan_terms: elChecked('consolidate_rowspan_terms', 'tc_consolidate_rowspan_terms'),
+      rep_link: elChecked('rep_link', 'tc_rep_link'),
+      party_link: elChecked('party_link', 'tc_party_link'),
+      alt_links: Array.from(of.querySelectorAll('input[name="alt_links"]')).map(function(inp) { return inp.value.trim(); }).filter(Boolean),
+      alt_link_include_main: !!(of.alt_link_include_main && of.alt_link_include_main.checked),
+      use_full_page_for_table: elChecked('use_full_page_for_table', 'tc_use_full_page_for_table'),
+      term_dates_merged: elChecked('term_dates_merged', 'tc_term_dates_merged'),
+      party_ignore: elChecked('party_ignore', 'tc_party_ignore'),
+      district_ignore: distMode() === 'no_district',
+      district_at_large: distMode() === 'at_large'
+    };
+  }
+  function syncTableBlockValidation(block) {
+    if (!block || !block.querySelector) return;
+    var mergedCb = block.querySelector('input[name="tc_term_dates_merged"]');
+    var termStartInput = block.querySelector('input[name="tc_term_start_column"]');
+    var termEndInput = block.querySelector('input[name="tc_term_end_column"]');
+    var termEndGroup = termEndInput && termEndInput.closest('.form-group');
+    if (mergedCb && termEndInput && termStartInput) {
+      if (mergedCb.checked) {
+        termEndInput.value = termStartInput.value;
+        termEndInput.disabled = true;
+        if (termEndGroup) { termEndGroup.style.opacity = '0.5'; termEndGroup.style.pointerEvents = 'none'; }
+      } else {
+        termEndInput.disabled = false;
+        if (termEndGroup) { termEndGroup.style.opacity = '1'; termEndGroup.style.pointerEvents = ''; }
+      }
+    }
+    var partyIgnoreCb = block.querySelector('input[name="tc_party_ignore"]');
+    var partyInput = block.querySelector('input[name="tc_party_column"]');
+    var partyGroup = partyInput && partyInput.closest('.form-group');
+    if (partyIgnoreCb && partyInput) {
+      if (partyIgnoreCb.checked) {
+        partyInput.value = '0';
+        partyInput.disabled = true;
+        if (partyGroup) { partyGroup.style.opacity = '0.5'; partyGroup.style.pointerEvents = 'none'; }
+      } else {
+        partyInput.disabled = false;
+        if (partyGroup) { partyGroup.style.opacity = '1'; partyGroup.style.pointerEvents = ''; }
+      }
+    }
+    var districtModeSelect = block.querySelector('select[name="tc_district_mode"]');
+    var districtInput = block.querySelector('input[name="tc_district_column"]');
+    var districtGroup = districtInput && districtInput.closest('.form-group');
+    if (districtGroup && districtInput) {
+      var useOverride = districtModeSelect && districtModeSelect.value !== 'column';
+      if (useOverride) {
+        districtInput.value = '0';
+        districtInput.disabled = true;
+        districtGroup.style.opacity = '0.5';
+        districtGroup.style.pointerEvents = 'none';
+      } else {
+        districtInput.disabled = false;
+        districtGroup.style.opacity = '1';
+        districtGroup.style.pointerEvents = '';
+      }
+    }
+  }
   (function() {
     var mergedCb = document.getElementById('termDatesMerged');
     var termEndGroup = document.getElementById('termEndColumnGroup');
@@ -338,6 +783,7 @@
     function syncPartyIgnore() {
       if (!partyIgnoreCb || !partyInput) return;
       if (partyIgnoreCb.checked) {
+        partyInput.value = '0';
         partyInput.disabled = true;
         if (partyGroup) { partyGroup.style.opacity = '0.5'; partyGroup.style.pointerEvents = 'none'; }
       } else {
@@ -356,6 +802,7 @@
       if (!districtGroup || !districtInput) return;
       var useOverride = districtModeSelect && districtModeSelect.value !== 'column';
       if (useOverride) {
+        districtInput.value = '0';
         districtInput.disabled = true;
         districtGroup.style.opacity = '0.5';
         districtGroup.style.pointerEvents = 'none';
@@ -367,6 +814,76 @@
     }
     if (districtModeSelect) districtModeSelect.addEventListener('change', syncDistrictOverride);
     syncDistrictOverride();
+  })();
+  (function() {
+    function runSyncForBlock(block) {
+      if (block && block.classList && block.classList.contains('table-config-block')) syncTableBlockValidation(block);
+    }
+    document.querySelectorAll('.table-config-block').forEach(syncTableBlockValidation);
+    document.body.addEventListener('change', function(e) {
+      var block = e.target.closest('.table-config-block');
+      if (block) runSyncForBlock(block);
+    });
+    document.body.addEventListener('input', function(e) {
+      var block = e.target.closest('.table-config-block');
+      if (block && e.target.name === 'tc_term_start_column') runSyncForBlock(block);
+    });
+  })();
+  (function() {
+    document.body.addEventListener('submit', function(e) {
+      var form = e.target && e.target.tagName === 'FORM' ? e.target : null;
+      if (form) {
+        form.querySelectorAll('input[disabled], select[disabled]').forEach(function(el) { el.disabled = false; });
+      }
+    }, true);
+  })();
+  (function() {
+    var saveAllBtn = document.getElementById('saveAllBtn');
+    var pageForm = document.getElementById('pageForm');
+    var saveAllBar = document.querySelector('.save-all-bar');
+    if (!saveAllBtn || !pageForm || !saveAllBar) return;
+    saveAllBtn.addEventListener('click', function() {
+      var statusEl = document.getElementById('saveAllStatus');
+      var pageId = saveAllBar.getAttribute('data-source-page-id');
+      var officeForms = document.querySelectorAll('.office-form');
+      function setStatus(txt) { if (statusEl) statusEl.textContent = txt; }
+      setStatus('Saving…');
+      saveAllBtn.disabled = true;
+      function formToBody(form) {
+        form.querySelectorAll('input[disabled], select[disabled]').forEach(function(el) { el.disabled = false; });
+        return new FormData(form);
+      }
+      var pageAction = pageForm.getAttribute('action') || pageForm.action;
+      if (typeof pageAction !== 'string') pageAction = '';
+      fetch(pageAction, { method: 'POST', body: formToBody(pageForm) })
+        .then(function(r) {
+          if (!r.ok && r.status !== 302) throw new Error('Page save failed');
+          var idx = 0;
+          function next() {
+            if (idx >= officeForms.length) {
+              setStatus('Saved.');
+              var firstForm = officeForms[0];
+              var firstAction = firstForm ? (firstForm.getAttribute('action') || firstForm.action) : '';
+              var firstOfficeId = typeof firstAction === 'string' ? (firstAction.match(/\/offices\/(\d+)/) || [])[1] : null;
+              if (firstOfficeId) window.location.href = '/offices/' + firstOfficeId + '?saved=1';
+              else window.location.href = '/offices?saved=1';
+              return;
+            }
+            var of = officeForms[idx++];
+            var officeAction = of.getAttribute('action') || of.action;
+            if (typeof officeAction !== 'string') officeAction = '';
+            return fetch(officeAction, { method: 'POST', body: formToBody(of) }).then(function(res) {
+              if (!res.ok && res.status !== 302) throw new Error('Office save failed');
+              return next();
+            });
+          }
+          return next();
+        })
+        .catch(function(err) {
+          setStatus('Error: ' + (err && err.message ? err.message : 'Save failed'));
+          saveAllBtn.disabled = false;
+        });
+    });
   })();
   (function() {
     var list = document.getElementById('altLinksList');
@@ -384,6 +901,79 @@
     });
     list.addEventListener('click', function(e) {
       if (e.target.classList.contains('alt-link-remove') && list.querySelectorAll('.alt-link-row').length > 1) e.target.closest('.alt-link-row').remove();
+    });
+  })();
+  (function() {
+    document.body.addEventListener('click', function(e) {
+      var form = e.target.closest('.office-form');
+      if (!form) return;
+      var container = form.querySelector('.alt-links-container');
+      if (!container) return;
+      if (e.target.classList.contains('alt-link-add')) {
+        e.preventDefault();
+        var row = document.createElement('div');
+        row.className = 'alt-link-row';
+        row.style.marginBottom = '0.25rem';
+        row.innerHTML = '<input type="text" name="alt_links" value="" placeholder="/wiki/..."> <button type="button" class="btn btn-secondary btn-sm alt-link-remove" aria-label="Remove">Remove</button>';
+        container.appendChild(row);
+      } else if (e.target.classList.contains('alt-link-remove')) {
+        if (container.querySelectorAll('.alt-link-row').length > 1) e.target.closest('.alt-link-row').remove();
+      }
+      var addTableBtnEl = (e.target && e.target.nodeType === 1 ? e.target : e.target.parentElement) && (e.target.nodeType === 1 ? e.target : e.target.parentElement).closest('.add-table-btn');
+      if (addTableBtnEl) {
+        e.preventDefault();
+        var form = e.target.closest('.office-form');
+        var container = form && form.querySelector('.table-config-blocks');
+        var firstBlock = container && container.querySelector('.table-config-block');
+        if (!container || !firstBlock) return;
+        var clone = firstBlock.cloneNode(true);
+        clone.removeAttribute('data-tc-id');
+        clone.querySelector('input[name="tc_id"]').value = '';
+        var nameInput = clone.querySelector('input[name="tc_name"]');
+        if (nameInput) nameInput.value = '';
+        clone.querySelector('input[name="tc_table_no"]').value = '1';
+        clone.querySelector('input[name="tc_table_rows"]').value = '4';
+        clone.querySelector('input[name="tc_link_column"]').value = '1';
+        clone.querySelector('input[name="tc_party_column"]').value = '0';
+        clone.querySelector('input[name="tc_term_start_column"]').value = '4';
+        clone.querySelector('input[name="tc_term_end_column"]').value = '5';
+        clone.querySelector('input[name="tc_district_column"]').value = '0';
+        clone.querySelector('input[name="tc_notes"]').value = '';
+        var deleteForm = clone.querySelector('form[action*="/table/"]');
+        if (deleteForm) deleteForm.remove();
+        var h4 = clone.querySelector('h4');
+        if (h4) h4.textContent = 'Table ' + (container.querySelectorAll('.table-config-block').length + 1);
+        clone.querySelectorAll('input[type="checkbox"]').forEach(function(cb) { cb.checked = false; });
+        clone.querySelectorAll('select').forEach(function(sel) {
+          if (sel.name === 'tc_date_source') sel.value = 'not_applicable';
+          else if (sel.name === 'tc_district_mode') sel.value = 'column';
+        });
+        container.appendChild(clone);
+        var newIdx = container.querySelectorAll('.table-config-block').length;
+        clone.id = 'section-office-' + (container.getAttribute('data-office-id') || '') + '-t-' + newIdx;
+        if (clone.querySelector('h4')) clone.querySelector('h4').textContent = 'Table ' + newIdx;
+        if (typeof syncTableBlockValidation === 'function') syncTableBlockValidation(clone);
+      }
+      if (e.target.classList.contains('remove-table-btn')) {
+        e.preventDefault();
+        var block = e.target.closest('.table-config-block');
+        var container = block && block.closest('.table-config-blocks');
+        if (block && container && container.querySelectorAll('.table-config-block').length > 1) block.remove();
+      }
+      if (e.target.classList.contains('delete-table-btn')) {
+        e.preventDefault();
+        var btn = e.target.closest('.delete-table-btn');
+        if (!btn) return;
+        var officeId = btn.getAttribute('data-office-id');
+        var tcId = btn.getAttribute('data-tc-id');
+        if (!officeId || !tcId) return;
+        if (!confirm('Delete this table config and its terms? This cannot be undone.')) return;
+        var f = document.createElement('form');
+        f.method = 'post';
+        f.action = '/offices/' + officeId + '/table/' + tcId + '/delete';
+        document.body.appendChild(f);
+        f.submit();
+      }
     });
   })();
   document.getElementById('testConfigBtn')?.addEventListener('click', function() {
@@ -406,6 +996,158 @@
         el.className = 'alert alert-error';
       });
   });
+  (function() {
+    document.body.addEventListener('click', function(e) {
+      var btn = e.target.closest('[data-action]');
+      if (!btn || !btn.closest('.office-form')) return;
+      var form = btn.closest('.office-form');
+      var block = btn.closest('.table-config-block');
+      var action = btn.getAttribute('data-action');
+      if (!action) return;
+      var draft = getFormDraftFromOfficeForm(form, block || null);
+      var el = document.getElementById('testConfigResult');
+      if (action === 'test-config') {
+        if (el) { el.style.display = 'block'; el.textContent = '…'; el.className = 'alert'; }
+        fetch('/api/offices/test-config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(draft) })
+          .then(function(r) { return r.json(); })
+          .then(function(d) {
+            if (el) { el.textContent = d.ok ? 'OK: ' + d.message : 'Error: ' + d.message; el.className = d.ok ? 'alert alert-success' : 'alert alert-error'; }
+          })
+          .catch(function() { if (el) { el.textContent = 'Request failed'; el.className = 'alert alert-error'; } });
+        return;
+      }
+      if (action === 'preview-all') { runPreview({ showAll: true, draft: draft }); return; }
+      if (action === 'preview-top-x') {
+        var raw = window.prompt('Show how many rows?', '10');
+        if (raw == null) return;
+        var num = parseInt(raw, 10);
+        if (isNaN(num) || num < 1) { alert('Please enter a number greater than 0.'); return; }
+        if (num > 2000) { num = 2000; }
+        runPreview({ maxRows: num, draft: draft });
+        return;
+      }
+      if (action === 'show-selected-table') {
+        if (!draft.url) { alert('Enter a URL first.'); return; }
+        var panel = document.getElementById('rawTablePanel');
+        var content = document.getElementById('rawTableContent');
+        if (panel) panel.style.display = 'block';
+        if (content) content.innerHTML = '<p>Loading…</p>';
+        fetch('/api/raw-table-preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: draft.url, table_no: draft.table_no || 1 }) })
+          .then(function(r) { return r.json(); })
+          .then(function(data) {
+            if (data.error && content) { content.innerHTML = '<div class="alert alert-error">' + esc(data.error) + '</div>'; return; }
+            var rows = data.rows || [];
+            var maxCols = 0;
+            rows.forEach(function(r) { if (r.length > maxCols) maxCols = r.length; });
+            if (maxCols === 0) maxCols = 1;
+            var html = '<p><small>Table ' + esc(data.table_no) + ' of ' + esc(data.num_tables) + ' (top 10 rows).</small></p><table><thead><tr>';
+            for (var c = 1; c <= maxCols; c++) html += '<th>Column ' + c + '</th>';
+            html += '</tr></thead><tbody>';
+            rows.forEach(function(row) { html += '<tr>'; for (var i = 0; i < maxCols; i++) html += '<td>' + esc(row[i] || '') + '</td>'; html += '</tr>'; });
+            if (content) content.innerHTML = html + '</tbody></table>' || '<p>No rows.</p>';
+          })
+          .catch(function() { if (content) content.innerHTML = '<div class="alert alert-error">Request failed.</div>'; });
+        return;
+      }
+      if (action === 'show-table-html') {
+        if (!draft.url) { alert('Enter a URL first.'); return; }
+        var panel = document.getElementById('tableHtmlPanel');
+        var content = document.getElementById('tableHtmlContent');
+        if (panel) panel.style.display = 'block';
+        if (content) content.innerHTML = '<p>Loading…</p>';
+        fetch('/api/table-html', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: draft.url, table_no: draft.table_no || 1 }) })
+          .then(function(r) { return r.json(); })
+          .then(function(data) {
+            if (content) content.innerHTML = data.error ? '<div class="alert alert-error">' + esc(data.error) + '</div>' : '<pre style="white-space:pre-wrap; word-break:break-all; max-height:30rem; overflow:auto; font-size:0.8rem; background:var(--bg2); padding:0.75rem; border-radius:4px;"><code>' + esc(data.html || '') + '</code></pre>';
+          })
+          .catch(function() { if (content) content.innerHTML = '<div class="alert alert-error">Request failed.</div>'; });
+        return;
+      }
+      if (action === 'refresh-table-cache') {
+        if (!draft.url) { alert('Enter a URL first.'); return; }
+        btn.disabled = true;
+        fetch('/api/refresh-table-cache', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: draft.url, table_no: draft.table_no || 1, use_full_page: !!draft.use_full_page_for_table }) })
+          .then(function(r) { if (!r.ok) return r.json().then(function(d) { throw new Error(d.detail || r.statusText); }); return r.json(); })
+          .then(function() { alert('Table cache updated.'); })
+          .catch(function(err) { alert('Refresh failed: ' + (err.message || 'Request failed')); })
+          .finally(function() { btn.disabled = false; });
+        return;
+      }
+      if (action === 'export-debug') {
+        var resultEl = document.getElementById('exportDebugResult');
+        var officeName = (draft.name || '').trim() || 'office';
+        var modeSelect = form.querySelector('.export-debug-mode');
+        var exportMode = (modeSelect && modeSelect.value) || 'full';
+        if (resultEl) { resultEl.style.display = 'block'; resultEl.className = 'alert'; resultEl.textContent = 'Exporting…'; }
+        if (exportMode === 'full' && draft.find_date_in_infobox) {
+          fetch('/api/office-debug-export', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ office_name: officeName, config: draft, export_mode: 'full' }) })
+            .then(function(r) { if (r.status === 202) return r.json().then(function(d) { return { async: true, job_id: d.job_id }; }); return r.json().then(function(d) { return { async: false, data: d }; }); })
+            .then(function(res) {
+              if (res.async && res.job_id) {
+                var jobId = res.job_id;
+                var poll = function() {
+                  fetch('/api/office-debug-export-status/' + jobId).then(function(r) { return r.json(); }).then(function(s) {
+                    if (resultEl) resultEl.textContent = s.message || 'Exporting…';
+                    if (s.status === 'complete') { if (resultEl) { resultEl.className = 'alert alert-success'; resultEl.textContent = 'Debug file exported successfully.'; } if (window.playJobCompleteSound) window.playJobCompleteSound(); return; }
+                    if (s.status === 'error') { if (resultEl) { resultEl.className = 'alert alert-error'; resultEl.textContent = 'Export failed: ' + (s.error || ''); } return; }
+                    setTimeout(poll, 600);
+                  });
+                };
+                poll();
+              } else { if (resultEl) { resultEl.className = 'alert alert-success'; resultEl.textContent = 'Debug file exported successfully.'; } }
+            })
+            .catch(function(err) { if (resultEl) { resultEl.className = 'alert alert-error'; resultEl.textContent = err && err.message ? err.message : 'Export failed.'; } });
+        } else {
+          fetch('/api/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(draft) })
+            .then(function(r) { return r.json(); })
+            .then(function(previewResult) {
+              return fetch('/api/table-html', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: draft.url, table_no: draft.table_no || 1, use_full_page: !!draft.use_full_page_for_table }) }).then(function(r) { return r.json(); }).then(function(tableHtmlResult) { return { previewResult: previewResult, tableHtmlResult: tableHtmlResult }; });
+            })
+            .then(function(_) {
+              return fetch('/api/office-debug-export', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ office_name: officeName, config: draft, preview_result: _.previewResult, table_html_result: _.tableHtmlResult, export_mode: exportMode }) }).then(function(r) { return r.json(); });
+            })
+            .then(function(data) { if (resultEl) { resultEl.className = 'alert alert-success'; resultEl.textContent = 'Debug file exported successfully.'; } })
+            .catch(function(err) { if (resultEl) { resultEl.className = 'alert alert-error'; resultEl.textContent = err && err.message ? err.message : 'Export failed.'; } });
+        }
+        return;
+      }
+      if (action === 'populate-terms') {
+        var officeId = btn.getAttribute('data-office-id');
+        if (!officeId) return;
+        var resultEl = document.getElementById('testConfigResult');
+        var stopBtn = document.getElementById('populateTermsStopBtn');
+        if (resultEl) { resultEl.style.display = 'block'; resultEl.textContent = 'Starting…'; resultEl.className = 'alert'; }
+        btn.disabled = true;
+        if (stopBtn) stopBtn.style.display = 'none';
+        fetch('/api/offices/' + officeId + '/populate-terms', { method: 'POST' })
+          .then(function(r) { return r.json().then(function(d) { return { status: r.status, data: d }; }); })
+          .then(function(res) {
+            if (res.status === 202 && res.data.job_id) {
+              var jobId = res.data.job_id;
+              if (stopBtn) { stopBtn.style.display = 'inline-block'; stopBtn.disabled = false; stopBtn.onclick = function() { stopBtn.disabled = true; fetch('/api/offices/' + officeId + '/populate-terms/cancel/' + jobId, { method: 'POST' }).catch(function() {}); }; }
+              var poll = function() {
+                fetch('/api/offices/' + officeId + '/populate-terms/status/' + jobId).then(function(r) { return r.json(); }).then(function(s) {
+                  if (resultEl) resultEl.textContent = (s.message || 'Processing…') + (s.total > 0 ? ' (' + s.current + ' of ' + s.total + ')' : '');
+                  if (s.status === 'complete' || s.status === 'cancelled') {
+                    var r = s.result;
+                    if (resultEl) { resultEl.textContent = r && r.ok ? r.message : ((r && r.message) || s.error || 'Failed'); resultEl.className = (r && r.ok) ? 'alert alert-success' : 'alert alert-error'; }
+                    btn.disabled = false;
+                    if (stopBtn) stopBtn.style.display = 'none';
+                    if (window.playJobCompleteSound) window.playJobCompleteSound();
+                  }
+                  if (s.status === 'error') { if (resultEl) { resultEl.textContent = 'Error: ' + (s.error || 'Failed'); resultEl.className = 'alert alert-error'; } btn.disabled = false; if (stopBtn) stopBtn.style.display = 'none'; if (window.playJobCompleteSound) window.playJobCompleteSound(); }
+                  if (s.status !== 'complete' && s.status !== 'cancelled' && s.status !== 'error') setTimeout(poll, 800);
+                }).catch(function() { if (resultEl) resultEl.textContent = 'Request failed.'; resultEl.className = 'alert alert-error'; btn.disabled = false; if (stopBtn) stopBtn.style.display = 'none'; });
+              };
+              poll();
+            } else if (res.data.ok) { if (resultEl) { resultEl.textContent = res.data.message; resultEl.className = 'alert alert-success'; } btn.disabled = false; if (window.playJobCompleteSound) window.playJobCompleteSound(); }
+            else { if (resultEl) { resultEl.textContent = 'Error: ' + (res.data.message || 'Failed'); resultEl.className = 'alert alert-error'; } btn.disabled = false; if (window.playJobCompleteSound) window.playJobCompleteSound(); }
+          })
+          .catch(function() { if (resultEl) { resultEl.textContent = 'Request failed.'; resultEl.className = 'alert alert-error'; } btn.disabled = false; });
+        return;
+      }
+    });
+  })();
   function renderPreviewResult(result, content) {
     var rows = result.preview_rows || [];
     var raw = result.raw_table_preview;
@@ -454,7 +1196,7 @@
     panel.style.display = 'block';
     content.innerHTML = '<p>Loading preview…</p>';
     if (previewStopBtn) previewStopBtn.style.display = 'none';
-    var draft = getFormDraft();
+    var draft = (opts && opts.draft) ? opts.draft : getFormDraft();
     if (opts.showAll) {
       draft.show_all = true;
     } else if (opts.maxRows != null) {
@@ -543,99 +1285,6 @@
   });
   document.getElementById('previewClose')?.addEventListener('click', function() {
     document.getElementById('previewPanel').style.display = 'none';
-  });
-
-  var allTablesPendingUrl = null;
-  function renderAllTables(data) {
-    var content = document.getElementById('allTablesContent');
-    if (data.error) {
-      content.innerHTML = '<div class="alert alert-error">' + esc(data.error) + '</div>';
-      return;
-    }
-    var tables = data.tables || [];
-    var html = '';
-    tables.forEach(function(tbl) {
-      var rows = tbl.rows || [];
-      var maxCols = 0;
-      rows.forEach(function(r) { if (r.length > maxCols) maxCols = r.length; });
-      if (maxCols === 0) maxCols = 1;
-      html += '<h3 style="margin-top:1rem;">Table ' + tbl.table_index + '</h3>';
-      html += '<table><thead><tr>';
-      for (var c = 1; c <= maxCols; c++) html += '<th>Column ' + c + '</th>';
-      html += '</tr></thead><tbody>';
-      rows.forEach(function(row) {
-        html += '<tr>';
-        for (var i = 0; i < maxCols; i++) html += '<td>' + esc(row[i] || '') + '</td>';
-        html += '</tr>';
-      });
-      html += '</tbody></table>';
-    });
-    content.innerHTML = html || '<p>No tables found.</p>';
-  }
-  document.getElementById('showAllTablesBtn')?.addEventListener('click', function() {
-    var url = document.getElementById('officeForm')?.url?.value?.trim();
-    if (!url) {
-      alert('Enter a URL first.');
-      return;
-    }
-    var panel = document.getElementById('allTablesPanel');
-    var content = document.getElementById('allTablesContent');
-    var confirmDiv = document.getElementById('allTablesConfirm');
-    panel.style.display = 'block';
-    confirmDiv.style.display = 'none';
-    content.innerHTML = '<p>Loading…</p>';
-    fetch('/api/preview-all-tables', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: url })
-    })
-      .then(function(r) { return r.json(); })
-      .then(function(data) {
-        if (data.confirm_required && data.num_tables) {
-          allTablesPendingUrl = url;
-          document.getElementById('allTablesCount').textContent = data.num_tables;
-          content.innerHTML = '';
-          confirmDiv.style.display = 'block';
-          return;
-        }
-        renderAllTables(data);
-      })
-      .catch(function() {
-        content.innerHTML = '<div class="alert alert-error">Request failed.</div>';
-      });
-  });
-  document.getElementById('allTablesConfirmLoad')?.addEventListener('click', function() {
-    if (!allTablesPendingUrl) return;
-    var content = document.getElementById('allTablesContent');
-    var confirmDiv = document.getElementById('allTablesConfirm');
-    content.innerHTML = '<p>Loading…</p>';
-    confirmDiv.style.display = 'none';
-    fetch('/api/preview-all-tables', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: allTablesPendingUrl, confirm: true })
-    })
-      .then(function(r) { return r.json(); })
-      .then(function(data) {
-        allTablesPendingUrl = null;
-        renderAllTables(data);
-      })
-      .catch(function() {
-        content.innerHTML = '<div class="alert alert-error">Request failed.</div>';
-      });
-  });
-  document.getElementById('allTablesConfirmCancel')?.addEventListener('click', function() {
-    allTablesPendingUrl = null;
-    document.getElementById('allTablesConfirm').style.display = 'none';
-    document.getElementById('allTablesContent').innerHTML = '';
-  });
-  document.getElementById('allTablesClose')?.addEventListener('click', function() {
-    document.getElementById('allTablesPanel').style.display = 'none';
-  });
-  document.getElementById('allTablesClear')?.addEventListener('click', function() {
-    document.getElementById('allTablesContent').innerHTML = '';
-    document.getElementById('allTablesConfirm').style.display = 'none';
-    allTablesPendingUrl = null;
   });
 
   document.getElementById('showSelectedTableBtn')?.addEventListener('click', function() {

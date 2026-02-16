@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS source_pages (
     url TEXT NOT NULL,
     notes TEXT,
     enabled INTEGER NOT NULL DEFAULT 1,
+    allow_reuse_tables INTEGER NOT NULL DEFAULT 0,
     last_scraped_at TEXT,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
@@ -104,11 +105,13 @@ CREATE TABLE IF NOT EXISTS office_table_config (
     district_at_large INTEGER NOT NULL DEFAULT 0,
     consolidate_rowspan_terms INTEGER NOT NULL DEFAULT 0,
     notes TEXT,
+    name TEXT,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_office_table_config_office_details_id ON office_table_config(office_details_id);
 CREATE INDEX IF NOT EXISTS idx_office_table_config_enabled ON office_table_config(enabled);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_office_table_config_office_table_no ON office_table_config(office_details_id, table_no);
 
 -- Offices: office definitions (what we scrape); link by FK to countries, states, levels, branches (legacy; migrated to hierarchy)
 CREATE TABLE IF NOT EXISTS offices (
