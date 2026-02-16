@@ -9,10 +9,12 @@
   <a href="/offices/new" class="btn">Add office</a>
   <a href="/offices/import" class="btn btn-secondary">Bulk import CSV</a>
   <a href="/api/export-config" download="office-config-export.json" class="btn btn-secondary">Export all config (JSON)</a>
+  {% if not page_search_view %}
   <button type="button" class="btn btn-secondary" id="toggleAllOn">Toggle all on</button>
   <button type="button" class="btn btn-secondary" id="toggleAllOff">Toggle all off</button>
   <button type="button" class="btn btn-secondary" id="testAll">Test all configs</button>
   <button type="button" class="btn btn-secondary" id="previewAllBtn">Preview all</button>
+  {% endif %}
 </div>
 <div id="testAllResult" class="alert" style="display:none; margin-top:0.5rem;"></div>
 <div id="previewAllPanel" class="preview-panel" style="display:none; margin-top:1rem;">
@@ -24,7 +26,113 @@
     <button type="button" class="btn btn-secondary btn-sm" id="previewAllClose">Close</button>
   </div>
 </div>
-{% if offices %}
+{% if page_search_view %}
+<form method="get" action="/offices" class="office-filters form-row" style="margin:0.5rem 0; flex-wrap:wrap; gap:0.5rem 1rem;">
+  <div class="form-group" style="margin:0; min-width:10rem;">
+    <label for="filterCountry">Country</label>
+    <select name="country_id" id="filterCountry" class="page-col-filter">
+      <option value="">All</option>
+      {% for c in countries %}
+      <option value="{{ c.id }}" {% if filter_country_id and c.id == filter_country_id %}selected{% endif %}>{{ c.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="form-group" style="margin:0; min-width:10rem;">
+    <label for="filterState">State</label>
+    <select name="state_id" id="filterState" class="page-col-filter">
+      <option value="">All</option>
+      {% for s in states %}
+      <option value="{{ s.id }}" {% if filter_state_id and s.id == filter_state_id %}selected{% endif %}>{{ s.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="form-group" style="margin:0; min-width:8rem;">
+    <label for="filterLevel">Level</label>
+    <select name="level_id" id="filterLevel" class="page-col-filter">
+      <option value="">All</option>
+      {% for l in levels %}
+      <option value="{{ l.id }}" {% if filter_level_id and l.id == filter_level_id %}selected{% endif %}>{{ l.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="form-group" style="margin:0; min-width:8rem;">
+    <label for="filterBranch">Branch</label>
+    <select name="branch_id" id="filterBranch" class="page-col-filter">
+      <option value="">All</option>
+      {% for b in branches %}
+      <option value="{{ b.id }}" {% if filter_branch_id and b.id == filter_branch_id %}selected{% endif %}>{{ b.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="form-group" style="margin:0; min-width:8rem;">
+    <label for="filterEnabled">On/Off</label>
+    <select name="enabled" id="filterEnabled" class="page-col-filter">
+      <option value="" {% if filter_enabled == '' %}selected{% endif %}>Both</option>
+      <option value="1" {% if filter_enabled == '1' %}selected{% endif %}>On</option>
+      <option value="0" {% if filter_enabled == '0' %}selected{% endif %}>Off</option>
+    </select>
+  </div>
+  <div class="form-group" style="margin:0; min-width:8rem;">
+    <label for="showLimit">Show</label>
+    <select name="limit" id="showLimit" class="page-col-filter">
+      <option value="20" {% if filter_limit == '20' %}selected{% endif %}>Top 20</option>
+      <option value="50" {% if filter_limit == '50' %}selected{% endif %}>Top 50</option>
+      <option value="100" {% if filter_limit == '100' %}selected{% endif %}>Top 100</option>
+      <option value="all" {% if filter_limit == 'all' %}selected{% endif %}>All</option>
+    </select>
+  </div>
+  <div class="form-group" style="margin:0;">
+    <label>&nbsp;</label>
+    <button type="submit" class="btn btn-secondary btn-sm">Apply</button>
+    <a href="/offices" class="btn btn-secondary btn-sm" style="margin-left:0.35rem;">Clear filters</a>
+  </div>
+</form>
+{% if pages %}
+<table id="pagesTable" class="table">
+  <thead>
+    <tr>
+      <th>On</th>
+      <th>Country</th>
+      <th>State</th>
+      <th>Level</th>
+      <th>Branch</th>
+      <th>Office count</th>
+      <th>Table count</th>
+      <th>URL</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for p in pages %}
+    <tr data-page-id="{{ p.id }}">
+      <td>
+        <label class="checkbox-group" title="Include this page in runs">
+          <input type="checkbox" class="page-enabled" data-page-id="{{ p.id }}" {% if p.enabled %}checked{% endif %} aria-label="Page {{ p.id }} enabled">
+        </label>
+      </td>
+      <td>{{ p.country_name or '—' }}</td>
+      <td>{{ p.state_name or '—' }}</td>
+      <td>{{ p.level_name or '—' }}</td>
+      <td>{{ p.branch_name or '—' }}</td>
+      <td>{{ p.office_count|default(0) }}</td>
+      <td>{{ p.table_count|default(0) }}</td>
+      <td>{% if p.url %}<a href="{{ p.url }}" target="_blank" rel="noopener">{{ (p.url[:50] + '…') if p.url|length > 50 else p.url }}</a>{% else %}—{% endif %}</td>
+      <td>
+        {% if p.first_office_id %}
+        <a href="/offices/{{ p.first_office_id }}{% if nav_ids or list_return_query %}?{% if nav_ids %}nav_ids={{ nav_ids }}{% endif %}{% if nav_ids and list_return_query %}&{% endif %}{{ list_return_query }}{% endif %}" class="btn btn-sm btn-secondary">Edit</a>
+        {% endif %}
+        <form action="/pages/{{ p.id }}/delete" method="post" style="display:inline;" onsubmit="return confirm('Delete this page and all its offices? This cannot be undone.');">
+          <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>No pages match the filters. <a href="/offices/new">Add a page</a> or <a href="/offices/import">bulk import from CSV</a>.</p>
+{% endif %}
+{% elif offices %}
 <div class="office-filters form-row" style="margin:0.5rem 0; flex-wrap:wrap; gap:0.5rem 1rem;">
   <div class="form-group" style="margin:0; min-width:10rem;">
     <label for="filterCountry">Country</label>
@@ -135,6 +243,7 @@
 {% else %}
 <p>No offices yet. <a href="/offices/new">Add one</a> or <a href="/offices/import">bulk import from CSV</a>.</p>
 {% endif %}
+{% if not page_search_view %}
 <script>
 (function() {
   var esc = window.esc;
@@ -790,4 +899,22 @@
   });
 })();
 </script>
+{% endif %}
+{% if page_search_view %}
+<script>
+(function() {
+  document.querySelectorAll('.page-enabled').forEach(function(cb) {
+    cb.addEventListener('change', function() {
+      var pageId = this.dataset.pageId;
+      var formData = new FormData();
+      formData.set('enabled', this.checked ? '1' : '0');
+      var checkbox = this;
+      fetch('/api/pages/' + pageId + '/enabled', { method: 'POST', body: formData })
+        .then(function(r) { if (!r.ok) throw new Error('Failed'); })
+        .catch(function() { checkbox.checked = !checkbox.checked; });
+    });
+  });
+})();
+</script>
+{% endif %}
 {% endblock %}
