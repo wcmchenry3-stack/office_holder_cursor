@@ -1029,6 +1029,14 @@
         var f = document.createElement('form');
         f.method = 'post';
         f.action = '/offices/' + officeId + '/table/' + tcId + '/delete';
+        var returnQuery = window.location.search ? window.location.search.slice(1) : '';
+        if (returnQuery) {
+          var input = document.createElement('input');
+          input.type = 'hidden';
+          input.name = 'return_query';
+          input.value = returnQuery;
+          f.appendChild(input);
+        }
         document.body.appendChild(f);
         f.submit();
       }
@@ -1048,6 +1056,8 @@
           var body = new URLSearchParams();
           body.append('to_office_id', toOfficeId);
           body.append('delete_source_office_if_empty', deleteSourceIfEmpty ? '1' : '');
+          var returnQuery = window.location.search ? window.location.search.slice(1) : '';
+          if (returnQuery) body.append('return_query', returnQuery);
           fetch('/offices/' + officeId + '/table/' + tcId + '/move', {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },

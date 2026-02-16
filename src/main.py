@@ -139,6 +139,7 @@ def _list_return_query(
     branch_id: int | None = None,
     enabled: str | None = None,
     limit: str | None = None,
+    office_count: str | None = None,
 ) -> str:
     """Build query string for returning to the page list with filters applied (for Cancel link)."""
     parts: list[str] = []
@@ -154,6 +155,8 @@ def _list_return_query(
         parts.append("enabled=" + str(enabled).strip())
     if limit is not None and str(limit).strip():
         parts.append("limit=" + str(limit).strip())
+    if office_count is not None and str(office_count).strip() and str(office_count).strip() != "all":
+        parts.append("office_count=" + str(office_count).strip())
     return "&".join(parts)
 
 
@@ -177,6 +180,7 @@ async def offices_list(
     branch_id: str | None = Query(None),
     enabled: str | None = Query(None),
     limit: str | None = Query(None),
+    office_count: str | None = Query("all"),
 ):
     saved = request.query_params.get("saved") == "1"
     validation_error = request.query_params.get("error") or None
@@ -199,6 +203,9 @@ async def offices_list(
         sid = _parse_optional_int(state_id)
         lid = _parse_optional_int(level_id)
         bid = _parse_optional_int(branch_id)
+        office_count_val = (office_count or "all").strip().lower()
+        if office_count_val not in ("all", "gt0", "eq0"):
+            office_count_val = "all"
         pages = db_offices.list_pages(
             country_id=cid,
             state_id=sid,
@@ -206,6 +213,7 @@ async def offices_list(
             branch_id=bid,
             enabled=enabled_int,
             limit=limit_int,
+            office_count_filter=office_count_val,
         )
         countries = db_refs.list_countries()
         levels = db_refs.list_levels()
@@ -217,6 +225,7 @@ async def offices_list(
             country_id=cid, state_id=sid, level_id=lid, branch_id=bid,
             enabled=enabled.strip() if enabled else None,
             limit=limit.strip() if limit else None,
+            office_count=office_count_val if office_count_val != "all" else None,
         )
         return templates.TemplateResponse(
             "offices.html",
@@ -237,6 +246,7 @@ async def offices_list(
                 "filter_branch_id": bid,
                 "filter_enabled": enabled.strip() if enabled else "",
                 "filter_limit": limit.strip() if limit else "20",
+                "filter_office_count": office_count_val,
                 "saved": saved,
                 "validation_error": validation_error,
                 "imported": imported,
@@ -519,6 +529,7 @@ async def office_edit_page(request: Request, office_id: int):
         branch_id=_parse_optional_int(q.get("branch_id")),
         enabled=q.get("enabled") or None,
         limit=q.get("limit") or None,
+        office_count=q.get("office_count") or None,
     )
     countries = db_refs.list_countries()
     levels = db_refs.list_levels()
@@ -669,14 +680,32 @@ async def office_delete(office_id: int):
 
 
 @app.post("/offices/{office_id}/table/{tc_id}/delete")
-async def table_delete(office_id: int, tc_id: int):
+async def table_delete(
+    office_id: int,
+    tc_id: int,
+    return_query: str = Form(""),
+):
     """Delete one table config. Redirect back to office edit. Confirmation must be done in UI."""
     try:
         db_offices.delete_table(tc_id)
     except ValueError as e:
         from urllib.parse import quote
-        return RedirectResponse(f"/offices/{office_id}?error=" + quote(str(e)), status_code=302)
-    return RedirectResponse(f"/offices/{office_id}?saved=1", status_code=302)
+        url = f"/offices/{office_id}?error=" + quote(str(e))
+        if return_query and return_query.strip():
+            q = return_query.strip().lstrip("?")
+            if q:
+                url += "&" + q
+        return RedirectResponse(url, status_code=302)
+    url = f"/offices/{office_id}?saved=1"
+    if return_query and return_query.strip():
+        q = return_query.strip().lstrip("?")
+        if q:
+            from urllib.parse import parse_qsl, urlencode
+            params = parse_qsl(q, keep_blank_values=True)
+            params = [(k, v) for k, v in params if k.lower() != "saved"]
+            if params:
+                url += "&" + urlencode(params)
+    return RedirectResponse(url, status_code=302)
 
 
 @app.post("/offices/{office_id}/table/{tc_id}/move")
@@ -685,6 +714,7 @@ async def table_move(
     tc_id: int,
     to_office_id: int = Form(...),
     delete_source_office_if_empty: str = Form(""),
+    return_query: str = Form(""),
 ):
     """Move a table config to another office on the same page. Returns 409 with requires_confirm if source would be empty; client may resubmit with delete_source_office_if_empty=1."""
     delete_flag = str(delete_source_office_if_empty).strip().lower() in ("1", "true", "yes")
@@ -700,6 +730,14 @@ async def table_move(
             )
         return JSONResponse({"error": msg}, status_code=400)
     redirect_url = f"/offices/{to_office_id}?saved=1"
+    if return_query and return_query.strip():
+        from urllib.parse import parse_qsl, urlencode
+        q = return_query.strip().lstrip("?")
+        if q:
+            params = parse_qsl(q, keep_blank_values=True)
+            params = [(k, v) for k, v in params if k.lower() != "saved"]
+            if params:
+                redirect_url += "&" + urlencode(params)
     return JSONResponse({"redirect": redirect_url})
 
 
