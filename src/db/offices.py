@@ -490,6 +490,85 @@ def update_page(source_page_id: int, data: dict[str, Any], conn: sqlite3.Connect
             conn.close()
 
 
+def get_page_export(source_page_id: int, conn: sqlite3.Connection | None = None) -> dict[str, Any] | None:
+    """Return full hierarchy for export: page (all source_pages cols), offices (each with office_details, alt_links, tables).
+    Uses SELECT * so any new columns are included. Returns None if not hierarchy or page not found."""
+    own_conn = conn is None
+    if own_conn:
+        conn = get_connection()
+    try:
+        if not _use_hierarchy(conn):
+            return None
+        row = conn.execute("SELECT * FROM source_pages WHERE id = ?", (source_page_id,)).fetchone()
+        if not row:
+            return None
+        page_dict = _row_to_dict(row)
+        offices_list: list[dict[str, Any]] = []
+        for od_row in conn.execute(
+            "SELECT * FROM office_details WHERE source_page_id = ? ORDER BY id", (source_page_id,)
+        ).fetchall():
+            od_dict = _row_to_dict(od_row)
+            od_id = od_dict.get("id")
+            alt_links_rows: list[dict[str, Any]] = []
+            try:
+                for al_row in conn.execute(
+                    "SELECT * FROM alt_links WHERE office_details_id = ? ORDER BY id", (od_id,)
+                ).fetchall():
+                    alt_links_rows.append(_row_to_dict(al_row))
+            except sqlite3.OperationalError:
+                pass
+            tables_rows: list[dict[str, Any]] = []
+            for tc_row in conn.execute(
+                "SELECT * FROM office_table_config WHERE office_details_id = ? ORDER BY table_no, id", (od_id,)
+            ).fetchall():
+                tables_rows.append(_row_to_dict(tc_row))
+            offices_list.append({"office": od_dict, "alt_links": alt_links_rows, "tables": tables_rows})
+        return {"page": page_dict, "offices": offices_list}
+    finally:
+        if own_conn:
+            conn.close()
+
+
+def get_full_export(conn: sqlite3.Connection | None = None) -> dict[str, Any]:
+    """Return full hierarchy for all pages: pages (each with page row, offices with alt_links and tables).
+    Uses SELECT * so any new columns are included. Returns {\"pages\": []} when not hierarchy."""
+    own_conn = conn is None
+    if own_conn:
+        conn = get_connection()
+    try:
+        if not _use_hierarchy(conn):
+            return {"pages": []}
+        pages_list: list[dict[str, Any]] = []
+        for page_row in conn.execute("SELECT * FROM source_pages ORDER BY id").fetchall():
+            page_dict = _row_to_dict(page_row)
+            source_page_id = page_dict.get("id")
+            offices_list: list[dict[str, Any]] = []
+            for od_row in conn.execute(
+                "SELECT * FROM office_details WHERE source_page_id = ? ORDER BY id", (source_page_id,)
+            ).fetchall():
+                od_dict = _row_to_dict(od_row)
+                od_id = od_dict.get("id")
+                alt_links_rows: list[dict[str, Any]] = []
+                try:
+                    for al_row in conn.execute(
+                        "SELECT * FROM alt_links WHERE office_details_id = ? ORDER BY id", (od_id,)
+                    ).fetchall():
+                        alt_links_rows.append(_row_to_dict(al_row))
+                except sqlite3.OperationalError:
+                    pass
+                tables_rows: list[dict[str, Any]] = []
+                for tc_row in conn.execute(
+                    "SELECT * FROM office_table_config WHERE office_details_id = ? ORDER BY table_no, id", (od_id,)
+                ).fetchall():
+                    tables_rows.append(_row_to_dict(tc_row))
+                offices_list.append({"office": od_dict, "alt_links": alt_links_rows, "tables": tables_rows})
+            pages_list.append({"page": page_dict, "offices": offices_list})
+        return {"pages": pages_list}
+    finally:
+        if own_conn:
+            conn.close()
+
+
 def list_offices_for_page(source_page_id: int, conn: sqlite3.Connection | None = None) -> list[dict[str, Any]]:
     """Return all offices (flat) for a given source_page_id. Empty if not using hierarchy or page not found."""
     own_conn = conn is None

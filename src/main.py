@@ -5,6 +5,7 @@ Run: uvicorn src.main:app --reload
 From project root: office_holder/
 """
 
+import json
 import re
 import tempfile
 from datetime import datetime
@@ -19,7 +20,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from fastapi import FastAPI, File, Request, Form, HTTPException, Query, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -109,7 +110,12 @@ def _office_draft_from_body(body: dict, *, include_ref_names: bool = False) -> d
 
 @app.on_event("startup")
 def startup():
-    init_db()
+    try:
+        init_db()
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise RuntimeError(f"Database startup failed: {e}") from e
 
 
 # ---------- Office config CRUD ----------
@@ -298,6 +304,30 @@ async def page_update(request: Request, source_page_id: int):
         return RedirectResponse(f"{base}?error=" + quote(str(e)), status_code=302)
     first_office_id = db_offices.list_offices_for_page(source_page_id)[0]["id"]
     return RedirectResponse(f"/offices/{first_office_id}?saved=1#section-page", status_code=302)
+
+
+@app.get("/api/export-config")
+async def api_export_config():
+    """Return full hierarchy for all pages (each page with offices, alt_links, tables) as JSON download."""
+    data = db_offices.get_full_export()
+    return Response(
+        content=json.dumps(data, indent=2),
+        media_type="application/json",
+        headers={"Content-Disposition": 'attachment; filename="office-config-export.json"'},
+    )
+
+
+@app.get("/api/pages/{source_page_id}/export-config")
+async def api_page_export_config(source_page_id: int):
+    """Return full page hierarchy (page, offices with alt_links and tables) for one page as JSON download."""
+    data = db_offices.get_page_export(source_page_id)
+    if data is None:
+        raise HTTPException(status_code=404, detail="Page not found or hierarchy not in use")
+    return Response(
+        content=json.dumps(data, indent=2),
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="page-{source_page_id}-config.json"'},
+    )
 
 
 @app.get("/offices/{office_id}", response_class=HTMLResponse)
