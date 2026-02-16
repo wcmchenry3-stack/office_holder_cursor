@@ -214,12 +214,106 @@ async def offices_import(request: Request, csv_path: str = Form("")):
         return templates.TemplateResponse("import.html", {"request": request, "error": str(e)})
 
 
+@app.post("/offices/add-office-to-page")
+async def office_add_to_page(request: Request):
+    """Add a new office (and table) to an existing page. Form: source_page_id. Redirects to new office edit."""
+    form = await request.form()
+    try:
+        source_page_id = int(form.get("source_page_id") or 0)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="source_page_id required")
+    if source_page_id <= 0:
+        raise HTTPException(status_code=400, detail="source_page_id required")
+    offices_on_page = db_offices.list_offices_for_page(source_page_id)
+    if not offices_on_page:
+        raise HTTPException(status_code=404, detail="Page not found or has no offices")
+    first = offices_on_page[0]
+    data = {
+        "country_id": first.get("country_id") or 0,
+        "state_id": first.get("state_id"),
+        "level_id": first.get("level_id"),
+        "branch_id": first.get("branch_id"),
+        "department": (first.get("department") or "").strip(),
+        "name": "New office",
+        "enabled": False,
+        "notes": "",
+        "url": first.get("url") or "",
+        "table_no": int(first.get("table_no") or 1),
+        "table_rows": int(first.get("table_rows") or 4),
+        "link_column": int(first.get("link_column") or 1),
+        "party_column": int(first.get("party_column") or 0),
+        "term_start_column": int(first.get("term_start_column") or 4),
+        "term_end_column": int(first.get("term_end_column") or 5),
+        "district_column": int(first.get("district_column") or 0),
+        "dynamic_parse": bool(first.get("dynamic_parse")),
+        "read_right_to_left": bool(first.get("read_right_to_left")),
+        "find_date_in_infobox": bool(first.get("find_date_in_infobox")),
+        "years_only": bool(first.get("years_only")),
+        "parse_rowspan": bool(first.get("parse_rowspan")),
+        "consolidate_rowspan_terms": bool(first.get("consolidate_rowspan_terms")),
+        "rep_link": bool(first.get("rep_link")),
+        "party_link": bool(first.get("party_link")),
+        "alt_links": list(first.get("alt_links") or []),
+        "alt_link_include_main": bool(first.get("alt_link_include_main")),
+        "use_full_page_for_table": bool(first.get("use_full_page_for_table")),
+        "term_dates_merged": bool(first.get("term_dates_merged")),
+        "party_ignore": bool(first.get("party_ignore")),
+        "district_ignore": bool(first.get("district_ignore")),
+        "district_at_large": bool(first.get("district_at_large")),
+    }
+    try:
+        new_id = db_offices.create_office_for_page(source_page_id, data)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return RedirectResponse(f"/offices/{new_id}?saved=0#section-office-{new_id}", status_code=302)
+
+
+@app.post("/pages/{source_page_id}/delete")
+async def page_delete(source_page_id: int):
+    """Delete page and all its offices. Redirect to /offices. Confirmation must be done in UI (onsubmit confirm)."""
+    db_offices.delete_page(source_page_id)
+    return RedirectResponse("/offices", status_code=302)
+
+
+@app.post("/pages/{source_page_id}")
+async def page_update(request: Request, source_page_id: int):
+    """Update only the page (URL, location). Used when editing one page with multiple offices."""
+    form = await request.form()
+    page_data = {
+        "url": (form.get("url") or "").strip(),
+        "country_id": int(form.get("country_id") or 0),
+        "state_id": int(form.get("state_id") or 0) or None,
+        "level_id": int(form.get("level_id") or 0) or None,
+        "branch_id": int(form.get("branch_id") or 0) or None,
+        "notes": (form.get("notes") or "").strip(),
+        "enabled": form.get("enabled") == "1",
+        "allow_reuse_tables": form.get("allow_reuse_tables") == "1",
+    }
+    try:
+        db_offices.update_page(source_page_id, page_data)
+    except ValueError as e:
+        from urllib.parse import quote
+        offices_on_page = db_offices.list_offices_for_page(source_page_id)
+        base = f"/offices/{offices_on_page[0]['id']}" if offices_on_page else "/offices"
+        return RedirectResponse(f"{base}?error=" + quote(str(e)), status_code=302)
+    first_office_id = db_offices.list_offices_for_page(source_page_id)[0]["id"]
+    return RedirectResponse(f"/offices/{first_office_id}?saved=1#section-page", status_code=302)
+
+
 @app.get("/offices/{office_id}", response_class=HTMLResponse)
 async def office_edit_page(request: Request, office_id: int):
     office = db_offices.get_office(office_id)
     if not office:
         raise HTTPException(status_code=404)
     office["alt_links"] = db_offices.list_alt_links(office_id)
+    offices_on_page = None
+    source_page_id = office.get("source_page_id")
+    page_data = None
+    if source_page_id is not None:
+        offices_on_page = db_offices.list_offices_for_page(source_page_id)
+        page_data = db_offices.get_page(source_page_id)
+        for o in offices_on_page or []:
+            o["terms_count"] = db_office_terms.count_terms_for_office(o["id"])
     saved = request.query_params.get("saved") == "1"
     validation_error = request.query_params.get("error") or None
     nav_ids_raw = request.query_params.get("nav_ids") or ""
@@ -239,18 +333,76 @@ async def office_edit_page(request: Request, office_id: int):
     countries = db_refs.list_countries()
     levels = db_refs.list_levels()
     branches = db_refs.list_branches()
-    states = db_refs.list_states(office.get("country_id") or 0) if office.get("country_id") else []
+    country_id_for_states = (page_data or office).get("country_id") or office.get("country_id") or 0
+    states = db_refs.list_states(country_id_for_states) if country_id_for_states else []
     terms_count = db_office_terms.count_terms_for_office(office_id)
     return templates.TemplateResponse(
         "page_form.html",
-        {"request": request, "office": office, "countries": countries, "levels": levels, "branches": branches, "states": states, "nav_ids": nav_ids_raw, "nav_prev_id": nav_prev_id, "nav_next_id": nav_next_id, "nav_current": nav_current, "nav_total": nav_total, "terms_count": terms_count, "saved": saved, "validation_error": validation_error, "form_template": "page_form"},
+        {"request": request, "office": office, "offices_on_page": offices_on_page, "source_page_id": source_page_id, "page_data": page_data, "countries": countries, "levels": levels, "branches": branches, "states": states, "nav_ids": nav_ids_raw, "nav_prev_id": nav_prev_id, "nav_next_id": nav_next_id, "nav_current": nav_current, "nav_total": nav_total, "terms_count": terms_count, "saved": saved, "validation_error": validation_error, "form_template": "page_form"},
     )
+
+
+def _form_to_table_config(form, i: int) -> dict:
+    """Build one table config dict from form using index i for tc_* getlist."""
+    def _get(key_flat: str, key_tc: str):
+        lst = form.getlist(key_tc)
+        if lst and i < len(lst) and lst[i] is not None and str(lst[i]).strip() != "":
+            return lst[i]
+        return form.get(key_flat) if i == 0 else None
+    def _int(key_flat: str, key_tc: str, default: int) -> int:
+        v = _get(key_flat, key_tc)
+        if v is None or v == "":
+            return default
+        try:
+            return int(v)
+        except (TypeError, ValueError):
+            return default
+    def _bool(key_flat: str, key_tc: str) -> bool:
+        v = _get(key_flat, key_tc)
+        return v in (True, "1", 1, "true", "TRUE")
+    tc_id = _get("tc_id", "tc_id")
+    if tc_id is not None and str(tc_id).strip() != "":
+        try:
+            tc_id = int(tc_id)
+        except (TypeError, ValueError):
+            tc_id = None
+    else:
+        tc_id = None
+    date_src = _get("date_source", "tc_date_source") or ""
+    dist_mode = _get("district_mode", "tc_district_mode") or "column"
+    return {
+        "id": tc_id,
+        "table_no": _int("table_no", "tc_table_no", 1),
+        "table_rows": _int("table_rows", "tc_table_rows", 4),
+        "link_column": _int("link_column", "tc_link_column", 1),
+        "party_column": _int("party_column", "tc_party_column", 0),
+        "term_start_column": _int("term_start_column", "tc_term_start_column", 4),
+        "term_end_column": _int("term_end_column", "tc_term_end_column", 5),
+        "district_column": _int("district_column", "tc_district_column", 0),
+        "dynamic_parse": _bool("dynamic_parse", "tc_dynamic_parse"),
+        "read_right_to_left": _bool("read_right_to_left", "tc_read_right_to_left"),
+        "find_date_in_infobox": date_src == "find_date_in_infobox",
+        "years_only": date_src == "years_only",
+        "parse_rowspan": _bool("parse_rowspan", "tc_parse_rowspan"),
+        "consolidate_rowspan_terms": _bool("consolidate_rowspan_terms", "tc_consolidate_rowspan_terms"),
+        "rep_link": _bool("rep_link", "tc_rep_link"),
+        "party_link": _bool("party_link", "tc_party_link"),
+        "enabled": _bool("enabled", "tc_enabled") if _get("tc_enabled", "tc_enabled") is not None else True,
+        "use_full_page_for_table": _bool("use_full_page_for_table", "tc_use_full_page_for_table"),
+        "term_dates_merged": _bool("term_dates_merged", "tc_term_dates_merged"),
+        "party_ignore": _bool("party_ignore", "tc_party_ignore"),
+        "district_ignore": dist_mode == "no_district",
+        "district_at_large": dist_mode == "at_large",
+        "notes": _get("notes", "tc_notes") or "",
+        "name": _get("name", "tc_name") or "",
+    }
 
 
 @app.post("/offices/{office_id}")
 async def office_update(request: Request, office_id: int):
     form = await request.form()
     action = form.get("action", "save_and_close")
+    office_only = form.get("office_only") == "1"
     nav_ids = (form.get("nav_ids") or "").strip()
     alt_links = [v.strip() for v in form.getlist("alt_links") if v and isinstance(v, str) and v.strip()]
     alt_link_include_main = form.get("alt_link_include_main") == "1"
@@ -277,15 +429,21 @@ async def office_update(request: Request, office_id: int):
         "district_ignore": (form.get("district_mode") or "column") == "no_district",
         "district_at_large": (form.get("district_mode") or "column") == "at_large",
     }
+    tc_ids = form.getlist("tc_id")
+    tc_table_nos = form.getlist("tc_table_no")
+    if tc_table_nos or tc_ids:
+        n = max(len(tc_ids), len(tc_table_nos), 1)
+        data["table_configs"] = [_form_to_table_config(form, i) for i in range(n)]
     try:
-        db_offices.update_office(office_id, data)
+        db_offices.update_office(office_id, data, office_only=office_only)
     except ValueError as e:
         from urllib.parse import quote
         q = "?error=" + quote(str(e)) + ("&nav_ids=" + nav_ids.strip() if nav_ids and nav_ids.strip() else "")
         return RedirectResponse(f"/offices/{office_id}{q}", status_code=302)
     if action == "save":
         q = "?saved=1" + ("&nav_ids=" + nav_ids.strip() if nav_ids and nav_ids.strip() else "")
-        return RedirectResponse(f"/offices/{office_id}{q}", status_code=302)
+        hash_frag = "#section-office-" + str(office_id) if office_only else ""
+        return RedirectResponse(f"/offices/{office_id}{q}{hash_frag}", status_code=302)
     return RedirectResponse("/offices?saved=1", status_code=302)
 
 
@@ -293,6 +451,17 @@ async def office_update(request: Request, office_id: int):
 async def office_delete(office_id: int):
     db_offices.delete_office(office_id)
     return RedirectResponse("/offices", status_code=302)
+
+
+@app.post("/offices/{office_id}/table/{tc_id}/delete")
+async def table_delete(office_id: int, tc_id: int):
+    """Delete one table config. Redirect back to office edit. Confirmation must be done in UI."""
+    try:
+        db_offices.delete_table(tc_id)
+    except ValueError as e:
+        from urllib.parse import quote
+        return RedirectResponse(f"/offices/{office_id}?error=" + quote(str(e)), status_code=302)
+    return RedirectResponse(f"/offices/{office_id}?saved=1", status_code=302)
 
 
 @app.post("/offices/{office_id}/duplicate")
@@ -337,6 +506,9 @@ async def office_duplicate(office_id: int):
         "district_ignore": bool(office.get("district_ignore")),
         "district_at_large": bool(office.get("district_at_large")),
     }
+    table_configs = office.get("table_configs")
+    if table_configs:
+        data["table_configs"] = [{k: v for k, v in tc.items() if k != "id"} for tc in table_configs]
     try:
         new_id = db_offices.create_office(data)
     except ValueError as e:
@@ -1019,6 +1191,13 @@ async def api_preview_all_tables(request: Request):
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON")
     url = (body.get("url") or "").strip()
+    # #region agent log
+    try:
+        with open("c:\\Users\\wcmch\\cursor\\office_holder\\.cursor\\debug.log", "a") as _f:
+            _f.write(__import__("json").dumps({"location": "main.py:api_preview_all_tables", "message": "request", "data": {"url_len": len(url), "url_preview": url[:80] if url else "", "has_confirm": body.get("confirm") is True}, "timestamp": __import__("time").time() * 1000}) + "\n")
+    except Exception:
+        pass
+    # #endregion
     if not url:
         raise HTTPException(status_code=400, detail="url required")
     confirmed = body.get("confirm") is True

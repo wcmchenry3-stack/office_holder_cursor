@@ -1,5 +1,7 @@
 """Migration: ensure ref tables exist and offices/parties use FK columns."""
 
+import sqlite3
+
 from .connection import get_connection
 
 
@@ -60,6 +62,10 @@ def migrate_to_fk(conn=None):
         _migrate_alt_links(conn)
         # Page -> office_details -> office_table_config hierarchy: add columns and backfill from offices
         _migrate_to_page_office_table_hierarchy(conn)
+        # Multiple tables per office: allow_reuse_tables on source_pages, unique (office_details_id, table_no)
+        _migrate_allow_reuse_tables_and_table_no_unique(conn)
+        # office_table_config: add name (table name for outline)
+        _migrate_office_table_config_name(conn)
     finally:
         if own_conn:
             conn.close()
@@ -573,3 +579,29 @@ def _migrate_to_page_office_table_hierarchy(conn):
             (od_id, tc_id, oid),
         )
     conn.commit()
+
+
+def _migrate_allow_reuse_tables_and_table_no_unique(conn):
+    """Add allow_reuse_tables to source_pages; add UNIQUE(office_details_id, table_no) on office_table_config."""
+    try:
+        sp_cols = _columns(conn, "source_pages")
+    except sqlite3.OperationalError:
+        return
+    if "allow_reuse_tables" not in sp_cols:
+        conn.execute("ALTER TABLE source_pages ADD COLUMN allow_reuse_tables INTEGER NOT NULL DEFAULT 0")
+        conn.commit()
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_office_table_config_office_table_no ON office_table_config(office_details_id, table_no)"
+    )
+    conn.commit()
+
+
+def _migrate_office_table_config_name(conn):
+    """Add name column to office_table_config for table display name in outline."""
+    try:
+        tc_cols = _columns(conn, "office_table_config")
+    except sqlite3.OperationalError:
+        return
+    if "name" not in tc_cols:
+        conn.execute("ALTER TABLE office_table_config ADD COLUMN name TEXT")
+        conn.commit()
