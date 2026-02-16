@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}Milestone report – Office Holder{% endblock %}
+{% block content %}
+<h1>Milestone report</h1>
+<p><small>Last 90 days.</small></p>
+
+<h2>Recent deaths</h2>
+{% if recent_deaths %}
+<table>
+  <thead>
+    <tr><th>Full name</th><th>Birth date</th><th>Death date</th></tr>
+  </thead>
+  <tbody>
+    {% for row in recent_deaths %}
+    <tr>
+      <td>{{ row.full_name or '—' }}</td>
+      <td>{{ row.birth_date or '—' }}</td>
+      <td>{{ row.death_date or '—' }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>No deaths in the last 90 days.</p>
+{% endif %}
+
+<h2>Recent term ends</h2>
+{% if recent_term_ends %}
+<table>
+  <thead>
+    <tr>
+      <th>Name</th><th>Country Name</th><th>State Name</th><th>Level</th><th>Branch</th>
+      <th>Office Name</th><th>Congressional District</th><th>Term Start</th><th>Term End</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in recent_term_ends %}
+    <tr>
+      <td>{{ row['Name'] or '—' }}</td>
+      <td>{{ row['Country Name'] or '—' }}</td>
+      <td>{{ row['State Name'] or '—' }}</td>
+      <td>{{ row['Level'] or '—' }}</td>
+      <td>{{ row['Branch'] or '—' }}</td>
+      <td>{{ row['Office Name'] or '—' }}</td>
+      <td>{{ row['Congressional District'] or '—' }}</td>
+      <td>{{ row['Term Start'] or '—' }}</td>
+      <td>{{ row['Term End'] or '—' }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>No term ends in the last 90 days.</p>
+{% endif %}
+
+<h2>Started term recently</h2>
+{% if recent_term_starts %}
+<table>
+  <thead>
+    <tr>
+      <th>Name</th><th>Country Name</th><th>State Name</th><th>Level</th><th>Branch</th>
+      <th>Office Name</th><th>Congressional District</th><th>Term Start</th><th>Term End</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in recent_term_starts %}
+    <tr>
+      <td>{{ row['Name'] or '—' }}</td>
+      <td>{{ row['Country Name'] or '—' }}</td>
+      <td>{{ row['State Name'] or '—' }}</td>
+      <td>{{ row['Level'] or '—' }}</td>
+      <td>{{ row['Branch'] or '—' }}</td>
+      <td>{{ row['Office Name'] or '—' }}</td>
+      <td>{{ row['Congressional District'] or '—' }}</td>
+      <td>{{ row['Term Start'] or '—' }}</td>
+      <td>{{ row['Term End'] or '—' }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>No term starts in the last 90 days.</p>
+{% endif %}
+{% endblock %}

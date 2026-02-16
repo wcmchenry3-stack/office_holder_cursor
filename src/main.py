@@ -30,6 +30,7 @@ from src.db import parties as db_parties
 from src.db import refs as db_refs
 from src.db import individuals as db_individuals
 from src.db import office_terms as db_office_terms
+from src.db import reports as db_reports
 from src.db.bulk_import import bulk_import_offices_from_csv, bulk_import_parties_from_csv
 from src.scraper.runner import run_with_db, preview_with_config, parse_full_table_for_export
 from src.scraper.config_test import test_office_config, get_raw_table_preview, get_all_tables_preview, get_table_html, get_table_header_from_html
@@ -1023,6 +1024,22 @@ async def data_office_terms(request: Request, limit: int = Query(100, le=500), o
     terms = db_office_terms.list_office_terms(limit=limit, offset=offset, office_id=office_id)
     offices = db_offices.list_offices()
     return templates.TemplateResponse("office_terms.html", {"request": request, "terms": terms, "offices": offices})
+
+
+@app.get("/report/milestones", response_class=HTMLResponse)
+async def report_milestones(request: Request):
+    recent_deaths = db_reports.get_recent_deaths()
+    recent_term_ends = db_reports.get_recent_term_ends()
+    recent_term_starts = db_reports.get_recent_term_starts()
+    return templates.TemplateResponse(
+        "milestone_report.html",
+        {
+            "request": request,
+            "recent_deaths": recent_deaths,
+            "recent_term_ends": recent_term_ends,
+            "recent_term_starts": recent_term_starts,
+        },
+    )
 
 
 # ---------- Preview (single office) ----------
