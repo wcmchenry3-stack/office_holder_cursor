@@ -18,7 +18,12 @@
 </p>
 {% endif %}
 {% if saved %}<div class="alert alert-success">Saved.</div>{% endif %}
-{% if validation_error %}<div class="alert alert-error">{{ validation_error }}</div>{% endif %}
+{% if validation_error %}
+<div class="alert alert-error" role="alert" style="border-width:2px; font-weight:600; margin-bottom:1rem;">
+  <strong>Save failed – validation error</strong><br>
+  <span style="font-weight:normal;">{{ validation_error }}</span>
+</div>
+{% endif %}
 
 {% if source_page_id is not none and page_data and offices_on_page %}
 {# Multi-office: one page config, multiple office sections, floating outline to jump #}
@@ -98,7 +103,6 @@
       <div class="form-group checkbox-group"><label><input type="checkbox" name="allow_reuse_tables" value="1" {% if page_data.allow_reuse_tables %}checked{% endif %}> Allow reuse of tables</label></div>
       <p class="form-note">When checked, table numbers must be unique per page. When unchecked, different offices can use the same table number.</p>
       <div class="actions">
-        <button type="submit" class="btn btn-secondary save-page-btn">Save page only</button>
         <a href="/offices{% if list_return_query is defined and list_return_query %}?{{ list_return_query }}{% endif %}" class="btn btn-secondary">Cancel</a>
         <form method="post" action="/pages/{{ source_page_id }}/delete" style="display:inline;" onsubmit="return confirm('Delete this page and all its offices and tables? This cannot be undone.');">
           <button type="submit" class="btn btn-danger">Delete page</button>
@@ -178,7 +182,7 @@
           <div class="form-group checkbox-group"><label><input type="checkbox" name="tc_rep_link" value="1" {% if tc.rep_link %}checked{% endif %}> Rep link</label></div>
           <div class="form-group checkbox-group"><label><input type="checkbox" name="tc_party_link" value="1" {% if tc.party_link %}checked{% endif %}> Party link</label></div>
           <div class="form-group checkbox-group"><label><input type="checkbox" name="tc_use_full_page_for_table" value="1" {% if tc.use_full_page_for_table %}checked{% endif %}> Use full page for table</label></div>
-          <div class="form-group checkbox-group"><label><input type="checkbox" name="tc_enabled" value="1" {% if tc.enabled %}checked{% endif %}> Table enabled</label></div>
+          <div class="form-group checkbox-group"><label><input type="hidden" name="tc_enabled_{{ tc.id if tc.id else ('new_' ~ loop.index0) }}" value="0"><input type="checkbox" name="tc_enabled_{{ tc.id if tc.id else ('new_' ~ loop.index0) }}" value="1" {% if tc.enabled %}checked{% endif %}> Table enabled</label></div>
         </div>
         <div class="form-group"><label>Notes</label><input type="text" name="tc_notes" value="{{ tc.notes or '' }}"></div>
         <div class="actions" style="margin-top:0.5rem;">
@@ -216,7 +220,6 @@
       </div>
       <button type="button" class="btn btn-secondary add-table-btn" data-office-id="{{ o.id }}" style="margin-bottom:1rem;">Add table</button>
       <div class="actions">
-        <button type="submit" class="btn btn-secondary save-office-btn">Save this office only</button>
         <a href="/offices{% if list_return_query is defined and list_return_query %}?{{ list_return_query }}{% endif %}" class="btn btn-secondary">Cancel</a>
       </div>
     </form>
@@ -868,35 +871,71 @@
       saveAllBtn.disabled = true;
       function formToBody(form) {
         form.querySelectorAll('input[disabled], select[disabled]').forEach(function(el) { el.disabled = false; });
+        form.querySelectorAll('fieldset[disabled]').forEach(function(fs) { fs.disabled = false; });
+        form.querySelectorAll('.table-config-block').forEach(function(block) {
+          var hidden = block.querySelector('input[type="hidden"][name^="tc_enabled_"]');
+          var checkbox = block.querySelector('input[type="checkbox"][name^="tc_enabled_"]');
+          if (hidden && checkbox) { hidden.value = checkbox.checked ? '1' : '0'; checkbox.removeAttribute('name'); }
+        });
         return new FormData(form);
       }
       var pageAction = pageForm.getAttribute('action') || pageForm.action;
       if (typeof pageAction !== 'string') pageAction = '';
-      fetch(pageAction, { method: 'POST', body: formToBody(pageForm) })
-        .then(function(r) {
-          if (!r.ok && r.status !== 302) throw new Error('Page save failed');
-          var idx = 0;
-          function next() {
-            if (idx >= officeForms.length) {
-              setStatus('Saved.');
-              var firstForm = officeForms[0];
-              var firstAction = firstForm ? (firstForm.getAttribute('action') || firstForm.action) : '';
-              var firstOfficeId = typeof firstAction === 'string' ? (firstAction.match(/\/offices\/(\d+)/) || [])[1] : null;
-              if (firstOfficeId) window.location.href = '/offices/' + firstOfficeId + '?saved=1';
-              else window.location.href = '/offices?saved=1';
-              return;
-            }
-            var of = officeForms[idx++];
-            var officeAction = of.getAttribute('action') || of.action;
-            if (typeof officeAction !== 'string') officeAction = '';
-            return fetch(officeAction, { method: 'POST', body: formToBody(of) }).then(function(res) {
-              if (!res.ok && res.status !== 302) throw new Error('Office save failed');
-              return next();
-            });
+      var saveAllHeaders = { 'X-Save-All': '1' };
+      function redirectIfError(res) {
+        if (res.status === 302) {
+          var loc = res.headers.get('Location') || '';
+          if (loc.indexOf('error=') !== -1) {
+            window.location.href = loc;
+            return true;
           }
-          return next();
+        }
+        return false;
+      }
+      function handleSaveAllResponse(res, fallbackRedirect) {
+        var ct = res.headers.get('Content-Type') || '';
+        if (ct.indexOf('application/json') !== -1) {
+          return res.json().then(function(data) {
+            if (data.ok === false) {
+              setStatus('Error: ' + (data.error || 'Validation failed'));
+              window.location.href = data.redirect || fallbackRedirect || window.location.pathname;
+              return Promise.reject(new Error('validation'));
+            }
+            return data;
+          });
+        }
+        if (!res.ok && res.status !== 302) return Promise.reject(new Error('Save failed'));
+        if (redirectIfError(res)) return Promise.reject(new Error('redirected'));
+        return Promise.resolve(null);
+      }
+      fetch(pageAction, { method: 'POST', headers: saveAllHeaders, body: formToBody(pageForm) })
+        .then(function(r) {
+          return handleSaveAllResponse(r, pageAction).then(function(data) {
+            var idx = 0;
+            function next() {
+              if (idx >= officeForms.length) {
+                setStatus('Saved.');
+                var firstForm = officeForms[0];
+                var firstAction = firstForm ? (firstForm.getAttribute('action') || firstForm.action) : '';
+                var firstOfficeId = typeof firstAction === 'string' ? (firstAction.match(/\/offices\/(\d+)/) || [])[1] : null;
+                if (firstOfficeId) window.location.href = '/offices/' + firstOfficeId + '?saved=1';
+                else window.location.href = '/offices?saved=1';
+                return;
+              }
+              var of = officeForms[idx++];
+              var officeAction = of.getAttribute('action') || of.action;
+              if (typeof officeAction !== 'string') officeAction = '';
+              return fetch(officeAction, { method: 'POST', headers: saveAllHeaders, body: formToBody(of) })
+                .then(function(res) {
+                  return handleSaveAllResponse(res, officeAction).then(function() { return next(); });
+                });
+            }
+            return next();
+          });
         })
         .catch(function(err) {
+          if (err && err.message === 'validation') return;
+          if (err && err.message === 'redirected') return;
           setStatus('Error: ' + (err && err.message ? err.message : 'Save failed'));
           saveAllBtn.disabled = false;
         });
@@ -967,6 +1006,8 @@
         });
         container.appendChild(clone);
         var newIdx = container.querySelectorAll('.table-config-block').length;
+        var blockIndex = newIdx - 1;
+        clone.querySelectorAll('input[name^="tc_enabled_"]').forEach(function(inp) { inp.name = 'tc_enabled_new_' + blockIndex; });
         clone.id = 'section-office-' + (container.getAttribute('data-office-id') || '') + '-t-' + newIdx;
         if (clone.querySelector('h4')) clone.querySelector('h4').textContent = 'Table ' + newIdx;
         if (typeof syncTableBlockValidation === 'function') syncTableBlockValidation(clone);

@@ -176,22 +176,33 @@ def validate_office_table_config(
     if term_start_column < 1 or term_end_column < 1:
         raise ValueError("term start and term end columns must be at least 1")
 
-    # Build set of column numbers that must be pairwise distinct (only positive values count).
+    # Build list of (value, field_name) for columns that must be pairwise distinct (only positive values count).
     # When term_dates_merged, only one "term" column counts for distinctness.
-    if term_dates_merged:
-        used = [link_column, term_start_column]
-    else:
-        used = [link_column, term_start_column, term_end_column]
+    entries: list[tuple[int, str]] = []
+    entries.append((link_column, "Link column"))
+    entries.append((term_start_column, "Term start column"))
+    if not term_dates_merged:
+        entries.append((term_end_column, "Term end column"))
     if not party_ignore:
-        used.append(party_column)
+        entries.append((party_column, "Party column"))
     if not district_ignore and not district_at_large:
-        used.append(district_column)
-    # Require all positive values to be distinct
-    positive = [c for c in used if c > 0]
-    if len(positive) != len(set(positive)):
+        entries.append((district_column, "District column"))
+    positive_entries = [(v, n) for v, n in entries if v > 0]
+    values = [v for v, _ in positive_entries]
+    if len(values) != len(set(values)):
+        if not term_dates_merged and term_start_column == term_end_column and term_start_column > 0:
+            raise ValueError(
+                "Term start column and term end column must be different, or check 'Term dates merged'."
+            )
+        # Find which value is duplicated and which field names use it
+        seen: dict[int, list[str]] = {}
+        for v, n in positive_entries:
+            seen.setdefault(v, []).append(n)
+        dup_val = next(v for v, names in seen.items() if len(names) > 1)
+        names_using = seen[dup_val]
         raise ValueError(
-            "link, party, term start, term end, and district columns must all be different "
-            "(when term dates merged, term start and end may be the same)"
+            f"Duplicate column number: {dup_val}. "
+            f"{' and '.join(names_using)} both use {dup_val}. Each must use a different column number."
         )
 
 
