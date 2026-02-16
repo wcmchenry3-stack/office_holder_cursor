@@ -1145,6 +1145,63 @@ def delete_table(office_table_config_id: int, conn: sqlite3.Connection | None = 
             conn.close()
 
 
+def move_table(
+    tc_id: int,
+    to_office_details_id: int,
+    delete_source_office_if_empty: bool = False,
+    conn: sqlite3.Connection | None = None,
+) -> int:
+    """Move a table config to another office on the same page. Returns to_office_details_id on success.
+    If source office has only one table and delete_source_office_if_empty is False, raises ValueError
+    with message 'OFFICE_WOULD_BE_EMPTY:Office Name' so the route can return 409."""
+    own_conn = conn is None
+    if own_conn:
+        conn = get_connection()
+    try:
+        if not _use_hierarchy(conn):
+            raise ValueError("Hierarchy required")
+        row = conn.execute(
+            "SELECT office_details_id FROM office_table_config WHERE id = ?", (tc_id,)
+        ).fetchone()
+        if not row:
+            raise ValueError("Table config not found")
+        source_od_id = row[0]
+        if source_od_id == to_office_details_id:
+            raise ValueError("Table is already in that office")
+        src_page = conn.execute(
+            "SELECT source_page_id FROM office_details WHERE id = ?", (source_od_id,)
+        ).fetchone()
+        tgt_page = conn.execute(
+            "SELECT source_page_id FROM office_details WHERE id = ?", (to_office_details_id,)
+        ).fetchone()
+        if not src_page or not tgt_page or src_page[0] != tgt_page[0]:
+            raise ValueError("Source and target office must be on the same page")
+        count = conn.execute(
+            "SELECT COUNT(*) FROM office_table_config WHERE office_details_id = ?", (source_od_id,)
+        ).fetchone()[0]
+        if count == 1 and not delete_source_office_if_empty:
+            name_row = conn.execute(
+                "SELECT name FROM office_details WHERE id = ?", (source_od_id,)
+            ).fetchone()
+            source_name = (name_row[0] or "Office").strip() if name_row else "Office"
+            raise ValueError(f"OFFICE_WOULD_BE_EMPTY:{source_name}")
+        next_no = conn.execute(
+            "SELECT COALESCE(MAX(table_no), 0) + 1 FROM office_table_config WHERE office_details_id = ?",
+            (to_office_details_id,),
+        ).fetchone()[0]
+        conn.execute(
+            "UPDATE office_table_config SET office_details_id = ?, table_no = ?, updated_at = datetime('now') WHERE id = ?",
+            (to_office_details_id, next_no, tc_id),
+        )
+        conn.commit()
+        if count == 1 and delete_source_office_if_empty:
+            delete_office(source_od_id, conn=conn)
+        return to_office_details_id
+    finally:
+        if own_conn:
+            conn.close()
+
+
 def delete_page(source_page_id: int, conn: sqlite3.Connection | None = None) -> bool:
     """Delete page and all its offices (each office's table configs, alt_links, office_terms, then office_details, then source_pages row)."""
     own_conn = conn is None
