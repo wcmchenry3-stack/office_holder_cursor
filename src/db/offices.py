@@ -18,6 +18,18 @@ def _use_hierarchy(conn: sqlite3.Connection) -> bool:
         return False
 
 
+def use_hierarchy(conn: sqlite3.Connection | None = None) -> bool:
+    """True if hierarchy (source_pages) is in use. Public wrapper for route logic."""
+    own_conn = conn is None
+    if own_conn:
+        conn = get_connection()
+    try:
+        return _use_hierarchy(conn)
+    finally:
+        if own_conn:
+            conn.close()
+
+
 def _flatten_hierarchy_row(
     p: dict, od: dict, tc: dict, country_name: str, state_name: str, level_name: str, branch_name: str, alt_links: list[str]
 ) -> dict[str, Any]:
@@ -347,6 +359,69 @@ def list_offices(conn: sqlite3.Connection | None = None) -> list[dict[str, Any]]
                LEFT JOIN branches b ON b.id = o.branch_id
                ORDER BY c.name, o.name"""
         )
+        return [_row_to_dict(r) for r in cur.fetchall()]
+    finally:
+        if own_conn:
+            conn.close()
+
+
+def list_pages(
+    country_id: int | None = None,
+    state_id: int | None = None,
+    level_id: int | None = None,
+    branch_id: int | None = None,
+    enabled: int | None = None,
+    limit: int | None = None,
+    conn: sqlite3.Connection | None = None,
+) -> list[dict[str, Any]]:
+    """Return source pages with optional filters and counts (office_count, table_count, first_office_id).
+    Used when hierarchy is in use; returns [] otherwise."""
+    own_conn = conn is None
+    if own_conn:
+        conn = get_connection()
+    try:
+        if not _use_hierarchy(conn):
+            return []
+        where_parts: list[str] = ["1=1"]
+        params: list[Any] = []
+        if country_id is not None and country_id != 0:
+            where_parts.append("p.country_id = ?")
+            params.append(country_id)
+        if state_id is not None and state_id != 0:
+            where_parts.append("p.state_id = ?")
+            params.append(state_id)
+        if level_id is not None and level_id != 0:
+            where_parts.append("p.level_id = ?")
+            params.append(level_id)
+        if branch_id is not None and branch_id != 0:
+            where_parts.append("p.branch_id = ?")
+            params.append(branch_id)
+        if enabled is not None and enabled in (0, 1):
+            where_parts.append("p.enabled = ?")
+            params.append(enabled)
+        where_sql = " AND ".join(where_parts)
+        limit_sql = ""
+        if limit is not None and limit > 0:
+            limit_sql = " LIMIT ?"
+            params.append(limit)
+        sql = f"""
+            SELECT p.id, p.country_id, p.state_id, p.level_id, p.branch_id, p.url, p.enabled,
+                   c.name AS country_name, s.name AS state_name, l.name AS level_name, b.name AS branch_name,
+                   (SELECT COUNT(*) FROM office_details od WHERE od.source_page_id = p.id) AS office_count,
+                   (SELECT COUNT(*) FROM office_details od
+                    JOIN office_table_config tc ON tc.office_details_id = od.id
+                    WHERE od.source_page_id = p.id) AS table_count,
+                   (SELECT MIN(od.id) FROM office_details od WHERE od.source_page_id = p.id) AS first_office_id
+            FROM source_pages p
+            LEFT JOIN countries c ON c.id = p.country_id
+            LEFT JOIN states s ON s.id = p.state_id
+            LEFT JOIN levels l ON l.id = p.level_id
+            LEFT JOIN branches b ON b.id = p.branch_id
+            WHERE {where_sql}
+            ORDER BY COALESCE(c.name, ''), COALESCE(l.name, ''), COALESCE(b.name, ''), p.url
+            {limit_sql}
+        """
+        cur = conn.execute(sql, params)
         return [_row_to_dict(r) for r in cur.fetchall()]
     finally:
         if own_conn:
@@ -1252,6 +1327,60 @@ def delete_office(office_id: int, conn: sqlite3.Connection | None = None) -> boo
     finally:
         if own_conn:
             conn.close()
+
+
+def deduplicate_source_pages_by_url(conn: sqlite3.Connection | None = None) -> dict[str, Any]:
+    """Deduplicate source_pages by URL: for each duplicate URL, keep the row with smallest id,
+    relink all office_details from other rows to that one, then disable the duplicate rows.
+    Returns {"relinked": [(duplicate_id, kept_id, office_count), ...], "disabled": [id, ...], "errors": []}."""
+    own_conn = conn is None
+    if own_conn:
+        conn = get_connection()
+    relinked: list[tuple[int, int, int]] = []
+    disabled: list[int] = []
+    errors: list[str] = []
+    try:
+        if not _use_hierarchy(conn):
+            return {"relinked": [], "disabled": [], "errors": ["Hierarchy (source_pages) not in use."]}
+        rows = conn.execute("SELECT id, url FROM source_pages").fetchall()
+        by_url: dict[str, list[tuple[int, str]]] = {}
+        for r in rows:
+            url = (r["url"] or "").strip()
+            if not url:
+                continue
+            if url not in by_url:
+                by_url[url] = []
+            by_url[url].append((r["id"], url))
+        for url, id_list in by_url.items():
+            if len(id_list) <= 1:
+                continue
+            id_list.sort(key=lambda x: x[0])
+            kept_id = id_list[0][0]
+            duplicate_ids = [x[0] for x in id_list[1:]]
+            for dup_id in duplicate_ids:
+                cur = conn.execute(
+                    "SELECT COUNT(*) FROM office_details WHERE source_page_id = ?", (dup_id,)
+                )
+                count = cur.fetchone()[0]
+                conn.execute(
+                    "UPDATE office_details SET source_page_id = ?, updated_at = datetime('now') WHERE source_page_id = ?",
+                    (kept_id, dup_id),
+                )
+                relinked.append((dup_id, kept_id, count))
+                conn.execute(
+                    "UPDATE source_pages SET enabled = 0, updated_at = datetime('now') WHERE id = ?",
+                    (dup_id,),
+                )
+                disabled.append(dup_id)
+        conn.commit()
+    except Exception as e:
+        if own_conn:
+            conn.rollback()
+        errors.append(str(e))
+    finally:
+        if own_conn:
+            conn.close()
+    return {"relinked": relinked, "disabled": list(disabled), "errors": errors}
 
 
 def list_alt_links(office_id: int, conn: sqlite3.Connection | None = None) -> list[str]:

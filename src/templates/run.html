@@ -21,6 +21,9 @@
     <label>Individual (ID or Wikipedia URL)</label>
     <input type="text" name="individual_ref" id="individualRef" placeholder="e.g. 42 or https://en.wikipedia.org/wiki/John_Doe">
   </div>
+  <div class="form-group checkbox-group">
+    <label><input type="checkbox" name="force_overwrite" value="1"> Force overwrite – when validation fails (new list missing existing holders), replace terms anyway</label>
+  </div>
   <div class="actions">
     <button type="submit" class="btn" id="runBtn">Run</button>
   </div>

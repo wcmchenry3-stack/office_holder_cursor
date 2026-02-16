@@ -119,26 +119,139 @@ def startup():
         raise RuntimeError(f"Database startup failed: {e}") from e
 
 
+# ---------- Favicon (avoid 404 in console) ----------
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    """Return 204 so the browser's automatic favicon request doesn't 404."""
+    return Response(status_code=204)
+
+
 # ---------- Office config CRUD ----------
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     return RedirectResponse("/offices", status_code=302)
 
 
+def _list_return_query(
+    country_id: int | None = None,
+    state_id: int | None = None,
+    level_id: int | None = None,
+    branch_id: int | None = None,
+    enabled: str | None = None,
+    limit: str | None = None,
+) -> str:
+    """Build query string for returning to the page list with filters applied (for Cancel link)."""
+    parts: list[str] = []
+    if country_id:
+        parts.append(f"country_id={country_id}")
+    if state_id:
+        parts.append(f"state_id={state_id}")
+    if level_id:
+        parts.append(f"level_id={level_id}")
+    if branch_id:
+        parts.append(f"branch_id={branch_id}")
+    if enabled is not None and str(enabled).strip():
+        parts.append("enabled=" + str(enabled).strip())
+    if limit is not None and str(limit).strip():
+        parts.append("limit=" + str(limit).strip())
+    return "&".join(parts)
+
+
+def _parse_optional_int(value: str | None) -> int | None:
+    """Parse query param to int; treat None or empty string as None."""
+    if value is None or not str(value).strip():
+        return None
+    try:
+        n = int(str(value).strip())
+        return n if n != 0 else None
+    except ValueError:
+        return None
+
+
 @app.get("/offices", response_class=HTMLResponse)
-async def offices_list(request: Request):
-    offices = db_offices.list_offices()
-    counts = db_office_terms.get_terms_counts_by_office()
-    for o in offices:
-        o["terms_count"] = counts.get(o["id"], 0)
+async def offices_list(
+    request: Request,
+    country_id: str | None = Query(None),
+    state_id: str | None = Query(None),
+    level_id: str | None = Query(None),
+    branch_id: str | None = Query(None),
+    enabled: str | None = Query(None),
+    limit: str | None = Query(None),
+):
     saved = request.query_params.get("saved") == "1"
     validation_error = request.query_params.get("error") or None
     imported_count = request.query_params.get("count")
     imported_errors = request.query_params.get("errors")
     imported = request.query_params.get("imported") == "1"
+
+    if db_offices.use_hierarchy():
+        # Parse limit: "20", "50", "100", "all" or missing -> int or None
+        limit_int: int | None = None
+        if limit and limit.strip().lower() != "all":
+            try:
+                limit_int = int(limit.strip())
+            except ValueError:
+                pass
+        enabled_int: int | None = None
+        if enabled is not None and enabled.strip() in ("0", "1"):
+            enabled_int = int(enabled.strip())
+        cid = _parse_optional_int(country_id)
+        sid = _parse_optional_int(state_id)
+        lid = _parse_optional_int(level_id)
+        bid = _parse_optional_int(branch_id)
+        pages = db_offices.list_pages(
+            country_id=cid,
+            state_id=sid,
+            level_id=lid,
+            branch_id=bid,
+            enabled=enabled_int,
+            limit=limit_int,
+        )
+        countries = db_refs.list_countries()
+        levels = db_refs.list_levels()
+        branches = db_refs.list_branches()
+        filter_country_id = cid
+        states = db_refs.list_states(filter_country_id) if filter_country_id else []
+        nav_ids = ",".join(str(p["first_office_id"]) for p in pages if p.get("first_office_id"))
+        list_return_query = _list_return_query(
+            country_id=cid, state_id=sid, level_id=lid, branch_id=bid,
+            enabled=enabled.strip() if enabled else None,
+            limit=limit.strip() if limit else None,
+        )
+        return templates.TemplateResponse(
+            "offices.html",
+            {
+                "request": request,
+                "page_search_view": True,
+                "pages": pages,
+                "nav_ids": nav_ids,
+                "list_return_query": list_return_query,
+                "offices": [],
+                "countries": countries,
+                "levels": levels,
+                "branches": branches,
+                "states": states,
+                "filter_country_id": filter_country_id,
+                "filter_state_id": sid,
+                "filter_level_id": lid,
+                "filter_branch_id": bid,
+                "filter_enabled": enabled.strip() if enabled else "",
+                "filter_limit": limit.strip() if limit else "20",
+                "saved": saved,
+                "validation_error": validation_error,
+                "imported": imported,
+                "imported_count": imported_count,
+                "imported_errors": imported_errors,
+            },
+        )
+
+    offices = db_offices.list_offices()
+    counts = db_office_terms.get_terms_counts_by_office()
+    for o in offices:
+        o["terms_count"] = counts.get(o["id"], 0)
     return templates.TemplateResponse(
         "offices.html",
-        {"request": request, "offices": offices, "saved": saved, "validation_error": validation_error, "imported": imported, "imported_count": imported_count, "imported_errors": imported_errors},
+        {"request": request, "page_search_view": False, "offices": offices, "pages": [], "saved": saved, "validation_error": validation_error, "imported": imported, "imported_count": imported_count, "imported_errors": imported_errors},
     )
 
 
@@ -282,6 +395,19 @@ async def page_delete(source_page_id: int):
     return RedirectResponse("/offices", status_code=302)
 
 
+@app.post("/api/pages/{source_page_id}/enabled")
+async def api_page_enabled(source_page_id: int, enabled: int = Form(1)):
+    """Toggle page enabled (0 or 1). Returns 400 if page not found or update fails."""
+    page = db_offices.get_page(source_page_id)
+    if not page:
+        raise HTTPException(status_code=404, detail="Page not found")
+    try:
+        db_offices.update_page(source_page_id, {**page, "enabled": enabled == 1})
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return JSONResponse({"ok": True})
+
+
 @app.post("/pages/{source_page_id}")
 async def page_update(request: Request, source_page_id: int):
     """Update only the page (URL, location). Used when editing one page with multiple offices."""
@@ -302,9 +428,15 @@ async def page_update(request: Request, source_page_id: int):
         from urllib.parse import quote
         offices_on_page = db_offices.list_offices_for_page(source_page_id)
         base = f"/offices/{offices_on_page[0]['id']}" if offices_on_page else "/offices"
-        return RedirectResponse(f"{base}?error=" + quote(str(e)), status_code=302)
+        nav_q = (form.get("nav_ids") or "").strip()
+        q = "?error=" + quote(str(e)) + ("&nav_ids=" + nav_q if nav_q else "")
+        return RedirectResponse(f"{base}{q}", status_code=302)
     first_office_id = db_offices.list_offices_for_page(source_page_id)[0]["id"]
-    return RedirectResponse(f"/offices/{first_office_id}?saved=1#section-page", status_code=302)
+    nav_q = (form.get("nav_ids") or "").strip()
+    url = f"/offices/{first_office_id}?saved=1#section-page"
+    if nav_q:
+        url += "&nav_ids=" + nav_q
+    return RedirectResponse(url, status_code=302)
 
 
 @app.get("/api/export-config")
@@ -361,6 +493,15 @@ async def office_edit_page(request: Request, office_id: int):
             nav_prev_id = nav_ids[idx - 1]
         if idx < len(nav_ids) - 1:
             nav_next_id = nav_ids[idx + 1]
+    q = request.query_params
+    list_return_query = _list_return_query(
+        country_id=_parse_optional_int(q.get("country_id")),
+        state_id=_parse_optional_int(q.get("state_id")),
+        level_id=_parse_optional_int(q.get("level_id")),
+        branch_id=_parse_optional_int(q.get("branch_id")),
+        enabled=q.get("enabled") or None,
+        limit=q.get("limit") or None,
+    )
     countries = db_refs.list_countries()
     levels = db_refs.list_levels()
     branches = db_refs.list_branches()
@@ -369,7 +510,7 @@ async def office_edit_page(request: Request, office_id: int):
     terms_count = db_office_terms.count_terms_for_office(office_id)
     return templates.TemplateResponse(
         "page_form.html",
-        {"request": request, "office": office, "offices_on_page": offices_on_page, "source_page_id": source_page_id, "page_data": page_data, "countries": countries, "levels": levels, "branches": branches, "states": states, "nav_ids": nav_ids_raw, "nav_prev_id": nav_prev_id, "nav_next_id": nav_next_id, "nav_current": nav_current, "nav_total": nav_total, "terms_count": terms_count, "saved": saved, "validation_error": validation_error, "form_template": "page_form"},
+        {"request": request, "office": office, "offices_on_page": offices_on_page, "source_page_id": source_page_id, "page_data": page_data, "countries": countries, "levels": levels, "branches": branches, "states": states, "nav_ids": nav_ids_raw, "nav_prev_id": nav_prev_id, "nav_next_id": nav_next_id, "nav_current": nav_current, "nav_total": nav_total, "list_return_query": list_return_query, "terms_count": terms_count, "saved": saved, "validation_error": validation_error, "form_template": "page_form"},
     )
 
 
@@ -649,7 +790,7 @@ def _populate_job_worker(job_id: str, office_id: int, force_override: bool = Fal
         err = result.get("message") or (result.get("error") if not result.get("office_count") else None)
         revalidate_failed = result.get("revalidate_failed") and terms_parsed == 0
         revalidate_msg = result.get("revalidate_message")
-        can_force_override = revalidate_msg == REVALIDATE_MSG_MISSING_HOLDERS
+        can_force_override = revalidate_failed and REVALIDATE_MSG_MISSING_HOLDERS in (revalidate_msg or "")
         revalidate_missing_holders = result.get("revalidate_missing_holders")  # full list for "View full list" in new window
         with _populate_job_lock:
             if job_id in _populate_job_store:
@@ -908,6 +1049,7 @@ def _run_job_worker(
     max_rows_per_table: int | None,
     office_id_list: list[int] | None,
     individual_ref: str | None = None,
+    force_overwrite: bool = False,
 ):
     def progress_callback(phase: str, current: int, total: int, message: str, extra: dict):
         with _run_job_lock:
@@ -937,6 +1079,7 @@ def _run_job_worker(
             individual_ref=individual_ref,
             progress_callback=progress_callback,
             cancel_check=cancel_check,
+            force_overwrite=force_overwrite,
         )
         with _run_job_lock:
             if job_id in _run_job_store:
@@ -950,9 +1093,14 @@ def _run_job_worker(
 
 
 @app.post("/api/run")
-async def api_run(run_mode: str = Form("delta"), individual_ref: str = Form("")):
+async def api_run(
+    run_mode: str = Form("delta"),
+    individual_ref: str = Form(""),
+    force_overwrite: str = Form(""),
+):
     if run_mode == "single_bio" and not individual_ref.strip():
         raise HTTPException(status_code=400, detail="Individual (ID or Wikipedia URL) required for re-run bio.")
+    force_overwrite_bool = str(force_overwrite).strip().lower() in ("1", "true", "yes")
     run_bio = run_mode == "delta_live"
     run_office_bio = run_mode not in ("full_no_bio", "delta_no_bio", "full_no_bio_refresh", "delta_no_bio_refresh")
     refresh_table_cache = run_mode in ("full_no_bio_refresh", "delta_no_bio_refresh")
@@ -979,7 +1127,7 @@ async def api_run(run_mode: str = Form("delta"), individual_ref: str = Form(""))
         }
     thread = threading.Thread(
         target=_run_job_worker,
-        args=(job_id, mode, run_bio, run_office_bio, refresh_table_cache, False, False, None, None, individual_ref.strip() or None),
+        args=(job_id, mode, run_bio, run_office_bio, refresh_table_cache, False, False, None, None, individual_ref.strip() or None, force_overwrite_bool),
     )
     thread.start()
     return JSONResponse({"job_id": job_id}, status_code=202)

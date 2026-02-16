@@ -248,12 +248,14 @@ def run_with_db(
     progress_callback: Callable[[str, int, int, str, dict], None] | None = None,
     cancel_check: Callable[[], bool] | None = None,
     force_replace_office_ids: list[int] | None = None,
+    force_overwrite: bool = False,
 ) -> dict[str, Any]:
     """
     Main entry: load offices and party list from DB, run scraper, write to DB (unless dry_run/test_run).
     If run_mode == single_bio, individual_ref (id or Wikipedia URL) is required; runs bio for that one only.
     If run_mode == bios_only, only update bios for all individuals (no office table parsing).
     run_office_bio=False skips all bio phases after office parsing. refresh_table_cache=True refetches table HTML from Wikipedia.
+    force_overwrite=True: when validation fails (new list missing existing holders), replace anyway for all offices.
     """
     init_db()
     log_dir = get_log_dir()
@@ -529,10 +531,15 @@ def run_with_db(
             if missing_years:
                 missing_list = _missing_holders_display(existing_terms, missing_years, _holder_key_from_existing_term_years)
                 missing_str = _format_missing_holders(missing_list)
-                logger.log(f"Repopulate validation failed for {office_name}: table-only check found new list missing {len(missing_years)} office holder(s). Skipping infobox fetch. Keeping existing terms. Missing: {missing_str}", True)
-                revalidate_failed_offices.append((office_id, "New list is missing office holders that were in existing data. Kept existing terms."))
-                revalidate_missing_holders_list.append(missing_list)
-                continue
+                force_replace_early = force_overwrite or (force_replace_office_ids and office_id in force_replace_office_ids)
+                if force_replace_early:
+                    logger.log(f"Force overwrite for {office_name}: table-only check found new list missing {len(missing_years)} holder(s); replacing anyway. Missing: {missing_str}", True)
+                    replaceable_office_ids.add(office_id)
+                else:
+                    logger.log(f"Repopulate validation failed for {office_name}: table-only check found new list missing {len(missing_years)} office holder(s). Skipping infobox fetch. Keeping existing terms. Missing: {missing_str}", True)
+                    revalidate_failed_offices.append((office_id, "New list is missing office holders that were in existing data. Kept existing terms."))
+                    revalidate_missing_holders_list.append(missing_list)
+                    continue
 
         # Parse table (shared code path); report infobox progress when find_date_in_infobox
         table_data = _parse_office_html(
@@ -548,7 +555,7 @@ def run_with_db(
             continue
 
         if has_existing and table_data:
-            force_replace = force_replace_office_ids and office_id in force_replace_office_ids
+            force_replace = (force_replace_office_ids and office_id in force_replace_office_ids) or force_overwrite
             old_holders = {_holder_key_from_existing_term(t) for t in existing_terms}
             years_only = bool(office_row.get("years_only"))
             new_holders = _holder_keys_from_parsed_rows(table_data, office_id, years_only)

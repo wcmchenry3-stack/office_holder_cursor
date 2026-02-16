@@ -5,13 +5,16 @@
 <p role="status" style="background:var(--bg2, #f0f0f0); border:1px solid var(--border, #ccc); border-radius:4px; padding:0.35rem 0.75rem; margin-bottom:1rem; font-size:0.9rem;">Form: <strong>page_form</strong> (template: page_form.html)</p>
 {% endif %}
 <p class="form-note" style="margin-bottom:1rem;">{{ "Edit" if office else "New" }} office</p>
-{% if office and (nav_prev_id or nav_next_id) and not (source_page_id is not none and page_data) %}
+{% if office and (nav_prev_id or nav_next_id) %}
+{% set _nav_part = "nav_ids=" ~ nav_ids if nav_ids else "" %}
+{% set _filter_part = list_return_query if list_return_query is defined and list_return_query else "" %}
+{% set nav_query = (_nav_part ~ "&" ~ _filter_part) if _nav_part and _filter_part else (_nav_part or _filter_part) %}
 <p class="nav-row" style="margin-bottom:1rem;">
-  {% if nav_prev_id %}<a href="/offices/{{ nav_prev_id }}{% if nav_ids %}?nav_ids={{ nav_ids }}{% endif %}" class="btn btn-secondary btn-sm">Previous</a>{% endif %}
+  {% if nav_prev_id %}<a href="/offices/{{ nav_prev_id }}{% if nav_query %}?{{ nav_query }}{% endif %}" class="btn btn-secondary btn-sm">Previous</a>{% endif %}
   {% if nav_prev_id and nav_current and nav_total %} | {% endif %}
   {% if nav_current and nav_total %}<span style="margin:0 0.5rem;">{{ nav_current }} of {{ nav_total }}</span>{% endif %}
   {% if nav_next_id and nav_current and nav_total %} | {% endif %}
-  {% if nav_next_id %}<a href="/offices/{{ nav_next_id }}{% if nav_ids %}?nav_ids={{ nav_ids }}{% endif %}" class="btn btn-secondary btn-sm">Next</a>{% endif %}
+  {% if nav_next_id %}<a href="/offices/{{ nav_next_id }}{% if nav_query %}?{{ nav_query }}{% endif %}" class="btn btn-secondary btn-sm">Next</a>{% endif %}
 </p>
 {% endif %}
 {% if saved %}<div class="alert alert-success">Saved.</div>{% endif %}
@@ -47,6 +50,7 @@
     <h1>Page</h1>
     <p class="form-note">Source page (URL and location). Shared by all offices below.</p>
     <form method="post" action="/pages/{{ source_page_id }}" id="pageForm">
+      {% if nav_ids %}<input type="hidden" name="nav_ids" value="{{ nav_ids }}">{% endif %}
       <div class="form-group"><label>URL</label><input type="url" name="url" value="{{ page_data.url or '' }}" required placeholder="https://en.wikipedia.org/wiki/..."></div>
       <div class="form-row">
         <div class="form-group">
@@ -94,7 +98,7 @@
       <p class="form-note">When checked, table numbers must be unique per page. When unchecked, different offices can use the same table number.</p>
       <div class="actions">
         <button type="submit" class="btn btn-secondary save-page-btn">Save page only</button>
-        <a href="/offices" class="btn btn-secondary">Cancel</a>
+        <a href="/offices{% if list_return_query is defined and list_return_query %}?{{ list_return_query }}{% endif %}" class="btn btn-secondary">Cancel</a>
         <form method="post" action="/pages/{{ source_page_id }}/delete" style="display:inline;" onsubmit="return confirm('Delete this page and all its offices and tables? This cannot be undone.');">
           <button type="submit" class="btn btn-danger">Delete page</button>
         </form>
@@ -212,7 +216,7 @@
       <button type="button" class="btn btn-secondary add-table-btn" data-office-id="{{ o.id }}" style="margin-bottom:1rem;">Add table</button>
       <div class="actions">
         <button type="submit" class="btn btn-secondary save-office-btn">Save this office only</button>
-        <a href="/offices" class="btn btn-secondary">Cancel</a>
+        <a href="/offices{% if list_return_query is defined and list_return_query %}?{{ list_return_query }}{% endif %}" class="btn btn-secondary">Cancel</a>
       </div>
     </form>
     <div class="actions" style="margin-top:0.25rem;">
@@ -274,7 +278,7 @@
   <div class="actions">
     <button type="submit" name="action" value="save" class="btn">Save</button>
     <button type="submit" name="action" value="save_and_close" class="btn">Save and close</button>
-    <a href="/offices" class="btn btn-secondary">Cancel</a>
+    <a href="/offices{% if list_return_query is defined and list_return_query %}?{{ list_return_query }}{% endif %}" class="btn btn-secondary">Cancel</a>
     <button type="button" class="btn btn-secondary" id="showAllTablesBtn">Show all tables</button>
   </div>
 
@@ -1062,6 +1066,110 @@
       var block = btn.closest('.table-config-block');
       var action = btn.getAttribute('data-action');
       if (!action) return;
+      if (action === 'populate-terms') {
+        var officeId = btn.getAttribute('data-office-id');
+        if (!officeId) return;
+        var resultEl = document.getElementById('testConfigResult');
+        var stopBtn = document.getElementById('populateTermsStopBtn');
+        if (resultEl) { resultEl.style.display = 'block'; resultEl.textContent = 'Starting…'; resultEl.className = 'alert'; resultEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
+        btn.disabled = true;
+        if (stopBtn) stopBtn.style.display = 'none';
+        fetch('/api/offices/' + officeId + '/populate-terms', { method: 'POST' })
+          .then(function(r) { return r.json().then(function(d) { return { status: r.status, data: d }; }); })
+          .then(function(res) {
+            if (res.status === 202 && res.data.job_id) {
+              var jobId = res.data.job_id;
+              if (stopBtn) { stopBtn.style.display = 'inline-block'; stopBtn.disabled = false; stopBtn.onclick = function() { stopBtn.disabled = true; fetch('/api/offices/' + officeId + '/populate-terms/cancel/' + jobId, { method: 'POST' }).catch(function() {}); }; }
+              var poll = function() {
+                fetch('/api/offices/' + officeId + '/populate-terms/status/' + jobId).then(function(r) { return r.json(); }).then(function(s) {
+                  if (resultEl) resultEl.textContent = (s.message || 'Processing…') + (s.total > 0 ? ' (' + s.current + ' of ' + s.total + ')' : '');
+                  if (s.status === 'complete' || s.status === 'cancelled') {
+                    var r = s.result;
+                    if (resultEl) {
+                      resultEl.textContent = r && r.ok ? r.message : ((r && r.message) || s.error || 'Failed');
+                      resultEl.className = (r && r.ok) ? 'alert alert-success' : 'alert alert-error';
+                      resultEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                      if (r && !r.ok && r.revalidate_missing_holders && r.revalidate_missing_holders.length > 0) {
+                        var viewListBtn = document.createElement('button');
+                        viewListBtn.type = 'button';
+                        viewListBtn.className = 'btn btn-secondary btn-sm';
+                        viewListBtn.style.marginLeft = '0.5rem';
+                        viewListBtn.textContent = 'View full list';
+                        viewListBtn.onclick = function() {
+                          var list = r.revalidate_missing_holders;
+                          var html = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Missing office holders</title></head><body><h1>Missing office holders</h1><p>These were in existing data but not in the new list.</p><ul>' + list.map(function(x) { return '<li>' + x.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }).join('') + '</ul></body></html>';
+                          var w = window.open('', '_blank');
+                          w.document.write(html);
+                          w.document.close();
+                        };
+                        resultEl.appendChild(document.createTextNode(' '));
+                        resultEl.appendChild(viewListBtn);
+                      }
+                      if (r && r.can_force_override) {
+                        var forceBtn = document.createElement('button');
+                        forceBtn.type = 'button';
+                        forceBtn.className = 'btn btn-secondary btn-sm';
+                        forceBtn.style.marginLeft = '0.5rem';
+                        forceBtn.textContent = 'Force override';
+                        forceBtn.onclick = function() {
+                          forceBtn.disabled = true;
+                          if (resultEl) { resultEl.textContent = 'Starting…'; resultEl.className = 'alert'; }
+                          fetch('/api/offices/' + officeId + '/populate-terms', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ force_override: true }) })
+                            .then(function(res) { return res.json().then(function(d) { return { status: res.status, data: d }; }); })
+                            .then(function(initRes) {
+                              if (initRes.status === 202 && initRes.data.job_id) {
+                                var jid = initRes.data.job_id;
+                                if (stopBtn) { stopBtn.style.display = 'inline-block'; stopBtn.disabled = false; stopBtn.onclick = function() { stopBtn.disabled = true; fetch('/api/offices/' + officeId + '/populate-terms/cancel/' + jid, { method: 'POST' }).catch(function() {}); }; }
+                                var pollForce = function() {
+                                  fetch('/api/offices/' + officeId + '/populate-terms/status/' + jid).then(function(res) { return res.json(); }).then(function(st) {
+                                    if (resultEl) resultEl.textContent = st.message || 'Processing…';
+                                    if (st.status === 'complete' || st.status === 'cancelled') {
+                                      var rr = st.result;
+                                      if (resultEl) { resultEl.textContent = rr && rr.message ? rr.message : (st.error || 'Done'); resultEl.className = rr && rr.ok ? 'alert alert-success' : 'alert alert-error'; }
+                                      if (stopBtn) stopBtn.style.display = 'none';
+                                      btn.disabled = false;
+                                      forceBtn.disabled = false;
+                                      if (window.playJobCompleteSound) window.playJobCompleteSound();
+                                      return;
+                                    }
+                                    if (st.status === 'error') {
+                                      if (resultEl) { resultEl.textContent = 'Error: ' + (st.error || 'Failed'); resultEl.className = 'alert alert-error'; }
+                                      if (stopBtn) stopBtn.style.display = 'none';
+                                      btn.disabled = false;
+                                      forceBtn.disabled = false;
+                                      if (window.playJobCompleteSound) window.playJobCompleteSound();
+                                      return;
+                                    }
+                                    setTimeout(pollForce, 800);
+                                  }).catch(function() { if (resultEl) { resultEl.textContent = 'Request failed.'; resultEl.className = 'alert alert-error'; } btn.disabled = false; forceBtn.disabled = false; if (stopBtn) stopBtn.style.display = 'none'; } );
+                                };
+                                pollForce();
+                              } else {
+                                if (resultEl) { resultEl.textContent = 'Error: ' + (initRes.data.detail || initRes.data.message || 'Failed to start'); resultEl.className = 'alert alert-error'; }
+                                forceBtn.disabled = false;
+                              }
+                            }).catch(function() { if (resultEl) { resultEl.textContent = 'Request failed.'; resultEl.className = 'alert alert-error'; } forceBtn.disabled = false; } );
+                        };
+                        resultEl.appendChild(document.createTextNode(' '));
+                        resultEl.appendChild(forceBtn);
+                        resultEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                      }
+                    }
+                    btn.disabled = false;
+                    if (stopBtn) stopBtn.style.display = 'none';
+                    if (window.playJobCompleteSound) window.playJobCompleteSound();
+                  }
+                  if (s.status === 'error') { if (resultEl) { resultEl.textContent = 'Error: ' + (s.error || 'Failed'); resultEl.className = 'alert alert-error'; resultEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } btn.disabled = false; if (stopBtn) stopBtn.style.display = 'none'; if (window.playJobCompleteSound) window.playJobCompleteSound(); }
+                  if (s.status !== 'complete' && s.status !== 'cancelled' && s.status !== 'error') setTimeout(poll, 800);
+                }).catch(function() { if (resultEl) { resultEl.textContent = 'Request failed.'; resultEl.className = 'alert alert-error'; } btn.disabled = false; if (stopBtn) stopBtn.style.display = 'none'; } );
+              };
+              poll();
+            } else if (res.data.ok) { if (resultEl) { resultEl.textContent = res.data.message; resultEl.className = 'alert alert-success'; resultEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } btn.disabled = false; if (window.playJobCompleteSound) window.playJobCompleteSound(); }
+            else { if (resultEl) { resultEl.textContent = 'Error: ' + (res.data.message || 'Failed'); resultEl.className = 'alert alert-error'; resultEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } btn.disabled = false; if (window.playJobCompleteSound) window.playJobCompleteSound(); }
+          })
+          .catch(function() { if (resultEl) { resultEl.textContent = 'Request failed.'; resultEl.className = 'alert alert-error'; resultEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } btn.disabled = false; } );
+        return;
+      }
       var draft = getFormDraftFromOfficeForm(form, block || null);
       var el = document.getElementById('testConfigResult');
       if (action === 'test-config') {
@@ -1167,41 +1275,6 @@
             .then(function(data) { if (resultEl) { resultEl.className = 'alert alert-success'; resultEl.textContent = 'Debug file exported successfully.'; } })
             .catch(function(err) { if (resultEl) { resultEl.className = 'alert alert-error'; resultEl.textContent = err && err.message ? err.message : 'Export failed.'; } });
         }
-        return;
-      }
-      if (action === 'populate-terms') {
-        var officeId = btn.getAttribute('data-office-id');
-        if (!officeId) return;
-        var resultEl = document.getElementById('testConfigResult');
-        var stopBtn = document.getElementById('populateTermsStopBtn');
-        if (resultEl) { resultEl.style.display = 'block'; resultEl.textContent = 'Starting…'; resultEl.className = 'alert'; }
-        btn.disabled = true;
-        if (stopBtn) stopBtn.style.display = 'none';
-        fetch('/api/offices/' + officeId + '/populate-terms', { method: 'POST' })
-          .then(function(r) { return r.json().then(function(d) { return { status: r.status, data: d }; }); })
-          .then(function(res) {
-            if (res.status === 202 && res.data.job_id) {
-              var jobId = res.data.job_id;
-              if (stopBtn) { stopBtn.style.display = 'inline-block'; stopBtn.disabled = false; stopBtn.onclick = function() { stopBtn.disabled = true; fetch('/api/offices/' + officeId + '/populate-terms/cancel/' + jobId, { method: 'POST' }).catch(function() {}); }; }
-              var poll = function() {
-                fetch('/api/offices/' + officeId + '/populate-terms/status/' + jobId).then(function(r) { return r.json(); }).then(function(s) {
-                  if (resultEl) resultEl.textContent = (s.message || 'Processing…') + (s.total > 0 ? ' (' + s.current + ' of ' + s.total + ')' : '');
-                  if (s.status === 'complete' || s.status === 'cancelled') {
-                    var r = s.result;
-                    if (resultEl) { resultEl.textContent = r && r.ok ? r.message : ((r && r.message) || s.error || 'Failed'); resultEl.className = (r && r.ok) ? 'alert alert-success' : 'alert alert-error'; }
-                    btn.disabled = false;
-                    if (stopBtn) stopBtn.style.display = 'none';
-                    if (window.playJobCompleteSound) window.playJobCompleteSound();
-                  }
-                  if (s.status === 'error') { if (resultEl) { resultEl.textContent = 'Error: ' + (s.error || 'Failed'); resultEl.className = 'alert alert-error'; } btn.disabled = false; if (stopBtn) stopBtn.style.display = 'none'; if (window.playJobCompleteSound) window.playJobCompleteSound(); }
-                  if (s.status !== 'complete' && s.status !== 'cancelled' && s.status !== 'error') setTimeout(poll, 800);
-                }).catch(function() { if (resultEl) resultEl.textContent = 'Request failed.'; resultEl.className = 'alert alert-error'; btn.disabled = false; if (stopBtn) stopBtn.style.display = 'none'; });
-              };
-              poll();
-            } else if (res.data.ok) { if (resultEl) { resultEl.textContent = res.data.message; resultEl.className = 'alert alert-success'; } btn.disabled = false; if (window.playJobCompleteSound) window.playJobCompleteSound(); }
-            else { if (resultEl) { resultEl.textContent = 'Error: ' + (res.data.message || 'Failed'); resultEl.className = 'alert alert-error'; } btn.disabled = false; if (window.playJobCompleteSound) window.playJobCompleteSound(); }
-          })
-          .catch(function() { if (resultEl) { resultEl.textContent = 'Request failed.'; resultEl.className = 'alert alert-error'; } btn.disabled = false; });
         return;
       }
     });
