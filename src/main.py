@@ -429,13 +429,22 @@ async def page_update(request: Request, source_page_id: int):
         offices_on_page = db_offices.list_offices_for_page(source_page_id)
         base = f"/offices/{offices_on_page[0]['id']}" if offices_on_page else "/offices"
         nav_q = (form.get("nav_ids") or "").strip()
-        q = "?error=" + quote(str(e)) + ("&nav_ids=" + nav_q if nav_q else "")
+        list_return_q = (form.get("list_return_query") or "").strip()
+        q = "?error=" + quote(str(e))
+        if nav_q:
+            q += "&nav_ids=" + nav_q
+        if list_return_q:
+            q += "&" + list_return_q
         return RedirectResponse(f"{base}{q}", status_code=302)
     first_office_id = db_offices.list_offices_for_page(source_page_id)[0]["id"]
     nav_q = (form.get("nav_ids") or "").strip()
-    url = f"/offices/{first_office_id}?saved=1#section-page"
+    list_return_q = (form.get("list_return_query") or "").strip()
+    url = f"/offices/{first_office_id}?saved=1"
     if nav_q:
         url += "&nav_ids=" + nav_q
+    if list_return_q:
+        url += "&" + list_return_q
+    url += "#section-page"
     return RedirectResponse(url, status_code=302)
 
 
@@ -576,6 +585,7 @@ async def office_update(request: Request, office_id: int):
     action = form.get("action", "save_and_close")
     office_only = form.get("office_only") == "1"
     nav_ids = (form.get("nav_ids") or "").strip()
+    list_return_query = (form.get("list_return_query") or "").strip()
     alt_links = [v.strip() for v in form.getlist("alt_links") if v and isinstance(v, str) and v.strip()]
     alt_link_include_main = form.get("alt_link_include_main") == "1"
     data = {
@@ -610,13 +620,24 @@ async def office_update(request: Request, office_id: int):
         db_offices.update_office(office_id, data, office_only=office_only)
     except ValueError as e:
         from urllib.parse import quote
-        q = "?error=" + quote(str(e)) + ("&nav_ids=" + nav_ids.strip() if nav_ids and nav_ids.strip() else "")
+        q = "?error=" + quote(str(e))
+        if nav_ids:
+            q += "&nav_ids=" + nav_ids
+        if list_return_query:
+            q += "&" + list_return_query
         return RedirectResponse(f"/offices/{office_id}{q}", status_code=302)
     if action == "save":
-        q = "?saved=1" + ("&nav_ids=" + nav_ids.strip() if nav_ids and nav_ids.strip() else "")
+        q = "?saved=1"
+        if nav_ids:
+            q += "&nav_ids=" + nav_ids
+        if list_return_query:
+            q += "&" + list_return_query
         hash_frag = "#section-office-" + str(office_id) if office_only else ""
         return RedirectResponse(f"/offices/{office_id}{q}{hash_frag}", status_code=302)
-    return RedirectResponse("/offices?saved=1", status_code=302)
+    url = "/offices?saved=1"
+    if list_return_query:
+        url += "&" + list_return_query
+    return RedirectResponse(url, status_code=302)
 
 
 @app.post("/offices/{office_id}/delete")
