@@ -383,10 +383,12 @@ def list_pages(
     branch_id: int | None = None,
     enabled: int | None = None,
     limit: int | None = None,
+    office_count_filter: str = "all",
     conn: sqlite3.Connection | None = None,
 ) -> list[dict[str, Any]]:
     """Return source pages with optional filters and counts (office_count, table_count, first_office_id).
-    Used when hierarchy is in use; returns [] otherwise."""
+    Used when hierarchy is in use; returns [] otherwise.
+    office_count_filter: "all", "gt0" (has offices), or "eq0" (no offices)."""
     own_conn = conn is None
     if own_conn:
         conn = get_connection()
@@ -410,6 +412,10 @@ def list_pages(
         if enabled is not None and enabled in (0, 1):
             where_parts.append("p.enabled = ?")
             params.append(enabled)
+        if office_count_filter == "gt0":
+            where_parts.append("(SELECT COUNT(*) FROM office_details od WHERE od.source_page_id = p.id) > 0")
+        elif office_count_filter == "eq0":
+            where_parts.append("(SELECT COUNT(*) FROM office_details od WHERE od.source_page_id = p.id) = 0")
         where_sql = " AND ".join(where_parts)
         limit_sql = ""
         if limit is not None and limit > 0:

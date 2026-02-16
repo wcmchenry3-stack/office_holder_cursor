@@ -72,6 +72,14 @@
       <option value="0" {% if filter_enabled == '0' %}selected{% endif %}>Off</option>
     </select>
   </div>
+  <div class="form-group" style="margin:0; min-width:10rem;">
+    <label for="filterOfficeCount">Office count</label>
+    <select name="office_count" id="filterOfficeCount" class="page-col-filter">
+      <option value="all" {% if filter_office_count == 'all' %}selected{% endif %}>All</option>
+      <option value="gt0" {% if filter_office_count == 'gt0' %}selected{% endif %}>Has offices (&gt;0)</option>
+      <option value="eq0" {% if filter_office_count == 'eq0' %}selected{% endif %}>No offices (=0)</option>
+    </select>
+  </div>
   <div class="form-group" style="margin:0; min-width:8rem;">
     <label for="showLimit">Show</label>
     <select name="limit" id="showLimit" class="page-col-filter">
@@ -84,9 +92,84 @@
   <div class="form-group" style="margin:0;">
     <label>&nbsp;</label>
     <button type="submit" class="btn btn-secondary btn-sm">Apply</button>
-    <a href="/offices" class="btn btn-secondary btn-sm" style="margin-left:0.35rem;">Clear filters</a>
+    <a href="/offices" class="btn btn-secondary btn-sm" id="clearFiltersLink" style="margin-left:0.35rem;">Clear filters</a>
   </div>
 </form>
+<script>
+(function() {
+  var PAGE_FILTERS_KEY = 'office_holder_page_search_filters';
+
+  function hasFilterParams() {
+    var params = new URLSearchParams(window.location.search);
+    return params.has('country_id') || params.has('state_id') || params.has('level_id') ||
+           params.has('branch_id') || params.has('enabled') || params.has('limit') || params.has('office_count');
+  }
+
+  function buildQueryFromForm(form) {
+    var fd = new FormData(form);
+    var parts = [];
+    ['country_id', 'state_id', 'level_id', 'branch_id', 'enabled', 'limit', 'office_count'].forEach(function(name) {
+      var v = fd.get(name);
+      if (v !== null && v !== undefined && String(v).trim() !== '') parts.push(encodeURIComponent(name) + '=' + encodeURIComponent(v));
+    });
+    return parts.join('&');
+  }
+
+  document.addEventListener('DOMContentLoaded', function() {
+    var form = document.querySelector('.office-filters.form-row[action="/offices"]');
+    if (!form) return;
+
+    if (!hasFilterParams()) {
+      try {
+        var saved = localStorage.getItem(PAGE_FILTERS_KEY);
+        if (saved && saved.length > 0) {
+          window.location.replace('/offices?' + saved);
+          return;
+        }
+      } catch (e) {}
+    }
+
+    form.addEventListener('submit', function() {
+      try {
+        var qs = buildQueryFromForm(form);
+        if (qs) localStorage.setItem(PAGE_FILTERS_KEY, qs);
+      } catch (e) {}
+    });
+
+    var clearLink = document.getElementById('clearFiltersLink');
+    if (clearLink) {
+      clearLink.addEventListener('click', function(e) {
+        e.preventDefault();
+        try { localStorage.removeItem(PAGE_FILTERS_KEY); } catch (err) {}
+        window.location.href = '/offices';
+      });
+    }
+
+    var countrySelect = document.getElementById('filterCountry');
+    var stateSelect = document.getElementById('filterState');
+    if (countrySelect && stateSelect) {
+      countrySelect.addEventListener('change', function() {
+        var cid = this.value;
+        stateSelect.innerHTML = '<option value="">All</option>';
+        stateSelect.disabled = true;
+        if (!cid) { stateSelect.disabled = false; return; }
+        fetch('/api/states?country_id=' + encodeURIComponent(cid))
+          .then(function(r) { return r.json(); })
+          .then(function(states) {
+            states.forEach(function(s) {
+              var opt = document.createElement('option');
+              opt.value = s.id;
+              opt.textContent = s.name;
+              stateSelect.appendChild(opt);
+            });
+            stateSelect.disabled = false;
+          })
+          .catch(function() { stateSelect.disabled = false; });
+      });
+    }
+  });
+})();
+</script>
 {% if pages %}
 <table id="pagesTable" class="table">
   <thead>
