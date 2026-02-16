@@ -1260,14 +1260,15 @@ def move_table(
             ).fetchone()
             source_name = (name_row[0] or "Office").strip() if name_row else "Office"
             raise ValueError(f"OFFICE_WOULD_BE_EMPTY:{source_name}")
-        next_no = conn.execute(
-            "SELECT COALESCE(MAX(table_no), 0) + 1 FROM office_table_config WHERE office_details_id = ?",
-            (to_office_details_id,),
-        ).fetchone()[0]
-        conn.execute(
-            "UPDATE office_table_config SET office_details_id = ?, table_no = ?, updated_at = datetime('now') WHERE id = ?",
-            (to_office_details_id, next_no, tc_id),
-        )
+        try:
+            conn.execute(
+                "UPDATE office_table_config SET office_details_id = ?, updated_at = datetime('now') WHERE id = ?",
+                (to_office_details_id, tc_id),
+            )
+        except sqlite3.IntegrityError:
+            raise ValueError(
+                "Target office already has a table with that table number. Change one of the table numbers first."
+            )
         conn.commit()
         if count == 1 and delete_source_office_if_empty:
             delete_office(source_od_id, conn=conn)
