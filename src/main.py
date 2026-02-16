@@ -495,6 +495,30 @@ async def table_delete(office_id: int, tc_id: int):
     return RedirectResponse(f"/offices/{office_id}?saved=1", status_code=302)
 
 
+@app.post("/offices/{office_id}/table/{tc_id}/move")
+async def table_move(
+    office_id: int,
+    tc_id: int,
+    to_office_id: int = Form(...),
+    delete_source_office_if_empty: str = Form(""),
+):
+    """Move a table config to another office on the same page. Returns 409 with requires_confirm if source would be empty; client may resubmit with delete_source_office_if_empty=1."""
+    delete_flag = str(delete_source_office_if_empty).strip().lower() in ("1", "true", "yes")
+    try:
+        db_offices.move_table(tc_id, to_office_id, delete_source_office_if_empty=delete_flag)
+    except ValueError as e:
+        msg = str(e)
+        if msg.startswith("OFFICE_WOULD_BE_EMPTY:"):
+            source_name = msg.split(":", 1)[-1].strip() or "Office"
+            return JSONResponse(
+                {"requires_confirm": True, "source_office_name": source_name},
+                status_code=409,
+            )
+        return JSONResponse({"error": msg}, status_code=400)
+    redirect_url = f"/offices/{to_office_id}?saved=1"
+    return JSONResponse({"redirect": redirect_url})
+
+
 @app.post("/offices/{office_id}/duplicate")
 async def office_duplicate(office_id: int):
     """Create a copy of the office (same config, new name) and redirect to the new office's edit page."""
