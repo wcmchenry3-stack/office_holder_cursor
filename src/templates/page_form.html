@@ -51,6 +51,7 @@
     <p class="form-note">Source page (URL and location). Shared by all offices below.</p>
     <form method="post" action="/pages/{{ source_page_id }}" id="pageForm">
       {% if nav_ids %}<input type="hidden" name="nav_ids" value="{{ nav_ids }}">{% endif %}
+      {% if list_return_query is defined and list_return_query %}<input type="hidden" name="list_return_query" value="{{ list_return_query }}">{% endif %}
       <div class="form-group"><label>URL</label><input type="url" name="url" value="{{ page_data.url or '' }}" required placeholder="https://en.wikipedia.org/wiki/..."></div>
       <div class="form-row">
         <div class="form-group">
@@ -231,6 +232,7 @@
 {% if office and terms_count is not none %}<p><small>Office terms: {{ terms_count }}</small></p>{% endif %}
 <form method="post" action="{% if office %}/offices/{{ office.id }}{% else %}/offices/new{% endif %}" id="officeForm" class="office-form">
   {% if office and nav_ids %}<input type="hidden" name="nav_ids" value="{{ nav_ids }}">{% endif %}
+  {% if office and list_return_query is defined and list_return_query %}<input type="hidden" name="list_return_query" value="{{ list_return_query }}">{% endif %}
 
   <h1>Page</h1>
   <p class="form-note">Source page (URL and location).</p>
