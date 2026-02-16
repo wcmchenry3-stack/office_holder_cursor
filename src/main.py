@@ -408,10 +408,22 @@ async def api_page_enabled(source_page_id: int, enabled: int = Form(1)):
     return JSONResponse({"ok": True})
 
 
+def _page_redirect_query(nav_q: str, list_return_q: str) -> str:
+    parts = []
+    if nav_q:
+        parts.append("nav_ids=" + nav_q)
+    if list_return_q:
+        parts.append(list_return_q)
+    return "&".join(parts)
+
+
 @app.post("/pages/{source_page_id}")
 async def page_update(request: Request, source_page_id: int):
     """Update only the page (URL, location). Used when editing one page with multiple offices."""
     form = await request.form()
+    save_all = request.headers.get("X-Save-All") == "1"
+    nav_q = (form.get("nav_ids") or "").strip()
+    list_return_q = (form.get("list_return_query") or "").strip()
     page_data = {
         "url": (form.get("url") or "").strip(),
         "country_id": int(form.get("country_id") or 0),
@@ -428,23 +440,20 @@ async def page_update(request: Request, source_page_id: int):
         from urllib.parse import quote
         offices_on_page = db_offices.list_offices_for_page(source_page_id)
         base = f"/offices/{offices_on_page[0]['id']}" if offices_on_page else "/offices"
-        nav_q = (form.get("nav_ids") or "").strip()
-        list_return_q = (form.get("list_return_query") or "").strip()
         q = "?error=" + quote(str(e))
-        if nav_q:
-            q += "&nav_ids=" + nav_q
-        if list_return_q:
-            q += "&" + list_return_q
-        return RedirectResponse(f"{base}{q}", status_code=302)
+        if nav_q or list_return_q:
+            q += "&" + _page_redirect_query(nav_q, list_return_q)
+        redirect_url = f"{base}{q}"
+        if save_all:
+            return JSONResponse({"ok": False, "error": str(e), "redirect": redirect_url})
+        return RedirectResponse(redirect_url, status_code=302)
     first_office_id = db_offices.list_offices_for_page(source_page_id)[0]["id"]
-    nav_q = (form.get("nav_ids") or "").strip()
-    list_return_q = (form.get("list_return_query") or "").strip()
     url = f"/offices/{first_office_id}?saved=1"
-    if nav_q:
-        url += "&nav_ids=" + nav_q
-    if list_return_q:
-        url += "&" + list_return_q
+    if nav_q or list_return_q:
+        url += "&" + _page_redirect_query(nav_q, list_return_q)
     url += "#section-page"
+    if save_all:
+        return JSONResponse({"ok": True, "redirect": url})
     return RedirectResponse(url, status_code=302)
 
 
@@ -520,6 +529,7 @@ async def office_edit_page(request: Request, office_id: int):
     return templates.TemplateResponse(
         "page_form.html",
         {"request": request, "office": office, "offices_on_page": offices_on_page, "source_page_id": source_page_id, "page_data": page_data, "countries": countries, "levels": levels, "branches": branches, "states": states, "nav_ids": nav_ids_raw, "nav_prev_id": nav_prev_id, "nav_next_id": nav_next_id, "nav_current": nav_current, "nav_total": nav_total, "list_return_query": list_return_query, "terms_count": terms_count, "saved": saved, "validation_error": validation_error, "form_template": "page_form"},
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
     )
 
 
@@ -549,6 +559,9 @@ def _form_to_table_config(form, i: int) -> dict:
             tc_id = None
     else:
         tc_id = None
+    enabled_key = "tc_enabled_" + str(tc_id) if tc_id is not None else "tc_enabled_new_" + str(i)
+    enabled_val = form.get(enabled_key)
+    enabled = enabled_val == "1" if enabled_val is not None else (_bool("enabled", "tc_enabled") if i == 0 else False)
     date_src = _get("date_source", "tc_date_source") or ""
     dist_mode = _get("district_mode", "tc_district_mode") or "column"
     return {
@@ -568,7 +581,7 @@ def _form_to_table_config(form, i: int) -> dict:
         "consolidate_rowspan_terms": _bool("consolidate_rowspan_terms", "tc_consolidate_rowspan_terms"),
         "rep_link": _bool("rep_link", "tc_rep_link"),
         "party_link": _bool("party_link", "tc_party_link"),
-        "enabled": _bool("enabled", "tc_enabled") if _get("tc_enabled", "tc_enabled") is not None else True,
+        "enabled": enabled,
         "use_full_page_for_table": _bool("use_full_page_for_table", "tc_use_full_page_for_table"),
         "term_dates_merged": _bool("term_dates_merged", "tc_term_dates_merged"),
         "party_ignore": _bool("party_ignore", "tc_party_ignore"),
@@ -616,6 +629,7 @@ async def office_update(request: Request, office_id: int):
     if tc_table_nos or tc_ids:
         n = max(len(tc_ids), len(tc_table_nos), 1)
         data["table_configs"] = [_form_to_table_config(form, i) for i in range(n)]
+    save_all = request.headers.get("X-Save-All") == "1"
     try:
         db_offices.update_office(office_id, data, office_only=office_only)
     except ValueError as e:
@@ -625,7 +639,10 @@ async def office_update(request: Request, office_id: int):
             q += "&nav_ids=" + nav_ids
         if list_return_query:
             q += "&" + list_return_query
-        return RedirectResponse(f"/offices/{office_id}{q}", status_code=302)
+        redirect_url = f"/offices/{office_id}{q}"
+        if save_all:
+            return JSONResponse({"ok": False, "error": str(e), "redirect": redirect_url})
+        return RedirectResponse(redirect_url, status_code=302)
     if action == "save":
         q = "?saved=1"
         if nav_ids:
@@ -633,10 +650,15 @@ async def office_update(request: Request, office_id: int):
         if list_return_query:
             q += "&" + list_return_query
         hash_frag = "#section-office-" + str(office_id) if office_only else ""
-        return RedirectResponse(f"/offices/{office_id}{q}{hash_frag}", status_code=302)
+        redirect_url = f"/offices/{office_id}{q}{hash_frag}"
+        if save_all:
+            return JSONResponse({"ok": True, "redirect": redirect_url})
+        return RedirectResponse(redirect_url, status_code=302)
     url = "/offices?saved=1"
     if list_return_query:
         url += "&" + list_return_query
+    if save_all:
+        return JSONResponse({"ok": True, "redirect": url})
     return RedirectResponse(url, status_code=302)
 
 
