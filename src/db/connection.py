@@ -33,7 +33,8 @@ def get_connection(path: Path | None = None) -> sqlite3.Connection:
     """Return a connection to the database, creating it and schema if needed."""
     ensure_data_dir()
     db_path = path or DB_PATH
-    conn = sqlite3.connect(str(db_path))
+    # Timeout (seconds) so we don't hang forever if the DB is locked by another process
+    conn = sqlite3.connect(str(db_path), timeout=10.0)
     conn.row_factory = sqlite3.Row
     return conn
 
