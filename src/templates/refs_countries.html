@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Countries – Office Holder{% endblock %}
+{% block content %}
+<h1>Countries</h1>
+{% if saved %}<div class="alert alert-success">Saved to local database.</div>{% endif %}
+{% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
+<div class="actions">
+  <a href="/refs/countries/new" class="btn">Add country</a>
+  <a href="/refs" class="btn btn-secondary">Back to Reference data</a>
+</div>
+{% if countries %}
+<table class="table">
+  <thead>
+    <tr><th>Name</th><th></th></tr>
+  </thead>
+  <tbody>
+    {% for c in countries %}
+    <tr>
+      <td><a href="/refs/countries/{{ c.id }}">{{ c.name or '—' }}</a></td>
+      <td>
+        <a href="/refs/countries/{{ c.id }}" class="btn btn-sm btn-secondary">Edit</a>
+        <form action="/refs/countries/{{ c.id }}/delete" method="post" style="display:inline;" onsubmit="return confirm('Delete this country?');">
+          <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>No countries yet. <a href="/refs/countries/new">Add one</a>.</p>
+{% endif %}
+{% endblock %}

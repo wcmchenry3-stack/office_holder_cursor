@@ -1119,6 +1119,264 @@ async def party_delete(party_id: int):
     return RedirectResponse("/parties", status_code=302)
 
 
+# ---------- Reference data (manage) ----------
+@app.get("/refs", response_class=HTMLResponse)
+async def refs_index(request: Request):
+    return templates.TemplateResponse("refs.html", {"request": request})
+
+
+@app.get("/refs/countries", response_class=HTMLResponse)
+async def refs_countries_list(request: Request):
+    saved = request.query_params.get("saved") == "1"
+    error = request.query_params.get("error") or None
+    countries = db_refs.list_countries()
+    return templates.TemplateResponse(
+        "refs_countries.html",
+        {"request": request, "countries": countries, "saved": saved, "error": error},
+    )
+
+
+@app.get("/refs/countries/new", response_class=HTMLResponse)
+async def refs_country_new(request: Request):
+    return templates.TemplateResponse("refs_country_form.html", {"request": request, "country": None})
+
+
+@app.post("/refs/countries/new")
+async def refs_country_create(request: Request, name: str = Form("")):
+    try:
+        db_refs.create_country(name)
+        return RedirectResponse("/refs/countries?saved=1", status_code=302)
+    except ValueError as e:
+        return templates.TemplateResponse(
+            "refs_country_form.html",
+            {"request": request, "country": {"name": name}, "validation_error": str(e)},
+        )
+
+
+@app.get("/refs/countries/{country_id}", response_class=HTMLResponse)
+async def refs_country_edit(request: Request, country_id: int):
+    country = db_refs.get_country(country_id)
+    if not country:
+        raise HTTPException(status_code=404)
+    return templates.TemplateResponse("refs_country_form.html", {"request": request, "country": country})
+
+
+@app.post("/refs/countries/{country_id}")
+async def refs_country_update(request: Request, country_id: int, name: str = Form("")):
+    try:
+        db_refs.update_country(country_id, name)
+        return RedirectResponse("/refs/countries?saved=1", status_code=302)
+    except ValueError as e:
+        country = db_refs.get_country(country_id)
+        if not country:
+            raise HTTPException(status_code=404)
+        return templates.TemplateResponse(
+            "refs_country_form.html",
+            {"request": request, "country": {**country, "name": name}, "validation_error": str(e)},
+        )
+
+
+@app.post("/refs/countries/{country_id}/delete")
+async def refs_country_delete(country_id: int):
+    try:
+        db_refs.delete_country(country_id)
+        return RedirectResponse("/refs/countries", status_code=302)
+    except ValueError as e:
+        from urllib.parse import quote
+        return RedirectResponse("/refs/countries?error=" + quote(str(e)), status_code=302)
+
+
+@app.get("/refs/states", response_class=HTMLResponse)
+async def refs_states_list(request: Request):
+    saved = request.query_params.get("saved") == "1"
+    error = request.query_params.get("error") or None
+    states = db_refs.list_states_with_country()
+    return templates.TemplateResponse(
+        "refs_states.html",
+        {"request": request, "states": states, "saved": saved, "error": error},
+    )
+
+
+@app.get("/refs/states/new", response_class=HTMLResponse)
+async def refs_state_new(request: Request):
+    countries = db_refs.list_countries()
+    return templates.TemplateResponse(
+        "refs_state_form.html", {"request": request, "state": None, "countries": countries}
+    )
+
+
+@app.post("/refs/states/new")
+async def refs_state_create(request: Request, country_id: int = Form(0), name: str = Form("")):
+    try:
+        db_refs.create_state(country_id, name)
+        return RedirectResponse("/refs/states?saved=1", status_code=302)
+    except ValueError as e:
+        countries = db_refs.list_countries()
+        return templates.TemplateResponse(
+            "refs_state_form.html",
+            {"request": request, "state": None, "countries": countries, "validation_error": str(e), "form_country_id": country_id, "form_name": name},
+        )
+
+
+@app.get("/refs/states/{state_id}", response_class=HTMLResponse)
+async def refs_state_edit(request: Request, state_id: int):
+    state = db_refs.get_state(state_id)
+    if not state:
+        raise HTTPException(status_code=404)
+    countries = db_refs.list_countries()
+    return templates.TemplateResponse(
+        "refs_state_form.html", {"request": request, "state": state, "countries": countries}
+    )
+
+
+@app.post("/refs/states/{state_id}")
+async def refs_state_update(request: Request, state_id: int, country_id: int = Form(0), name: str = Form("")):
+    try:
+        db_refs.update_state(state_id, country_id, name)
+        return RedirectResponse("/refs/states?saved=1", status_code=302)
+    except ValueError as e:
+        state = db_refs.get_state(state_id)
+        if not state:
+            raise HTTPException(status_code=404)
+        countries = db_refs.list_countries()
+        return templates.TemplateResponse(
+            "refs_state_form.html",
+            {"request": request, "state": {**state, "country_id": country_id, "name": name}, "countries": countries, "validation_error": str(e)},
+        )
+
+
+@app.post("/refs/states/{state_id}/delete")
+async def refs_state_delete(state_id: int):
+    try:
+        db_refs.delete_state(state_id)
+        return RedirectResponse("/refs/states", status_code=302)
+    except ValueError as e:
+        from urllib.parse import quote
+        return RedirectResponse("/refs/states?error=" + quote(str(e)), status_code=302)
+
+
+@app.get("/refs/levels", response_class=HTMLResponse)
+async def refs_levels_list(request: Request):
+    saved = request.query_params.get("saved") == "1"
+    error = request.query_params.get("error") or None
+    levels = db_refs.list_levels()
+    return templates.TemplateResponse(
+        "refs_levels.html",
+        {"request": request, "levels": levels, "saved": saved, "error": error},
+    )
+
+
+@app.get("/refs/levels/new", response_class=HTMLResponse)
+async def refs_level_new(request: Request):
+    return templates.TemplateResponse("refs_level_form.html", {"request": request, "level": None})
+
+
+@app.post("/refs/levels/new")
+async def refs_level_create(request: Request, name: str = Form("")):
+    try:
+        db_refs.create_level(name)
+        return RedirectResponse("/refs/levels?saved=1", status_code=302)
+    except ValueError as e:
+        return templates.TemplateResponse(
+            "refs_level_form.html",
+            {"request": request, "level": {"name": name}, "validation_error": str(e)},
+        )
+
+
+@app.get("/refs/levels/{level_id}", response_class=HTMLResponse)
+async def refs_level_edit(request: Request, level_id: int):
+    level = db_refs.get_level(level_id)
+    if not level:
+        raise HTTPException(status_code=404)
+    return templates.TemplateResponse("refs_level_form.html", {"request": request, "level": level})
+
+
+@app.post("/refs/levels/{level_id}")
+async def refs_level_update(request: Request, level_id: int, name: str = Form("")):
+    try:
+        db_refs.update_level(level_id, name)
+        return RedirectResponse("/refs/levels?saved=1", status_code=302)
+    except ValueError as e:
+        level = db_refs.get_level(level_id)
+        if not level:
+            raise HTTPException(status_code=404)
+        return templates.TemplateResponse(
+            "refs_level_form.html",
+            {"request": request, "level": {**level, "name": name}, "validation_error": str(e)},
+        )
+
+
+@app.post("/refs/levels/{level_id}/delete")
+async def refs_level_delete(level_id: int):
+    try:
+        db_refs.delete_level(level_id)
+        return RedirectResponse("/refs/levels", status_code=302)
+    except ValueError as e:
+        from urllib.parse import quote
+        return RedirectResponse("/refs/levels?error=" + quote(str(e)), status_code=302)
+
+
+@app.get("/refs/branches", response_class=HTMLResponse)
+async def refs_branches_list(request: Request):
+    saved = request.query_params.get("saved") == "1"
+    error = request.query_params.get("error") or None
+    branches = db_refs.list_branches()
+    return templates.TemplateResponse(
+        "refs_branches.html",
+        {"request": request, "branches": branches, "saved": saved, "error": error},
+    )
+
+
+@app.get("/refs/branches/new", response_class=HTMLResponse)
+async def refs_branch_new(request: Request):
+    return templates.TemplateResponse("refs_branch_form.html", {"request": request, "branch": None})
+
+
+@app.post("/refs/branches/new")
+async def refs_branch_create(request: Request, name: str = Form("")):
+    try:
+        db_refs.create_branch(name)
+        return RedirectResponse("/refs/branches?saved=1", status_code=302)
+    except ValueError as e:
+        return templates.TemplateResponse(
+            "refs_branch_form.html",
+            {"request": request, "branch": {"name": name}, "validation_error": str(e)},
+        )
+
+
+@app.get("/refs/branches/{branch_id}", response_class=HTMLResponse)
+async def refs_branch_edit(request: Request, branch_id: int):
+    branch = db_refs.get_branch(branch_id)
+    if not branch:
+        raise HTTPException(status_code=404)
+    return templates.TemplateResponse("refs_branch_form.html", {"request": request, "branch": branch})
+
+
+@app.post("/refs/branches/{branch_id}")
+async def refs_branch_update(request: Request, branch_id: int, name: str = Form("")):
+    try:
+        db_refs.update_branch(branch_id, name)
+        return RedirectResponse("/refs/branches?saved=1", status_code=302)
+    except ValueError as e:
+        branch = db_refs.get_branch(branch_id)
+        if not branch:
+            raise HTTPException(status_code=404)
+        return templates.TemplateResponse(
+            "refs_branch_form.html",
+            {"request": request, "branch": {**branch, "name": name}, "validation_error": str(e)},
+        )
+
+
+@app.post("/refs/branches/{branch_id}/delete")
+async def refs_branch_delete(branch_id: int):
+    try:
+        db_refs.delete_branch(branch_id)
+        return RedirectResponse("/refs/branches", status_code=302)
+    except ValueError as e:
+        from urllib.parse import quote
+        return RedirectResponse("/refs/branches?error=" + quote(str(e)), status_code=302)
+
+
 # ---------- Reference data (for dropdowns) ----------
 @app.get("/api/countries")
 async def api_countries():
