@@ -66,6 +66,8 @@ def migrate_to_fk(conn=None):
         _migrate_allow_reuse_tables_and_table_no_unique(conn)
         # office_table_config: add name (table name for outline)
         _migrate_office_table_config_name(conn)
+        # office_category tables and office_details.office_category_id
+        _migrate_office_category(conn)
     finally:
         if own_conn:
             conn.close()
@@ -604,4 +606,39 @@ def _migrate_office_table_config_name(conn):
         return
     if "name" not in tc_cols:
         conn.execute("ALTER TABLE office_table_config ADD COLUMN name TEXT")
+        conn.commit()
+
+
+def _migrate_office_category(conn):
+    """Create office_category and junction tables if missing; add office_category_id to office_details."""
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS office_category (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE
+        );
+        CREATE TABLE IF NOT EXISTS office_category_countries (
+            category_id INTEGER NOT NULL REFERENCES office_category(id),
+            country_id INTEGER NOT NULL REFERENCES countries(id),
+            PRIMARY KEY (category_id, country_id)
+        );
+        CREATE TABLE IF NOT EXISTS office_category_levels (
+            category_id INTEGER NOT NULL REFERENCES office_category(id),
+            level_id INTEGER NOT NULL REFERENCES levels(id),
+            PRIMARY KEY (category_id, level_id)
+        );
+        CREATE TABLE IF NOT EXISTS office_category_branches (
+            category_id INTEGER NOT NULL REFERENCES office_category(id),
+            branch_id INTEGER NOT NULL REFERENCES branches(id),
+            PRIMARY KEY (category_id, branch_id)
+        );
+    """)
+    conn.commit()
+    try:
+        od_cols = _columns(conn, "office_details")
+    except sqlite3.OperationalError:
+        return
+    if "office_category_id" not in od_cols:
+        conn.execute(
+            "ALTER TABLE office_details ADD COLUMN office_category_id INTEGER REFERENCES office_category(id)"
+        )
         conn.commit()

@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Office categories – Office Holder{% endblock %}
+{% block content %}
+<h1>Office categories</h1>
+{% if saved %}<div class="alert alert-success">Saved to local database.</div>{% endif %}
+{% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
+<div class="actions">
+  <a href="/refs/office-categories/new" class="btn">Add office category</a>
+  <a href="/refs" class="btn btn-secondary">Back to Reference data</a>
+</div>
+{% if categories %}
+<table class="table">
+  <thead>
+    <tr><th>Name</th><th></th></tr>
+  </thead>
+  <tbody>
+    {% for c in categories %}
+    <tr>
+      <td><a href="/refs/office-categories/{{ c.id }}">{{ c.name or '—' }}</a></td>
+      <td>
+        <a href="/refs/office-categories/{{ c.id }}" class="btn btn-sm btn-secondary">Edit</a>
+        <form action="/refs/office-categories/{{ c.id }}/delete" method="post" style="display:inline;" onsubmit="return confirm('Delete this office category?');">
+          <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>No office categories yet. <a href="/refs/office-categories/new">Add one</a>.</p>
+{% endif %}
+{% endblock %}

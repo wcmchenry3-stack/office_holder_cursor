@@ -454,7 +454,7 @@ def get_office(office_id: int, conn: sqlite3.Connection | None = None) -> dict[s
         if _use_hierarchy(conn):
             cur = conn.execute(
                 """SELECT p.id AS page_id, p.country_id, p.state_id, p.level_id, p.branch_id, p.url, p.notes AS page_notes, p.enabled AS page_enabled,
-                          od.id AS office_details_id, od.name, od.department, od.notes, od.alt_link_include_main, od.enabled AS od_enabled,
+                          od.id AS office_details_id, od.name, od.department, od.notes, od.alt_link_include_main, od.enabled AS od_enabled, od.office_category_id,
                           tc.id AS tc_id, tc.table_no, tc.table_rows, tc.link_column, tc.party_column,
                           tc.term_start_column, tc.term_end_column, tc.district_column, tc.dynamic_parse, tc.read_right_to_left,
                           tc.find_date_in_infobox, tc.parse_rowspan, tc.rep_link, tc.party_link, tc.enabled AS tc_enabled,
@@ -477,7 +477,7 @@ def get_office(office_id: int, conn: sqlite3.Connection | None = None) -> dict[s
             ]
             c, s, lv, b = _ref_names(conn, rd0.get("country_id"), rd0.get("state_id"), rd0.get("level_id"), rd0.get("branch_id"))
             p = {"url": rd0.get("url"), "country_id": rd0.get("country_id"), "state_id": rd0.get("state_id"), "level_id": rd0.get("level_id"), "branch_id": rd0.get("branch_id"), "notes": rd0.get("page_notes"), "enabled": rd0.get("page_enabled")}
-            od = {"id": od_id, "name": rd0.get("name"), "department": rd0.get("department"), "notes": rd0.get("notes"), "alt_link_include_main": rd0.get("alt_link_include_main"), "enabled": rd0.get("od_enabled")}
+            od = {"id": od_id, "name": rd0.get("name"), "department": rd0.get("department"), "notes": rd0.get("notes"), "alt_link_include_main": rd0.get("alt_link_include_main"), "enabled": rd0.get("od_enabled"), "office_category_id": rd0.get("office_category_id")}
             table_configs = []
             for r in rows:
                 rd = _row_to_dict(r)
@@ -490,6 +490,7 @@ def get_office(office_id: int, conn: sqlite3.Connection | None = None) -> dict[s
             flat["id"] = od_id
             flat["source_page_id"] = rd0.get("page_id")
             flat["table_configs"] = table_configs
+            flat["office_category_id"] = rd0.get("office_category_id")
             return flat
         cur = conn.execute(
             """SELECT o.*, c.name AS country_name, s.name AS state_name, l.name AS level_name, b.name AS branch_name
@@ -690,7 +691,7 @@ def list_offices_for_page(source_page_id: int, conn: sqlite3.Connection | None =
             return []
         cur = conn.execute(
             """SELECT p.id AS page_id, p.country_id, p.state_id, p.level_id, p.branch_id, p.url, p.notes AS page_notes, p.enabled AS page_enabled,
-                          od.id AS office_details_id, od.name, od.department, od.notes, od.alt_link_include_main, od.enabled AS od_enabled,
+                          od.id AS office_details_id, od.name, od.department, od.notes, od.alt_link_include_main, od.enabled AS od_enabled, od.office_category_id,
                           tc.id AS tc_id, tc.table_no, tc.table_rows, tc.link_column, tc.party_column,
                           tc.term_start_column, tc.term_end_column, tc.district_column, tc.dynamic_parse, tc.read_right_to_left,
                           tc.find_date_in_infobox, tc.parse_rowspan, tc.rep_link, tc.party_link, tc.enabled AS tc_enabled,
@@ -721,7 +722,7 @@ def list_offices_for_page(source_page_id: int, conn: sqlite3.Connection | None =
             ]
             c, s, lv, b = _ref_names(conn, rd0.get("country_id"), rd0.get("state_id"), rd0.get("level_id"), rd0.get("branch_id"))
             p = {"url": rd0.get("url"), "country_id": rd0.get("country_id"), "state_id": rd0.get("state_id"), "level_id": rd0.get("level_id"), "branch_id": rd0.get("branch_id"), "notes": rd0.get("page_notes"), "enabled": rd0.get("page_enabled")}
-            od = {"id": od_id, "name": rd0.get("name"), "department": rd0.get("department"), "notes": rd0.get("notes"), "alt_link_include_main": rd0.get("alt_link_include_main"), "enabled": rd0.get("od_enabled")}
+            od = {"id": od_id, "name": rd0.get("name"), "department": rd0.get("department"), "notes": rd0.get("notes"), "alt_link_include_main": rd0.get("alt_link_include_main"), "enabled": rd0.get("od_enabled"), "office_category_id": rd0.get("office_category_id")}
             table_configs = []
             for rd in group:
                 if rd.get("tc_id") is not None:
@@ -733,6 +734,7 @@ def list_offices_for_page(source_page_id: int, conn: sqlite3.Connection | None =
             flat["id"] = od_id
             flat["source_page_id"] = rd0.get("page_id")
             flat["table_configs"] = table_configs
+            flat["office_category_id"] = rd0.get("office_category_id")
             out.append(flat)
         return out
     finally:
@@ -834,9 +836,17 @@ def create_office_for_page(source_page_id: int, data: dict[str, Any], conn: sqli
                         "Table numbers must be unique per page when 'Allow reuse of tables' is checked"
                     )
         enabled = 1 if row_data.get("enabled") in (True, 1, "TRUE", "true", "1") else 0
+        _ocid = row_data.get("office_category_id")
+        if _ocid is not None and _ocid != "":
+            try:
+                _ocid = int(_ocid) if _ocid else None
+            except (TypeError, ValueError):
+                _ocid = None
+        else:
+            _ocid = None
         conn.execute(
-            """INSERT INTO office_details (source_page_id, name, variant_name, department, notes, alt_link_include_main, enabled, created_at, updated_at)
-               VALUES (?, ?, '', ?, ?, ?, ?, datetime('now'), datetime('now'))""",
+            """INSERT INTO office_details (source_page_id, name, variant_name, department, notes, alt_link_include_main, enabled, office_category_id, created_at, updated_at)
+               VALUES (?, ?, '', ?, ?, ?, ?, ?, datetime('now'), datetime('now'))""",
             (
                 source_page_id,
                 (row_data.get("name") or "New office").strip(),
@@ -844,6 +854,7 @@ def create_office_for_page(source_page_id: int, data: dict[str, Any], conn: sqli
                 row_data.get("notes") or "",
                 1 if row_data.get("alt_link_include_main") in (True, 1, "TRUE", "true", "1") else 0,
                 enabled,
+                _ocid,
             ),
         )
         od_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
@@ -915,9 +926,17 @@ def create_office(data: dict[str, Any], conn: sqlite3.Connection | None = None) 
             ),
         )
         page_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        _ocid = data.get("office_category_id")
+        if _ocid is not None and _ocid != "":
+            try:
+                _ocid = int(_ocid) if _ocid else None
+            except (TypeError, ValueError):
+                _ocid = None
+        else:
+            _ocid = None
         conn.execute(
-            """INSERT INTO office_details (source_page_id, name, variant_name, department, notes, alt_link_include_main, enabled, created_at, updated_at)
-               VALUES (?, ?, '', ?, ?, ?, ?, datetime('now'), datetime('now'))""",
+            """INSERT INTO office_details (source_page_id, name, variant_name, department, notes, alt_link_include_main, enabled, office_category_id, created_at, updated_at)
+               VALUES (?, ?, '', ?, ?, ?, ?, ?, datetime('now'), datetime('now'))""",
             (
                 page_id,
                 (row_data.get("name") or "").strip(),
@@ -925,6 +944,7 @@ def create_office(data: dict[str, Any], conn: sqlite3.Connection | None = None) 
                 row_data.get("notes") or "",
                 1 if row_data.get("alt_link_include_main") in (True, 1, "TRUE", "true", "1") else 0,
                 enabled,
+                _ocid,
             ),
         )
         od_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
@@ -976,14 +996,23 @@ def update_office(office_id: int, data: dict[str, Any], conn: sqlite3.Connection
                         page_id,
                     ),
                 )
+            _ocid = row_data.get("office_category_id")
+            if _ocid is not None and _ocid != "":
+                try:
+                    _ocid = int(_ocid) if _ocid else None
+                except (TypeError, ValueError):
+                    _ocid = None
+            else:
+                _ocid = None
             conn.execute(
-                """UPDATE office_details SET name=?, department=?, notes=?, alt_link_include_main=?, enabled=?, updated_at=datetime('now') WHERE id=?""",
+                """UPDATE office_details SET name=?, department=?, notes=?, alt_link_include_main=?, enabled=?, office_category_id=?, updated_at=datetime('now') WHERE id=?""",
                 (
                     (row_data.get("name") or "").strip(),
                     row_data.get("department") or "",
                     row_data.get("notes") or "",
                     1 if row_data.get("alt_link_include_main") in (True, 1, "TRUE", "true", "1") else 0,
                     enabled_val,
+                    _ocid,
                     office_id,
                 ),
             )

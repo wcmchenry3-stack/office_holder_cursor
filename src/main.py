@@ -29,6 +29,7 @@ from src.db.connection import init_db, get_connection
 from src.db import offices as db_offices
 from src.db import parties as db_parties
 from src.db import refs as db_refs
+from src.db import office_category as db_office_category
 from src.db import individuals as db_individuals
 from src.db import office_terms as db_office_terms
 from src.db import reports as db_reports
@@ -567,9 +568,12 @@ async def office_edit_page(request: Request, office_id: int):
     country_id_for_states = (page_data or office).get("country_id") or office.get("country_id") or 0
     states = db_refs.list_states(country_id_for_states) if country_id_for_states else []
     terms_count = db_office_terms.count_terms_for_office(office_id)
+    office_categories = db_office_category.list_categories_for_office(
+        office.get("country_id"), office.get("level_id"), office.get("branch_id")
+    )
     return templates.TemplateResponse(
         "page_form.html",
-        {"request": request, "office": office, "offices_on_page": offices_on_page, "source_page_id": source_page_id, "page_data": page_data, "countries": countries, "levels": levels, "branches": branches, "states": states, "nav_ids": nav_ids_raw, "nav_prev_id": nav_prev_id, "nav_next_id": nav_next_id, "nav_current": nav_current, "nav_total": nav_total, "list_return_query": list_return_query, "terms_count": terms_count, "saved": saved, "validation_error": validation_error, "form_template": "page_form"},
+        {"request": request, "office": office, "offices_on_page": offices_on_page, "source_page_id": source_page_id, "page_data": page_data, "countries": countries, "levels": levels, "branches": branches, "states": states, "nav_ids": nav_ids_raw, "nav_prev_id": nav_prev_id, "nav_next_id": nav_next_id, "nav_current": nav_current, "nav_total": nav_total, "list_return_query": list_return_query, "terms_count": terms_count, "saved": saved, "validation_error": validation_error, "form_template": "page_form", "office_categories": office_categories},
         headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
     )
 
@@ -645,6 +649,7 @@ async def office_update(request: Request, office_id: int):
     data = {
         "country_id": int(form.get("country_id") or 0), "state_id": int(form.get("state_id") or 0) or None, "level_id": int(form.get("level_id") or 0) or None, "branch_id": int(form.get("branch_id") or 0) or None,
         "department": (form.get("department") or "").strip(), "name": (form.get("name") or "").strip(), "enabled": form.get("enabled") == "1", "notes": (form.get("notes") or "").strip(), "url": (form.get("url") or "").strip(),
+        "office_category_id": form.get("office_category_id") or None,
         "table_no": int(form.get("table_no") or 1), "table_rows": int(form.get("table_rows") or 4),
         "link_column": int(form.get("link_column") or 1), "party_column": int(form.get("party_column") or 0),
         "term_start_column": int(form.get("term_start_column") or 4), "term_end_column": int(form.get("term_end_column") or 5),
@@ -1375,6 +1380,131 @@ async def refs_branch_delete(branch_id: int):
     except ValueError as e:
         from urllib.parse import quote
         return RedirectResponse("/refs/branches?error=" + quote(str(e)), status_code=302)
+
+
+# ---------- Office categories (reference data) ----------
+@app.get("/refs/office-categories", response_class=HTMLResponse)
+async def refs_office_categories_list(request: Request):
+    saved = request.query_params.get("saved") == "1"
+    error = request.query_params.get("error") or None
+    categories = db_office_category.list_office_categories()
+    return templates.TemplateResponse(
+        "refs_office_categories.html",
+        {"request": request, "categories": categories, "saved": saved, "error": error},
+    )
+
+
+@app.get("/refs/office-categories/new", response_class=HTMLResponse)
+async def refs_office_category_new(request: Request):
+    countries = db_refs.list_countries()
+    levels = db_refs.list_levels()
+    branches = db_refs.list_branches()
+    return templates.TemplateResponse(
+        "refs_office_category_form.html",
+        {"request": request, "category": None, "countries": countries, "levels": levels, "branches": branches},
+    )
+
+
+def _form_ids(form, key: str) -> list[int]:
+    """Return list of int ids from form getlist(key), ignoring empty/zero."""
+    raw = form.getlist(key) if hasattr(form, "getlist") else []
+    ids = []
+    for v in raw:
+        try:
+            n = int(v) if v else 0
+            if n:
+                ids.append(n)
+        except (TypeError, ValueError):
+            pass
+    return ids
+
+
+@app.post("/refs/office-categories/new")
+async def refs_office_category_create(request: Request):
+    form = await request.form()
+    name = (form.get("name") or "").strip()
+    country_ids = _form_ids(form, "country_ids")
+    level_ids = _form_ids(form, "level_ids")
+    branch_ids = _form_ids(form, "branch_ids")
+    try:
+        db_office_category.create_office_category(name, country_ids, level_ids, branch_ids)
+        return RedirectResponse("/refs/office-categories?saved=1", status_code=302)
+    except ValueError as e:
+        countries = db_refs.list_countries()
+        levels = db_refs.list_levels()
+        branches = db_refs.list_branches()
+        return templates.TemplateResponse(
+            "refs_office_category_form.html",
+            {
+                "request": request,
+                "category": None,
+                "countries": countries,
+                "levels": levels,
+                "branches": branches,
+                "validation_error": str(e),
+                "form_name": name,
+                "form_country_ids": country_ids,
+                "form_level_ids": level_ids,
+                "form_branch_ids": branch_ids,
+            },
+        )
+
+
+@app.get("/refs/office-categories/{category_id}", response_class=HTMLResponse)
+async def refs_office_category_edit(request: Request, category_id: int):
+    category = db_office_category.get_office_category(category_id)
+    if not category:
+        raise HTTPException(status_code=404)
+    countries = db_refs.list_countries()
+    levels = db_refs.list_levels()
+    branches = db_refs.list_branches()
+    return templates.TemplateResponse(
+        "refs_office_category_form.html",
+        {"request": request, "category": category, "countries": countries, "levels": levels, "branches": branches},
+    )
+
+
+@app.post("/refs/office-categories/{category_id}")
+async def refs_office_category_update(request: Request, category_id: int):
+    form = await request.form()
+    name = (form.get("name") or "").strip()
+    country_ids = _form_ids(form, "country_ids")
+    level_ids = _form_ids(form, "level_ids")
+    branch_ids = _form_ids(form, "branch_ids")
+    try:
+        updated = db_office_category.update_office_category(category_id, name, country_ids, level_ids, branch_ids)
+        if not updated:
+            raise HTTPException(status_code=404)
+        return RedirectResponse("/refs/office-categories?saved=1", status_code=302)
+    except ValueError as e:
+        category = db_office_category.get_office_category(category_id)
+        if not category:
+            raise HTTPException(status_code=404)
+        category = {**category, "name": name, "country_ids": country_ids, "level_ids": level_ids, "branch_ids": branch_ids}
+        countries = db_refs.list_countries()
+        levels = db_refs.list_levels()
+        branches = db_refs.list_branches()
+        return templates.TemplateResponse(
+            "refs_office_category_form.html",
+            {
+                "request": request,
+                "category": category,
+                "countries": countries,
+                "levels": levels,
+                "branches": branches,
+                "validation_error": str(e),
+            },
+        )
+
+
+@app.post("/refs/office-categories/{category_id}/delete")
+async def refs_office_category_delete(category_id: int):
+    try:
+        db_office_category.delete_office_category(category_id)
+        return RedirectResponse("/refs/office-categories", status_code=302)
+    except ValueError as e:
+        from urllib.parse import quote
+        return RedirectResponse("/refs/office-categories?error=" + quote(str(e)), status_code=302)
 
 
 # ---------- Reference data (for dropdowns) ----------

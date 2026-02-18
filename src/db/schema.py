@@ -28,6 +28,27 @@ CREATE TABLE IF NOT EXISTS branches (
     name TEXT NOT NULL UNIQUE
 );
 
+-- Office category: optional label per office; scoped by country/level/branch (empty = all)
+CREATE TABLE IF NOT EXISTS office_category (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE
+);
+CREATE TABLE IF NOT EXISTS office_category_countries (
+    category_id INTEGER NOT NULL REFERENCES office_category(id),
+    country_id INTEGER NOT NULL REFERENCES countries(id),
+    PRIMARY KEY (category_id, country_id)
+);
+CREATE TABLE IF NOT EXISTS office_category_levels (
+    category_id INTEGER NOT NULL REFERENCES office_category(id),
+    level_id INTEGER NOT NULL REFERENCES levels(id),
+    PRIMARY KEY (category_id, level_id)
+);
+CREATE TABLE IF NOT EXISTS office_category_branches (
+    category_id INTEGER NOT NULL REFERENCES office_category(id),
+    branch_id INTEGER NOT NULL REFERENCES branches(id),
+    PRIMARY KEY (category_id, branch_id)
+);
+
 -- Individuals: one row per person (keyed by Wikipedia URL)
 CREATE TABLE IF NOT EXISTS individuals (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
