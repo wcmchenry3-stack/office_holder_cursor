@@ -92,7 +92,7 @@
       <div class="form-row">
         <div class="form-group">
           <label>Level</label>
-          <select name="level_id">
+          <select name="level_id" id="pageLevelId">
             <option value="">— None —</option>
             {% for l in levels %}
             <option value="{{ l.id }}" {% if page_data.level_id == l.id %}selected{% endif %}>{{ l.name }}</option>
@@ -564,6 +564,49 @@
     selectedPageCityId = null;
     loadPageCities(pageStateSelect.value);
   });
+
+  function levelNameFromSelect(levelSelect) {
+    if (!levelSelect || levelSelect.selectedIndex < 0) return '';
+    var opt = levelSelect.options[levelSelect.selectedIndex];
+    return (opt && opt.text ? opt.text.trim() : '').toLowerCase();
+  }
+  function applyLevelStateCityGrayout() {
+    var pageLevel = document.getElementById('pageLevelId');
+    var pageState = document.getElementById('pageStateId');
+    var pageCity = document.getElementById('pageCityId');
+    var singleLevel = document.getElementById('levelId');
+    var singleState = document.getElementById('stateId');
+    if (pageLevel && pageState && pageCity) {
+      var name = levelNameFromSelect(pageLevel);
+      if (name === 'federal') {
+        pageState.disabled = true;
+        pageState.value = '';
+        pageCity.disabled = true;
+        pageCity.value = '';
+      } else if (name === 'state') {
+        pageState.disabled = false;
+        pageCity.disabled = true;
+        pageCity.value = '';
+      } else {
+        pageState.disabled = false;
+        pageCity.disabled = false;
+      }
+    }
+    if (singleLevel && singleState) {
+      var name = levelNameFromSelect(singleLevel);
+      if (name === 'federal') {
+        singleState.disabled = true;
+        singleState.value = '';
+      } else {
+        singleState.disabled = false;
+      }
+    }
+  }
+  var pageLevelSelect = document.getElementById('pageLevelId');
+  if (pageLevelSelect) pageLevelSelect.addEventListener('change', applyLevelStateCityGrayout);
+  var singleLevelSelect = document.getElementById('levelId');
+  if (singleLevelSelect) singleLevelSelect.addEventListener('change', applyLevelStateCityGrayout);
+  applyLevelStateCityGrayout();
 
   var allTablesPendingUrl = null;
   function renderAllTables(data) {
