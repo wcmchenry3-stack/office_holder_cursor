@@ -308,7 +308,7 @@ async def office_create(request: Request):
         "district_at_large": (form.get("district_mode") or "column") == "at_large",
     }
     try:
-        _validate_level_state_city(data.get("level_id"), data.get("state_id"), data.get("city_id"))
+        _validate_level_state_city(data.get("level_id"), data.get("state_id"), data.get("city_id"), data.get("branch_id"))
     except ValueError as e:
         countries = db_refs.list_countries()
         levels = db_refs.list_levels()
@@ -507,16 +507,21 @@ def _page_redirect_query(nav_q: str, list_return_q: str) -> str:
     return "&".join(parts)
 
 
-def _validate_level_state_city(level_id, state_id, city_id) -> None:
-    """Raise ValueError if level/state/city combination is invalid. Federal: state and city empty; State: state required, city empty; Local: state and city required."""
+def _validate_level_state_city(level_id, state_id, city_id, branch_id=None) -> None:
+    """Raise ValueError if level/state/city combination is invalid. Federal: state and city empty (except Federal+Legislative allows state, not city); State: state required, city empty; Local: state and city required."""
     if not level_id:
         return
     level_name = (db_refs.get_level_name(int(level_id) if level_id else 0) or "").strip().lower()
+    branch_name = (db_refs.get_branch_name(int(branch_id) if branch_id else 0) or "").strip().lower()
     state_set = state_id is not None and state_id != 0
     city_set = city_id is not None and city_id != 0
     if level_name == "federal":
-        if state_set or city_set:
-            raise ValueError("For Federal level, State and City must be empty.")
+        if branch_name == "legislative":
+            if city_set:
+                raise ValueError("For Federal Legislative level, City must be empty (State is allowed).")
+        else:
+            if state_set or city_set:
+                raise ValueError("For Federal level, State and City must be empty.")
     elif level_name == "state":
         if not state_set:
             raise ValueError("For State level, State is required.")
@@ -548,7 +553,7 @@ async def page_update(request: Request, source_page_id: int):
         "allow_reuse_tables": form.get("allow_reuse_tables") == "1",
     }
     try:
-        _validate_level_state_city(page_data.get("level_id"), page_data.get("state_id"), page_data.get("city_id"))
+        _validate_level_state_city(page_data.get("level_id"), page_data.get("state_id"), page_data.get("city_id"), page_data.get("branch_id"))
         db_offices.update_page(source_page_id, page_data)
     except ValueError as e:
         from urllib.parse import quote
@@ -752,7 +757,7 @@ async def office_update(request: Request, office_id: int):
         data["table_configs"] = [_form_to_table_config(form, i) for i in range(n)]
     save_all = request.headers.get("X-Save-All") == "1"
     try:
-        _validate_level_state_city(data.get("level_id"), data.get("state_id"), data.get("city_id"))
+        _validate_level_state_city(data.get("level_id"), data.get("state_id"), data.get("city_id"), data.get("branch_id"))
         db_offices.update_office(office_id, data, office_only=office_only)
     except ValueError as e:
         from urllib.parse import quote

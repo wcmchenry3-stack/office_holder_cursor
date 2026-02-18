@@ -101,7 +101,7 @@
         </div>
         <div class="form-group">
           <label>Branch</label>
-          <select name="branch_id">
+          <select name="branch_id" id="pageBranchId">
             <option value="">— None —</option>
             {% for b in branches %}
             <option value="{{ b.id }}" {% if page_data.branch_id == b.id %}selected{% endif %}>{{ b.name }}</option>
@@ -570,20 +570,34 @@
     var opt = levelSelect.options[levelSelect.selectedIndex];
     return (opt && opt.text ? opt.text.trim() : '').toLowerCase();
   }
+  function branchNameFromSelect(branchSelect) {
+    if (!branchSelect || branchSelect.selectedIndex < 0) return '';
+    var opt = branchSelect.options[branchSelect.selectedIndex];
+    return (opt && opt.text ? opt.text.trim() : '').toLowerCase();
+  }
   function applyLevelStateCityGrayout() {
     var pageLevel = document.getElementById('pageLevelId');
     var pageState = document.getElementById('pageStateId');
     var pageCity = document.getElementById('pageCityId');
+    var pageBranch = document.getElementById('pageBranchId');
     var singleLevel = document.getElementById('levelId');
     var singleState = document.getElementById('stateId');
+    var singleBranch = document.getElementById('branchId');
     if (pageLevel && pageState && pageCity) {
-      var name = levelNameFromSelect(pageLevel);
-      if (name === 'federal') {
-        pageState.disabled = true;
-        pageState.value = '';
-        pageCity.disabled = true;
-        pageCity.value = '';
-      } else if (name === 'state') {
+      var levelName = levelNameFromSelect(pageLevel);
+      var branchName = pageBranch ? branchNameFromSelect(pageBranch) : '';
+      if (levelName === 'federal') {
+        if (branchName === 'legislative') {
+          pageState.disabled = false;
+          pageCity.disabled = true;
+          pageCity.value = '';
+        } else {
+          pageState.disabled = true;
+          pageState.value = '';
+          pageCity.disabled = true;
+          pageCity.value = '';
+        }
+      } else if (levelName === 'state') {
         pageState.disabled = false;
         pageCity.disabled = true;
         pageCity.value = '';
@@ -593,10 +607,15 @@
       }
     }
     if (singleLevel && singleState) {
-      var name = levelNameFromSelect(singleLevel);
-      if (name === 'federal') {
-        singleState.disabled = true;
-        singleState.value = '';
+      var levelName = levelNameFromSelect(singleLevel);
+      var branchName = singleBranch ? branchNameFromSelect(singleBranch) : '';
+      if (levelName === 'federal') {
+        if (branchName === 'legislative') {
+          singleState.disabled = false;
+        } else {
+          singleState.disabled = true;
+          singleState.value = '';
+        }
       } else {
         singleState.disabled = false;
       }
@@ -604,8 +623,12 @@
   }
   var pageLevelSelect = document.getElementById('pageLevelId');
   if (pageLevelSelect) pageLevelSelect.addEventListener('change', applyLevelStateCityGrayout);
+  var pageBranchSelect = document.getElementById('pageBranchId');
+  if (pageBranchSelect) pageBranchSelect.addEventListener('change', applyLevelStateCityGrayout);
   var singleLevelSelect = document.getElementById('levelId');
   if (singleLevelSelect) singleLevelSelect.addEventListener('change', applyLevelStateCityGrayout);
+  var singleBranchSelect = document.getElementById('branchId');
+  if (singleBranchSelect) singleBranchSelect.addEventListener('change', applyLevelStateCityGrayout);
   applyLevelStateCityGrayout();
 
   var allTablesPendingUrl = null;
