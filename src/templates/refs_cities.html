@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Cities – Office Holder{% endblock %}
+{% block content %}
+<h1>Cities</h1>
+<p>Manage cities; each city is linked to exactly one state (state implies country).</p>
+{% if saved %}<div class="alert alert-success">Saved to local database.</div>{% endif %}
+{% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
+<div class="actions">
+  <a href="/refs/cities/new" class="btn">Add city</a>
+  <a href="/refs" class="btn btn-secondary">Back to Reference data</a>
+</div>
+{% if cities %}
+<table class="table">
+  <thead>
+    <tr><th>City</th><th>Country</th><th>State</th><th></th></tr>
+  </thead>
+  <tbody>
+    {% for c in cities %}
+    <tr>
+      <td><a href="/refs/cities/{{ c.id }}">{{ c.name or '—' }}</a></td>
+      <td>{{ c.country_name or '—' }}</td>
+      <td>{{ c.state_name or '—' }}</td>
+      <td>
+        <a href="/refs/cities/{{ c.id }}" class="btn btn-sm btn-secondary">Edit</a>
+        <form action="/refs/cities/{{ c.id }}/delete" method="post" style="display:inline;" onsubmit="return confirm('Delete this city? (Only allowed if not linked to any page.)');">
+          <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>No cities yet. <a href="/refs/cities/new">Add one</a>.</p>
+{% endif %}
+{% endblock %}

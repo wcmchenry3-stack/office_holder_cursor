@@ -226,7 +226,7 @@ def update_state(state_id: int, country_id: int, name: str, conn: sqlite3.Connec
 
 
 def delete_state(state_id: int, conn: sqlite3.Connection | None = None) -> None:
-    """Delete state. Raises ValueError if still in use by source_pages or offices."""
+    """Delete state. Raises ValueError if still in use by source_pages, offices, or cities."""
     own = conn is None
     if own:
         conn = get_connection()
@@ -237,12 +237,143 @@ def delete_state(state_id: int, conn: sqlite3.Connection | None = None) -> None:
                 in_use.append("source pages")
             if _count_refs(conn, "offices", "state_id", state_id) > 0:
                 in_use.append("offices")
+            if _count_refs(conn, "cities", "state_id", state_id) > 0:
+                in_use.append("cities")
         except sqlite3.OperationalError:
             pass
         if in_use:
             raise ValueError("Cannot delete: still in use by " + ", ".join(in_use))
         conn.execute("DELETE FROM states WHERE id = ?", (state_id,))
         conn.commit()
+    finally:
+        if own:
+            conn.close()
+
+
+def list_cities(state_id: int, conn: sqlite3.Connection | None = None) -> list[dict[str, Any]]:
+    """Return cities for the given state (for page dropdown). state_id required."""
+    own = conn is None
+    if own:
+        conn = get_connection()
+    try:
+        cur = conn.execute(
+            "SELECT id, name FROM cities WHERE state_id = ? ORDER BY name", (state_id,)
+        )
+        return [_row_to_dict(r) for r in cur.fetchall()]
+    finally:
+        if own:
+            conn.close()
+
+
+def list_cities_with_country_state(conn: sqlite3.Connection | None = None) -> list[dict[str, Any]]:
+    """Return cities with id, name, state_id, country_name, state_name for refs list."""
+    own = conn is None
+    if own:
+        conn = get_connection()
+    try:
+        cur = conn.execute(
+            "SELECT c.id, c.name, c.state_id, co.name AS country_name, s.name AS state_name "
+            "FROM cities c JOIN states s ON s.id = c.state_id JOIN countries co ON co.id = s.country_id "
+            "ORDER BY co.name, s.name, c.name"
+        )
+        return [_row_to_dict(r) for r in cur.fetchall()]
+    finally:
+        if own:
+            conn.close()
+
+
+def get_city(city_id: int, conn: sqlite3.Connection | None = None) -> dict[str, Any] | None:
+    """Return city row with id, name, state_id, or None."""
+    own = conn is None
+    if own:
+        conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT c.id, c.name, c.state_id FROM cities c WHERE c.id = ?", (city_id,)
+        ).fetchone()
+        return _row_to_dict(row) if row else None
+    finally:
+        if own:
+            conn.close()
+
+
+def create_city(state_id: int, name: str, conn: sqlite3.Connection | None = None) -> int:
+    """Insert city, return id. state_id required. Raises ValueError if name empty or duplicate for state."""
+    name = (name or "").strip()
+    if not name:
+        raise ValueError("City name is required")
+    if not state_id:
+        raise ValueError("State is required")
+    own = conn is None
+    if own:
+        conn = get_connection()
+    try:
+        conn.execute("INSERT INTO cities (state_id, name) VALUES (?, ?)", (state_id, name))
+        conn.commit()
+        return conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    except sqlite3.IntegrityError as e:
+        if "UNIQUE" in str(e):
+            raise ValueError("A city with this name already exists for this state") from e
+        raise
+    finally:
+        if own:
+            conn.close()
+
+
+def update_city(city_id: int, state_id: int, name: str, conn: sqlite3.Connection | None = None) -> bool:
+    """Update city. Returns True if updated."""
+    name = (name or "").strip()
+    if not name:
+        raise ValueError("City name is required")
+    if not state_id:
+        raise ValueError("State is required")
+    own = conn is None
+    if own:
+        conn = get_connection()
+    try:
+        cur = conn.execute(
+            "UPDATE cities SET state_id = ?, name = ? WHERE id = ?", (state_id, name, city_id)
+        )
+        conn.commit()
+        return cur.rowcount > 0
+    except sqlite3.IntegrityError as e:
+        if "UNIQUE" in str(e):
+            raise ValueError("A city with this name already exists for this state") from e
+        raise
+    finally:
+        if own:
+            conn.close()
+
+
+def delete_city(city_id: int, conn: sqlite3.Connection | None = None) -> None:
+    """Delete city. Raises ValueError if still in use by source_pages."""
+    own = conn is None
+    if own:
+        conn = get_connection()
+    try:
+        try:
+            if _count_refs(conn, "source_pages", "city_id", city_id) > 0:
+                raise ValueError("Cannot delete: city is linked to one or more pages")
+        except sqlite3.OperationalError:
+            pass
+        conn.execute("DELETE FROM cities WHERE id = ?", (city_id,))
+        conn.commit()
+    finally:
+        if own:
+            conn.close()
+
+
+def get_city_name(city_id: int | None, conn: sqlite3.Connection | None = None) -> str:
+    """Return city name for display, or empty string if no city_id."""
+    if not city_id:
+        return ""
+    own = conn is None
+    if own:
+        conn = get_connection()
+    try:
+        cur = conn.execute("SELECT name FROM cities WHERE id = ?", (city_id,))
+        row = cur.fetchone()
+        return row["name"] if row else ""
     finally:
         if own:
             conn.close()

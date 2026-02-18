@@ -68,6 +68,8 @@ def migrate_to_fk(conn=None):
         _migrate_office_table_config_name(conn)
         # office_category tables and office_details.office_category_id
         _migrate_office_category(conn)
+        # cities table and source_pages.city_id
+        _migrate_city(conn)
     finally:
         if own_conn:
             conn.close()
@@ -642,3 +644,31 @@ def _migrate_office_category(conn):
             "ALTER TABLE office_details ADD COLUMN office_category_id INTEGER REFERENCES office_category(id)"
         )
         conn.commit()
+
+
+def _migrate_city(conn):
+    """Create cities table if missing; add city_id to source_pages if missing."""
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS cities (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            state_id INTEGER NOT NULL REFERENCES states(id),
+            name TEXT NOT NULL,
+            UNIQUE(state_id, name)
+        );
+        CREATE INDEX IF NOT EXISTS idx_cities_state_id ON cities(state_id);
+    """)
+    conn.commit()
+    try:
+        sp_cols = _columns(conn, "source_pages")
+    except sqlite3.OperationalError:
+        return
+    if "city_id" not in sp_cols:
+        conn.execute(
+            "ALTER TABLE source_pages ADD COLUMN city_id INTEGER REFERENCES cities(id)"
+        )
+        conn.commit()
+    try:
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_source_pages_city_id ON source_pages(city_id)")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass

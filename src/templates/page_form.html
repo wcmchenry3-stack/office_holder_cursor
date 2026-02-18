@@ -70,11 +70,22 @@
         </div>
         <div class="form-group">
           <label>State / Province / Territory</label>
-          <select name="state_id">
+          <select name="state_id" id="pageStateId">
             <option value="">— None —</option>
             {% for s in states %}
             <option value="{{ s.id }}" {% if page_data.state_id == s.id %}selected{% endif %}>{{ s.name }}</option>
             {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>City</label>
+          <select name="city_id" id="pageCityId">
+            <option value="">— None —</option>
+            {% if cities is defined and cities %}
+            {% for c in cities %}
+            <option value="{{ c.id }}" {% if page_data.city_id == c.id %}selected{% endif %}>{{ c.name }}</option>
+            {% endfor %}
+            {% endif %}
           </select>
         </div>
       </div>
@@ -529,6 +540,30 @@
   });
 
   if (countrySelect && countrySelect.value) loadStates(countrySelect.value);
+
+  var pageStateSelect = document.getElementById('pageStateId');
+  var pageCitySelect = document.getElementById('pageCityId');
+  var selectedPageCityId = {% if page_data is defined and page_data.city_id %}{{ page_data.city_id }}{% else %}null{% endif %};
+  function loadPageCities(stateId) {
+    if (!pageCitySelect) return;
+    pageCitySelect.innerHTML = '<option value="">— None —</option>';
+    if (!stateId) return;
+    fetch('/api/cities?state_id=' + encodeURIComponent(stateId))
+      .then(function(r) { return r.json(); })
+      .then(function(cities) {
+        cities.forEach(function(c) {
+          var opt = document.createElement('option');
+          opt.value = c.id;
+          opt.textContent = c.name;
+          if (selectedPageCityId && c.id === selectedPageCityId) opt.selected = true;
+          pageCitySelect.appendChild(opt);
+        });
+      });
+  }
+  if (pageStateSelect) pageStateSelect.addEventListener('change', function() {
+    selectedPageCityId = null;
+    loadPageCities(pageStateSelect.value);
+  });
 
   var allTablesPendingUrl = null;
   function renderAllTables(data) {
