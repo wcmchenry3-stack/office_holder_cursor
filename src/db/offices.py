@@ -532,6 +532,25 @@ def get_page(source_page_id: int, conn: sqlite3.Connection | None = None) -> dic
             conn.close()
 
 
+def get_source_page_id_by_url(url: str, conn: sqlite3.Connection | None = None) -> int | None:
+    """Return source_pages.id if a row exists with this URL (comparison: trimmed, case-insensitive). Else None."""
+    own_conn = conn is None
+    if own_conn:
+        conn = get_connection()
+    try:
+        url_clean = (url or "").strip()
+        if not url_clean:
+            return None
+        row = conn.execute(
+            "SELECT id FROM source_pages WHERE LOWER(TRIM(url)) = LOWER(?)",
+            (url_clean,),
+        ).fetchone()
+        return row[0] if row else None
+    finally:
+        if own_conn:
+            conn.close()
+
+
 def update_page(source_page_id: int, data: dict[str, Any], conn: sqlite3.Connection | None = None) -> bool:
     """Update only source_pages row. Data: url, country_id, state_id, level_id, branch_id, notes, enabled, allow_reuse_tables."""
     own_conn = conn is None
