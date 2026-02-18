@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Levels – Office Holder{% endblock %}
+{% block content %}
+<h1>Levels</h1>
+{% if saved %}<div class="alert alert-success">Saved to local database.</div>{% endif %}
+{% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
+<div class="actions">
+  <a href="/refs/levels/new" class="btn">Add level</a>
+  <a href="/refs" class="btn btn-secondary">Back to Reference data</a>
+</div>
+{% if levels %}
+<table class="table">
+  <thead>
+    <tr><th>Name</th><th></th></tr>
+  </thead>
+  <tbody>
+    {% for l in levels %}
+    <tr>
+      <td><a href="/refs/levels/{{ l.id }}">{{ l.name or '—' }}</a></td>
+      <td>
+        <a href="/refs/levels/{{ l.id }}" class="btn btn-sm btn-secondary">Edit</a>
+        <form action="/refs/levels/{{ l.id }}/delete" method="post" style="display:inline;" onsubmit="return confirm('Delete this level?');">
+          <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>No levels yet. <a href="/refs/levels/new">Add one</a>.</p>
+{% endif %}
+{% endblock %}

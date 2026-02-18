@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Branches – Office Holder{% endblock %}
+{% block content %}
+<h1>Branches</h1>
+{% if saved %}<div class="alert alert-success">Saved to local database.</div>{% endif %}
+{% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
+<div class="actions">
+  <a href="/refs/branches/new" class="btn">Add branch</a>
+  <a href="/refs" class="btn btn-secondary">Back to Reference data</a>
+</div>
+{% if branches %}
+<table class="table">
+  <thead>
+    <tr><th>Name</th><th></th></tr>
+  </thead>
+  <tbody>
+    {% for b in branches %}
+    <tr>
+      <td><a href="/refs/branches/{{ b.id }}">{{ b.name or '—' }}</a></td>
+      <td>
+        <a href="/refs/branches/{{ b.id }}" class="btn btn-sm btn-secondary">Edit</a>
+        <form action="/refs/branches/{{ b.id }}/delete" method="post" style="display:inline;" onsubmit="return confirm('Delete this branch?');">
+          <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>No branches yet. <a href="/refs/branches/new">Add one</a>.</p>
+{% endif %}
+{% endblock %}
