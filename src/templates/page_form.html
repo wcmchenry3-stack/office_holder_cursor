@@ -177,7 +177,7 @@
           <div class="form-group"><label>District column</label><input type="number" name="tc_district_column" value="{{ tc.district_column or 0 }}" min="0"></div>
         </div>
         <div class="form-row">
-          <div class="form-group checkbox-group"><label><input type="checkbox" name="tc_term_dates_merged" value="1" {% if tc.term_dates_merged %}checked{% endif %}> Term dates merged</label></div>
+          <div class="form-group checkbox-group"><label><input type="checkbox" name="tc_term_dates_merged_{{ loop.index0 }}" value="1" {% if tc.term_dates_merged %}checked{% endif %}> Term dates merged</label></div>
           <div class="form-group checkbox-group"><label><input type="checkbox" name="tc_party_ignore" value="1" {% if tc.party_ignore %}checked{% endif %}> Ignore party</label></div>
           <div class="form-group">
             <label>District</label>
@@ -797,7 +797,7 @@
     var of = officeForm;
     var block = tableBlock || of;
     function el(name, tcName) {
-      var b = block.querySelector && block.querySelector('[name="' + tcName + '"]');
+      var b = block.querySelector && (tcName === 'tc_term_dates_merged' ? block.querySelector('[name^="tc_term_dates_merged"]') : block.querySelector('[name="' + tcName + '"]'));
       if (b) return b;
       return of[name] || block[name];
     }
@@ -855,7 +855,7 @@
   }
   function syncTableBlockValidation(block) {
     if (!block || !block.querySelector) return;
-    var mergedCb = block.querySelector('input[name="tc_term_dates_merged"]');
+    var mergedCb = block.querySelector('input[name^="tc_term_dates_merged"]');
     var termStartInput = block.querySelector('input[name="tc_term_start_column"]');
     var termEndInput = block.querySelector('input[name="tc_term_end_column"]');
     var termEndGroup = termEndInput && termEndInput.closest('.form-group');
@@ -1131,6 +1131,8 @@
         var newIdx = container.querySelectorAll('.table-config-block').length;
         var blockIndex = newIdx - 1;
         clone.querySelectorAll('input[name^="tc_enabled_"]').forEach(function(inp) { inp.name = 'tc_enabled_new_' + blockIndex; });
+        var mergedCb = clone.querySelector('input[name^="tc_term_dates_merged"]');
+        if (mergedCb) mergedCb.name = 'tc_term_dates_merged_' + blockIndex;
         clone.id = 'section-office-' + (container.getAttribute('data-office-id') || '') + '-t-' + newIdx;
         if (clone.querySelector('h4')) clone.querySelector('h4').textContent = 'Table ' + newIdx;
         if (typeof syncTableBlockValidation === 'function') syncTableBlockValidation(clone);
@@ -1139,7 +1141,13 @@
         e.preventDefault();
         var block = e.target.closest('.table-config-block');
         var container = block && block.closest('.table-config-blocks');
-        if (block && container && container.querySelectorAll('.table-config-block').length > 1) block.remove();
+        if (block && container && container.querySelectorAll('.table-config-block').length > 1) {
+          block.remove();
+          container.querySelectorAll('.table-config-block').forEach(function(blk, idx) {
+            var m = blk.querySelector('input[name^="tc_term_dates_merged"]');
+            if (m) m.name = 'tc_term_dates_merged_' + idx;
+          });
+        }
       }
       if (e.target.classList.contains('delete-table-btn')) {
         e.preventDefault();

@@ -676,6 +676,12 @@ def _form_to_table_config(form, i: int) -> dict:
     def _bool(key_flat: str, key_tc: str) -> bool:
         v = _get(key_flat, key_tc)
         return v in (True, "1", 1, "true", "TRUE")
+    def _term_dates_merged_for_index(f, idx: int, get_fn, bool_fn) -> bool:
+        # Per-index name so each table config gets its own value (unchecked checkboxes omit the key).
+        v = f.get("tc_term_dates_merged_" + str(idx))
+        if v is not None and str(v).strip() != "":
+            return str(v).strip().lower() in ("true", "1", "yes")
+        return bool_fn("term_dates_merged", "tc_term_dates_merged")
     tc_id = _get("tc_id", "tc_id")
     if tc_id is not None and str(tc_id).strip() != "":
         try:
@@ -708,7 +714,7 @@ def _form_to_table_config(form, i: int) -> dict:
         "party_link": _bool("party_link", "tc_party_link"),
         "enabled": enabled,
         "use_full_page_for_table": _bool("use_full_page_for_table", "tc_use_full_page_for_table"),
-        "term_dates_merged": _bool("term_dates_merged", "tc_term_dates_merged"),
+        "term_dates_merged": _term_dates_merged_for_index(form, i, _get, _bool),
         "party_ignore": _bool("party_ignore", "tc_party_ignore"),
         "district_ignore": dist_mode == "no_district",
         "district_at_large": dist_mode == "at_large",
