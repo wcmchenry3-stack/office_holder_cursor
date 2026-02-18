@@ -285,7 +285,7 @@ async def office_create(request: Request):
     alt_links = [v.strip() for v in form.getlist("alt_links") if v and isinstance(v, str) and v.strip()]
     alt_link_include_main = form.get("alt_link_include_main") == "1"
     data = {
-        "country_id": int(form.get("country_id") or 0), "state_id": int(form.get("state_id") or 0) or None, "level_id": int(form.get("level_id") or 0) or None, "branch_id": int(form.get("branch_id") or 0) or None,
+        "country_id": int(form.get("country_id") or 0), "state_id": int(form.get("state_id") or 0) or None, "city_id": int(form.get("city_id") or 0) or None, "level_id": int(form.get("level_id") or 0) or None, "branch_id": int(form.get("branch_id") or 0) or None,
         "department": (form.get("department") or "").strip(), "name": (form.get("name") or "").strip(), "enabled": form.get("enabled") == "1", "notes": (form.get("notes") or "").strip(), "url": (form.get("url") or "").strip(),
         "table_no": int(form.get("table_no") or 1), "table_rows": int(form.get("table_rows") or 4),
         "link_column": int(form.get("link_column") or 1), "party_column": int(form.get("party_column") or 0),
@@ -317,6 +317,7 @@ async def office_create(request: Request):
             levels = db_refs.list_levels()
             branches = db_refs.list_branches()
             states = db_refs.list_states(int(data.get("country_id") or 0)) if data.get("country_id") else []
+            cities = db_refs.list_cities(data.get("state_id")) if data.get("state_id") else []
             edit_link = Markup(f'<a href="/offices/{first_office_id}">Edit the existing page</a>') if first_office_id else Markup.escape("Edit the existing page from the office list.")
             validation_error = Markup("A page with this URL already exists. ") + edit_link + Markup(" instead.")
             return templates.TemplateResponse(
@@ -328,6 +329,7 @@ async def office_create(request: Request):
                     "levels": levels,
                     "branches": branches,
                     "states": states,
+                    "cities": cities,
                     "nav_ids": "",
                     "nav_prev_id": None,
                     "nav_next_id": None,
@@ -469,6 +471,7 @@ async def page_update(request: Request, source_page_id: int):
         "url": (form.get("url") or "").strip(),
         "country_id": int(form.get("country_id") or 0),
         "state_id": int(form.get("state_id") or 0) or None,
+        "city_id": int(form.get("city_id") or 0) or None,
         "level_id": int(form.get("level_id") or 0) or None,
         "branch_id": int(form.get("branch_id") or 0) or None,
         "notes": (form.get("notes") or "").strip(),
@@ -567,13 +570,15 @@ async def office_edit_page(request: Request, office_id: int):
     branches = db_refs.list_branches()
     country_id_for_states = (page_data or office).get("country_id") or office.get("country_id") or 0
     states = db_refs.list_states(country_id_for_states) if country_id_for_states else []
+    state_id_for_cities = (page_data or {}).get("state_id")
+    cities = db_refs.list_cities(state_id_for_cities) if state_id_for_cities else []
     terms_count = db_office_terms.count_terms_for_office(office_id)
     office_categories = db_office_category.list_categories_for_office(
         office.get("country_id"), office.get("level_id"), office.get("branch_id")
     )
     return templates.TemplateResponse(
         "page_form.html",
-        {"request": request, "office": office, "offices_on_page": offices_on_page, "source_page_id": source_page_id, "page_data": page_data, "countries": countries, "levels": levels, "branches": branches, "states": states, "nav_ids": nav_ids_raw, "nav_prev_id": nav_prev_id, "nav_next_id": nav_next_id, "nav_current": nav_current, "nav_total": nav_total, "list_return_query": list_return_query, "terms_count": terms_count, "saved": saved, "validation_error": validation_error, "form_template": "page_form", "office_categories": office_categories},
+        {"request": request, "office": office, "offices_on_page": offices_on_page, "source_page_id": source_page_id, "page_data": page_data, "countries": countries, "levels": levels, "branches": branches, "states": states, "cities": cities, "nav_ids": nav_ids_raw, "nav_prev_id": nav_prev_id, "nav_next_id": nav_next_id, "nav_current": nav_current, "nav_total": nav_total, "list_return_query": list_return_query, "terms_count": terms_count, "saved": saved, "validation_error": validation_error, "form_template": "page_form", "office_categories": office_categories},
         headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
     )
 
@@ -647,7 +652,7 @@ async def office_update(request: Request, office_id: int):
     alt_links = [v.strip() for v in form.getlist("alt_links") if v and isinstance(v, str) and v.strip()]
     alt_link_include_main = form.get("alt_link_include_main") == "1"
     data = {
-        "country_id": int(form.get("country_id") or 0), "state_id": int(form.get("state_id") or 0) or None, "level_id": int(form.get("level_id") or 0) or None, "branch_id": int(form.get("branch_id") or 0) or None,
+        "country_id": int(form.get("country_id") or 0), "state_id": int(form.get("state_id") or 0) or None, "city_id": int(form.get("city_id") or 0) or None, "level_id": int(form.get("level_id") or 0) or None, "branch_id": int(form.get("branch_id") or 0) or None,
         "department": (form.get("department") or "").strip(), "name": (form.get("name") or "").strip(), "enabled": form.get("enabled") == "1", "notes": (form.get("notes") or "").strip(), "url": (form.get("url") or "").strip(),
         "office_category_id": form.get("office_category_id") or None,
         "table_no": int(form.get("table_no") or 1), "table_rows": int(form.get("table_rows") or 4),
@@ -1382,6 +1387,76 @@ async def refs_branch_delete(branch_id: int):
         return RedirectResponse("/refs/branches?error=" + quote(str(e)), status_code=302)
 
 
+# ---------- Cities (reference data) ----------
+@app.get("/refs/cities", response_class=HTMLResponse)
+async def refs_cities_list(request: Request):
+    saved = request.query_params.get("saved") == "1"
+    error = request.query_params.get("error") or None
+    cities = db_refs.list_cities_with_country_state()
+    return templates.TemplateResponse(
+        "refs_cities.html",
+        {"request": request, "cities": cities, "saved": saved, "error": error},
+    )
+
+
+@app.get("/refs/cities/new", response_class=HTMLResponse)
+async def refs_city_new(request: Request):
+    states = db_refs.list_states_with_country()
+    return templates.TemplateResponse(
+        "refs_city_form.html", {"request": request, "city": None, "states": states}
+    )
+
+
+@app.post("/refs/cities/new")
+async def refs_city_create(request: Request, state_id: int = Form(0), name: str = Form("")):
+    try:
+        db_refs.create_city(state_id, name)
+        return RedirectResponse("/refs/cities?saved=1", status_code=302)
+    except ValueError as e:
+        states = db_refs.list_states_with_country()
+        return templates.TemplateResponse(
+            "refs_city_form.html",
+            {"request": request, "city": None, "states": states, "validation_error": str(e), "form_state_id": state_id, "form_name": name},
+        )
+
+
+@app.get("/refs/cities/{city_id}", response_class=HTMLResponse)
+async def refs_city_edit(request: Request, city_id: int):
+    city = db_refs.get_city(city_id)
+    if not city:
+        raise HTTPException(status_code=404)
+    states = db_refs.list_states_with_country()
+    return templates.TemplateResponse(
+        "refs_city_form.html", {"request": request, "city": city, "states": states}
+    )
+
+
+@app.post("/refs/cities/{city_id}")
+async def refs_city_update(request: Request, city_id: int, state_id: int = Form(0), name: str = Form("")):
+    try:
+        db_refs.update_city(city_id, state_id, name)
+        return RedirectResponse("/refs/cities?saved=1", status_code=302)
+    except ValueError as e:
+        city = db_refs.get_city(city_id)
+        if not city:
+            raise HTTPException(status_code=404)
+        states = db_refs.list_states_with_country()
+        return templates.TemplateResponse(
+            "refs_city_form.html",
+            {"request": request, "city": {**city, "state_id": state_id, "name": name}, "states": states, "validation_error": str(e)},
+        )
+
+
+@app.post("/refs/cities/{city_id}/delete")
+async def refs_city_delete(city_id: int):
+    try:
+        db_refs.delete_city(city_id)
+        return RedirectResponse("/refs/cities", status_code=302)
+    except ValueError as e:
+        from urllib.parse import quote
+        return RedirectResponse("/refs/cities?error=" + quote(str(e)), status_code=302)
+
+
 # ---------- Office categories (reference data) ----------
 @app.get("/refs/office-categories", response_class=HTMLResponse)
 async def refs_office_categories_list(request: Request):
@@ -1528,6 +1603,13 @@ async def api_levels():
 @app.get("/api/branches")
 async def api_branches():
     return JSONResponse(db_refs.list_branches())
+
+
+@app.get("/api/cities")
+async def api_cities(state_id: int = Query(0)):
+    if not state_id:
+        return JSONResponse([])
+    return JSONResponse(db_refs.list_cities(state_id))
 
 
 # ---------- Run scraper ----------

@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}{{ "Edit" if city else "New" }} city – Office Holder{% endblock %}
+{% block content %}
+<h1>{{ "Edit" if city else "New" }} city</h1>
+<p>Select one state (country is determined by the state).</p>
+{% if validation_error %}<div class="alert alert-error">{{ validation_error }}</div>{% endif %}
+<form method="post" action="{% if city %}/refs/cities/{{ city.id }}{% else %}/refs/cities/new{% endif %}">
+  <div class="form-group">
+    <label for="state_id">State / Province / Territory</label>
+    <select id="state_id" name="state_id" required>
+      <option value="">— Select state —</option>
+      {% for s in states %}
+      <option value="{{ s.id }}" {% if city and city.state_id == s.id %}selected{% elif form_state_id is defined and form_state_id == s.id %}selected{% endif %}>{{ s.name }} ({{ s.country_name or '—' }})</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="form-group">
+    <label for="name">City name</label>
+    <input type="text" id="name" name="name" value="{{ city.name if city else (form_name if form_name is defined else '') }}" required placeholder="City name">
+  </div>
+  <div class="actions">
+    <button type="submit" class="btn">Save</button>
+    <a href="/refs/cities" class="btn btn-secondary">Cancel</a>
+  </div>
+</form>
+{% endblock %}

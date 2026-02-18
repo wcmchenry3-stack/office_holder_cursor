@@ -16,6 +16,15 @@ CREATE TABLE IF NOT EXISTS states (
 );
 CREATE INDEX IF NOT EXISTS idx_states_country_id ON states(country_id);
 
+-- Reference: cities (per state; state implies country)
+CREATE TABLE IF NOT EXISTS cities (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    state_id INTEGER NOT NULL REFERENCES states(id),
+    name TEXT NOT NULL,
+    UNIQUE(state_id, name)
+);
+CREATE INDEX IF NOT EXISTS idx_cities_state_id ON cities(state_id);
+
 -- Reference: level (federal, state, local)
 CREATE TABLE IF NOT EXISTS levels (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -66,11 +75,12 @@ CREATE TABLE IF NOT EXISTS individuals (
     updated_at TEXT DEFAULT (datetime('now'))
 );
 
--- Source pages: Wikipedia page (one per URL; country/state/level/branch from refs)
+-- Source pages: Wikipedia page (one per URL; country/state/level/branch/city from refs)
 CREATE TABLE IF NOT EXISTS source_pages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     country_id INTEGER REFERENCES countries(id),
     state_id INTEGER REFERENCES states(id),
+    city_id INTEGER REFERENCES cities(id),
     level_id INTEGER REFERENCES levels(id),
     branch_id INTEGER REFERENCES branches(id),
     url TEXT NOT NULL,

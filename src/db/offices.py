@@ -50,6 +50,7 @@ def _flatten_hierarchy_row(
         "notes": (od.get("notes") or "").strip(),
         "country_id": p.get("country_id"),
         "state_id": p.get("state_id"),
+        "city_id": p.get("city_id"),
         "level_id": p.get("level_id"),
         "branch_id": p.get("branch_id"),
         "country_name": country_name or "",
@@ -256,7 +257,7 @@ def list_runnable_units(conn: sqlite3.Connection | None = None) -> list[dict[str
         if not _use_hierarchy(conn):
             return []
         cur = conn.execute(
-            """SELECT p.id AS page_id, p.country_id, p.state_id, p.level_id, p.branch_id, p.url, p.notes AS page_notes, p.enabled AS page_enabled,
+            """SELECT p.id AS page_id, p.country_id, p.state_id, p.city_id, p.level_id, p.branch_id, p.url, p.notes AS page_notes, p.enabled AS page_enabled,
                       od.id AS office_details_id, od.name, od.department, od.notes, od.alt_link_include_main, od.enabled AS od_enabled,
                       tc.id AS office_table_config_id, tc.table_no, tc.table_rows, tc.link_column, tc.party_column,
                       tc.term_start_column, tc.term_end_column, tc.district_column, tc.dynamic_parse, tc.read_right_to_left,
@@ -285,7 +286,7 @@ def list_runnable_units(conn: sqlite3.Connection | None = None) -> list[dict[str
                 rd.get("level_id"),
                 rd.get("branch_id"),
             )
-            p = {"url": rd.get("url"), "country_id": rd.get("country_id"), "state_id": rd.get("state_id"), "level_id": rd.get("level_id"), "branch_id": rd.get("branch_id"), "notes": rd.get("page_notes"), "enabled": rd.get("page_enabled")}
+            p = {"url": rd.get("url"), "country_id": rd.get("country_id"), "state_id": rd.get("state_id"), "city_id": rd.get("city_id"), "level_id": rd.get("level_id"), "branch_id": rd.get("branch_id"), "notes": rd.get("page_notes"), "enabled": rd.get("page_enabled")}
             od = {"id": od_id, "name": rd.get("name"), "department": rd.get("department"), "notes": rd.get("notes"), "alt_link_include_main": rd.get("alt_link_include_main"), "enabled": rd.get("od_enabled")}
             tc = {"table_no": rd.get("table_no"), "table_rows": rd.get("table_rows"), "link_column": rd.get("link_column"), "party_column": rd.get("party_column"), "term_start_column": rd.get("term_start_column"), "term_end_column": rd.get("term_end_column"), "district_column": rd.get("district_column"), "dynamic_parse": rd.get("dynamic_parse"), "read_right_to_left": rd.get("read_right_to_left"), "find_date_in_infobox": rd.get("find_date_in_infobox"), "parse_rowspan": rd.get("parse_rowspan"), "rep_link": rd.get("rep_link"), "party_link": rd.get("party_link"), "enabled": rd.get("tc_enabled"), "use_full_page_for_table": rd.get("use_full_page_for_table"), "years_only": rd.get("years_only"), "term_dates_merged": rd.get("term_dates_merged"), "party_ignore": rd.get("party_ignore"), "district_ignore": rd.get("district_ignore"), "district_at_large": rd.get("district_at_large"), "consolidate_rowspan_terms": rd.get("consolidate_rowspan_terms"), "notes": rd.get("tc_notes"), "created_at": rd.get("created_at")}
             flat = _flatten_hierarchy_row(p, od, tc, c, s, lv, b, alt_links)
@@ -309,7 +310,7 @@ def list_offices(conn: sqlite3.Connection | None = None) -> list[dict[str, Any]]
     try:
         if _use_hierarchy(conn):
             cur = conn.execute(
-                """SELECT p.id AS page_id, p.country_id, p.state_id, p.level_id, p.branch_id, p.url, p.notes AS page_notes, p.enabled AS page_enabled,
+                """SELECT p.id AS page_id, p.country_id, p.state_id, p.city_id, p.level_id, p.branch_id, p.url, p.notes AS page_notes, p.enabled AS page_enabled,
                           od.id AS office_details_id, od.name, od.department, od.notes, od.alt_link_include_main, od.enabled AS od_enabled,
                           tc.id AS tc_id, tc.table_no, tc.table_rows, tc.link_column, tc.party_column,
                           tc.term_start_column, tc.term_end_column, tc.district_column, tc.dynamic_parse, tc.read_right_to_left,
@@ -337,7 +338,7 @@ def list_offices(conn: sqlite3.Connection | None = None) -> list[dict[str, Any]]
                     for row in conn.execute("SELECT link_path FROM alt_links WHERE office_details_id = ? ORDER BY id", (od_id,)).fetchall()
                 ]
                 c, s, lv, b = _ref_names(conn, rd0.get("country_id"), rd0.get("state_id"), rd0.get("level_id"), rd0.get("branch_id"))
-                p = {"url": rd0.get("url"), "country_id": rd0.get("country_id"), "state_id": rd0.get("state_id"), "level_id": rd0.get("level_id"), "branch_id": rd0.get("branch_id"), "notes": rd0.get("page_notes"), "enabled": rd0.get("page_enabled")}
+                p = {"url": rd0.get("url"), "country_id": rd0.get("country_id"), "state_id": rd0.get("state_id"), "city_id": rd0.get("city_id"), "level_id": rd0.get("level_id"), "branch_id": rd0.get("branch_id"), "notes": rd0.get("page_notes"), "enabled": rd0.get("page_enabled")}
                 od = {"id": od_id, "name": rd0.get("name"), "department": rd0.get("department"), "notes": rd0.get("notes"), "alt_link_include_main": rd0.get("alt_link_include_main"), "enabled": rd0.get("od_enabled")}
                 table_configs = []
                 for rd in group:
@@ -422,7 +423,7 @@ def list_pages(
             limit_sql = " LIMIT ?"
             params.append(limit)
         sql = f"""
-            SELECT p.id, p.country_id, p.state_id, p.level_id, p.branch_id, p.url, p.enabled,
+            SELECT p.id, p.country_id, p.state_id, p.city_id, p.level_id, p.branch_id, p.url, p.enabled,
                    c.name AS country_name, s.name AS state_name, l.name AS level_name, b.name AS branch_name,
                    (SELECT COUNT(*) FROM office_details od WHERE od.source_page_id = p.id) AS office_count,
                    (SELECT COUNT(*) FROM office_details od
@@ -453,7 +454,7 @@ def get_office(office_id: int, conn: sqlite3.Connection | None = None) -> dict[s
     try:
         if _use_hierarchy(conn):
             cur = conn.execute(
-                """SELECT p.id AS page_id, p.country_id, p.state_id, p.level_id, p.branch_id, p.url, p.notes AS page_notes, p.enabled AS page_enabled,
+                """SELECT p.id AS page_id, p.country_id, p.state_id, p.city_id, p.level_id, p.branch_id, p.url, p.notes AS page_notes, p.enabled AS page_enabled,
                           od.id AS office_details_id, od.name, od.department, od.notes, od.alt_link_include_main, od.enabled AS od_enabled, od.office_category_id,
                           tc.id AS tc_id, tc.table_no, tc.table_rows, tc.link_column, tc.party_column,
                           tc.term_start_column, tc.term_end_column, tc.district_column, tc.dynamic_parse, tc.read_right_to_left,
@@ -476,7 +477,7 @@ def get_office(office_id: int, conn: sqlite3.Connection | None = None) -> dict[s
                 for r in conn.execute("SELECT link_path FROM alt_links WHERE office_details_id = ? ORDER BY id", (od_id,)).fetchall()
             ]
             c, s, lv, b = _ref_names(conn, rd0.get("country_id"), rd0.get("state_id"), rd0.get("level_id"), rd0.get("branch_id"))
-            p = {"url": rd0.get("url"), "country_id": rd0.get("country_id"), "state_id": rd0.get("state_id"), "level_id": rd0.get("level_id"), "branch_id": rd0.get("branch_id"), "notes": rd0.get("page_notes"), "enabled": rd0.get("page_enabled")}
+            p = {"url": rd0.get("url"), "country_id": rd0.get("country_id"), "state_id": rd0.get("state_id"), "city_id": rd0.get("city_id"), "level_id": rd0.get("level_id"), "branch_id": rd0.get("branch_id"), "notes": rd0.get("page_notes"), "enabled": rd0.get("page_enabled")}
             od = {"id": od_id, "name": rd0.get("name"), "department": rd0.get("department"), "notes": rd0.get("notes"), "alt_link_include_main": rd0.get("alt_link_include_main"), "enabled": rd0.get("od_enabled"), "office_category_id": rd0.get("office_category_id")}
             table_configs = []
             for r in rows:
@@ -510,13 +511,13 @@ def get_office(office_id: int, conn: sqlite3.Connection | None = None) -> dict[s
 
 
 def get_page(source_page_id: int, conn: sqlite3.Connection | None = None) -> dict[str, Any] | None:
-    """Return source_pages row as dict (id, url, country_id, state_id, level_id, branch_id, notes, enabled, allow_reuse_tables) or None."""
+    """Return source_pages row as dict (id, url, country_id, state_id, city_id, level_id, branch_id, notes, enabled, allow_reuse_tables) or None."""
     own_conn = conn is None
     if own_conn:
         conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT id, url, country_id, state_id, level_id, branch_id, notes, enabled FROM source_pages WHERE id = ?",
+            "SELECT id, url, country_id, state_id, city_id, level_id, branch_id, notes, enabled FROM source_pages WHERE id = ?",
             (source_page_id,),
         ).fetchone()
         if not row:
@@ -553,7 +554,7 @@ def get_source_page_id_by_url(url: str, conn: sqlite3.Connection | None = None) 
 
 
 def update_page(source_page_id: int, data: dict[str, Any], conn: sqlite3.Connection | None = None) -> bool:
-    """Update only source_pages row. Data: url, country_id, state_id, level_id, branch_id, notes, enabled, allow_reuse_tables."""
+    """Update only source_pages row. Data: url, country_id, state_id, city_id, level_id, branch_id, notes, enabled, allow_reuse_tables."""
     own_conn = conn is None
     if own_conn:
         conn = get_connection()
@@ -566,12 +567,14 @@ def update_page(source_page_id: int, data: dict[str, Any], conn: sqlite3.Connect
             raise ValueError("url required")
         enabled = 1 if data.get("enabled") in (True, 1, "TRUE", "true", "1") else 0
         allow_reuse_tables = 1 if data.get("allow_reuse_tables") in (True, 1, "TRUE", "true", "1") else 0
+        city_id = int(data.get("city_id") or 0) or None
         try:
             conn.execute(
-                """UPDATE source_pages SET country_id=?, state_id=?, level_id=?, branch_id=?, url=?, notes=?, enabled=?, allow_reuse_tables=?, updated_at=datetime('now') WHERE id=?""",
+                """UPDATE source_pages SET country_id=?, state_id=?, city_id=?, level_id=?, branch_id=?, url=?, notes=?, enabled=?, allow_reuse_tables=?, updated_at=datetime('now') WHERE id=?""",
                 (
                     country_id,
                     int(data.get("state_id") or 0) or None,
+                    city_id,
                     int(data.get("level_id") or 0) or None,
                     int(data.get("branch_id") or 0) or None,
                     url,
@@ -583,10 +586,11 @@ def update_page(source_page_id: int, data: dict[str, Any], conn: sqlite3.Connect
             )
         except sqlite3.OperationalError:
             conn.execute(
-                """UPDATE source_pages SET country_id=?, state_id=?, level_id=?, branch_id=?, url=?, notes=?, enabled=?, updated_at=datetime('now') WHERE id=?""",
+                """UPDATE source_pages SET country_id=?, state_id=?, city_id=?, level_id=?, branch_id=?, url=?, notes=?, enabled=?, updated_at=datetime('now') WHERE id=?""",
                 (
                     country_id,
                     int(data.get("state_id") or 0) or None,
+                    city_id,
                     int(data.get("level_id") or 0) or None,
                     int(data.get("branch_id") or 0) or None,
                     url,
@@ -690,7 +694,7 @@ def list_offices_for_page(source_page_id: int, conn: sqlite3.Connection | None =
         if not _use_hierarchy(conn):
             return []
         cur = conn.execute(
-            """SELECT p.id AS page_id, p.country_id, p.state_id, p.level_id, p.branch_id, p.url, p.notes AS page_notes, p.enabled AS page_enabled,
+            """SELECT p.id AS page_id, p.country_id, p.state_id, p.city_id, p.level_id, p.branch_id, p.url, p.notes AS page_notes, p.enabled AS page_enabled,
                           od.id AS office_details_id, od.name, od.department, od.notes, od.alt_link_include_main, od.enabled AS od_enabled, od.office_category_id,
                           tc.id AS tc_id, tc.table_no, tc.table_rows, tc.link_column, tc.party_column,
                           tc.term_start_column, tc.term_end_column, tc.district_column, tc.dynamic_parse, tc.read_right_to_left,
@@ -721,7 +725,7 @@ def list_offices_for_page(source_page_id: int, conn: sqlite3.Connection | None =
                 for row in conn.execute("SELECT link_path FROM alt_links WHERE office_details_id = ? ORDER BY id", (od_id,)).fetchall()
             ]
             c, s, lv, b = _ref_names(conn, rd0.get("country_id"), rd0.get("state_id"), rd0.get("level_id"), rd0.get("branch_id"))
-            p = {"url": rd0.get("url"), "country_id": rd0.get("country_id"), "state_id": rd0.get("state_id"), "level_id": rd0.get("level_id"), "branch_id": rd0.get("branch_id"), "notes": rd0.get("page_notes"), "enabled": rd0.get("page_enabled")}
+            p = {"url": rd0.get("url"), "country_id": rd0.get("country_id"), "state_id": rd0.get("state_id"), "city_id": rd0.get("city_id"), "level_id": rd0.get("level_id"), "branch_id": rd0.get("branch_id"), "notes": rd0.get("page_notes"), "enabled": rd0.get("page_enabled")}
             od = {"id": od_id, "name": rd0.get("name"), "department": rd0.get("department"), "notes": rd0.get("notes"), "alt_link_include_main": rd0.get("alt_link_include_main"), "enabled": rd0.get("od_enabled"), "office_category_id": rd0.get("office_category_id")}
             table_configs = []
             for rd in group:
@@ -912,12 +916,14 @@ def create_office(data: dict[str, Any], conn: sqlite3.Connection | None = None) 
             if len(table_nos) != len(set(table_nos)):
                 raise ValueError("Duplicate table_no within office")
         enabled = 1 if row_data.get("enabled") in (True, 1, "TRUE", "true", "1") else 0
+        _city_id = int(row_data.get("city_id") or 0) or None
         conn.execute(
-            """INSERT INTO source_pages (country_id, state_id, level_id, branch_id, url, notes, enabled, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))""",
+            """INSERT INTO source_pages (country_id, state_id, city_id, level_id, branch_id, url, notes, enabled, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))""",
             (
                 country_id,
                 int(row_data.get("state_id") or 0) or None,
+                _city_id,
                 int(row_data.get("level_id") or 0) or None,
                 int(row_data.get("branch_id") or 0) or None,
                 (row_data.get("url") or "").strip(),
@@ -983,11 +989,13 @@ def update_office(office_id: int, data: dict[str, Any], conn: sqlite3.Connection
                 return False
             page_id = row["source_page_id"]
             if not office_only:
+                _city_id = int(row_data.get("city_id") or 0) or None
                 conn.execute(
-                    """UPDATE source_pages SET country_id=?, state_id=?, level_id=?, branch_id=?, url=?, notes=?, enabled=?, updated_at=datetime('now') WHERE id=?""",
+                    """UPDATE source_pages SET country_id=?, state_id=?, city_id=?, level_id=?, branch_id=?, url=?, notes=?, enabled=?, updated_at=datetime('now') WHERE id=?""",
                     (
                         int(row_data.get("country_id") or 0),
                         int(row_data.get("state_id") or 0) or None,
+                        _city_id,
                         int(row_data.get("level_id") or 0) or None,
                         int(row_data.get("branch_id") or 0) or None,
                         (row_data.get("url") or "").strip(),
