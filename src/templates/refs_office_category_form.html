@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}{{ "Edit" if category else "New" }} office category – Office Holder{% endblock %}
+{% block content %}
+<h1>{{ "Edit" if category else "New" }} office category</h1>
+{% if validation_error %}<div class="alert alert-error">{{ validation_error }}</div>{% endif %}
+<p class="form-note">Leave a list empty (select none) for "All". Otherwise only the selected values apply for that dimension.</p>
+<form method="post" action="{% if category %}/refs/office-categories/{{ category.id }}{% else %}/refs/office-categories/new{% endif %}">
+  <div class="form-group">
+    <label for="name">Name</label>
+    <input type="text" id="name" name="name" value="{{ category.name if category else (form_name if form_name is defined else '') }}" required placeholder="Category name">
+  </div>
+  <div class="form-group">
+    <label for="country_ids">Countries (optional; leave empty for all)</label>
+    <select id="country_ids" name="country_ids" multiple size="6">
+      {% for c in countries %}
+      <option value="{{ c.id }}" {% if category and c.id in (category.country_ids or []) %}selected{% elif form_country_ids is defined and c.id in form_country_ids %}selected{% endif %}>{{ c.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="form-group">
+    <label for="level_ids">Levels (optional; leave empty for all)</label>
+    <select id="level_ids" name="level_ids" multiple size="4">
+      {% for l in levels %}
+      <option value="{{ l.id }}" {% if category and l.id in (category.level_ids or []) %}selected{% elif form_level_ids is defined and l.id in form_level_ids %}selected{% endif %}>{{ l.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="form-group">
+    <label for="branch_ids">Branches (optional; leave empty for all)</label>
+    <select id="branch_ids" name="branch_ids" multiple size="4">
+      {% for b in branches %}
+      <option value="{{ b.id }}" {% if category and b.id in (category.branch_ids or []) %}selected{% elif form_branch_ids is defined and b.id in form_branch_ids %}selected{% endif %}>{{ b.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="actions">
+    <button type="submit" class="btn">Save</button>
+    <a href="/refs/office-categories" class="btn btn-secondary">Cancel</a>
+  </div>
+</form>
+{% endblock %}
