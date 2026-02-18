@@ -2,15 +2,24 @@
 {% block title %}{{ "Edit" if city else "New" }} city – Office Holder{% endblock %}
 {% block content %}
 <h1>{{ "Edit" if city else "New" }} city</h1>
-<p>Select one state (country is determined by the state).</p>
+<p>Select country, then state, then enter the city name.</p>
 {% if validation_error %}<div class="alert alert-error">{{ validation_error }}</div>{% endif %}
 <form method="post" action="{% if city %}/refs/cities/{{ city.id }}{% else %}/refs/cities/new{% endif %}">
   <div class="form-group">
+    <label for="country_id">Country</label>
+    <select id="country_id" name="country_id" required>
+      <option value="">— Select country —</option>
+      {% for c in countries %}
+      <option value="{{ c.id }}" {% if form_country_id is defined and form_country_id == c.id %}selected{% endif %}>{{ c.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="form-group">
     <label for="state_id">State / Province / Territory</label>
     <select id="state_id" name="state_id" required>
-      <option value="">— Select state —</option>
+      <option value="">— Select country first —</option>
       {% for s in states %}
-      <option value="{{ s.id }}" {% if city and city.state_id == s.id %}selected{% elif form_state_id is defined and form_state_id == s.id %}selected{% endif %}>{{ s.name }} ({{ s.country_name or '—' }})</option>
+      <option value="{{ s.id }}" {% if city and city.state_id == s.id %}selected{% elif form_state_id is defined and form_state_id == s.id %}selected{% endif %}>{{ s.name }}</option>
       {% endfor %}
     </select>
   </div>
@@ -23,4 +32,33 @@
     <a href="/refs/cities" class="btn btn-secondary">Cancel</a>
   </div>
 </form>
+<script>
+(function() {
+  var countrySelect = document.getElementById('country_id');
+  var stateSelect = document.getElementById('state_id');
+  var preselectedStateId = {% if city and city.state_id %}{{ city.state_id }}{% elif form_state_id is defined and form_state_id %}{{ form_state_id }}{% else %}null{% endif %};
+  function loadStates(countryId) {
+    if (!stateSelect) return;
+    stateSelect.innerHTML = '<option value="">— Select country first —</option>';
+    if (!countryId) return;
+    stateSelect.innerHTML = '<option value="">— None —</option>';
+    fetch('/api/states?country_id=' + encodeURIComponent(countryId))
+      .then(function(r) { return r.json(); })
+      .then(function(states) {
+        states.forEach(function(s) {
+          var opt = document.createElement('option');
+          opt.value = s.id;
+          opt.textContent = s.name;
+          if (preselectedStateId && s.id === preselectedStateId) opt.selected = true;
+          stateSelect.appendChild(opt);
+        });
+      });
+  }
+  if (countrySelect) countrySelect.addEventListener('change', function() {
+    preselectedStateId = null;
+    loadStates(countrySelect.value);
+  });
+  if (countrySelect && countrySelect.value) loadStates(countrySelect.value);
+})();
+</script>
 {% endblock %}

@@ -1472,9 +1472,9 @@ async def refs_cities_list(request: Request):
 
 @app.get("/refs/cities/new", response_class=HTMLResponse)
 async def refs_city_new(request: Request):
-    states = db_refs.list_states_with_country()
+    countries = db_refs.list_countries()
     return templates.TemplateResponse(
-        "refs_city_form.html", {"request": request, "city": None, "states": states}
+        "refs_city_form.html", {"request": request, "city": None, "states": [], "countries": countries}
     )
 
 
@@ -1484,10 +1484,13 @@ async def refs_city_create(request: Request, state_id: int = Form(0), name: str 
         db_refs.create_city(state_id, name)
         return RedirectResponse("/refs/cities?saved=1", status_code=302)
     except ValueError as e:
-        states = db_refs.list_states_with_country()
+        countries = db_refs.list_countries()
+        state_row = db_refs.get_state(state_id) if state_id else None
+        form_country_id = state_row.get("country_id") if state_row else None
+        states = db_refs.list_states(form_country_id) if form_country_id else []
         return templates.TemplateResponse(
             "refs_city_form.html",
-            {"request": request, "city": None, "states": states, "validation_error": str(e), "form_state_id": state_id, "form_name": name},
+            {"request": request, "city": None, "states": states, "countries": countries, "validation_error": str(e), "form_state_id": state_id, "form_name": name, "form_country_id": form_country_id},
         )
 
 
@@ -1496,9 +1499,12 @@ async def refs_city_edit(request: Request, city_id: int):
     city = db_refs.get_city(city_id)
     if not city:
         raise HTTPException(status_code=404)
-    states = db_refs.list_states_with_country()
+    state_row = db_refs.get_state(city["state_id"]) if city.get("state_id") else None
+    form_country_id = state_row.get("country_id") if state_row else None
+    states = db_refs.list_states(form_country_id) if form_country_id else []
+    countries = db_refs.list_countries()
     return templates.TemplateResponse(
-        "refs_city_form.html", {"request": request, "city": city, "states": states}
+        "refs_city_form.html", {"request": request, "city": city, "states": states, "countries": countries, "form_country_id": form_country_id}
     )
 
 
@@ -1511,10 +1517,13 @@ async def refs_city_update(request: Request, city_id: int, state_id: int = Form(
         city = db_refs.get_city(city_id)
         if not city:
             raise HTTPException(status_code=404)
-        states = db_refs.list_states_with_country()
+        state_row = db_refs.get_state(state_id) if state_id else None
+        form_country_id = state_row.get("country_id") if state_row else None
+        states = db_refs.list_states(form_country_id) if form_country_id else []
+        countries = db_refs.list_countries()
         return templates.TemplateResponse(
             "refs_city_form.html",
-            {"request": request, "city": {**city, "state_id": state_id, "name": name}, "states": states, "validation_error": str(e)},
+            {"request": request, "city": {**city, "state_id": state_id, "name": name}, "states": states, "countries": countries, "form_country_id": form_country_id, "validation_error": str(e)},
         )
 
 
