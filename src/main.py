@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from markupsafe import Markup
 from fastapi import FastAPI, File, Request, Form, HTTPException, Query, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -305,6 +306,35 @@ async def office_create(request: Request):
         "district_ignore": (form.get("district_mode") or "column") == "no_district",
         "district_at_large": (form.get("district_mode") or "column") == "at_large",
     }
+    url = (data.get("url") or "").strip()
+    if url:
+        existing_page_id = db_offices.get_source_page_id_by_url(url)
+        if existing_page_id is not None:
+            offices_on_page = db_offices.list_offices_for_page(existing_page_id)
+            first_office_id = offices_on_page[0]["id"] if offices_on_page else None
+            countries = db_refs.list_countries()
+            levels = db_refs.list_levels()
+            branches = db_refs.list_branches()
+            states = db_refs.list_states(int(data.get("country_id") or 0)) if data.get("country_id") else []
+            edit_link = Markup(f'<a href="/offices/{first_office_id}">Edit the existing page</a>') if first_office_id else Markup.escape("Edit the existing page from the office list.")
+            validation_error = Markup("A page with this URL already exists. ") + edit_link + Markup(" instead.")
+            return templates.TemplateResponse(
+                "page_form.html",
+                {
+                    "request": request,
+                    "office": {**data, "alt_links": alt_links},
+                    "countries": countries,
+                    "levels": levels,
+                    "branches": branches,
+                    "states": states,
+                    "nav_ids": "",
+                    "nav_prev_id": None,
+                    "nav_next_id": None,
+                    "terms_count": 0,
+                    "form_template": "page_form",
+                    "validation_error": validation_error,
+                },
+            )
     try:
         new_id = db_offices.create_office(data)
     except ValueError as e:
