@@ -125,3 +125,74 @@ def test_process_table_ignores_rows_without_valid_wiki_links_when_enabled():
 
     assert len(rows) == 1
     assert rows[0]["Wiki Link"].endswith("/wiki/Linked_Senator")
+
+
+def test_process_columns_right_to_left_maps_first_column_to_rightmost():
+    logger = _Logger()
+    offices = Offices(logger, biography=None, data_cleanup=DataCleanup(logger))
+    config = {
+        "link_column": 0,
+        "party_column": 1,
+        "term_start_column": 2,
+        "term_end_column": 2,
+        "district_column": -1,
+    }
+
+    mapped = offices.process_columns_right_to_left(config, total_columns=8)
+
+    assert mapped["link_column"] == 7
+    assert mapped["party_column"] == 6
+    assert mapped["term_start_column"] == 5
+    assert mapped["term_end_column"] == 5
+    assert mapped["district_column"] == -1
+
+
+def test_rtl_parse_reads_rightmost_link_when_link_column_is_one_based_1():
+    logger = _Logger()
+    offices = Offices(logger, biography=None, data_cleanup=DataCleanup(logger))
+    html = """
+    <table>
+      <tr><th>A</th><th>B</th><th>C</th></tr>
+      <tr>
+        <td>Jan 1, 2001 – Jan 1, 2002</td>
+        <td>Democratic</td>
+        <td><a href="/wiki/Rightmost_Senator">Rightmost Senator</a></td>
+      </tr>
+    </table>
+    """
+    table_config = {
+        "table_no": 1,
+        "table_rows": 1,
+        "link_column": 0,
+        "party_column": 1,
+        "term_start_column": 2,
+        "term_end_column": 2,
+        "district_column": 0,
+        "run_dynamic_parse": False,
+        "read_columns_right_to_left": True,
+        "find_date_in_infobox": False,
+        "years_only": False,
+        "parse_rowspan": False,
+        "consolidate_rowspan_terms": False,
+        "rep_link": False,
+        "party_link": False,
+        "party_ignore": False,
+        "district_ignore": True,
+        "district_at_large": False,
+        "ignore_non_links": False,
+    }
+    office_details = {
+        "office_country": "United States",
+        "office_level": "Federal",
+        "office_branch": "Legislative",
+        "office_department": "Senate",
+        "office_name": "RTL Test",
+        "office_state": "",
+        "office_notes": "",
+    }
+    party_list = {"United States": []}
+
+    rows = offices.process_table(html, table_config, office_details, "https://en.wikipedia.org/wiki/Test", party_list)
+
+    assert len(rows) == 1
+    assert rows[0]["Wiki Link"].endswith("/wiki/Rightmost_Senator")

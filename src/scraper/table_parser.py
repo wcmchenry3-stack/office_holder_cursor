@@ -1224,32 +1224,39 @@ class Offices:
 
     self.Logger.debug_log( f"running process_columns right to left" , True )
 
-    # define column_no variables. Add one as these are zero-based indices. Essentially this functions subtracts total_columns from the col_no.
-    link_column = table_config_to_parse["link_column"] + 1
-    party_column = table_config_to_parse["party_column"] + 1
-    term_start_column = table_config_to_parse["term_start_column"] + 1
-    term_end_column = table_config_to_parse["term_end_column"] + 1
+    # RTL should mirror LTR column counting: user enters columns from the right edge,
+    # but parser still indexes cells left->right. So col 0 (form: 1) means rightmost cell.
+    # Keep negative columns (e.g. -1 = unconfigured) unchanged.
+    def _rtl_to_ltr_index(col_index):
+      if col_index is None:
+        return None
+      if col_index < 0:
+        return col_index
+      return total_columns - (col_index + 1)
 
-    link_column_old = link_column
-    link_column = total_columns - link_column_old
-    self.Logger.debug_log( f"new link column {link_column} after subtracting {total_columns} from {link_column_old}", True )
+    link_column_old = table_config_to_parse.get("link_column")
+    party_column_old = table_config_to_parse.get("party_column")
+    term_start_column_old = table_config_to_parse.get("term_start_column")
+    term_end_column_old = table_config_to_parse.get("term_end_column")
+    district_column_old = table_config_to_parse.get("district_column")
 
-    party_column_old = party_column
-    party_column = total_columns - party_column_old
-    self.Logger.debug_log( f"party column {party_column} after subtracting {total_columns} from {party_column_old}", True )
+    link_column = _rtl_to_ltr_index(link_column_old)
+    party_column = _rtl_to_ltr_index(party_column_old)
+    term_start_column = _rtl_to_ltr_index(term_start_column_old)
+    term_end_column = _rtl_to_ltr_index(term_end_column_old)
+    district_column = _rtl_to_ltr_index(district_column_old)
 
-    term_start_column_old = term_start_column
-    term_start_column = total_columns - term_start_column_old
-    self.Logger.debug_log( f"term start {term_start_column} after subtracting {total_columns} from {term_start_column_old}", True )
-
-    term_end_column_old = term_end_column
-    term_end_column = total_columns - term_end_column_old
-    self.Logger.debug_log( f"term end {term_end_column} after subtracting {total_columns} from {term_end_column_old}", True )
+    self.Logger.debug_log( f"new link column {link_column} after rtl conversion from {link_column_old} with total {total_columns}", True )
+    self.Logger.debug_log( f"party column {party_column} after rtl conversion from {party_column_old} with total {total_columns}", True )
+    self.Logger.debug_log( f"term start {term_start_column} after rtl conversion from {term_start_column_old} with total {total_columns}", True )
+    self.Logger.debug_log( f"term end {term_end_column} after rtl conversion from {term_end_column_old} with total {total_columns}", True )
+    self.Logger.debug_log( f"district column {district_column} after rtl conversion from {district_column_old} with total {total_columns}", True )
 
     table_config_to_parse["link_column"] = link_column
     table_config_to_parse["party_column"] = party_column
     table_config_to_parse["term_start_column"] = term_start_column
     table_config_to_parse["term_end_column"] = term_end_column
+    table_config_to_parse["district_column"] = district_column
 
     return table_config_to_parse
 
