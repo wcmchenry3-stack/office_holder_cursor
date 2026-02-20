@@ -82,19 +82,35 @@ def _run_bio_like_test(html_content: str, mode: str) -> dict[str, Any]:
     return biography.parse_first_paragraph(first_paragraph) if first_paragraph else {}
 
 
-def run_test_script(test_row: dict[str, Any]) -> dict[str, Any]:
-    html_content = _load_html(test_row.get("html_file") or "")
-    test_type = (test_row.get("test_type") or "table_config").strip()
-    config_json = test_row.get("config_json") or {}
-    source_url = (test_row.get("source_url") or "").strip()
-    if test_type == "table_config":
-        actual = _run_table_test(html_content, config_json, source_url)
-    elif test_type == "infobox":
+def run_test_script_from_html(
+    *,
+    test_type: str,
+    html_content: str,
+    config_json: dict[str, Any] | None = None,
+    source_url: str = "",
+    expected_json: Any = None,
+) -> dict[str, Any]:
+    parsed_type = (test_type or "table_config").strip()
+    cfg = config_json or {}
+    if parsed_type == "table_config":
+        actual = _run_table_test(html_content, cfg, source_url.strip())
+    elif parsed_type == "infobox":
         actual = _run_bio_like_test(html_content, "infobox")
-    elif test_type == "bio":
+    elif parsed_type == "bio":
         actual = _run_bio_like_test(html_content, "bio")
     else:
-        raise ValueError(f"Unknown test type: {test_type}")
-    expected = test_row.get("expected_json")
+        raise ValueError(f"Unknown test type: {parsed_type}")
+    expected = expected_json
     passed = expected is not None and json.dumps(actual, sort_keys=True, ensure_ascii=False) == json.dumps(expected, sort_keys=True, ensure_ascii=False)
     return {"passed": passed, "actual": actual, "expected": expected}
+
+
+def run_test_script(test_row: dict[str, Any]) -> dict[str, Any]:
+    html_content = _load_html(test_row.get("html_file") or "")
+    return run_test_script_from_html(
+        test_type=(test_row.get("test_type") or "table_config"),
+        html_content=html_content,
+        config_json=test_row.get("config_json") or {},
+        source_url=(test_row.get("source_url") or "").strip(),
+        expected_json=test_row.get("expected_json"),
+    )

@@ -14,6 +14,8 @@ import sys
 import threading
 import uuid
 
+import requests
+
 # Ensure project root is on path
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
@@ -37,7 +39,8 @@ from src.db import test_scripts as db_test_scripts
 from src.db.bulk_import import bulk_import_offices_from_csv, bulk_import_parties_from_csv
 from src.scraper.runner import run_with_db, preview_with_config, parse_full_table_for_export
 from src.scraper.config_test import test_office_config, get_raw_table_preview, get_all_tables_preview, get_table_html, get_table_header_from_html
-from src.scraper.test_script_runner import run_test_script
+from src.scraper.test_script_runner import run_test_script, run_test_script_from_html
+from src.scraper.wiki_fetch import WIKIPEDIA_REQUEST_HEADERS, wiki_url_to_rest_html_url
 
 app = FastAPI(title="Office Holder")
 # Resolve to absolute path so template dir is correct regardless of process cwd
@@ -1714,46 +1717,71 @@ async def test_scripts_page(request: Request):
     return templates.TemplateResponse("test_scripts.html", {"request": request, "tests": tests})
 
 
-@app.post("/api/test-scripts")
-async def api_create_test_script(
-    name: str = Form(...),
-    test_type: str = Form("table_config"),
-    enabled: str | None = Form(None),
-    source_url: str | None = Form(None),
-    config_json: str = Form("{}"),
-    expected_json: str | None = Form(None),
-    use_actual_as_expected: str | None = Form(None),
-    html_file: UploadFile = File(...),
-):
-    db_test_scripts.ensure_test_scripts_dir()
-    safe_name = re.sub(r"[^a-zA-Z0-9._-]+", "_", html_file.filename or "sample.html")
-    dest = db_test_scripts.TEST_SCRIPTS_DIR / f"{uuid.uuid4().hex}_{safe_name}"
-    content = await html_file.read()
-    dest.write_bytes(content)
+@app.post("/api/test-scripts/preview")
+async def api_preview_test_script(request: Request):
+    """Fetch Wikipedia HTML, run parser preview, return html payload + actual output."""
+    body = await request.json()
+    source_url = (body.get("source_url") or "").strip()
+    test_type = (body.get("test_type") or "table_config").strip()
+    config_json = body.get("config_json") if isinstance(body.get("config_json"), dict) else {}
+    expected_json = body.get("expected_json")
+    if not source_url:
+        raise HTTPException(status_code=400, detail="source_url is required")
 
+    fetch_url = wiki_url_to_rest_html_url(source_url) or source_url
     try:
-        config = json.loads(config_json or "{}")
-        expected = json.loads(expected_json) if expected_json and expected_json.strip() else None
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Invalid JSON: {e}") from e
+        resp = requests.get(fetch_url, headers=WIKIPEDIA_REQUEST_HEADERS, timeout=30)
+    except requests.RequestException as e:
+        raise HTTPException(status_code=502, detail=f"Failed to fetch page: {e}") from e
+    if resp.status_code != 200:
+        raise HTTPException(status_code=502, detail=f"Failed to fetch page: HTTP {resp.status_code}")
 
-    payload = {
-        "name": name.strip(),
-        "test_type": (test_type or "table_config").strip(),
-        "enabled": enabled in ("1", "true", "on", "yes"),
-        "source_url": (source_url or "").strip(),
+    html_content = resp.text
+    try:
+        preview = run_test_script_from_html(
+            test_type=test_type,
+            html_content=html_content,
+            config_json=config_json,
+            source_url=source_url,
+            expected_json=expected_json,
+        )
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e), "html": html_content}, status_code=200)
+    return JSONResponse({"ok": True, "html": html_content, **preview})
+
+
+@app.post("/api/test-scripts")
+async def api_create_test_script(request: Request):
+    """Save script only after preview/approval; persist fetched HTML locally in test_scripts/."""
+    body = await request.json()
+    name = (body.get("name") or "").strip()
+    test_type = (body.get("test_type") or "table_config").strip()
+    source_url = (body.get("source_url") or "").strip()
+    html_content = body.get("html") or ""
+    enabled = bool(body.get("enabled", True))
+    config_json = body.get("config_json") if isinstance(body.get("config_json"), dict) else {}
+    expected_json = body.get("expected_json")
+
+    if not name:
+        raise HTTPException(status_code=400, detail="name is required")
+    if not html_content.strip():
+        raise HTTPException(status_code=400, detail="Preview first to fetch HTML before saving")
+
+    db_test_scripts.ensure_test_scripts_dir()
+    safe_page = re.sub(r"[^a-zA-Z0-9._-]+", "_", (source_url.split("/")[-1] or "wiki_page"))
+    dest = db_test_scripts.TEST_SCRIPTS_DIR / f"{uuid.uuid4().hex}_{safe_page}.html"
+    dest.write_text(html_content, encoding="utf-8")
+
+    test_id = db_test_scripts.create_test({
+        "name": name,
+        "test_type": test_type,
+        "enabled": enabled,
+        "source_url": source_url,
         "html_file": dest.name,
-        "config_json": config,
-        "expected_json": expected,
-    }
-    test_id = db_test_scripts.create_test(payload)
-    test_row = db_test_scripts.get_test(test_id)
-    if use_actual_as_expected in ("1", "true", "on", "yes") and test_row is not None:
-        result = run_test_script(test_row)
-        with get_connection() as conn:
-            conn.execute("UPDATE parser_test_scripts SET expected_json = ?, updated_at = datetime('now') WHERE id = ?", (json.dumps(result.get("actual"), ensure_ascii=False), test_id))
-            conn.commit()
-    return RedirectResponse("/test-scripts", status_code=303)
+        "config_json": config_json,
+        "expected_json": expected_json,
+    })
+    return JSONResponse({"ok": True, "id": test_id, "html_file": dest.name})
 
 
 @app.post("/api/test-scripts/{test_id}/enabled")
