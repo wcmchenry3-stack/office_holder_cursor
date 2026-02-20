@@ -67,7 +67,7 @@ flowchart LR
   - **Delta run:** Parses all office tables, compares with existing terms, inserts/updates only changes.
   - **Live person update:** Refreshes biography data for individuals with no death date.
   - **Single-bio:** Run biography for one individual (by ID or Wikipedia URL).
-  - **Selected bios by office category:** Pick an office category, optionally limit to no-death-date individuals, and run biography refresh for matching IDs.
+  - **Selected bios by office category:** Pick an office category, optionally limit to no-death-date individuals and/or only valid page paths (non-blank page_path), and run biography refresh for matching IDs.
 
 - **Table parsing:** Done by `src/scraper/table_parser.py` (classes DataCleanup, Offices, Biography). **The app does not load or execute `sample files/` at runtime.** `src/scraper/parse_core.py` only imports and re-exports from `table_parser`. Column mapping, rowspan handling, dynamic parse, and term-date extraction all live in table_parser.
 
@@ -111,7 +111,7 @@ flowchart LR
 
 - **Offices:** Add/edit office configs (Wikipedia list URL, table number, column mapping, flags). Use **Bulk import** with a path like `sample files/OfficeTables - Sheet1 (1).csv` to load many at once. **Test config**, **Preview**, **Show all tables**, **Show selected table** (raw cell text for the configured table only), **Show table HTML**, **Export debug file** use the current form values.
 - **Parties:** Manage the party list (country, name, Wikipedia link) used when resolving party from table links.
-- **Run:** Choose run mode (Full / Delta / Live person / Single bio / Category bio selection), pick office category filters when relevant, and run. Category bio selection shows match counts before run and supports force update.
+- **Run:** Choose run mode (Full / Delta / Live person / Single bio / Category bio selection), pick office category filters when relevant, and run. Category bio selection shows match counts before run and supports force update plus valid page-path filtering.
 - **Individuals / Office terms:** View scraped data.
 
 ---

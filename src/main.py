@@ -2089,12 +2089,14 @@ async def api_run(
     office_category_id: str = Form(""),
     force_overwrite: str = Form(""),
     living_only: str = Form(""),
+    valid_page_paths_only: str = Form(""),
 ):
     if run_mode == "single_bio" and not individual_ref.strip():
         raise HTTPException(status_code=400, detail="Individual (ID or Wikipedia URL) required for re-run bio.")
     force_overwrite_bool = str(force_overwrite).strip().lower() in ("1", "true", "yes")
     office_category_id_int = _parse_optional_int(office_category_id)
     living_only_bool = str(living_only).strip().lower() in ("1", "true", "yes")
+    valid_page_paths_only_bool = str(valid_page_paths_only).strip().lower() in ("1", "true", "yes")
     run_bio = run_mode == "delta_live"
     run_office_bio = run_mode not in ("full_no_bio", "delta_no_bio", "full_no_bio_refresh", "delta_no_bio_refresh")
     refresh_table_cache = run_mode in ("full_no_bio_refresh", "delta_no_bio_refresh")
@@ -2122,7 +2124,11 @@ async def api_run(
     elif run_mode == "selected_bios_by_category":
         if not office_category_id_int:
             raise HTTPException(status_code=400, detail="Office category is required for selected bios run.")
-        matches = db_individuals.list_individuals_for_office_category(office_category_id_int, living_only=living_only_bool)
+        matches = db_individuals.list_individuals_for_office_category(
+            office_category_id_int,
+            living_only=living_only_bool,
+            valid_page_paths_only=valid_page_paths_only_bool,
+        )
         matched_ids = sorted({int(r.get("id")) for r in matches if r.get("id")})
         if not force_overwrite_bool:
             matched_ids = [
@@ -2160,8 +2166,17 @@ async def api_run(
 
 
 @app.get("/api/run/matching-individuals")
-async def api_run_matching_individuals(office_category_id: int, living_only: int = 0, force_overwrite: int = 0):
-    rows = db_individuals.list_individuals_for_office_category(office_category_id, living_only=bool(living_only))
+async def api_run_matching_individuals(
+    office_category_id: int,
+    living_only: int = 0,
+    force_overwrite: int = 0,
+    valid_page_paths_only: int = 0,
+):
+    rows = db_individuals.list_individuals_for_office_category(
+        office_category_id,
+        living_only=bool(living_only),
+        valid_page_paths_only=bool(valid_page_paths_only),
+    )
     unique_ids = sorted({int(r.get("id")) for r in rows if r.get("id")})
     eligible_ids = list(unique_ids)
     if not bool(force_overwrite):
@@ -2173,6 +2188,7 @@ async def api_run_matching_individuals(office_category_id: int, living_only: int
         "office_category_id": office_category_id,
         "living_only": bool(living_only),
         "force_overwrite": bool(force_overwrite),
+        "valid_page_paths_only": bool(valid_page_paths_only),
         "matching_records": len(rows),
         "matching_individuals": len(unique_ids),
         "eligible_individuals": len(eligible_ids),
