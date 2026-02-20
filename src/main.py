@@ -40,7 +40,7 @@ from src.db.bulk_import import bulk_import_offices_from_csv, bulk_import_parties
 from src.scraper.runner import run_with_db, preview_with_config, parse_full_table_for_export
 from src.scraper.config_test import test_office_config, get_raw_table_preview, get_all_tables_preview, get_table_html, get_table_header_from_html
 from src.scraper.test_script_runner import run_test_script, run_test_script_from_html
-from src.scraper.wiki_fetch import WIKIPEDIA_REQUEST_HEADERS, wiki_url_to_rest_html_url
+from src.scraper.wiki_fetch import WIKIPEDIA_REQUEST_HEADERS, wiki_url_to_rest_html_url, normalize_wiki_url
 
 app = FastAPI(title="Office Holder")
 # Resolve to absolute path so template dir is correct regardless of process cwd
@@ -1713,6 +1713,64 @@ async def api_cities(state_id: int = Query(0)):
 # ---------- Run scraper ----------
 
 
+def _snapshot_member_pages_for_test(
+    *,
+    source_url: str,
+    config_json: dict,
+    html_content: str,
+    file_prefix: str,
+) -> tuple[dict, list[str], list[str], list[dict]]:
+    """Return (config_with_fixtures, fetched_urls, saved_files, actual_rows) for infobox-enabled table tests."""
+    cfg = dict(config_json or {})
+    if not (cfg.get("find_date_in_infobox") and html_content.strip()):
+        return cfg, [], [], []
+    preview = run_test_script_from_html(
+        test_type="table_config",
+        html_content=html_content,
+        config_json=cfg,
+        source_url=source_url,
+        expected_json=None,
+    )
+    rows = preview.get("actual") if isinstance(preview, dict) else []
+    if not isinstance(rows, list):
+        rows = []
+
+    member_urls: list[str] = []
+    seen: set[str] = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        u = (row.get("Wiki Link") or "").strip()
+        if not u or u == "No link":
+            continue
+        nu = normalize_wiki_url(u) or u
+        if nu in seen:
+            continue
+        seen.add(nu)
+        member_urls.append(nu)
+
+    fixtures: dict[str, str] = {}
+    saved_files: list[str] = []
+    for idx, member_url in enumerate(member_urls):
+        fetch_url = wiki_url_to_rest_html_url(member_url) or member_url
+        try:
+            resp = requests.get(fetch_url, headers=WIKIPEDIA_REQUEST_HEADERS, timeout=30)
+        except requests.RequestException:
+            continue
+        if resp.status_code != 200:
+            continue
+        safe_member = re.sub(r"[^a-zA-Z0-9._-]+", "_", (member_url.split("/")[-1] or f"member_{idx+1}"))
+        rel_name = f"{file_prefix}_{safe_member}.html"
+        dest = db_test_scripts.TEST_SCRIPTS_DIR / rel_name
+        dest.write_text(resp.text, encoding="utf-8")
+        fixtures[member_url] = rel_name
+        saved_files.append(rel_name)
+
+    if fixtures:
+        cfg["_member_fixtures"] = fixtures
+    return cfg, member_urls, saved_files, rows
+
+
 def _store_test_script_result(payload: dict) -> str:
     rid = uuid.uuid4().hex
     with _test_script_result_lock:
@@ -1812,21 +1870,20 @@ async def api_create_test_script(request: Request):
             if not html_content.strip():
                 raise HTTPException(status_code=400, detail="Preview first to fetch new HTML before overwriting")
             safe_page = re.sub(r"[^a-zA-Z0-9._-]+", "_", (source_url.split("/")[-1] or "wiki_page"))
-            dest = db_test_scripts.TEST_SCRIPTS_DIR / f"{uuid.uuid4().hex}_{safe_page}.html"
+            prefix = f"{uuid.uuid4().hex}_{safe_page}"
+            dest = db_test_scripts.TEST_SCRIPTS_DIR / f"{prefix}.html"
             dest.write_text(html_content, encoding="utf-8")
             html_file = dest.name
+
+            config_json, _member_urls, _member_files, auto_rows = _snapshot_member_pages_for_test(
+                source_url=source_url,
+                config_json=config_json,
+                html_content=html_content,
+                file_prefix=prefix,
+            )
             if _expected_missing(expected_json):
-                try:
-                    preview = run_test_script_from_html(
-                        test_type=test_type,
-                        html_content=html_content,
-                        config_json=config_json,
-                        source_url=source_url,
-                        expected_json=None,
-                    )
-                    expected_json = preview.get("actual")
-                except Exception:
-                    pass
+                expected_json = auto_rows
+
             if delete_existing_files and (existing.get("html_file") or "").strip():
                 old_path = (db_test_scripts.TEST_SCRIPTS_DIR / existing["html_file"]).resolve()
                 try:
@@ -1834,6 +1891,18 @@ async def api_create_test_script(request: Request):
                         old_path.unlink()
                 except Exception:
                     pass
+            if delete_existing_files and isinstance(existing.get("config_json"), dict):
+                old_fx = existing["config_json"].get("_member_fixtures")
+                if isinstance(old_fx, dict):
+                    for _, rel_name in old_fx.items():
+                        if not isinstance(rel_name, str):
+                            continue
+                        old_member = (db_test_scripts.TEST_SCRIPTS_DIR / rel_name).resolve()
+                        try:
+                            if db_test_scripts.TEST_SCRIPTS_DIR in old_member.parents and old_member.exists():
+                                old_member.unlink()
+                        except Exception:
+                            pass
 
         db_test_scripts.update_test(test_id, {
             "name": name,
@@ -1851,21 +1920,18 @@ async def api_create_test_script(request: Request):
         raise HTTPException(status_code=400, detail="Preview first to fetch HTML before saving")
 
     safe_page = re.sub(r"[^a-zA-Z0-9._-]+", "_", (source_url.split("/")[-1] or "wiki_page"))
-    dest = db_test_scripts.TEST_SCRIPTS_DIR / f"{uuid.uuid4().hex}_{safe_page}.html"
+    prefix = f"{uuid.uuid4().hex}_{safe_page}"
+    dest = db_test_scripts.TEST_SCRIPTS_DIR / f"{prefix}.html"
     dest.write_text(html_content, encoding="utf-8")
 
+    config_json, _member_urls, _member_files, auto_rows = _snapshot_member_pages_for_test(
+        source_url=source_url,
+        config_json=config_json,
+        html_content=html_content,
+        file_prefix=prefix,
+    )
     if _expected_missing(expected_json):
-        try:
-            preview = run_test_script_from_html(
-                test_type=test_type,
-                html_content=html_content,
-                config_json=config_json,
-                source_url=source_url,
-                expected_json=None,
-            )
-            expected_json = preview.get("actual")
-        except Exception:
-            pass
+        expected_json = auto_rows
 
     new_test_id = db_test_scripts.create_test({
         "name": name,

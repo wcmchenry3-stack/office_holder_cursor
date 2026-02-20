@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import json
+from contextlib import contextmanager
 from pathlib import Path
+
+import requests
 from typing import Any
 
 from bs4 import BeautifulSoup
@@ -11,11 +14,69 @@ from bs4 import BeautifulSoup
 from src.scraper.logger import Logger
 from src.scraper import parse_core
 from src.scraper.runner import parse_full_table_for_export
+from src.scraper.wiki_fetch import wiki_url_to_rest_html_url, normalize_wiki_url
 from src.db.connection import ensure_data_dir, get_log_dir
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 TEST_SCRIPTS_DIR = PROJECT_ROOT / "test_scripts"
+
+
+
+
+def _fixture_path(name: str) -> Path:
+    return (TEST_SCRIPTS_DIR / (name or "")).resolve()
+
+
+def _load_member_fixture_html(cfg: dict[str, Any]) -> dict[str, str]:
+    fixtures = cfg.get("_member_fixtures") if isinstance(cfg, dict) else None
+    if not isinstance(fixtures, dict):
+        return {}
+    out: dict[str, str] = {}
+    for raw_url, rel_file in fixtures.items():
+        if not isinstance(raw_url, str) or not isinstance(rel_file, str):
+            continue
+        path = _fixture_path(rel_file)
+        if TEST_SCRIPTS_DIR not in path.parents or not path.exists():
+            continue
+        html = path.read_text(encoding="utf-8")
+        norm = normalize_wiki_url(raw_url) or raw_url
+        out[norm] = html
+        rest = wiki_url_to_rest_html_url(norm)
+        if rest:
+            out[rest] = html
+    return out
+
+
+@contextmanager
+def _requests_get_with_member_fixtures(member_html_by_url: dict[str, str]):
+    if not member_html_by_url:
+        yield
+        return
+
+    original_get = requests.get
+
+    class _Resp:
+        def __init__(self, text: str):
+            self.status_code = 200
+            self.text = text
+
+    def patched_get(url, *args, **kwargs):
+        key = normalize_wiki_url(url) or url
+        if key in member_html_by_url:
+            return _Resp(member_html_by_url[key])
+        rest = wiki_url_to_rest_html_url(key)
+        if rest and rest in member_html_by_url:
+            return _Resp(member_html_by_url[rest])
+        if url in member_html_by_url:
+            return _Resp(member_html_by_url[url])
+        return original_get(url, *args, **kwargs)
+
+    requests.get = patched_get
+    try:
+        yield
+    finally:
+        requests.get = original_get
 
 
 DEFAULT_TABLE_CONFIG = {
@@ -70,7 +131,10 @@ def _run_table_test(html_content: str, cfg: dict[str, Any], source_url: str) -> 
     if not (1 <= table_no <= len(tables)):
         return []
     selected_table_html = str(tables[table_no - 1])
-    return parse_full_table_for_export(office_row, selected_table_html, url)
+
+    member_html_by_url = _load_member_fixture_html(office_row)
+    with _requests_get_with_member_fixtures(member_html_by_url):
+        return parse_full_table_for_export(office_row, selected_table_html, url)
 
 
 def _run_bio_like_test(html_content: str, mode: str) -> dict[str, Any]:

@@ -128,6 +128,7 @@
 let lastPreview = null;
 let editingTestId = null;
 let editingOriginalHtmlFile = null;
+let preservedConfigExtras = {};
 
 function parseJsonOrEmpty(text) {
   const t = (text || '').trim();
@@ -143,7 +144,7 @@ function n(id, fallback) {
 function buildConfig() {
   const districtMode = document.getElementById('district_mode').value;
   const dateSource = document.getElementById('date_source').value;
-  return {
+  const base = {
     name: (document.getElementById('table_name').value || '').trim(),
     table_no: n('table_no', 1),
     table_rows: n('table_rows', 4),
@@ -166,6 +167,7 @@ function buildConfig() {
     party_link: document.getElementById('party_link').checked,
     use_full_page_for_table: document.getElementById('use_full_page_for_table').checked,
   };
+  return {...base, ...preservedConfigExtras};
 }
 
 function renderParsedTablePreview(data) {
@@ -238,6 +240,10 @@ async function editOne(id) {
     document.getElementById('source_url').value = t.source_url || '';
 
     const c = t.config_json || {};
+    preservedConfigExtras = {};
+    for (const [k, v] of Object.entries(c)) {
+      if (String(k).startsWith('_')) preservedConfigExtras[k] = v;
+    }
     const setVal = (id, v, fallback='') => { document.getElementById(id).value = (v === null || v === undefined) ? fallback : v; };
     setVal('table_name', c.name || '');
     setVal('table_no', c.table_no, 1);
@@ -274,6 +280,7 @@ async function editOne(id) {
 function cancelEditMode() {
   editingTestId = null;
   editingOriginalHtmlFile = null;
+  preservedConfigExtras = {};
   document.getElementById('editModeBanner').style.display = 'none';
   document.getElementById('editModeName').textContent = '';
   document.getElementById('saveBtn').textContent = 'Save test script';
