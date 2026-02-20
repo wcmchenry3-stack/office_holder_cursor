@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Test Scripts{% endblock %}
+{% block content %}
+<h1>Test Scripts</h1>
+<p>Create parser tests from saved local HTML in <code>test_scripts/</code>. Supports table parser, infobox parser, and bio parser.</p>
+
+<section>
+  <h2>Create test script</h2>
+  <form action="/api/test-scripts" method="post" enctype="multipart/form-data">
+    <label>Test name <input type="text" name="name" required></label><br>
+    <label>Type
+      <select name="test_type">
+        <option value="table_config">Table config</option>
+        <option value="infobox">Find infobox</option>
+        <option value="bio">Bio parser</option>
+      </select>
+    </label><br>
+    <label><input type="checkbox" name="enabled" value="1" checked> Enabled</label><br>
+    <label>Source URL (optional) <input type="text" name="source_url" placeholder="https://en.wikipedia.org/wiki/..." style="min-width:420px"></label><br>
+    <label>Sample HTML file <input type="file" name="html_file" accept=".html,.htm,.txt" required></label><br>
+    <label>Config JSON</label><br>
+    <textarea name="config_json" rows="10" style="width:100%;max-width:900px">{
+  "table_no": 1,
+  "link_column": 1,
+  "term_start_column": 4,
+  "term_end_column": 5
+}</textarea><br>
+    <label>Expected JSON (optional)</label><br>
+    <textarea name="expected_json" rows="10" style="width:100%;max-width:900px" placeholder='[{"Wiki Link":"..."}]'></textarea><br>
+    <label><input type="checkbox" name="use_actual_as_expected" value="1"> Run once after create and save actual result as expected</label><br>
+    <button type="submit">Create test script</button>
+  </form>
+</section>
+
+<section>
+  <h2>Existing tests</h2>
+  <p><button id="runEnabledBtn" type="button">Run all enabled tests</button></p>
+  <pre id="runAllOutput" style="white-space:pre-wrap;background:#111;color:#eee;padding:12px"></pre>
+
+  <table border="1" cellpadding="6" cellspacing="0">
+    <thead>
+      <tr><th>ID</th><th>Name</th><th>Type</th><th>Enabled</th><th>HTML</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+      {% for t in tests %}
+      <tr>
+        <td>{{ t.id }}</td>
+        <td>{{ t.name }}</td>
+        <td>{{ t.test_type }}</td>
+        <td><input type="checkbox" {% if t.enabled %}checked{% endif %} onchange="toggleEnabled({{ t.id }}, this.checked)"></td>
+        <td><code>{{ t.html_file }}</code></td>
+        <td>
+          <button type="button" onclick="runOne({{ t.id }})">Run</button>
+          <form action="/api/test-scripts/{{ t.id }}/delete" method="post" style="display:inline">
+            <button type="submit">Delete</button>
+          </form>
+          <pre id="out-{{ t.id }}" style="white-space:pre-wrap;max-width:700px"></pre>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<script>
+async function toggleEnabled(id, enabled) {
+  await fetch(`/api/test-scripts/${id}/enabled`, {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:`enabled=${enabled?1:0}`});
+}
+async function runOne(id) {
+  const el = document.getElementById(`out-${id}`);
+  el.textContent = 'Running...';
+  const r = await fetch(`/api/test-scripts/${id}/run`, {method:'POST'});
+  el.textContent = JSON.stringify(await r.json(), null, 2);
+}
+async function runAllEnabled() {
+  const out = document.getElementById('runAllOutput');
+  out.textContent = 'Running enabled tests...';
+  const r = await fetch('/api/test-scripts/run-enabled', {method:'POST'});
+  out.textContent = JSON.stringify(await r.json(), null, 2);
+}
+document.getElementById('runEnabledBtn').addEventListener('click', runAllEnabled);
+</script>
+{% endblock %}

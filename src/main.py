@@ -33,9 +33,11 @@ from src.db import office_category as db_office_category
 from src.db import individuals as db_individuals
 from src.db import office_terms as db_office_terms
 from src.db import reports as db_reports
+from src.db import test_scripts as db_test_scripts
 from src.db.bulk_import import bulk_import_offices_from_csv, bulk_import_parties_from_csv
 from src.scraper.runner import run_with_db, preview_with_config, parse_full_table_for_export
 from src.scraper.config_test import test_office_config, get_raw_table_preview, get_all_tables_preview, get_table_html, get_table_header_from_html
+from src.scraper.test_script_runner import run_test_script
 
 app = FastAPI(title="Office Holder")
 # Resolve to absolute path so template dir is correct regardless of process cwd
@@ -1704,6 +1706,92 @@ async def api_cities(state_id: int = Query(0)):
 
 
 # ---------- Run scraper ----------
+
+
+@app.get("/test-scripts", response_class=HTMLResponse)
+async def test_scripts_page(request: Request):
+    tests = db_test_scripts.list_tests()
+    return templates.TemplateResponse("test_scripts.html", {"request": request, "tests": tests})
+
+
+@app.post("/api/test-scripts")
+async def api_create_test_script(
+    name: str = Form(...),
+    test_type: str = Form("table_config"),
+    enabled: str | None = Form(None),
+    source_url: str | None = Form(None),
+    config_json: str = Form("{}"),
+    expected_json: str | None = Form(None),
+    use_actual_as_expected: str | None = Form(None),
+    html_file: UploadFile = File(...),
+):
+    db_test_scripts.ensure_test_scripts_dir()
+    safe_name = re.sub(r"[^a-zA-Z0-9._-]+", "_", html_file.filename or "sample.html")
+    dest = db_test_scripts.TEST_SCRIPTS_DIR / f"{uuid.uuid4().hex}_{safe_name}"
+    content = await html_file.read()
+    dest.write_bytes(content)
+
+    try:
+        config = json.loads(config_json or "{}")
+        expected = json.loads(expected_json) if expected_json and expected_json.strip() else None
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid JSON: {e}") from e
+
+    payload = {
+        "name": name.strip(),
+        "test_type": (test_type or "table_config").strip(),
+        "enabled": enabled in ("1", "true", "on", "yes"),
+        "source_url": (source_url or "").strip(),
+        "html_file": dest.name,
+        "config_json": config,
+        "expected_json": expected,
+    }
+    test_id = db_test_scripts.create_test(payload)
+    test_row = db_test_scripts.get_test(test_id)
+    if use_actual_as_expected in ("1", "true", "on", "yes") and test_row is not None:
+        result = run_test_script(test_row)
+        with get_connection() as conn:
+            conn.execute("UPDATE parser_test_scripts SET expected_json = ?, updated_at = datetime('now') WHERE id = ?", (json.dumps(result.get("actual"), ensure_ascii=False), test_id))
+            conn.commit()
+    return RedirectResponse("/test-scripts", status_code=303)
+
+
+@app.post("/api/test-scripts/{test_id}/enabled")
+async def api_toggle_test_script(test_id: int, enabled: int = Form(...)):
+    db_test_scripts.update_test_enabled(test_id, bool(enabled))
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/test-scripts/{test_id}/delete")
+async def api_delete_test_script(test_id: int):
+    db_test_scripts.delete_test(test_id)
+    return RedirectResponse("/test-scripts", status_code=303)
+
+
+@app.post("/api/test-scripts/{test_id}/run")
+async def api_run_one_test_script(test_id: int):
+    row = db_test_scripts.get_test(test_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Test script not found")
+    try:
+        result = run_test_script(row)
+    except Exception as e:
+        return JSONResponse({"ok": False, "name": row.get("name"), "error": str(e), "passed": False}, status_code=200)
+    return JSONResponse({"ok": True, "name": row.get("name"), **result})
+
+
+@app.post("/api/test-scripts/run-enabled")
+async def api_run_enabled_test_scripts():
+    rows = [t for t in db_test_scripts.list_tests() if t.get("enabled")]
+    out = []
+    for row in rows:
+        try:
+            result = run_test_script(row)
+            out.append({"id": row["id"], "name": row.get("name"), **result})
+        except Exception as e:
+            out.append({"id": row["id"], "name": row.get("name"), "passed": False, "error": str(e)})
+    return JSONResponse({"count": len(out), "passed": sum(1 for r in out if r.get("passed")), "results": out})
+
 @app.get("/run", response_class=HTMLResponse)
 async def run_page(request: Request):
     offices = db_offices.list_offices()
