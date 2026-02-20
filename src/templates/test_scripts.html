@@ -2,30 +2,76 @@
 {% block title %}Test Scripts{% endblock %}
 {% block content %}
 <h1>Test Scripts</h1>
-<p>Create parser tests from Wikipedia URLs, preview expected output, then save (HTML is stored locally under <code>test_scripts/</code>).</p>
+<p>Create parser tests from Wikipedia URLs, preview output, then save a local HTML snapshot in <code>test_scripts/</code>.</p>
 
 <section>
   <h2>Create test script</h2>
-  <div>
-    <label>Test name <input id="name" type="text" required></label><br>
-    <label>Type
+  <div class="form-row">
+    <div class="form-group"><label>Test name</label><input id="name" type="text" required></div>
+    <div class="form-group">
+      <label>Type</label>
       <select id="test_type">
         <option value="table_config">Table config</option>
         <option value="infobox">Find infobox</option>
         <option value="bio">Bio parser</option>
       </select>
-    </label><br>
-    <label><input id="enabled" type="checkbox" checked> Enabled</label><br>
-    <label>Wikipedia URL <input id="source_url" type="text" placeholder="https://en.wikipedia.org/wiki/..." style="min-width:520px" required></label><br>
-    <label>Config JSON</label><br>
-    <textarea id="config_json" rows="10" style="width:100%;max-width:900px">{
-  "table_no": 1,
-  "link_column": 1,
-  "term_start_column": 4,
-  "term_end_column": 5
-}</textarea><br>
-    <label>Expected JSON (optional; leave blank to use Preview output on Save)</label><br>
-    <textarea id="expected_json" rows="10" style="width:100%;max-width:900px" placeholder='[{"Wiki Link":"..."}]'></textarea><br>
+    </div>
+  </div>
+  <div class="form-group"><label><input id="enabled" type="checkbox" checked> Enabled</label></div>
+  <div class="form-group"><label>Wikipedia URL</label><input id="source_url" type="text" placeholder="https://en.wikipedia.org/wiki/..." required></div>
+
+  <h3>Table parsing config (same options as office config)</h3>
+  <div id="tableConfigPanel">
+    <div class="form-row">
+      <div class="form-group"><label>Table no</label><input type="number" id="table_no" min="1" value="1"></div>
+      <div class="form-group"><label>Table rows (min)</label><input type="number" id="table_rows" min="1" value="4"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Table name</label><input type="text" id="table_name" placeholder="e.g. Current members"></div>
+      <div class="form-group"><label>Link column (1-based)</label><input type="number" id="link_column" min="0" value="1"></div>
+      <div class="form-group" id="partyColumnGroup"><label>Party column</label><input type="number" id="party_column" min="0" value="0"></div>
+      <div class="form-group"><label>Term start column</label><input type="number" id="term_start_column" min="0" value="4"></div>
+      <div class="form-group" id="termEndColumnGroup"><label>Term end column</label><input type="number" id="term_end_column" min="0" value="5"></div>
+      <div class="form-group" id="districtColumnGroup"><label>District column</label><input type="number" id="district_column" min="0" value="0"></div>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group checkbox-group"><label><input type="checkbox" id="term_dates_merged"> Term dates merged</label></div>
+      <div class="form-group checkbox-group"><label><input type="checkbox" id="party_ignore"> Ignore party</label></div>
+      <div class="form-group">
+        <label>District</label>
+        <select id="district_mode">
+          <option value="column" selected>Use district column</option>
+          <option value="at_large">At-Large (ignore column)</option>
+          <option value="no_district">No District (ignore column)</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group checkbox-group"><label><input type="checkbox" id="dynamic_parse" checked> Dynamic parse</label></div>
+      <div class="form-group checkbox-group"><label><input type="checkbox" id="read_right_to_left"> Read right to left</label></div>
+      <div class="form-group">
+        <label>Date source</label>
+        <select id="date_source">
+          <option value="not_applicable" selected>Not applicable</option>
+          <option value="find_date_in_infobox">Find date in infobox</option>
+          <option value="years_only">Table has years only</option>
+        </select>
+      </div>
+      <div class="form-group checkbox-group"><label><input type="checkbox" id="parse_rowspan"> Parse rowspan</label></div>
+      <div class="form-group checkbox-group"><label><input type="checkbox" id="consolidate_rowspan_terms"> Consolidate consecutive terms (rowspan)</label></div>
+      <div class="form-group checkbox-group"><label><input type="checkbox" id="rep_link"> Rep link</label></div>
+      <div class="form-group checkbox-group"><label><input type="checkbox" id="party_link"> Party link</label></div>
+      <div class="form-group checkbox-group"><label><input type="checkbox" id="use_full_page_for_table"> Use full page for table fetch</label></div>
+    </div>
+  </div>
+
+  <div class="form-group">
+    <label>Expected JSON (optional; leave blank to use Preview output on Save)</label>
+    <textarea id="expected_json" rows="8" style="width:100%;max-width:900px" placeholder='[{"Wiki Link":"..."}]'></textarea>
+  </div>
+  <div class="actions">
     <button id="previewBtn" type="button">Preview from Wikipedia API</button>
     <button id="saveBtn" type="button" disabled>Save test script</button>
   </div>
@@ -71,17 +117,63 @@ function parseJsonOrEmpty(text) {
   return JSON.parse(t);
 }
 
+function n(id, fallback) {
+  const v = parseInt(document.getElementById(id).value || '', 10);
+  return Number.isNaN(v) ? fallback : v;
+}
+
+function buildConfig() {
+  const districtMode = document.getElementById('district_mode').value;
+  const dateSource = document.getElementById('date_source').value;
+  return {
+    name: (document.getElementById('table_name').value || '').trim(),
+    table_no: n('table_no', 1),
+    table_rows: n('table_rows', 4),
+    link_column: n('link_column', 1),
+    party_column: n('party_column', 0),
+    term_start_column: n('term_start_column', 4),
+    term_end_column: n('term_end_column', 5),
+    district_column: n('district_column', 0),
+    term_dates_merged: document.getElementById('term_dates_merged').checked,
+    party_ignore: document.getElementById('party_ignore').checked,
+    district_ignore: districtMode === 'no_district',
+    district_at_large: districtMode === 'at_large',
+    dynamic_parse: document.getElementById('dynamic_parse').checked,
+    read_right_to_left: document.getElementById('read_right_to_left').checked,
+    find_date_in_infobox: dateSource === 'find_date_in_infobox',
+    years_only: dateSource === 'years_only',
+    parse_rowspan: document.getElementById('parse_rowspan').checked,
+    consolidate_rowspan_terms: document.getElementById('consolidate_rowspan_terms').checked,
+    rep_link: document.getElementById('rep_link').checked,
+    party_link: document.getElementById('party_link').checked,
+    use_full_page_for_table: document.getElementById('use_full_page_for_table').checked,
+  };
+}
+
+function syncTableConfigControls() {
+  const isTable = document.getElementById('test_type').value === 'table_config';
+  document.getElementById('tableConfigPanel').style.display = isTable ? '' : 'none';
+
+  const merged = document.getElementById('term_dates_merged').checked;
+  const termEndInput = document.getElementById('term_end_column');
+  termEndInput.disabled = merged;
+
+  const partyIgnore = document.getElementById('party_ignore').checked;
+  document.getElementById('party_column').disabled = partyIgnore;
+
+  const districtMode = document.getElementById('district_mode').value;
+  document.getElementById('district_column').disabled = districtMode !== 'column';
+}
+
 async function previewScript() {
   const out = document.getElementById('createOutput');
   out.textContent = 'Fetching from Wikipedia API and running preview...';
   try {
-    const configJson = parseJsonOrEmpty(document.getElementById('config_json').value) || {};
-    const expectedJson = parseJsonOrEmpty(document.getElementById('expected_json').value);
     const payload = {
       source_url: document.getElementById('source_url').value,
       test_type: document.getElementById('test_type').value,
-      config_json: configJson,
-      expected_json: expectedJson,
+      config_json: buildConfig(),
+      expected_json: parseJsonOrEmpty(document.getElementById('expected_json').value),
     };
     const r = await fetch('/api/test-scripts/preview', {
       method: 'POST',
@@ -102,6 +194,7 @@ async function previewScript() {
       expected: data.expected,
       actual: data.actual,
       html_size: (data.html || '').length,
+      config_used: payload.config_json,
     }, null, 2);
   } catch (e) {
     out.textContent = 'Error: ' + e;
@@ -118,15 +211,13 @@ async function saveScript() {
   }
   try {
     let expectedJson = parseJsonOrEmpty(document.getElementById('expected_json').value);
-    if (expectedJson === null) {
-      expectedJson = lastPreview.actual;
-    }
+    if (expectedJson === null) expectedJson = lastPreview.actual;
     const payload = {
       name: document.getElementById('name').value,
       test_type: document.getElementById('test_type').value,
       enabled: document.getElementById('enabled').checked,
       source_url: document.getElementById('source_url').value,
-      config_json: parseJsonOrEmpty(document.getElementById('config_json').value) || {},
+      config_json: buildConfig(),
       expected_json: expectedJson,
       html: lastPreview.html,
     };
@@ -162,8 +253,13 @@ async function runAllEnabled() {
   const r = await fetch('/api/test-scripts/run-enabled', {method:'POST'});
   out.textContent = JSON.stringify(await r.json(), null, 2);
 }
+
 document.getElementById('runEnabledBtn').addEventListener('click', runAllEnabled);
 document.getElementById('previewBtn').addEventListener('click', previewScript);
 document.getElementById('saveBtn').addEventListener('click', saveScript);
+['test_type','term_dates_merged','party_ignore','district_mode'].forEach((id) => {
+  document.getElementById(id).addEventListener('change', syncTableConfigControls);
+});
+syncTableConfigControls();
 </script>
 {% endblock %}
