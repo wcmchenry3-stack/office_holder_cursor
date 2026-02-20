@@ -6,6 +6,10 @@
 
 <section>
   <h2>Create test script</h2>
+  <div id="editModeBanner" style="display:none;margin-bottom:0.75rem;padding:0.5rem;border:1px solid #555;border-radius:6px;">
+    Editing test <strong id="editModeName"></strong>.
+    <button id="cancelEditBtn" type="button" style="margin-left:0.5rem;">Cancel edit</button>
+  </div>
   <div class="form-row">
     <div class="form-group"><label>Test name</label><input id="name" type="text" required></div>
     <div class="form-group">
@@ -106,6 +110,7 @@
         <td><code>{{ t.html_file }}</code></td>
         <td>
           <button type="button" onclick="runOne({{ t.id }})">Run</button>
+          <button type="button" onclick="editOne({{ t.id }})">Edit</button>
           <form action="/api/test-scripts/{{ t.id }}/delete" method="post" style="display:inline">
             <button type="submit">Delete</button>
           </form>
@@ -119,6 +124,8 @@
 
 <script>
 let lastPreview = null;
+let editingTestId = null;
+let editingOriginalHtmlFile = null;
 
 function parseJsonOrEmpty(text) {
   const t = (text || '').trim();
@@ -206,6 +213,68 @@ function setPreviewAsExpected() {
   document.getElementById('expected_json').value = JSON.stringify(expected, null, 2);
 }
 
+
+async function editOne(id) {
+  const out = document.getElementById('createOutput');
+  out.textContent = 'Loading test for edit...';
+  try {
+    const r = await fetch(`/api/test-scripts/${id}`);
+    const data = await r.json();
+    if (!r.ok || data.ok === false) {
+      out.textContent = JSON.stringify(data, null, 2);
+      return;
+    }
+    const t = data.test || {};
+    editingTestId = t.id;
+    editingOriginalHtmlFile = t.html_file || null;
+    document.getElementById('name').value = t.name || '';
+    document.getElementById('test_type').value = t.test_type || 'table_config';
+    document.getElementById('enabled').checked = !!t.enabled;
+    document.getElementById('source_url').value = t.source_url || '';
+
+    const c = t.config_json || {};
+    const setVal = (id, v, fallback='') => { document.getElementById(id).value = (v === null || v === undefined) ? fallback : v; };
+    setVal('table_name', c.name || '');
+    setVal('table_no', c.table_no, 1);
+    setVal('table_rows', c.table_rows, 4);
+    setVal('link_column', c.link_column, 1);
+    setVal('party_column', c.party_column, 0);
+    setVal('term_start_column', c.term_start_column, 4);
+    setVal('term_end_column', c.term_end_column, 5);
+    setVal('district_column', c.district_column, 0);
+    document.getElementById('term_dates_merged').checked = !!c.term_dates_merged;
+    document.getElementById('party_ignore').checked = !!c.party_ignore;
+    document.getElementById('district_mode').value = c.district_ignore ? 'no_district' : (c.district_at_large ? 'at_large' : 'column');
+    document.getElementById('dynamic_parse').checked = !!c.dynamic_parse;
+    document.getElementById('read_right_to_left').checked = !!c.read_right_to_left;
+    document.getElementById('date_source').value = c.find_date_in_infobox ? 'find_date_in_infobox' : (c.years_only ? 'years_only' : 'not_applicable');
+    document.getElementById('parse_rowspan').checked = !!c.parse_rowspan;
+    document.getElementById('consolidate_rowspan_terms').checked = !!c.consolidate_rowspan_terms;
+    document.getElementById('rep_link').checked = !!c.rep_link;
+    document.getElementById('party_link').checked = !!c.party_link;
+    document.getElementById('use_full_page_for_table').checked = !!c.use_full_page_for_table;
+
+    document.getElementById('expected_json').value = t.expected_json ? JSON.stringify(t.expected_json, null, 2) : '';
+    document.getElementById('editModeName').textContent = `${t.name || ''} (#${t.id})`;
+    document.getElementById('editModeBanner').style.display = '';
+    document.getElementById('saveBtn').textContent = 'Save changes';
+    document.getElementById('saveBtn').disabled = false;
+    syncTableConfigControls();
+    out.textContent = 'Loaded test for edit. Run Preview to review parser output before saving.';
+  } catch (e) {
+    out.textContent = 'Error loading test: ' + e;
+  }
+}
+
+function cancelEditMode() {
+  editingTestId = null;
+  editingOriginalHtmlFile = null;
+  document.getElementById('editModeBanner').style.display = 'none';
+  document.getElementById('editModeName').textContent = '';
+  document.getElementById('saveBtn').textContent = 'Save test script';
+  document.getElementById('saveBtn').disabled = !lastPreview;
+}
+
 function syncTableConfigControls() {
   const isTable = document.getElementById('test_type').value === 'table_config';
   document.getElementById('tableConfigPanel').style.display = isTable ? '' : 'none';
@@ -265,21 +334,41 @@ async function previewScript() {
 
 async function saveScript() {
   const out = document.getElementById('createOutput');
-  if (!lastPreview || !lastPreview.html) {
+  if (editingTestId === null && (!lastPreview || !lastPreview.html)) {
     out.textContent = 'Preview first before saving.';
     return;
   }
   try {
     let expectedJson = parseJsonOrEmpty(document.getElementById('expected_json').value);
-    if (expectedJson === null) expectedJson = lastPreview.actual;
+    if (expectedJson === null && lastPreview) expectedJson = lastPreview.actual;
+
+    let overwriteHtml = false;
+    let deleteExistingFiles = false;
+    let htmlToSend = (lastPreview && lastPreview.html) ? lastPreview.html : '';
+    if (editingTestId !== null) {
+      const answer = window.confirm('Do you want to delete the existing local HTML file and overwrite with a new one from current preview?\n\nOK = overwrite with new HTML and delete old file\nCancel = keep existing local HTML file');
+      overwriteHtml = !!answer;
+      deleteExistingFiles = !!answer;
+      if (overwriteHtml && !htmlToSend) {
+        out.textContent = 'Run Preview first so a new HTML snapshot is available for overwrite.';
+        return;
+      }
+      if (!overwriteHtml) {
+        htmlToSend = '';
+      }
+    }
+
     const payload = {
+      test_id: editingTestId,
       name: document.getElementById('name').value,
       test_type: document.getElementById('test_type').value,
       enabled: document.getElementById('enabled').checked,
       source_url: document.getElementById('source_url').value,
       config_json: buildConfig(),
       expected_json: expectedJson,
-      html: lastPreview.html,
+      html: htmlToSend,
+      overwrite_html: overwriteHtml,
+      delete_existing_files: deleteExistingFiles,
     };
     const r = await fetch('/api/test-scripts', {
       method: 'POST',
@@ -292,6 +381,7 @@ async function saveScript() {
       return;
     }
     out.textContent = 'Saved. Reloading...';
+    cancelEditMode();
     window.location.reload();
   } catch (e) {
     out.textContent = 'Error: ' + e;
@@ -318,6 +408,7 @@ document.getElementById('runEnabledBtn').addEventListener('click', runAllEnabled
 document.getElementById('previewBtn').addEventListener('click', previewScript);
 document.getElementById('saveBtn').addEventListener('click', saveScript);
 document.getElementById('usePreviewAsExpectedBtn').addEventListener('click', setPreviewAsExpected);
+document.getElementById('cancelEditBtn').addEventListener('click', cancelEditMode);
 ['test_type','term_dates_merged','party_ignore','district_mode'].forEach((id) => {
   document.getElementById(id).addEventListener('change', syncTableConfigControls);
 });

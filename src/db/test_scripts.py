@@ -130,3 +130,40 @@ def delete_test(test_id: int, conn: sqlite3.Connection | None = None) -> None:
     finally:
         if own:
             conn.close()
+
+
+
+def update_test(test_id: int, data: dict[str, Any], conn: sqlite3.Connection | None = None) -> None:
+    own = conn is None
+    if own:
+        conn = get_connection()
+    try:
+        _ensure_table(conn)
+        conn.execute(
+            """
+            UPDATE parser_test_scripts
+               SET name = ?,
+                   test_type = ?,
+                   enabled = ?,
+                   html_file = ?,
+                   source_url = ?,
+                   config_json = ?,
+                   expected_json = ?,
+                   updated_at = datetime('now')
+             WHERE id = ?
+            """,
+            (
+                (data.get("name") or "").strip(),
+                (data.get("test_type") or "table_config").strip(),
+                1 if data.get("enabled", True) else 0,
+                (data.get("html_file") or "").strip(),
+                (data.get("source_url") or "").strip() or None,
+                json.dumps(data.get("config_json") or {}, ensure_ascii=False),
+                json.dumps(data.get("expected_json"), ensure_ascii=False) if data.get("expected_json") is not None else None,
+                test_id,
+            ),
+        )
+        conn.commit()
+    finally:
+        if own:
+            conn.close()

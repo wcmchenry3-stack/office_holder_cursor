@@ -1717,6 +1717,14 @@ async def test_scripts_page(request: Request):
     return templates.TemplateResponse("test_scripts.html", {"request": request, "tests": tests})
 
 
+@app.get("/api/test-scripts/{test_id}")
+async def api_get_test_script(test_id: int):
+    row = db_test_scripts.get_test(test_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Test script not found")
+    return JSONResponse({"ok": True, "test": row})
+
+
 @app.post("/api/test-scripts/preview")
 async def api_preview_test_script(request: Request):
     """Fetch Wikipedia HTML, run parser preview, return html payload + actual output."""
@@ -1752,8 +1760,11 @@ async def api_preview_test_script(request: Request):
 
 @app.post("/api/test-scripts")
 async def api_create_test_script(request: Request):
-    """Save script only after preview/approval; persist fetched HTML locally in test_scripts/."""
+    """Create/update script. On update, optionally overwrite local HTML snapshot."""
     body = await request.json()
+    test_id_raw = body.get("test_id")
+    test_id = int(test_id_raw) if str(test_id_raw).strip().isdigit() else None
+
     name = (body.get("name") or "").strip()
     test_type = (body.get("test_type") or "table_config").strip()
     source_url = (body.get("source_url") or "").strip()
@@ -1761,18 +1772,56 @@ async def api_create_test_script(request: Request):
     enabled = bool(body.get("enabled", True))
     config_json = body.get("config_json") if isinstance(body.get("config_json"), dict) else {}
     expected_json = body.get("expected_json")
+    overwrite_html = bool(body.get("overwrite_html", False))
+    delete_existing_files = bool(body.get("delete_existing_files", False))
 
     if not name:
         raise HTTPException(status_code=400, detail="name is required")
+
+    db_test_scripts.ensure_test_scripts_dir()
+
+    # Update existing test
+    if test_id is not None:
+        existing = db_test_scripts.get_test(test_id)
+        if not existing:
+            raise HTTPException(status_code=404, detail="Test script not found")
+
+        html_file = existing.get("html_file") or ""
+        if overwrite_html:
+            if not html_content.strip():
+                raise HTTPException(status_code=400, detail="Preview first to fetch new HTML before overwriting")
+            safe_page = re.sub(r"[^a-zA-Z0-9._-]+", "_", (source_url.split("/")[-1] or "wiki_page"))
+            dest = db_test_scripts.TEST_SCRIPTS_DIR / f"{uuid.uuid4().hex}_{safe_page}.html"
+            dest.write_text(html_content, encoding="utf-8")
+            html_file = dest.name
+            if delete_existing_files and (existing.get("html_file") or "").strip():
+                old_path = (db_test_scripts.TEST_SCRIPTS_DIR / existing["html_file"]).resolve()
+                try:
+                    if db_test_scripts.TEST_SCRIPTS_DIR in old_path.parents and old_path.exists():
+                        old_path.unlink()
+                except Exception:
+                    pass
+
+        db_test_scripts.update_test(test_id, {
+            "name": name,
+            "test_type": test_type,
+            "enabled": enabled,
+            "source_url": source_url,
+            "html_file": html_file,
+            "config_json": config_json,
+            "expected_json": expected_json,
+        })
+        return JSONResponse({"ok": True, "id": test_id, "html_file": html_file, "updated": True})
+
+    # Create new test
     if not html_content.strip():
         raise HTTPException(status_code=400, detail="Preview first to fetch HTML before saving")
 
-    db_test_scripts.ensure_test_scripts_dir()
     safe_page = re.sub(r"[^a-zA-Z0-9._-]+", "_", (source_url.split("/")[-1] or "wiki_page"))
     dest = db_test_scripts.TEST_SCRIPTS_DIR / f"{uuid.uuid4().hex}_{safe_page}.html"
     dest.write_text(html_content, encoding="utf-8")
 
-    test_id = db_test_scripts.create_test({
+    new_test_id = db_test_scripts.create_test({
         "name": name,
         "test_type": test_type,
         "enabled": enabled,
@@ -1781,7 +1830,7 @@ async def api_create_test_script(request: Request):
         "config_json": config_json,
         "expected_json": expected_json,
     })
-    return JSONResponse({"ok": True, "id": test_id, "html_file": dest.name})
+    return JSONResponse({"ok": True, "id": new_test_id, "html_file": dest.name, "updated": False})
 
 
 @app.post("/api/test-scripts/{test_id}/enabled")
