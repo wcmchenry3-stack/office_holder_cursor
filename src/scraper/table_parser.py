@@ -293,18 +293,20 @@ class DataCleanup:
       sy = int(year_match.group(0))
       return (sy, sy)
 
-  def find_link_and_data_columns( self , row , max_column_index = None ):
+  def find_link_and_data_columns( self , row , max_column_index = None, min_column_index = None ):
       # Dynamic identification of the link column and subsequent data columns.
       # If max_column_index is set (0-based), only consider cells up to that index so we never
       # pick a link from a non-data column (e.g. President column) when it appears after term dates.
       # #region agent log
       try:
           _log_path = Path(__file__).resolve().parent.parent.parent / ".cursor" / "debug.log"
-          open(_log_path, "a", encoding="utf-8").write(json.dumps({"location": "table_parser:find_link_and_data_columns", "message": "entry", "data": {"len_row": len(row), "max_column_index": max_column_index}, "timestamp": __import__("time").time() * 1000, "hypothesisId": "H2"}) + "\n")
+          open(_log_path, "a", encoding="utf-8").write(json.dumps({"location": "table_parser:find_link_and_data_columns", "message": "entry", "data": {"len_row": len(row), "max_column_index": max_column_index, "min_column_index": min_column_index}, "timestamp": __import__("time").time() * 1000, "hypothesisId": "H2"}) + "\n")
       except Exception:
           pass
       # #endregion
       for i, cell in enumerate(row):
+          if min_column_index is not None and i < min_column_index:
+              continue
           if max_column_index is not None and i > max_column_index:
               break
           try:
@@ -1250,15 +1252,51 @@ class Offices:
     term_end_column = table_config_to_parse["term_end_column"]
     district_column = table_config_to_parse["district_column"]
 
-    # Only search columns up to and including term_end_column so we never pick the link from
-    # a column after the term dates (e.g. Lt. Governor or President column).
-    max_link_col = max(0, term_end_column) if term_end_column is not None and term_end_column >= 0 else None
+    row_len = len(cells)
+    if row_len == 0:
+      return False, table_config_to_parse
+
+    # Explicit bounds override default behavior.
+    dynamic_link_min_col = table_config_to_parse.get("dynamic_link_min_col")
+    dynamic_link_max_col = table_config_to_parse.get("dynamic_link_max_col")
+    if dynamic_link_min_col is not None or dynamic_link_max_col is not None:
+      min_link_col = dynamic_link_min_col if dynamic_link_min_col is not None else 0
+      max_link_col = dynamic_link_max_col if dynamic_link_max_col is not None else (row_len - 1)
+    else:
+      # Backward compatibility: bound by term_end and parse direction.
+      if table_config_to_parse.get("read_columns_right_to_left") == True:
+        min_link_col = term_end_column if term_end_column is not None else 0
+        max_link_col = row_len - 1
+      else:
+        min_link_col = 0
+        max_link_col = term_end_column if term_end_column is not None and term_end_column >= 0 else (row_len - 1)
+
+    # Clamp to row bounds.
+    min_link_col = max(0, min(int(min_link_col), row_len - 1))
+    max_link_col = max(0, min(int(max_link_col), row_len - 1))
+
+    if min_link_col > max_link_col:
+      min_link_col, max_link_col = 0, row_len - 1
+
     link_column_old = link_column
-    link_column_result = self.DataCleanup.find_link_and_data_columns(cells, max_column_index=max_link_col)
+    link_column_result = self.DataCleanup.find_link_and_data_columns(
+      cells,
+      max_column_index=max_link_col,
+      min_column_index=min_link_col,
+    )
+
+    used_fallback_scan = False
+    if link_column_result is None:
+      used_fallback_scan = True
+      link_column_result = self.DataCleanup.find_link_and_data_columns(cells, max_column_index=row_len - 1, min_column_index=0)
 
     # Stop loop if no link is found
     if link_column_result is None:
-        self.Logger.debug_log("Link column not found, skipping this row.", True )
+        table_no = table_config_to_parse.get("table_no", "unknown")
+        self.Logger.debug_log(
+          f"DynamicParse table={table_no}: no link found (bounds {min_link_col}..{max_link_col}, fallback full-row {'failed' if used_fallback_scan else 'not-run'}). Row skipped.",
+          True,
+        )
         # Return False indicating the link column was not found, alongside original columns
         table_config_to_parse["link_column"] = link_column
         table_config_to_parse["party_column"] = party_column
@@ -1709,6 +1747,5 @@ class Biography:
           pass
       # #endregion
       return ([("YYYY-00-00", "YYYY-00-00")], infobox_items if infobox_items else ["No dates found (placeholder)."])
-
 
 

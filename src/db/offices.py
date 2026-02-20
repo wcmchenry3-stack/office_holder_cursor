@@ -1543,6 +1543,8 @@ def office_row_to_table_config(row: dict[str, Any], alt_links: list[str] | None 
         "find_date_in_infobox": bool(row.get("find_date_in_infobox")),
         "years_only": bool(row.get("years_only")),
         "read_columns_right_to_left": bool(row.get("read_right_to_left")),
+        "dynamic_link_min_col": _col_1based_to_0based(row.get("dynamic_link_min_col")) if row.get("dynamic_link_min_col") not in (None, "") else None,
+        "dynamic_link_max_col": _col_1based_to_0based(row.get("dynamic_link_max_col")) if row.get("dynamic_link_max_col") not in (None, "") else None,
         "parse_rowspan": bool(row.get("parse_rowspan")),
         "consolidate_rowspan_terms": bool(row.get("consolidate_rowspan_terms")),
         "rep_link": bool(row.get("rep_link")),
