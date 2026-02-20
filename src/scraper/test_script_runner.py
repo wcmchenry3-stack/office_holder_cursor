@@ -62,7 +62,15 @@ def _load_html(html_file: str) -> str:
 def _run_table_test(html_content: str, cfg: dict[str, Any], source_url: str) -> Any:
     office_row = {**DEFAULT_TABLE_CONFIG, **(cfg or {})}
     url = source_url or office_row.get("url") or DEFAULT_TABLE_CONFIG["url"]
-    return parse_full_table_for_export(office_row, html_content, url)
+
+    # Match the real scraper path: select configured table_no first, then parse a single-table HTML fragment.
+    table_no = int(office_row.get("table_no") or 1)
+    soup = BeautifulSoup(html_content or "", "html.parser")
+    tables = soup.find_all("table")
+    if not (1 <= table_no <= len(tables)):
+        return []
+    selected_table_html = str(tables[table_no - 1])
+    return parse_full_table_for_export(office_row, selected_table_html, url)
 
 
 def _run_bio_like_test(html_content: str, mode: str) -> dict[str, Any]:
