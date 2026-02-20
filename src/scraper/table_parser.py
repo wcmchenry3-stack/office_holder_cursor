@@ -293,18 +293,20 @@ class DataCleanup:
       sy = int(year_match.group(0))
       return (sy, sy)
 
-  def find_link_and_data_columns( self , row , max_column_index = None ):
+  def find_link_and_data_columns( self , row , max_column_index = None , min_column_index = 0 ):
       # Dynamic identification of the link column and subsequent data columns.
-      # If max_column_index is set (0-based), only consider cells up to that index so we never
-      # pick a link from a non-data column (e.g. President column) when it appears after term dates.
+      # If min/max bounds are set (0-based), only consider cells in that range so we can keep
+      # dynamic parse constrained for both LTR and RTL tables.
       # #region agent log
       try:
           _log_path = Path(__file__).resolve().parent.parent.parent / ".cursor" / "debug.log"
-          open(_log_path, "a", encoding="utf-8").write(json.dumps({"location": "table_parser:find_link_and_data_columns", "message": "entry", "data": {"len_row": len(row), "max_column_index": max_column_index}, "timestamp": __import__("time").time() * 1000, "hypothesisId": "H2"}) + "\n")
+          open(_log_path, "a", encoding="utf-8").write(json.dumps({"location": "table_parser:find_link_and_data_columns", "message": "entry", "data": {"len_row": len(row), "max_column_index": max_column_index, "min_column_index": min_column_index}, "timestamp": __import__("time").time() * 1000, "hypothesisId": "H2"}) + "\n")
       except Exception:
           pass
       # #endregion
       for i, cell in enumerate(row):
+          if i < min_column_index:
+              continue
           if max_column_index is not None and i > max_column_index:
               break
           try:
@@ -1250,11 +1252,22 @@ class Offices:
     term_end_column = table_config_to_parse["term_end_column"]
     district_column = table_config_to_parse["district_column"]
 
-    # Only search columns up to and including term_end_column so we never pick the link from
-    # a column after the term dates (e.g. Lt. Governor or President column).
-    max_link_col = max(0, term_end_column) if term_end_column is not None and term_end_column >= 0 else None
+    # Constrain dynamic link search to expected side of term columns.
+    # LTR: link should be at/before term columns. RTL: link should be at/after term columns.
+    read_rtl = bool(table_config_to_parse.get("read_columns_right_to_left"))
+    min_link_col = 0
+    max_link_col = None
+    if term_end_column is not None and term_end_column >= 0:
+        if read_rtl:
+            min_link_col = max(0, term_end_column)
+        else:
+            max_link_col = max(0, term_end_column)
     link_column_old = link_column
-    link_column_result = self.DataCleanup.find_link_and_data_columns(cells, max_column_index=max_link_col)
+    link_column_result = self.DataCleanup.find_link_and_data_columns(
+        cells,
+        max_column_index=max_link_col,
+        min_column_index=min_link_col,
+    )
 
     # Stop loop if no link is found
     if link_column_result is None:
@@ -1709,6 +1722,4 @@ class Biography:
           pass
       # #endregion
       return ([("YYYY-00-00", "YYYY-00-00")], infobox_items if infobox_items else ["No dates found (placeholder)."])
-
-
 
