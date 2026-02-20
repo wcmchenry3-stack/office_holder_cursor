@@ -417,6 +417,15 @@ class Offices:
     self.Biography = biography
 
 
+  def _is_valid_wiki_link(self, link):
+    if not isinstance(link, str):
+      return False
+    candidate = link.strip()
+    if not candidate or candidate == "No link":
+      return False
+    return candidate.startswith("https://en.wikipedia.org/wiki/")
+
+
   def process_table(self, html_content, table_config, office_details, url, party_list, progress_callback=None, max_rows=None):
     self.Logger.log(f"---------------\n\n Processing table with config: {table_config}", True)
 
@@ -465,6 +474,8 @@ class Offices:
 
             cells_td = row.find_all('td')
             row_results = self.parse_table_row(row, table_config, office_details, url,  previous_row_wiki_link, previous_row_district, previous_row_party, party_list)
+            if row_results and table_config.get("ignore_non_links"):
+                row_results = [r for r in row_results if self._is_valid_wiki_link(r.get("Wiki Link"))]
             self.Logger.debug_log( f"results from process table {row_results}" , True )
             appended = bool(row_results)
             if row_results:

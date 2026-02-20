@@ -77,3 +77,51 @@ def test_dynamic_parse_falls_back_to_full_row_when_bounds_miss_links():
 
     assert success is True
     assert parsed["link_column"] == 1
+
+
+def test_process_table_ignores_rows_without_valid_wiki_links_when_enabled():
+    logger = _Logger()
+    offices = Offices(logger, biography=None, data_cleanup=DataCleanup(logger))
+    html = """
+    <table>
+      <tr><th>#</th><th>Senator</th><th>Party</th><th>Dates</th></tr>
+      <tr><td>1</td><td><a href="/wiki/Linked_Senator">Linked Senator</a></td><td>Democratic</td><td>Jan 1, 2000 – Jan 1, 2006</td></tr>
+      <tr><td>2</td><td><i>Vacant</i></td><td></td><td>Jan 1, 2006 – Jan 2, 2006</td></tr>
+    </table>
+    """
+    table_config = {
+        "table_no": 1,
+        "table_rows": 3,
+        "link_column": 1,
+        "party_column": 2,
+        "term_start_column": 3,
+        "term_end_column": 3,
+        "district_column": 0,
+        "run_dynamic_parse": False,
+        "read_columns_right_to_left": False,
+        "find_date_in_infobox": False,
+        "years_only": False,
+        "parse_rowspan": False,
+        "consolidate_rowspan_terms": False,
+        "rep_link": False,
+        "party_link": False,
+        "party_ignore": False,
+        "district_ignore": True,
+        "district_at_large": False,
+        "ignore_non_links": True,
+    }
+    office_details = {
+        "office_country": "United States",
+        "office_level": "Federal",
+        "office_branch": "Legislative",
+        "office_department": "Senate",
+        "office_name": "Class 2",
+        "office_state": "Alaska",
+        "office_notes": "",
+    }
+    party_list = {"United States": []}
+
+    rows = offices.process_table(html, table_config, office_details, "https://en.wikipedia.org/wiki/Test", party_list)
+
+    assert len(rows) == 1
+    assert rows[0]["Wiki Link"].endswith("/wiki/Linked_Senator")

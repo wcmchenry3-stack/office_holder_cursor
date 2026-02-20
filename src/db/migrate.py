@@ -56,6 +56,7 @@ def migrate_to_fk(conn=None):
         _migrate_office_terms_year_columns(conn)
         # Add term_dates_merged, party_ignore, district_ignore, district_at_large to offices
         _migrate_offices_parsing_options(conn)
+        _migrate_ignore_non_links(conn)
         # Add is_dead_link to individuals if missing
         _migrate_individuals_dead_link(conn)
         # Alt links: new table, backfill from offices.alt_link, verify, then drop offices.alt_link
@@ -672,3 +673,14 @@ def _migrate_city(conn):
         conn.commit()
     except sqlite3.OperationalError:
         pass
+
+
+def _migrate_ignore_non_links(conn):
+    """Add ignore_non_links to offices and office_table_config if missing."""
+    offices_cols = _columns(conn, "offices")
+    if "ignore_non_links" not in offices_cols:
+        conn.execute("ALTER TABLE offices ADD COLUMN ignore_non_links INTEGER NOT NULL DEFAULT 0")
+    otc_cols = _columns(conn, "office_table_config")
+    if "ignore_non_links" not in otc_cols:
+        conn.execute("ALTER TABLE office_table_config ADD COLUMN ignore_non_links INTEGER NOT NULL DEFAULT 0")
+    conn.commit()
