@@ -1,0 +1,445 @@
+{% extends "base.html" %}
+{% block title %}Test Scripts{% endblock %}
+{% block content %}
+<h1>Test Scripts</h1>
+<p>Create parser tests from Wikipedia URLs, preview output, then save a local HTML snapshot in <code>test_scripts/</code>.</p>
+
+<section>
+  <h2>Create test script</h2>
+  <div id="editModeBanner" style="display:none;margin-bottom:0.75rem;padding:0.5rem;border:1px solid #555;border-radius:6px;">
+    Editing test <strong id="editModeName"></strong>.
+    <button id="cancelEditBtn" type="button" style="margin-left:0.5rem;">Cancel edit</button>
+  </div>
+  <div class="form-row">
+    <div class="form-group"><label>Test name</label><input id="name" type="text" required></div>
+    <div class="form-group">
+      <label>Type</label>
+      <select id="test_type">
+        <option value="table_config">Table config</option>
+        <option value="infobox">Find infobox</option>
+        <option value="bio">Bio parser</option>
+      </select>
+    </div>
+  </div>
+  <div class="form-group"><label><input id="enabled" type="checkbox" checked> Enabled</label></div>
+  <div class="form-group"><label>Wikipedia URL</label><input id="source_url" type="text" placeholder="https://en.wikipedia.org/wiki/..." required></div>
+
+  <h3>Table parsing config (same options as office config)</h3>
+  <div id="tableConfigPanel">
+    <div class="form-row">
+      <div class="form-group"><label>Table no</label><input type="number" id="table_no" min="1" value="1"></div>
+      <div class="form-group"><label>Table rows (min)</label><input type="number" id="table_rows" min="1" value="4"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Table name</label><input type="text" id="table_name" placeholder="e.g. Current members"></div>
+      <div class="form-group"><label>Link column (1-based)</label><input type="number" id="link_column" min="0" value="1"></div>
+      <div class="form-group" id="partyColumnGroup"><label>Party column</label><input type="number" id="party_column" min="0" value="0"></div>
+      <div class="form-group"><label>Term start column</label><input type="number" id="term_start_column" min="0" value="4"></div>
+      <div class="form-group" id="termEndColumnGroup"><label>Term end column</label><input type="number" id="term_end_column" min="0" value="5"></div>
+      <div class="form-group" id="districtColumnGroup"><label>District column</label><input type="number" id="district_column" min="0" value="0"></div>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group checkbox-group"><label><input type="checkbox" id="term_dates_merged"> Term dates merged</label></div>
+      <div class="form-group checkbox-group"><label><input type="checkbox" id="party_ignore"> Ignore party</label></div>
+      <div class="form-group">
+        <label>District</label>
+        <select id="district_mode">
+          <option value="column" selected>Use district column</option>
+          <option value="at_large">At-Large (ignore column)</option>
+          <option value="no_district">No District (ignore column)</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group checkbox-group"><label><input type="checkbox" id="dynamic_parse" checked> Dynamic parse</label></div>
+      <div class="form-group checkbox-group"><label><input type="checkbox" id="read_right_to_left"> Read right to left</label></div>
+      <div class="form-group">
+        <label>Date source</label>
+        <select id="date_source">
+          <option value="not_applicable" selected>Not applicable</option>
+          <option value="find_date_in_infobox">Find date in infobox</option>
+          <option value="years_only">Table has years only</option>
+        </select>
+      </div>
+      <div class="form-group checkbox-group"><label><input type="checkbox" id="parse_rowspan"> Parse rowspan</label></div>
+      <div class="form-group checkbox-group"><label><input type="checkbox" id="consolidate_rowspan_terms"> Consolidate consecutive terms (rowspan)</label></div>
+      <div class="form-group checkbox-group"><label><input type="checkbox" id="rep_link"> Rep link</label></div>
+      <div class="form-group checkbox-group"><label><input type="checkbox" id="party_link"> Party link</label></div>
+      <div class="form-group checkbox-group"><label><input type="checkbox" id="use_full_page_for_table"> Use full page for table fetch</label></div>
+    </div>
+  </div>
+
+  <div class="form-group">
+    <label>Expected JSON (optional; leave blank to use Preview output on Save)</label>
+    <textarea id="expected_json" rows="8" style="width:100%;max-width:900px" placeholder='[{"Wiki Link":"..."}]'></textarea>
+  </div>
+  <div class="actions">
+    <button id="previewBtn" type="button">Preview from Wikipedia API</button>
+    <button id="saveBtn" type="button" disabled>Save test script</button>
+  </div>
+  <pre id="createOutput" style="white-space:pre-wrap;background:#111;color:#eee;padding:12px"></pre>
+
+  <div id="parsedTablePreviewWrap" style="display:none;margin-top:1rem;">
+    <h3>Parsed table preview</h3>
+    <p class="form-note">This shows what the parser will produce. If correct, click the button below to set this as expected result.</p>
+    <div class="actions" style="margin-bottom:0.5rem;">
+      <button id="usePreviewAsExpectedBtn" type="button" disabled>Use preview as expected result</button>
+    </div>
+    <div id="parsedTablePreviewMeta" class="form-note" style="margin-bottom:0.5rem;"></div>
+    <div id="parsedTablePreview" style="overflow:auto;"></div>
+  </div>
+</section>
+
+<section>
+  <h2>Existing tests</h2>
+  <p><button id="runEnabledBtn" type="button">Run all enabled tests</button></p>
+  <pre id="runAllOutput" style="white-space:pre-wrap;background:#111;color:#eee;padding:12px"></pre>
+
+  <table border="1" cellpadding="6" cellspacing="0">
+    <thead>
+      <tr><th>ID</th><th>Name</th><th>Type</th><th>Enabled</th><th>HTML</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+      {% for t in tests %}
+      <tr>
+        <td>{{ t.id }}</td>
+        <td>{{ t.name }}</td>
+        <td>{{ t.test_type }}</td>
+        <td><input type="checkbox" {% if t.enabled %}checked{% endif %} onchange="toggleEnabled({{ t.id }}, this.checked)"></td>
+        <td><code>{{ t.html_file }}</code></td>
+        <td>
+          <button type="button" onclick="runOne({{ t.id }})">Run</button>
+          <button type="button" onclick="editOne({{ t.id }})">Edit</button>
+          <form action="/api/test-scripts/{{ t.id }}/delete" method="post" style="display:inline">
+            <button type="submit">Delete</button>
+          </form>
+          <div id="out-{{ t.id }}" class="form-note" style="margin-top:0.5rem;">Not run yet.</div>
+          <a id="out-link-{{ t.id }}" href="#" target="_blank" rel="noopener" style="display:none;">View full results</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<script>
+let lastPreview = null;
+let editingTestId = null;
+let editingOriginalHtmlFile = null;
+let preservedConfigExtras = {};
+
+function parseJsonOrEmpty(text) {
+  const t = (text || '').trim();
+  if (!t) return null;
+  return JSON.parse(t);
+}
+
+function n(id, fallback) {
+  const v = parseInt(document.getElementById(id).value || '', 10);
+  return Number.isNaN(v) ? fallback : v;
+}
+
+function buildConfig() {
+  const districtMode = document.getElementById('district_mode').value;
+  const dateSource = document.getElementById('date_source').value;
+  const base = {
+    name: (document.getElementById('table_name').value || '').trim(),
+    table_no: n('table_no', 1),
+    table_rows: n('table_rows', 4),
+    link_column: n('link_column', 1),
+    party_column: n('party_column', 0),
+    term_start_column: n('term_start_column', 4),
+    term_end_column: n('term_end_column', 5),
+    district_column: n('district_column', 0),
+    term_dates_merged: document.getElementById('term_dates_merged').checked,
+    party_ignore: document.getElementById('party_ignore').checked,
+    district_ignore: districtMode === 'no_district',
+    district_at_large: districtMode === 'at_large',
+    dynamic_parse: document.getElementById('dynamic_parse').checked,
+    read_right_to_left: document.getElementById('read_right_to_left').checked,
+    find_date_in_infobox: dateSource === 'find_date_in_infobox',
+    years_only: dateSource === 'years_only',
+    parse_rowspan: document.getElementById('parse_rowspan').checked,
+    consolidate_rowspan_terms: document.getElementById('consolidate_rowspan_terms').checked,
+    rep_link: document.getElementById('rep_link').checked,
+    party_link: document.getElementById('party_link').checked,
+    use_full_page_for_table: document.getElementById('use_full_page_for_table').checked,
+  };
+  return {...base, ...preservedConfigExtras};
+}
+
+function renderParsedTablePreview(data) {
+  const wrap = document.getElementById('parsedTablePreviewWrap');
+  const container = document.getElementById('parsedTablePreview');
+  const meta = document.getElementById('parsedTablePreviewMeta');
+  const btn = document.getElementById('usePreviewAsExpectedBtn');
+  const isTable = (document.getElementById('test_type').value === 'table_config');
+  const rows = Array.isArray(data?.actual) ? data.actual : [];
+  if (!isTable || rows.length === 0) {
+    wrap.style.display = 'none';
+    container.innerHTML = '';
+    meta.textContent = '';
+    btn.disabled = true;
+    return;
+  }
+
+  const headers = ['Wiki Link', 'Dead link', 'Party', 'District', 'Term Start', 'Term End', 'Term Start Year', 'Term End Year'];
+  let html = '<table border="1" cellpadding="6" cellspacing="0" style="min-width:900px"><thead><tr>';
+  for (const h of headers) html += `<th>${window.esc(h)}</th>`;
+  html += '</tr></thead><tbody>';
+
+  for (const r of rows) {
+    const link = r['Wiki Link'] || '';
+    const linkCell = link && link !== 'No link'
+      ? `<a href="${window.esc(link)}" target="_blank" rel="noopener">${window.esc(link)}</a>`
+      : window.esc(link || '—');
+    html += '<tr>' +
+      `<td>${linkCell}</td>` +
+      `<td>${window.esc((r['Dead link'] === true || r['Dead link'] === 1) ? 'yes' : 'no')}</td>` +
+      `<td>${window.esc(r['Party'] || '—')}</td>` +
+      `<td>${window.esc(r['District'] || '—')}</td>` +
+      `<td>${window.esc(r['Term Start'] || '—')}</td>` +
+      `<td>${window.esc(r['Term End'] || '—')}</td>` +
+      `<td>${window.esc(r['Term Start Year'] ?? '—')}</td>` +
+      `<td>${window.esc(r['Term End Year'] ?? '—')}</td>` +
+      '</tr>';
+  }
+
+  html += '</tbody></table>';
+  container.innerHTML = html;
+  meta.textContent = `Showing ${rows.length} parsed row${rows.length === 1 ? '' : 's'}.`;
+  wrap.style.display = '';
+  btn.disabled = false;
+}
+
+function setPreviewAsExpected() {
+  if (!lastPreview) return;
+  const expected = lastPreview.actual;
+  document.getElementById('expected_json').value = JSON.stringify(expected, null, 2);
+}
+
+
+async function editOne(id) {
+  const out = document.getElementById('createOutput');
+  out.textContent = 'Loading test for edit...';
+  try {
+    const r = await fetch(`/api/test-scripts/${id}`);
+    const data = await r.json();
+    if (!r.ok || data.ok === false) {
+      out.textContent = JSON.stringify(data, null, 2);
+      return;
+    }
+    const t = data.test || {};
+    editingTestId = t.id;
+    editingOriginalHtmlFile = t.html_file || null;
+    document.getElementById('name').value = t.name || '';
+    document.getElementById('test_type').value = t.test_type || 'table_config';
+    document.getElementById('enabled').checked = !!t.enabled;
+    document.getElementById('source_url').value = t.source_url || '';
+
+    const c = t.config_json || {};
+    preservedConfigExtras = {};
+    for (const [k, v] of Object.entries(c)) {
+      if (String(k).startsWith('_')) preservedConfigExtras[k] = v;
+    }
+    const setVal = (id, v, fallback='') => { document.getElementById(id).value = (v === null || v === undefined) ? fallback : v; };
+    setVal('table_name', c.name || '');
+    setVal('table_no', c.table_no, 1);
+    setVal('table_rows', c.table_rows, 4);
+    setVal('link_column', c.link_column, 1);
+    setVal('party_column', c.party_column, 0);
+    setVal('term_start_column', c.term_start_column, 4);
+    setVal('term_end_column', c.term_end_column, 5);
+    setVal('district_column', c.district_column, 0);
+    document.getElementById('term_dates_merged').checked = !!c.term_dates_merged;
+    document.getElementById('party_ignore').checked = !!c.party_ignore;
+    document.getElementById('district_mode').value = c.district_ignore ? 'no_district' : (c.district_at_large ? 'at_large' : 'column');
+    document.getElementById('dynamic_parse').checked = !!c.dynamic_parse;
+    document.getElementById('read_right_to_left').checked = !!c.read_right_to_left;
+    document.getElementById('date_source').value = c.find_date_in_infobox ? 'find_date_in_infobox' : (c.years_only ? 'years_only' : 'not_applicable');
+    document.getElementById('parse_rowspan').checked = !!c.parse_rowspan;
+    document.getElementById('consolidate_rowspan_terms').checked = !!c.consolidate_rowspan_terms;
+    document.getElementById('rep_link').checked = !!c.rep_link;
+    document.getElementById('party_link').checked = !!c.party_link;
+    document.getElementById('use_full_page_for_table').checked = !!c.use_full_page_for_table;
+
+    document.getElementById('expected_json').value = t.expected_json ? JSON.stringify(t.expected_json, null, 2) : '';
+    document.getElementById('editModeName').textContent = `${t.name || ''} (#${t.id})`;
+    document.getElementById('editModeBanner').style.display = '';
+    document.getElementById('saveBtn').textContent = 'Save changes';
+    document.getElementById('saveBtn').disabled = false;
+    syncTableConfigControls();
+    out.textContent = 'Loaded test for edit. Run Preview to review parser output before saving.';
+  } catch (e) {
+    out.textContent = 'Error loading test: ' + e;
+  }
+}
+
+function cancelEditMode() {
+  editingTestId = null;
+  editingOriginalHtmlFile = null;
+  preservedConfigExtras = {};
+  document.getElementById('editModeBanner').style.display = 'none';
+  document.getElementById('editModeName').textContent = '';
+  document.getElementById('saveBtn').textContent = 'Save test script';
+  document.getElementById('saveBtn').disabled = !lastPreview;
+}
+
+function syncTableConfigControls() {
+  const isTable = document.getElementById('test_type').value === 'table_config';
+  document.getElementById('tableConfigPanel').style.display = isTable ? '' : 'none';
+  if (!isTable) renderParsedTablePreview(null); else if (lastPreview) renderParsedTablePreview(lastPreview);
+
+  const merged = document.getElementById('term_dates_merged').checked;
+  const termEndInput = document.getElementById('term_end_column');
+  termEndInput.disabled = merged;
+
+  const partyIgnore = document.getElementById('party_ignore').checked;
+  document.getElementById('party_column').disabled = partyIgnore;
+
+  const districtMode = document.getElementById('district_mode').value;
+  document.getElementById('district_column').disabled = districtMode !== 'column';
+}
+
+async function previewScript() {
+  const out = document.getElementById('createOutput');
+  out.textContent = 'Fetching from Wikipedia API and running preview...';
+  try {
+    const payload = {
+      source_url: document.getElementById('source_url').value,
+      test_type: document.getElementById('test_type').value,
+      config_json: buildConfig(),
+      expected_json: parseJsonOrEmpty(document.getElementById('expected_json').value),
+    };
+    const r = await fetch('/api/test-scripts/preview', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload),
+    });
+    const data = await r.json();
+    if (!r.ok || data.ok === false) {
+      out.textContent = JSON.stringify(data, null, 2);
+      lastPreview = null;
+      document.getElementById('saveBtn').disabled = true;
+      renderParsedTablePreview(null);
+      return;
+    }
+    lastPreview = data;
+    document.getElementById('saveBtn').disabled = false;
+    renderParsedTablePreview(data);
+    const rows = Array.isArray(data.actual) ? data.actual.length : 0;
+    out.textContent = `Preview complete. Parsed ${rows} row${rows === 1 ? '' : 's'}. Review the table below.`;
+  } catch (e) {
+    out.textContent = 'Error: ' + e;
+    lastPreview = null;
+    document.getElementById('saveBtn').disabled = true;
+    renderParsedTablePreview(null);
+  }
+}
+
+async function saveScript() {
+  const out = document.getElementById('createOutput');
+  if (editingTestId === null && (!lastPreview || !lastPreview.html)) {
+    out.textContent = 'Preview first before saving.';
+    return;
+  }
+  try {
+    let expectedJson = parseJsonOrEmpty(document.getElementById('expected_json').value);
+    if (lastPreview && (expectedJson === null || (Array.isArray(expectedJson) && expectedJson.length === 0))) expectedJson = lastPreview.actual;
+
+    let overwriteHtml = false;
+    let deleteExistingFiles = false;
+    let htmlToSend = (lastPreview && lastPreview.html) ? lastPreview.html : '';
+    if (editingTestId !== null) {
+      const answer = window.confirm('Do you want to delete the existing local HTML file and overwrite with a new one from current preview?\n\nOK = overwrite with new HTML and delete old file\nCancel = keep existing local HTML file');
+      overwriteHtml = !!answer;
+      deleteExistingFiles = !!answer;
+      if (overwriteHtml && !htmlToSend) {
+        out.textContent = 'Run Preview first so a new HTML snapshot is available for overwrite.';
+        return;
+      }
+      if (!overwriteHtml) {
+        htmlToSend = '';
+      }
+    }
+
+    const payload = {
+      test_id: editingTestId,
+      name: document.getElementById('name').value,
+      test_type: document.getElementById('test_type').value,
+      enabled: document.getElementById('enabled').checked,
+      source_url: document.getElementById('source_url').value,
+      config_json: buildConfig(),
+      expected_json: expectedJson,
+      html: htmlToSend,
+      overwrite_html: overwriteHtml,
+      delete_existing_files: deleteExistingFiles,
+    };
+    const r = await fetch('/api/test-scripts', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload),
+    });
+    const data = await r.json();
+    if (!r.ok || data.ok === false) {
+      out.textContent = JSON.stringify(data, null, 2);
+      return;
+    }
+    out.textContent = 'Saved. Reloading...';
+    cancelEditMode();
+    window.location.reload();
+  } catch (e) {
+    out.textContent = 'Error: ' + e;
+  }
+}
+
+async function toggleEnabled(id, enabled) {
+  await fetch(`/api/test-scripts/${id}/enabled`, {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:`enabled=${enabled?1:0}`});
+}
+async function runOne(id) {
+  const el = document.getElementById(`out-${id}`);
+  const link = document.getElementById(`out-link-${id}`);
+  el.textContent = 'Running...';
+  link.style.display = 'none';
+  const r = await fetch(`/api/test-scripts/${id}/run`, {method:'POST'});
+  const data = await r.json();
+  const pass = !!data.passed;
+  el.textContent = pass ? 'PASS' : 'FAIL';
+  if (data.result_url) {
+    link.href = data.result_url;
+    link.style.display = '';
+  }
+}
+async function runAllEnabled() {
+  const out = document.getElementById('runAllOutput');
+  out.textContent = 'Running enabled tests...';
+  const r = await fetch('/api/test-scripts/run-enabled', {method:'POST'});
+  const data = await r.json();
+  const lines = [];
+  lines.push(`Passed ${data.passed}/${data.count}`);
+  for (const row of (data.results || [])) {
+    lines.push(`- ${row.name}: ${row.passed ? 'PASS' : 'FAIL'}${row.result_url ? ' -> ' + row.result_url : ''}`);
+    const el = document.getElementById(`out-${row.id}`);
+    const link = document.getElementById(`out-link-${row.id}`);
+    if (el) el.textContent = row.passed ? 'PASS' : 'FAIL';
+    if (link && row.result_url) {
+      link.href = row.result_url;
+      link.style.display = '';
+    }
+  }
+  out.textContent = lines.join('\n');
+}
+
+document.getElementById('runEnabledBtn').addEventListener('click', runAllEnabled);
+document.getElementById('previewBtn').addEventListener('click', previewScript);
+document.getElementById('saveBtn').addEventListener('click', saveScript);
+document.getElementById('usePreviewAsExpectedBtn').addEventListener('click', setPreviewAsExpected);
+document.getElementById('cancelEditBtn').addEventListener('click', cancelEditMode);
+['test_type','term_dates_merged','party_ignore','district_mode'].forEach((id) => {
+  document.getElementById(id).addEventListener('change', syncTableConfigControls);
+});
+syncTableConfigControls();
+</script>
+{% endblock %}

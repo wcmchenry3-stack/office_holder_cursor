@@ -14,6 +14,8 @@ import sys
 import threading
 import uuid
 
+import requests
+
 # Ensure project root is on path
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
@@ -33,9 +35,12 @@ from src.db import office_category as db_office_category
 from src.db import individuals as db_individuals
 from src.db import office_terms as db_office_terms
 from src.db import reports as db_reports
+from src.db import test_scripts as db_test_scripts
 from src.db.bulk_import import bulk_import_offices_from_csv, bulk_import_parties_from_csv
 from src.scraper.runner import run_with_db, preview_with_config, parse_full_table_for_export
 from src.scraper.config_test import test_office_config, get_raw_table_preview, get_all_tables_preview, get_table_html, get_table_header_from_html
+from src.scraper.test_script_runner import run_test_script, run_test_script_from_html
+from src.scraper.wiki_fetch import WIKIPEDIA_REQUEST_HEADERS, wiki_url_to_rest_html_url, normalize_wiki_url
 
 app = FastAPI(title="Office Holder")
 # Resolve to absolute path so template dir is correct regardless of process cwd
@@ -54,6 +59,8 @@ _preview_job_store: dict = {}
 _preview_job_lock = threading.Lock()
 _export_job_store: dict = {}
 _export_job_lock = threading.Lock()
+_test_script_result_store: dict = {}
+_test_script_result_lock = threading.Lock()
 
 # Stoppable process types: server-side (e.g. "run") have a cancel endpoint and job store with cancelled flag;
 # client-side (e.g. "preview_all") use a Stop button and a running/stopped flag (optional AbortController).
@@ -1704,6 +1711,284 @@ async def api_cities(state_id: int = Query(0)):
 
 
 # ---------- Run scraper ----------
+
+
+def _snapshot_member_pages_for_test(
+    *,
+    source_url: str,
+    config_json: dict,
+    html_content: str,
+    file_prefix: str,
+) -> tuple[dict, list[str], list[str], list[dict]]:
+    """Return (config_with_fixtures, fetched_urls, saved_files, actual_rows) for infobox-enabled table tests."""
+    cfg = dict(config_json or {})
+    if not (cfg.get("find_date_in_infobox") and html_content.strip()):
+        return cfg, [], [], []
+    preview = run_test_script_from_html(
+        test_type="table_config",
+        html_content=html_content,
+        config_json=cfg,
+        source_url=source_url,
+        expected_json=None,
+    )
+    rows = preview.get("actual") if isinstance(preview, dict) else []
+    if not isinstance(rows, list):
+        rows = []
+
+    member_urls: list[str] = []
+    seen: set[str] = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        u = (row.get("Wiki Link") or "").strip()
+        if not u or u == "No link":
+            continue
+        nu = normalize_wiki_url(u) or u
+        if nu in seen:
+            continue
+        seen.add(nu)
+        member_urls.append(nu)
+
+    fixtures: dict[str, str] = {}
+    saved_files: list[str] = []
+    for idx, member_url in enumerate(member_urls):
+        fetch_url = wiki_url_to_rest_html_url(member_url) or member_url
+        try:
+            resp = requests.get(fetch_url, headers=WIKIPEDIA_REQUEST_HEADERS, timeout=30)
+        except requests.RequestException:
+            continue
+        if resp.status_code != 200:
+            continue
+        safe_member = re.sub(r"[^a-zA-Z0-9._-]+", "_", (member_url.split("/")[-1] or f"member_{idx+1}"))
+        rel_name = f"{file_prefix}_{safe_member}.html"
+        dest = db_test_scripts.TEST_SCRIPTS_DIR / rel_name
+        dest.write_text(resp.text, encoding="utf-8")
+        fixtures[member_url] = rel_name
+        saved_files.append(rel_name)
+
+    if fixtures:
+        cfg["_member_fixtures"] = fixtures
+    return cfg, member_urls, saved_files, rows
+
+
+def _store_test_script_result(payload: dict) -> str:
+    rid = uuid.uuid4().hex
+    with _test_script_result_lock:
+        _test_script_result_store[rid] = payload
+    return rid
+
+
+@app.get("/test-scripts/results/{result_id}", response_class=HTMLResponse)
+async def test_script_result_page(request: Request, result_id: str):
+    with _test_script_result_lock:
+        payload = _test_script_result_store.get(result_id)
+    if not payload:
+        raise HTTPException(status_code=404, detail="Result not found")
+    return templates.TemplateResponse("test_script_result.html", {"request": request, "payload": payload, "result_id": result_id})
+
+
+@app.get("/test-scripts", response_class=HTMLResponse)
+async def test_scripts_page(request: Request):
+    tests = db_test_scripts.list_tests()
+    return templates.TemplateResponse("test_scripts.html", {"request": request, "tests": tests})
+
+
+@app.get("/api/test-scripts/{test_id}")
+async def api_get_test_script(test_id: int):
+    row = db_test_scripts.get_test(test_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Test script not found")
+    return JSONResponse({"ok": True, "test": row})
+
+
+@app.post("/api/test-scripts/preview")
+async def api_preview_test_script(request: Request):
+    """Fetch Wikipedia HTML, run parser preview, return html payload + actual output."""
+    body = await request.json()
+    source_url = (body.get("source_url") or "").strip()
+    test_type = (body.get("test_type") or "table_config").strip()
+    config_json = body.get("config_json") if isinstance(body.get("config_json"), dict) else {}
+    expected_json = body.get("expected_json")
+    if not source_url:
+        raise HTTPException(status_code=400, detail="source_url is required")
+
+    fetch_url = wiki_url_to_rest_html_url(source_url) or source_url
+    try:
+        resp = requests.get(fetch_url, headers=WIKIPEDIA_REQUEST_HEADERS, timeout=30)
+    except requests.RequestException as e:
+        raise HTTPException(status_code=502, detail=f"Failed to fetch page: {e}") from e
+    if resp.status_code != 200:
+        raise HTTPException(status_code=502, detail=f"Failed to fetch page: HTTP {resp.status_code}")
+
+    html_content = resp.text
+    try:
+        preview = run_test_script_from_html(
+            test_type=test_type,
+            html_content=html_content,
+            config_json=config_json,
+            source_url=source_url,
+            expected_json=expected_json,
+        )
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e), "html": html_content}, status_code=200)
+    return JSONResponse({"ok": True, "html": html_content, **preview})
+
+
+@app.post("/api/test-scripts")
+async def api_create_test_script(request: Request):
+    """Create/update script. On update, optionally overwrite local HTML snapshot."""
+    body = await request.json()
+    test_id_raw = body.get("test_id")
+    test_id = int(test_id_raw) if str(test_id_raw).strip().isdigit() else None
+
+    name = (body.get("name") or "").strip()
+    test_type = (body.get("test_type") or "table_config").strip()
+    source_url = (body.get("source_url") or "").strip()
+    html_content = body.get("html") or ""
+    enabled = bool(body.get("enabled", True))
+    config_json = body.get("config_json") if isinstance(body.get("config_json"), dict) else {}
+    expected_json = body.get("expected_json")
+    overwrite_html = bool(body.get("overwrite_html", False))
+    delete_existing_files = bool(body.get("delete_existing_files", False))
+
+    def _expected_missing(v):
+        return v is None or (isinstance(v, list) and len(v) == 0)
+
+    if not name:
+        raise HTTPException(status_code=400, detail="name is required")
+
+    db_test_scripts.ensure_test_scripts_dir()
+
+    # Update existing test
+    if test_id is not None:
+        existing = db_test_scripts.get_test(test_id)
+        if not existing:
+            raise HTTPException(status_code=404, detail="Test script not found")
+
+        html_file = existing.get("html_file") or ""
+        if overwrite_html:
+            if not html_content.strip():
+                raise HTTPException(status_code=400, detail="Preview first to fetch new HTML before overwriting")
+            safe_page = re.sub(r"[^a-zA-Z0-9._-]+", "_", (source_url.split("/")[-1] or "wiki_page"))
+            prefix = f"{uuid.uuid4().hex}_{safe_page}"
+            dest = db_test_scripts.TEST_SCRIPTS_DIR / f"{prefix}.html"
+            dest.write_text(html_content, encoding="utf-8")
+            html_file = dest.name
+
+            config_json, _member_urls, _member_files, auto_rows = _snapshot_member_pages_for_test(
+                source_url=source_url,
+                config_json=config_json,
+                html_content=html_content,
+                file_prefix=prefix,
+            )
+            if _expected_missing(expected_json):
+                expected_json = auto_rows
+
+            if delete_existing_files and (existing.get("html_file") or "").strip():
+                old_path = (db_test_scripts.TEST_SCRIPTS_DIR / existing["html_file"]).resolve()
+                try:
+                    if db_test_scripts.TEST_SCRIPTS_DIR in old_path.parents and old_path.exists():
+                        old_path.unlink()
+                except Exception:
+                    pass
+            if delete_existing_files and isinstance(existing.get("config_json"), dict):
+                old_fx = existing["config_json"].get("_member_fixtures")
+                if isinstance(old_fx, dict):
+                    for _, rel_name in old_fx.items():
+                        if not isinstance(rel_name, str):
+                            continue
+                        old_member = (db_test_scripts.TEST_SCRIPTS_DIR / rel_name).resolve()
+                        try:
+                            if db_test_scripts.TEST_SCRIPTS_DIR in old_member.parents and old_member.exists():
+                                old_member.unlink()
+                        except Exception:
+                            pass
+
+        db_test_scripts.update_test(test_id, {
+            "name": name,
+            "test_type": test_type,
+            "enabled": enabled,
+            "source_url": source_url,
+            "html_file": html_file,
+            "config_json": config_json,
+            "expected_json": expected_json,
+        })
+        return JSONResponse({"ok": True, "id": test_id, "html_file": html_file, "updated": True})
+
+    # Create new test
+    if not html_content.strip():
+        raise HTTPException(status_code=400, detail="Preview first to fetch HTML before saving")
+
+    safe_page = re.sub(r"[^a-zA-Z0-9._-]+", "_", (source_url.split("/")[-1] or "wiki_page"))
+    prefix = f"{uuid.uuid4().hex}_{safe_page}"
+    dest = db_test_scripts.TEST_SCRIPTS_DIR / f"{prefix}.html"
+    dest.write_text(html_content, encoding="utf-8")
+
+    config_json, _member_urls, _member_files, auto_rows = _snapshot_member_pages_for_test(
+        source_url=source_url,
+        config_json=config_json,
+        html_content=html_content,
+        file_prefix=prefix,
+    )
+    if _expected_missing(expected_json):
+        expected_json = auto_rows
+
+    new_test_id = db_test_scripts.create_test({
+        "name": name,
+        "test_type": test_type,
+        "enabled": enabled,
+        "source_url": source_url,
+        "html_file": dest.name,
+        "config_json": config_json,
+        "expected_json": expected_json,
+    })
+    return JSONResponse({"ok": True, "id": new_test_id, "html_file": dest.name, "updated": False})
+
+
+@app.post("/api/test-scripts/{test_id}/enabled")
+async def api_toggle_test_script(test_id: int, enabled: int = Form(...)):
+    db_test_scripts.update_test_enabled(test_id, bool(enabled))
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/test-scripts/{test_id}/delete")
+async def api_delete_test_script(test_id: int):
+    db_test_scripts.delete_test(test_id)
+    return RedirectResponse("/test-scripts", status_code=303)
+
+
+@app.post("/api/test-scripts/{test_id}/run")
+async def api_run_one_test_script(test_id: int):
+    row = db_test_scripts.get_test(test_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Test script not found")
+    try:
+        result = run_test_script(row)
+        payload = {"type": "single", "test_id": test_id, "name": row.get("name"), "result": result}
+        rid = _store_test_script_result(payload)
+    except Exception as e:
+        payload = {"type": "single", "test_id": test_id, "name": row.get("name"), "result": {"passed": False, "error": str(e)}}
+        rid = _store_test_script_result(payload)
+        return JSONResponse({"ok": False, "name": row.get("name"), "error": str(e), "passed": False, "result_id": rid, "result_url": f"/test-scripts/results/{rid}"}, status_code=200)
+    return JSONResponse({"ok": True, "name": row.get("name"), "passed": bool(result.get("passed")), "result_id": rid, "result_url": f"/test-scripts/results/{rid}"})
+
+
+@app.post("/api/test-scripts/run-enabled")
+async def api_run_enabled_test_scripts():
+    rows = [t for t in db_test_scripts.list_tests() if t.get("enabled")]
+    out = []
+    for row in rows:
+        try:
+            result = run_test_script(row)
+            payload = {"type": "single", "test_id": row["id"], "name": row.get("name"), "result": result}
+            rid = _store_test_script_result(payload)
+            out.append({"id": row["id"], "name": row.get("name"), "passed": bool(result.get("passed")), "result_id": rid, "result_url": f"/test-scripts/results/{rid}"})
+        except Exception as e:
+            payload = {"type": "single", "test_id": row["id"], "name": row.get("name"), "result": {"passed": False, "error": str(e)}}
+            rid = _store_test_script_result(payload)
+            out.append({"id": row["id"], "name": row.get("name"), "passed": False, "error": str(e), "result_id": rid, "result_url": f"/test-scripts/results/{rid}"})
+    return JSONResponse({"count": len(out), "passed": sum(1 for r in out if r.get("passed")), "results": out})
+
 @app.get("/run", response_class=HTMLResponse)
 async def run_page(request: Request):
     offices = db_offices.list_offices()
