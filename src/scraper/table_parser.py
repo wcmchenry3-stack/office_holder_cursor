@@ -293,18 +293,20 @@ class DataCleanup:
       sy = int(year_match.group(0))
       return (sy, sy)
 
-  def find_link_and_data_columns( self , row , max_column_index = None ):
+  def find_link_and_data_columns( self , row , max_column_index = None, min_column_index = None ):
       # Dynamic identification of the link column and subsequent data columns.
       # If max_column_index is set (0-based), only consider cells up to that index so we never
       # pick a link from a non-data column (e.g. President column) when it appears after term dates.
       # #region agent log
       try:
           _log_path = Path(__file__).resolve().parent.parent.parent / ".cursor" / "debug.log"
-          open(_log_path, "a", encoding="utf-8").write(json.dumps({"location": "table_parser:find_link_and_data_columns", "message": "entry", "data": {"len_row": len(row), "max_column_index": max_column_index}, "timestamp": __import__("time").time() * 1000, "hypothesisId": "H2"}) + "\n")
+          open(_log_path, "a", encoding="utf-8").write(json.dumps({"location": "table_parser:find_link_and_data_columns", "message": "entry", "data": {"len_row": len(row), "max_column_index": max_column_index, "min_column_index": min_column_index}, "timestamp": __import__("time").time() * 1000, "hypothesisId": "H2"}) + "\n")
       except Exception:
           pass
       # #endregion
       for i, cell in enumerate(row):
+          if min_column_index is not None and i < min_column_index:
+              continue
           if max_column_index is not None and i > max_column_index:
               break
           try:
@@ -323,6 +325,7 @@ class DataCleanup:
           has_relative = 'href="./' in cell_str and 'href="./File:' not in cell_str and 'href="./Special:' not in cell_str
           has_full_url = 'en.wikipedia.org/wiki/' in cell_str and '/wiki/File:' not in cell_str and '/wiki/Special:' not in cell_str
           has_wiki_link = has_absolute or has_relative or has_full_url
+          has_fragment_link = '#"' in cell_str or '#cite_note' in cell_str
           # Exclude file/special links in any form
           has_file_link = (
               'href="/wiki/File:' in cell_str
@@ -331,7 +334,7 @@ class DataCleanup:
               or 'href="./Special:' in cell_str
               or '/wiki/Special:' in cell_str
           )
-          if has_wiki_link and not has_file_link:
+          if has_wiki_link and not has_file_link and not has_fragment_link:
               # #region agent log
               try:
                   _log_path = Path(__file__).resolve().parent.parent.parent / ".cursor" / "debug.log"
@@ -415,6 +418,22 @@ class Offices:
     self.Biography = biography
 
 
+  def _is_valid_wiki_link(self, link):
+    if not isinstance(link, str):
+      return False
+    candidate = link.strip()
+    if not candidate or candidate == "No link":
+      return False
+    if not candidate.startswith("https://en.wikipedia.org/wiki/"):
+      return False
+    # Keep ignore_non_links useful for parser junk rows too (e.g. congress/election links).
+    if any(re.search(pattern, candidate) for pattern in self.patterns_to_ignore()):
+      return False
+    if "/wiki/File:" in candidate or "/wiki/Special:" in candidate:
+      return False
+    return True
+
+
   def process_table(self, html_content, table_config, office_details, url, party_list, progress_callback=None, max_rows=None):
     self.Logger.log(f"---------------\n\n Processing table with config: {table_config}", True)
 
@@ -463,6 +482,8 @@ class Offices:
 
             cells_td = row.find_all('td')
             row_results = self.parse_table_row(row, table_config, office_details, url,  previous_row_wiki_link, previous_row_district, previous_row_party, party_list)
+            if row_results and table_config.get("ignore_non_links"):
+                row_results = [r for r in row_results if self._is_valid_wiki_link(r.get("Wiki Link"))]
             self.Logger.debug_log( f"results from process table {row_results}" , True )
             appended = bool(row_results)
             if row_results:
@@ -942,7 +963,8 @@ class Offices:
                       path = "/wiki/" + raw_href
                   full_url = normalize_wiki_url(f"https://en.wikipedia.org{path}") or f"https://en.wikipedia.org{path}"
                   self.Logger.debug_log(f"found full url {full_url}", True)
-                  should_ignore = any(re.search(pattern, full_url) for pattern in self.patterns_to_ignore())
+                  has_fragment = "#" in full_url
+                  should_ignore = any(re.search(pattern, full_url) for pattern in self.patterns_to_ignore()) or has_fragment
                   party_links = {p.get('link') for p in party_list.get(country, []) if p.get('link')}
                   if not should_ignore and full_url not in party_links:
                       self.Logger.debug_log(f"URL passed all checks: {full_url}", True)
@@ -1211,32 +1233,39 @@ class Offices:
 
     self.Logger.debug_log( f"running process_columns right to left" , True )
 
-    # define column_no variables. Add one as these are zero-based indices. Essentially this functions subtracts total_columns from the col_no.
-    link_column = table_config_to_parse["link_column"] + 1
-    party_column = table_config_to_parse["party_column"] + 1
-    term_start_column = table_config_to_parse["term_start_column"] + 1
-    term_end_column = table_config_to_parse["term_end_column"] + 1
+    # RTL should mirror LTR column counting: user enters columns from the right edge,
+    # but parser still indexes cells left->right. So col 0 (form: 1) means rightmost cell.
+    # Keep negative columns (e.g. -1 = unconfigured) unchanged.
+    def _rtl_to_ltr_index(col_index):
+      if col_index is None:
+        return None
+      if col_index < 0:
+        return col_index
+      return total_columns - (col_index + 1)
 
-    link_column_old = link_column
-    link_column = total_columns - link_column_old
-    self.Logger.debug_log( f"new link column {link_column} after subtracting {total_columns} from {link_column_old}", True )
+    link_column_old = table_config_to_parse.get("link_column")
+    party_column_old = table_config_to_parse.get("party_column")
+    term_start_column_old = table_config_to_parse.get("term_start_column")
+    term_end_column_old = table_config_to_parse.get("term_end_column")
+    district_column_old = table_config_to_parse.get("district_column")
 
-    party_column_old = party_column
-    party_column = total_columns - party_column_old
-    self.Logger.debug_log( f"party column {party_column} after subtracting {total_columns} from {party_column_old}", True )
+    link_column = _rtl_to_ltr_index(link_column_old)
+    party_column = _rtl_to_ltr_index(party_column_old)
+    term_start_column = _rtl_to_ltr_index(term_start_column_old)
+    term_end_column = _rtl_to_ltr_index(term_end_column_old)
+    district_column = _rtl_to_ltr_index(district_column_old)
 
-    term_start_column_old = term_start_column
-    term_start_column = total_columns - term_start_column_old
-    self.Logger.debug_log( f"term start {term_start_column} after subtracting {total_columns} from {term_start_column_old}", True )
-
-    term_end_column_old = term_end_column
-    term_end_column = total_columns - term_end_column_old
-    self.Logger.debug_log( f"term end {term_end_column} after subtracting {total_columns} from {term_end_column_old}", True )
+    self.Logger.debug_log( f"new link column {link_column} after rtl conversion from {link_column_old} with total {total_columns}", True )
+    self.Logger.debug_log( f"party column {party_column} after rtl conversion from {party_column_old} with total {total_columns}", True )
+    self.Logger.debug_log( f"term start {term_start_column} after rtl conversion from {term_start_column_old} with total {total_columns}", True )
+    self.Logger.debug_log( f"term end {term_end_column} after rtl conversion from {term_end_column_old} with total {total_columns}", True )
+    self.Logger.debug_log( f"district column {district_column} after rtl conversion from {district_column_old} with total {total_columns}", True )
 
     table_config_to_parse["link_column"] = link_column
     table_config_to_parse["party_column"] = party_column
     table_config_to_parse["term_start_column"] = term_start_column
     table_config_to_parse["term_end_column"] = term_end_column
+    table_config_to_parse["district_column"] = district_column
 
     return table_config_to_parse
 
@@ -1250,15 +1279,51 @@ class Offices:
     term_end_column = table_config_to_parse["term_end_column"]
     district_column = table_config_to_parse["district_column"]
 
-    # Only search columns up to and including term_end_column so we never pick the link from
-    # a column after the term dates (e.g. Lt. Governor or President column).
-    max_link_col = max(0, term_end_column) if term_end_column is not None and term_end_column >= 0 else None
+    row_len = len(cells)
+    if row_len == 0:
+      return False, table_config_to_parse
+
+    # Explicit bounds override default behavior.
+    dynamic_link_min_col = table_config_to_parse.get("dynamic_link_min_col")
+    dynamic_link_max_col = table_config_to_parse.get("dynamic_link_max_col")
+    if dynamic_link_min_col is not None or dynamic_link_max_col is not None:
+      min_link_col = dynamic_link_min_col if dynamic_link_min_col is not None else 0
+      max_link_col = dynamic_link_max_col if dynamic_link_max_col is not None else (row_len - 1)
+    else:
+      # Backward compatibility: bound by term_end and parse direction.
+      if table_config_to_parse.get("read_columns_right_to_left") == True:
+        min_link_col = term_end_column if term_end_column is not None else 0
+        max_link_col = row_len - 1
+      else:
+        min_link_col = 0
+        max_link_col = term_end_column if term_end_column is not None and term_end_column >= 0 else (row_len - 1)
+
+    # Clamp to row bounds.
+    min_link_col = max(0, min(int(min_link_col), row_len - 1))
+    max_link_col = max(0, min(int(max_link_col), row_len - 1))
+
+    if min_link_col > max_link_col:
+      min_link_col, max_link_col = 0, row_len - 1
+
     link_column_old = link_column
-    link_column_result = self.DataCleanup.find_link_and_data_columns(cells, max_column_index=max_link_col)
+    link_column_result = self.DataCleanup.find_link_and_data_columns(
+      cells,
+      max_column_index=max_link_col,
+      min_column_index=min_link_col,
+    )
+
+    used_fallback_scan = False
+    if link_column_result is None:
+      used_fallback_scan = True
+      link_column_result = self.DataCleanup.find_link_and_data_columns(cells, max_column_index=row_len - 1, min_column_index=0)
 
     # Stop loop if no link is found
     if link_column_result is None:
-        self.Logger.debug_log("Link column not found, skipping this row.", True )
+        table_no = table_config_to_parse.get("table_no", "unknown")
+        self.Logger.debug_log(
+          f"DynamicParse table={table_no}: no link found (bounds {min_link_col}..{max_link_col}, fallback full-row {'failed' if used_fallback_scan else 'not-run'}). Row skipped.",
+          True,
+        )
         # Return False indicating the link column was not found, alongside original columns
         table_config_to_parse["link_column"] = link_column
         table_config_to_parse["party_column"] = party_column
@@ -1709,6 +1774,5 @@ class Biography:
           pass
       # #endregion
       return ([("YYYY-00-00", "YYYY-00-00")], infobox_items if infobox_items else ["No dates found (placeholder)."])
-
 
 

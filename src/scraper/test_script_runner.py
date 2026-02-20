@@ -108,6 +108,7 @@ DEFAULT_TABLE_CONFIG = {
     "party_ignore": False,
     "district_ignore": False,
     "district_at_large": False,
+    "ignore_non_links": False,
 }
 
 

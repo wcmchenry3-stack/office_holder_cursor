@@ -42,6 +42,7 @@
     <div class="form-row">
       <div class="form-group checkbox-group"><label><input type="checkbox" id="term_dates_merged"> Term dates merged</label></div>
       <div class="form-group checkbox-group"><label><input type="checkbox" id="party_ignore"> Ignore party</label></div>
+      <div class="form-group checkbox-group"><label><input type="checkbox" id="ignore_non_links"> Ignore non-links</label></div>
       <div class="form-group">
         <label>District</label>
         <select id="district_mode">
@@ -155,6 +156,7 @@ function buildConfig() {
     district_column: n('district_column', 0),
     term_dates_merged: document.getElementById('term_dates_merged').checked,
     party_ignore: document.getElementById('party_ignore').checked,
+    ignore_non_links: document.getElementById('ignore_non_links').checked,
     district_ignore: districtMode === 'no_district',
     district_at_large: districtMode === 'at_large',
     dynamic_parse: document.getElementById('dynamic_parse').checked,
@@ -255,6 +257,7 @@ async function editOne(id) {
     setVal('district_column', c.district_column, 0);
     document.getElementById('term_dates_merged').checked = !!c.term_dates_merged;
     document.getElementById('party_ignore').checked = !!c.party_ignore;
+    document.getElementById('ignore_non_links').checked = !!c.ignore_non_links;
     document.getElementById('district_mode').value = c.district_ignore ? 'no_district' : (c.district_at_large ? 'at_large' : 'column');
     document.getElementById('dynamic_parse').checked = !!c.dynamic_parse;
     document.getElementById('read_right_to_left').checked = !!c.read_right_to_left;
@@ -437,7 +440,7 @@ document.getElementById('previewBtn').addEventListener('click', previewScript);
 document.getElementById('saveBtn').addEventListener('click', saveScript);
 document.getElementById('usePreviewAsExpectedBtn').addEventListener('click', setPreviewAsExpected);
 document.getElementById('cancelEditBtn').addEventListener('click', cancelEditMode);
-['test_type','term_dates_merged','party_ignore','district_mode'].forEach((id) => {
+['test_type','term_dates_merged','party_ignore','ignore_non_links','district_mode'].forEach((id) => {
   document.getElementById(id).addEventListener('change', syncTableConfigControls);
 });
 syncTableConfigControls();

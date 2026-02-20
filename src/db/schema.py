@@ -134,6 +134,7 @@ CREATE TABLE IF NOT EXISTS office_table_config (
     party_ignore INTEGER NOT NULL DEFAULT 0,
     district_ignore INTEGER NOT NULL DEFAULT 0,
     district_at_large INTEGER NOT NULL DEFAULT 0,
+    ignore_non_links INTEGER NOT NULL DEFAULT 0,
     consolidate_rowspan_terms INTEGER NOT NULL DEFAULT 0,
     notes TEXT,
     name TEXT,
@@ -177,6 +178,7 @@ CREATE TABLE IF NOT EXISTS offices (
     party_ignore INTEGER NOT NULL DEFAULT 0,
     district_ignore INTEGER NOT NULL DEFAULT 0,
     district_at_large INTEGER NOT NULL DEFAULT 0,
+    ignore_non_links INTEGER NOT NULL DEFAULT 0,
     created_at TEXT DEFAULT (datetime('now'))
 );
 
