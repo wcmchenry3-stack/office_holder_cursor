@@ -15,11 +15,21 @@
       <option value="delta_no_bio_refresh">Delta run (no bio, refresh cache)</option>
       <option value="bios_only">Bios only (update all individuals)</option>
       <option value="single_bio">Re-run bio for one individual</option>
+      <option value="populate_category_terms">Populate terms for office category</option>
     </select>
   </div>
   <div class="form-group" id="individualRefGroup" style="display:none;">
     <label>Individual (ID or Wikipedia URL)</label>
     <input type="text" name="individual_ref" id="individualRef" placeholder="e.g. 42 or https://en.wikipedia.org/wiki/John_Doe">
+  </div>
+  <div class="form-group" id="officeCategoryGroup" style="display:none;">
+    <label>Office category</label>
+    <select name="office_category_id" id="officeCategoryId">
+      <option value="">Select office category</option>
+      {% for oc in office_categories %}
+      <option value="{{ oc.id }}">{{ oc.name }}</option>
+      {% endfor %}
+    </select>
   </div>
   <div class="form-group checkbox-group">
     <label><input type="checkbox" name="force_overwrite" value="1"> Force overwrite – when validation fails (new list missing existing holders), replace terms anyway</label>
@@ -89,11 +99,13 @@
 (function() {
   const runMode = document.getElementById('runMode');
   const individualRefGroup = document.getElementById('individualRefGroup');
-  function toggleIndividualRef() {
+  const officeCategoryGroup = document.getElementById('officeCategoryGroup');
+  function toggleRunModeFields() {
     individualRefGroup.style.display = runMode.value === 'single_bio' ? 'block' : 'none';
+    officeCategoryGroup.style.display = runMode.value === 'populate_category_terms' ? 'block' : 'none';
   }
-  runMode.addEventListener('change', toggleIndividualRef);
-  toggleIndividualRef();
+  runMode.addEventListener('change', toggleRunModeFields);
+  toggleRunModeFields();
 })();
 document.getElementById('runForm').addEventListener('submit', async (e) => {
   e.preventDefault();

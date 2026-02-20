@@ -64,6 +64,15 @@
       {% endfor %}
     </select>
   </div>
+  <div class="form-group" style="margin:0; min-width:12rem;">
+    <label for="filterOfficeCategory">Office category</label>
+    <select name="office_category_id" id="filterOfficeCategory" class="page-col-filter">
+      <option value="">All</option>
+      {% for oc in office_categories %}
+      <option value="{{ oc.id }}" {% if filter_office_category_id and oc.id == filter_office_category_id %}selected{% endif %}>{{ oc.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
   <div class="form-group" style="margin:0; min-width:8rem;">
     <label for="filterEnabled">On/Off</label>
     <select name="enabled" id="filterEnabled" class="page-col-filter">
@@ -102,13 +111,13 @@
   function hasFilterParams() {
     var params = new URLSearchParams(window.location.search);
     return params.has('country_id') || params.has('state_id') || params.has('level_id') ||
-           params.has('branch_id') || params.has('enabled') || params.has('limit') || params.has('office_count');
+           params.has('branch_id') || params.has('office_category_id') || params.has('enabled') || params.has('limit') || params.has('office_count');
   }
 
   function buildQueryFromForm(form) {
     var fd = new FormData(form);
     var parts = [];
-    ['country_id', 'state_id', 'level_id', 'branch_id', 'enabled', 'limit', 'office_count'].forEach(function(name) {
+    ['country_id', 'state_id', 'level_id', 'branch_id', 'office_category_id', 'enabled', 'limit', 'office_count'].forEach(function(name) {
       var v = fd.get(name);
       if (v !== null && v !== undefined && String(v).trim() !== '') parts.push(encodeURIComponent(name) + '=' + encodeURIComponent(v));
     });
