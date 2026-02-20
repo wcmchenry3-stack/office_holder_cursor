@@ -1777,6 +1777,17 @@ def _snapshot_member_pages_for_test(
     return cfg, member_urls, saved_files, rows
 
 
+
+
+def _table_config_properties_array(config_json: dict | None) -> list[dict]:
+    """Return stable key/value array of table config properties for result payload debug JSON."""
+    if not isinstance(config_json, dict):
+        return []
+    out = []
+    for key in sorted(config_json.keys()):
+        out.append({"property": key, "value": config_json.get(key)})
+    return out
+
 def _store_test_script_result(payload: dict) -> str:
     rid = uuid.uuid4().hex
     with _test_script_result_lock:
@@ -1970,10 +1981,10 @@ async def api_run_one_test_script(test_id: int):
         raise HTTPException(status_code=404, detail="Test script not found")
     try:
         result = run_test_script(row)
-        payload = {"type": "single", "test_id": test_id, "name": row.get("name"), "result": result}
+        payload = {"type": "single", "test_id": test_id, "name": row.get("name"), "result": result, "config_json": row.get("config_json") or {}, "table_config_properties": _table_config_properties_array(row.get("config_json"))}
         rid = _store_test_script_result(payload)
     except Exception as e:
-        payload = {"type": "single", "test_id": test_id, "name": row.get("name"), "result": {"passed": False, "error": str(e)}}
+        payload = {"type": "single", "test_id": test_id, "name": row.get("name"), "result": {"passed": False, "error": str(e)}, "config_json": row.get("config_json") or {}, "table_config_properties": _table_config_properties_array(row.get("config_json"))}
         rid = _store_test_script_result(payload)
         return JSONResponse({"ok": False, "name": row.get("name"), "error": str(e), "passed": False, "result_id": rid, "result_url": f"/test-scripts/results/{rid}"}, status_code=200)
     return JSONResponse({"ok": True, "name": row.get("name"), "passed": bool(result.get("passed")), "result_id": rid, "result_url": f"/test-scripts/results/{rid}"})
@@ -1986,11 +1997,11 @@ async def api_run_enabled_test_scripts():
     for row in rows:
         try:
             result = run_test_script(row)
-            payload = {"type": "single", "test_id": row["id"], "name": row.get("name"), "result": result}
+            payload = {"type": "single", "test_id": row["id"], "name": row.get("name"), "result": result, "config_json": row.get("config_json") or {}, "table_config_properties": _table_config_properties_array(row.get("config_json"))}
             rid = _store_test_script_result(payload)
             out.append({"id": row["id"], "name": row.get("name"), "passed": bool(result.get("passed")), "result_id": rid, "result_url": f"/test-scripts/results/{rid}"})
         except Exception as e:
-            payload = {"type": "single", "test_id": row["id"], "name": row.get("name"), "result": {"passed": False, "error": str(e)}}
+            payload = {"type": "single", "test_id": row["id"], "name": row.get("name"), "result": {"passed": False, "error": str(e)}, "config_json": row.get("config_json") or {}, "table_config_properties": _table_config_properties_array(row.get("config_json"))}
             rid = _store_test_script_result(payload)
             out.append({"id": row["id"], "name": row.get("name"), "passed": False, "error": str(e), "result_id": rid, "result_url": f"/test-scripts/results/{rid}"})
     return JSONResponse({"count": len(out), "passed": sum(1 for r in out if r.get("passed")), "results": out})
