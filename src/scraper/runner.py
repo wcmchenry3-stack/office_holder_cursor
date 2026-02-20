@@ -245,6 +245,7 @@ def run_with_db(
     max_rows_per_table: int | None = None,
     office_ids: list[int] | None = None,
     individual_ref: str | None = None,
+    individual_ids: list[int] | None = None,
     progress_callback: Callable[[str, int, int, str, dict], None] | None = None,
     cancel_check: Callable[[], bool] | None = None,
     force_replace_office_ids: list[int] | None = None,
@@ -321,6 +322,86 @@ def run_with_db(
             "living_success_count": 0,
             "living_error_count": 0,
             "living_errors": [],
+        }
+
+    if run_mode == "selected_bios":
+        from src.scraper import parse_core
+        selected_ids = sorted({int(i) for i in (individual_ids or []) if int(i) > 0})
+        if not selected_ids:
+            logger.close()
+            return {
+                "office_count": 0,
+                "terms_parsed": 0,
+                "unique_wiki_urls": 0,
+                "bio_success_count": 0,
+                "bio_error_count": 0,
+                "bio_errors": [],
+                "bio_skipped_count": 0,
+                "living_success_count": 0,
+                "living_error_count": 0,
+                "living_errors": [],
+                "message": "No individuals selected.",
+            }
+        data_cleanup = parse_core.DataCleanup(logger)
+        biography = parse_core.Biography(logger, data_cleanup)
+        bio_success_count = 0
+        bio_error_count = 0
+        bio_errors: list[dict[str, str]] = []
+        total_bios = len(selected_ids)
+        for bio_idx, individual_id in enumerate(selected_ids):
+            if cancel_check and cancel_check():
+                logger.log("Selected bios run cancelled by user.", True)
+                break
+            report("bio", bio_idx + 1, total_bios, "Updating selected individuals…", {"current": bio_idx + 1, "total": total_bios})
+            individual = db_individuals.get_individual(individual_id)
+            if not individual:
+                bio_error_count += 1
+                bio_errors.append({"url": str(individual_id), "error": "Individual not found"})
+                continue
+            wiki_url = (individual.get("wiki_url") or "").strip()
+            if not wiki_url:
+                page_path = (individual.get("page_path") or "").strip()
+                if page_path:
+                    wiki_url = page_path if page_path.startswith("http") else f"https://en.wikipedia.org/wiki/{page_path.lstrip('/')}"
+            if not wiki_url:
+                bio_error_count += 1
+                bio_errors.append({"url": str(individual_id), "error": "Missing wiki_url/page_path"})
+                continue
+            if bio_idx > 0:
+                time.sleep(1.5)
+            try:
+                bio_info = biography.biography_extract(wiki_url)
+                if bio_info:
+                    bio_info["wiki_url"] = wiki_url
+                    bd, bd_imp = normalize_date(bio_info.get("birth_date"))
+                    dd, dd_imp = normalize_date(bio_info.get("death_date"))
+                    bio_info["birth_date"] = bd
+                    bio_info["death_date"] = dd
+                    bio_info["birth_date_imprecise"] = bd_imp
+                    bio_info["death_date_imprecise"] = dd_imp
+                    db_individuals.upsert_individual(bio_info)
+                    bio_success_count += 1
+                else:
+                    bio_error_count += 1
+                    bio_errors.append({"url": wiki_url, "error": "No bio data extracted"})
+            except Exception as e:
+                bio_error_count += 1
+                bio_errors.append({"url": wiki_url, "error": str(e)})
+        logger.close()
+        return {
+            "office_count": 0,
+            "terms_parsed": 0,
+            "unique_wiki_urls": total_bios,
+            "bio_success_count": bio_success_count,
+            "bio_error_count": bio_error_count,
+            "bio_errors": bio_errors,
+            "bio_skipped_count": 0,
+            "living_success_count": 0,
+            "living_error_count": 0,
+            "living_errors": [],
+            "dry_run": False,
+            "test_run": False,
+            "preview_rows": None,
         }
 
     # Bios only: update biography for every individual in the DB (no office table parsing).
