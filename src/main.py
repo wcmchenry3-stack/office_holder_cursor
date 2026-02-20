@@ -59,6 +59,8 @@ _preview_job_store: dict = {}
 _preview_job_lock = threading.Lock()
 _export_job_store: dict = {}
 _export_job_lock = threading.Lock()
+_test_script_result_store: dict = {}
+_test_script_result_lock = threading.Lock()
 
 # Stoppable process types: server-side (e.g. "run") have a cancel endpoint and job store with cancelled flag;
 # client-side (e.g. "preview_all") use a Stop button and a running/stopped flag (optional AbortController).
@@ -1711,6 +1713,22 @@ async def api_cities(state_id: int = Query(0)):
 # ---------- Run scraper ----------
 
 
+def _store_test_script_result(payload: dict) -> str:
+    rid = uuid.uuid4().hex
+    with _test_script_result_lock:
+        _test_script_result_store[rid] = payload
+    return rid
+
+
+@app.get("/test-scripts/results/{result_id}", response_class=HTMLResponse)
+async def test_script_result_page(request: Request, result_id: str):
+    with _test_script_result_lock:
+        payload = _test_script_result_store.get(result_id)
+    if not payload:
+        raise HTTPException(status_code=404, detail="Result not found")
+    return templates.TemplateResponse("test_script_result.html", {"request": request, "payload": payload, "result_id": result_id})
+
+
 @app.get("/test-scripts", response_class=HTMLResponse)
 async def test_scripts_page(request: Request):
     tests = db_test_scripts.list_tests()
@@ -1775,6 +1793,9 @@ async def api_create_test_script(request: Request):
     overwrite_html = bool(body.get("overwrite_html", False))
     delete_existing_files = bool(body.get("delete_existing_files", False))
 
+    def _expected_missing(v):
+        return v is None or (isinstance(v, list) and len(v) == 0)
+
     if not name:
         raise HTTPException(status_code=400, detail="name is required")
 
@@ -1794,6 +1815,18 @@ async def api_create_test_script(request: Request):
             dest = db_test_scripts.TEST_SCRIPTS_DIR / f"{uuid.uuid4().hex}_{safe_page}.html"
             dest.write_text(html_content, encoding="utf-8")
             html_file = dest.name
+            if _expected_missing(expected_json):
+                try:
+                    preview = run_test_script_from_html(
+                        test_type=test_type,
+                        html_content=html_content,
+                        config_json=config_json,
+                        source_url=source_url,
+                        expected_json=None,
+                    )
+                    expected_json = preview.get("actual")
+                except Exception:
+                    pass
             if delete_existing_files and (existing.get("html_file") or "").strip():
                 old_path = (db_test_scripts.TEST_SCRIPTS_DIR / existing["html_file"]).resolve()
                 try:
@@ -1820,6 +1853,19 @@ async def api_create_test_script(request: Request):
     safe_page = re.sub(r"[^a-zA-Z0-9._-]+", "_", (source_url.split("/")[-1] or "wiki_page"))
     dest = db_test_scripts.TEST_SCRIPTS_DIR / f"{uuid.uuid4().hex}_{safe_page}.html"
     dest.write_text(html_content, encoding="utf-8")
+
+    if _expected_missing(expected_json):
+        try:
+            preview = run_test_script_from_html(
+                test_type=test_type,
+                html_content=html_content,
+                config_json=config_json,
+                source_url=source_url,
+                expected_json=None,
+            )
+            expected_json = preview.get("actual")
+        except Exception:
+            pass
 
     new_test_id = db_test_scripts.create_test({
         "name": name,
@@ -1852,9 +1898,13 @@ async def api_run_one_test_script(test_id: int):
         raise HTTPException(status_code=404, detail="Test script not found")
     try:
         result = run_test_script(row)
+        payload = {"type": "single", "test_id": test_id, "name": row.get("name"), "result": result}
+        rid = _store_test_script_result(payload)
     except Exception as e:
-        return JSONResponse({"ok": False, "name": row.get("name"), "error": str(e), "passed": False}, status_code=200)
-    return JSONResponse({"ok": True, "name": row.get("name"), **result})
+        payload = {"type": "single", "test_id": test_id, "name": row.get("name"), "result": {"passed": False, "error": str(e)}}
+        rid = _store_test_script_result(payload)
+        return JSONResponse({"ok": False, "name": row.get("name"), "error": str(e), "passed": False, "result_id": rid, "result_url": f"/test-scripts/results/{rid}"}, status_code=200)
+    return JSONResponse({"ok": True, "name": row.get("name"), "passed": bool(result.get("passed")), "result_id": rid, "result_url": f"/test-scripts/results/{rid}"})
 
 
 @app.post("/api/test-scripts/run-enabled")
@@ -1864,9 +1914,13 @@ async def api_run_enabled_test_scripts():
     for row in rows:
         try:
             result = run_test_script(row)
-            out.append({"id": row["id"], "name": row.get("name"), **result})
+            payload = {"type": "single", "test_id": row["id"], "name": row.get("name"), "result": result}
+            rid = _store_test_script_result(payload)
+            out.append({"id": row["id"], "name": row.get("name"), "passed": bool(result.get("passed")), "result_id": rid, "result_url": f"/test-scripts/results/{rid}"})
         except Exception as e:
-            out.append({"id": row["id"], "name": row.get("name"), "passed": False, "error": str(e)})
+            payload = {"type": "single", "test_id": row["id"], "name": row.get("name"), "result": {"passed": False, "error": str(e)}}
+            rid = _store_test_script_result(payload)
+            out.append({"id": row["id"], "name": row.get("name"), "passed": False, "error": str(e), "result_id": rid, "result_url": f"/test-scripts/results/{rid}"})
     return JSONResponse({"count": len(out), "passed": sum(1 for r in out if r.get("passed")), "results": out})
 
 @app.get("/run", response_class=HTMLResponse)

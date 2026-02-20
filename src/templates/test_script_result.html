@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Test Script Result{% endblock %}
+{% block content %}
+<h1>Test Script Result</h1>
+<p><strong>Result ID:</strong> <code>{{ result_id }}</code></p>
+{% if payload.name %}<p><strong>Test:</strong> {{ payload.name }}</p>{% endif %}
+{% set r = payload.result if payload and payload.result else {} %}
+<p><strong>Status:</strong> {% if r and r.passed %}PASS{% else %}FAIL{% endif %}</p>
+{% if r and r.error %}
+<p><strong>Error:</strong> {{ r.error }}</p>
+{% endif %}
+<h2>Full Result JSON</h2>
+<pre style="white-space:pre-wrap;background:#111;color:#eee;padding:12px;overflow:auto;">{{ payload | tojson(indent=2) }}</pre>
+{% endblock %}

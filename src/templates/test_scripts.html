@@ -115,7 +115,8 @@
           <form action="/api/test-scripts/{{ t.id }}/delete" method="post" style="display:inline">
             <button type="submit">Delete</button>
           </form>
-          <pre id="out-{{ t.id }}" style="white-space:pre-wrap;max-width:700px"></pre>
+          <div id="out-{{ t.id }}" class="form-note" style="margin-top:0.5rem;">Not run yet.</div>
+          <a id="out-link-{{ t.id }}" href="#" target="_blank" rel="noopener" style="display:none;">View full results</a>
         </td>
       </tr>
       {% endfor %}
@@ -339,7 +340,7 @@ async function saveScript() {
   }
   try {
     let expectedJson = parseJsonOrEmpty(document.getElementById('expected_json').value);
-    if (expectedJson === null && lastPreview) expectedJson = lastPreview.actual;
+    if (lastPreview && (expectedJson === null || (Array.isArray(expectedJson) && expectedJson.length === 0))) expectedJson = lastPreview.actual;
 
     let overwriteHtml = false;
     let deleteExistingFiles = false;
@@ -392,15 +393,36 @@ async function toggleEnabled(id, enabled) {
 }
 async function runOne(id) {
   const el = document.getElementById(`out-${id}`);
+  const link = document.getElementById(`out-link-${id}`);
   el.textContent = 'Running...';
+  link.style.display = 'none';
   const r = await fetch(`/api/test-scripts/${id}/run`, {method:'POST'});
-  el.textContent = JSON.stringify(await r.json(), null, 2);
+  const data = await r.json();
+  const pass = !!data.passed;
+  el.textContent = pass ? 'PASS' : 'FAIL';
+  if (data.result_url) {
+    link.href = data.result_url;
+    link.style.display = '';
+  }
 }
 async function runAllEnabled() {
   const out = document.getElementById('runAllOutput');
   out.textContent = 'Running enabled tests...';
   const r = await fetch('/api/test-scripts/run-enabled', {method:'POST'});
-  out.textContent = JSON.stringify(await r.json(), null, 2);
+  const data = await r.json();
+  const lines = [];
+  lines.push(`Passed ${data.passed}/${data.count}`);
+  for (const row of (data.results || [])) {
+    lines.push(`- ${row.name}: ${row.passed ? 'PASS' : 'FAIL'}${row.result_url ? ' -> ' + row.result_url : ''}`);
+    const el = document.getElementById(`out-${row.id}`);
+    const link = document.getElementById(`out-link-${row.id}`);
+    if (el) el.textContent = row.passed ? 'PASS' : 'FAIL';
+    if (link && row.result_url) {
+      link.href = row.result_url;
+      link.style.display = '';
+    }
+  }
+  out.textContent = lines.join('\n');
 }
 
 document.getElementById('runEnabledBtn').addEventListener('click', runAllEnabled);
