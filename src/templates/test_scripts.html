@@ -87,6 +87,7 @@
     <div class="actions" style="margin-bottom:0.5rem;">
       <button id="usePreviewAsExpectedBtn" type="button" disabled>Use preview as expected result</button>
     </div>
+    <div id="parsedTablePreviewMeta" class="form-note" style="margin-bottom:0.5rem;"></div>
     <div id="parsedTablePreview" style="overflow:auto;"></div>
   </div>
 </section>
@@ -169,12 +170,14 @@ function buildConfig() {
 function renderParsedTablePreview(data) {
   const wrap = document.getElementById('parsedTablePreviewWrap');
   const container = document.getElementById('parsedTablePreview');
+  const meta = document.getElementById('parsedTablePreviewMeta');
   const btn = document.getElementById('usePreviewAsExpectedBtn');
   const isTable = (document.getElementById('test_type').value === 'table_config');
   const rows = Array.isArray(data?.actual) ? data.actual : [];
   if (!isTable || rows.length === 0) {
     wrap.style.display = 'none';
     container.innerHTML = '';
+    meta.textContent = '';
     btn.disabled = true;
     return;
   }
@@ -203,6 +206,7 @@ function renderParsedTablePreview(data) {
 
   html += '</tbody></table>';
   container.innerHTML = html;
+  meta.textContent = `Showing ${rows.length} parsed row${rows.length === 1 ? '' : 's'}.`;
   wrap.style.display = '';
   btn.disabled = false;
 }
@@ -317,13 +321,8 @@ async function previewScript() {
     lastPreview = data;
     document.getElementById('saveBtn').disabled = false;
     renderParsedTablePreview(data);
-    out.textContent = JSON.stringify({
-      passed: data.passed,
-      expected: data.expected,
-      actual: data.actual,
-      html_size: (data.html || '').length,
-      config_used: payload.config_json,
-    }, null, 2);
+    const rows = Array.isArray(data.actual) ? data.actual.length : 0;
+    out.textContent = `Preview complete. Parsed ${rows} row${rows === 1 ? '' : 's'}. Review the table below.`;
   } catch (e) {
     out.textContent = 'Error: ' + e;
     lastPreview = null;
