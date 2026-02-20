@@ -384,6 +384,7 @@ def list_pages(
     state_id: int | None = None,
     level_id: int | None = None,
     branch_id: int | None = None,
+    office_category_id: int | None = None,
     enabled: int | None = None,
     limit: int | None = None,
     office_count_filter: str = "all",
@@ -415,6 +416,15 @@ def list_pages(
         if enabled is not None and enabled in (0, 1):
             where_parts.append("p.enabled = ?")
             params.append(enabled)
+        if office_category_id is not None and office_category_id != 0:
+            where_parts.append(
+                """EXISTS (
+                    SELECT 1 FROM office_details od
+                    WHERE od.source_page_id = p.id
+                      AND od.office_category_id = ?
+                )"""
+            )
+            params.append(office_category_id)
         if office_count_filter == "gt0":
             where_parts.append("(SELECT COUNT(*) FROM office_details od WHERE od.source_page_id = p.id) > 0")
         elif office_count_filter == "eq0":
@@ -443,6 +453,37 @@ def list_pages(
         """
         cur = conn.execute(sql, params)
         return [_row_to_dict(r) for r in cur.fetchall()]
+    finally:
+        if own_conn:
+            conn.close()
+
+
+def get_runnable_unit_ids_for_office_category(
+    office_category_id: int,
+    conn: sqlite3.Connection | None = None,
+) -> list[int]:
+    """Return runnable unit ids for enabled offices in a given office category."""
+    own_conn = conn is None
+    if own_conn:
+        conn = get_connection()
+    try:
+        if not office_category_id:
+            return []
+        if _use_hierarchy(conn):
+            cur = conn.execute(
+                """SELECT tc.id
+                   FROM office_table_config tc
+                   JOIN office_details od ON od.id = tc.office_details_id
+                   JOIN source_pages p ON p.id = od.source_page_id
+                   WHERE od.office_category_id = ?
+                     AND tc.enabled = 1
+                     AND od.enabled = 1
+                     AND p.enabled = 1
+                   ORDER BY tc.id""",
+                (office_category_id,),
+            )
+            return [row[0] for row in cur.fetchall()]
+        return []
     finally:
         if own_conn:
             conn.close()

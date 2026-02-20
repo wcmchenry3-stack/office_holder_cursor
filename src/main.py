@@ -147,6 +147,7 @@ def _list_return_query(
     state_id: int | None = None,
     level_id: int | None = None,
     branch_id: int | None = None,
+    office_category_id: int | None = None,
     enabled: str | None = None,
     limit: str | None = None,
     office_count: str | None = None,
@@ -161,6 +162,8 @@ def _list_return_query(
         parts.append(f"level_id={level_id}")
     if branch_id:
         parts.append(f"branch_id={branch_id}")
+    if office_category_id:
+        parts.append(f"office_category_id={office_category_id}")
     if enabled is not None and str(enabled).strip():
         parts.append("enabled=" + str(enabled).strip())
     if limit is not None and str(limit).strip():
@@ -188,6 +191,7 @@ async def offices_list(
     state_id: str | None = Query(None),
     level_id: str | None = Query(None),
     branch_id: str | None = Query(None),
+    office_category_id: str | None = Query(None),
     enabled: str | None = Query(None),
     limit: str | None = Query(None),
     office_count: str | None = Query("all"),
@@ -213,6 +217,7 @@ async def offices_list(
         sid = _parse_optional_int(state_id)
         lid = _parse_optional_int(level_id)
         bid = _parse_optional_int(branch_id)
+        ocid = _parse_optional_int(office_category_id)
         office_count_val = (office_count or "all").strip().lower()
         if office_count_val not in ("all", "gt0", "eq0"):
             office_count_val = "all"
@@ -221,6 +226,7 @@ async def offices_list(
             state_id=sid,
             level_id=lid,
             branch_id=bid,
+            office_category_id=ocid,
             enabled=enabled_int,
             limit=limit_int,
             office_count_filter=office_count_val,
@@ -228,11 +234,13 @@ async def offices_list(
         countries = db_refs.list_countries()
         levels = db_refs.list_levels()
         branches = db_refs.list_branches()
+        office_categories = db_office_category.list_office_categories()
         filter_country_id = cid
         states = db_refs.list_states(filter_country_id) if filter_country_id else []
         nav_ids = ",".join(str(p["first_office_id"]) for p in pages if p.get("first_office_id"))
         list_return_query = _list_return_query(
             country_id=cid, state_id=sid, level_id=lid, branch_id=bid,
+            office_category_id=ocid,
             enabled=enabled.strip() if enabled else None,
             limit=limit.strip() if limit else None,
             office_count=office_count_val if office_count_val != "all" else None,
@@ -249,11 +257,13 @@ async def offices_list(
                 "countries": countries,
                 "levels": levels,
                 "branches": branches,
+                "office_categories": office_categories,
                 "states": states,
                 "filter_country_id": filter_country_id,
                 "filter_state_id": sid,
                 "filter_level_id": lid,
                 "filter_branch_id": bid,
+                "filter_office_category_id": ocid,
                 "filter_enabled": enabled.strip() if enabled else "",
                 "filter_limit": limit.strip() if limit else "20",
                 "filter_office_count": office_count_val,
@@ -2009,7 +2019,11 @@ async def api_run_enabled_test_scripts():
 @app.get("/run", response_class=HTMLResponse)
 async def run_page(request: Request):
     offices = db_offices.list_offices()
-    return templates.TemplateResponse("run.html", {"request": request, "offices": offices})
+    office_categories = db_office_category.list_office_categories()
+    return templates.TemplateResponse(
+        "run.html",
+        {"request": request, "offices": offices, "office_categories": office_categories},
+    )
 
 
 def _run_job_worker(
@@ -2070,11 +2084,13 @@ def _run_job_worker(
 async def api_run(
     run_mode: str = Form("delta"),
     individual_ref: str = Form(""),
+    office_category_id: str = Form(""),
     force_overwrite: str = Form(""),
 ):
     if run_mode == "single_bio" and not individual_ref.strip():
         raise HTTPException(status_code=400, detail="Individual (ID or Wikipedia URL) required for re-run bio.")
     force_overwrite_bool = str(force_overwrite).strip().lower() in ("1", "true", "yes")
+    office_category_id_int = _parse_optional_int(office_category_id)
     run_bio = run_mode == "delta_live"
     run_office_bio = run_mode not in ("full_no_bio", "delta_no_bio", "full_no_bio_refresh", "delta_no_bio_refresh")
     refresh_table_cache = run_mode in ("full_no_bio_refresh", "delta_no_bio_refresh")
@@ -2086,6 +2102,18 @@ async def api_run(
         mode = "delta"
     else:
         mode = run_mode
+
+    office_id_list: list[int] | None = None
+    if run_mode == "populate_category_terms":
+        if not office_category_id_int:
+            raise HTTPException(status_code=400, detail="Office category is required for category populate run.")
+        office_id_list = db_offices.get_runnable_unit_ids_for_office_category(office_category_id_int)
+        if not office_id_list:
+            raise HTTPException(status_code=400, detail="No enabled office tables found for the selected office category.")
+        mode = "delta"
+        run_bio = False
+        run_office_bio = False
+        refresh_table_cache = False
     job_id = str(uuid.uuid4())
     with _run_job_lock:
         _run_job_store[job_id] = {
@@ -2101,7 +2129,7 @@ async def api_run(
         }
     thread = threading.Thread(
         target=_run_job_worker,
-        args=(job_id, mode, run_bio, run_office_bio, refresh_table_cache, False, False, None, None, individual_ref.strip() or None, force_overwrite_bool),
+        args=(job_id, mode, run_bio, run_office_bio, refresh_table_cache, False, False, None, office_id_list, individual_ref.strip() or None, force_overwrite_bool),
     )
     thread.start()
     return JSONResponse({"job_id": job_id}, status_code=202)
