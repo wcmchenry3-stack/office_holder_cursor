@@ -243,3 +243,33 @@ def test_ignore_non_links_drops_non_person_wiki_links():
 
     assert len(rows) == 1
     assert rows[0]["Wiki Link"].endswith("/wiki/Real_Person")
+
+
+def test_dynamic_parse_ignores_fragment_links_when_finding_link_column():
+    logger = _Logger()
+    offices = Offices(logger, biography=None, data_cleanup=DataCleanup(logger))
+    html = """
+    <tr>
+      <td><a href="/wiki/Mayor_of_Philadelphia#cite_note-17">ref</a></td>
+      <td><a href="/wiki/Real_Holder">Real Holder</a></td>
+      <td>Democratic</td>
+      <td>Jan 1, 1800</td>
+      <td>Jan 1, 1801</td>
+    </tr>
+    """
+    from bs4 import BeautifulSoup
+    cells = BeautifulSoup(html, "html.parser").find("tr").find_all(["td", "th"])
+    config = {
+        "link_column": 1,
+        "party_column": 2,
+        "term_start_column": 3,
+        "term_end_column": 4,
+        "district_column": 0,
+        "read_columns_right_to_left": False,
+        "table_no": 1,
+    }
+
+    success, parsed = offices.process_dynamic_parse(cells, config)
+
+    assert success is True
+    assert parsed["link_column"] == 1

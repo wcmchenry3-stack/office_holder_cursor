@@ -325,6 +325,7 @@ class DataCleanup:
           has_relative = 'href="./' in cell_str and 'href="./File:' not in cell_str and 'href="./Special:' not in cell_str
           has_full_url = 'en.wikipedia.org/wiki/' in cell_str and '/wiki/File:' not in cell_str and '/wiki/Special:' not in cell_str
           has_wiki_link = has_absolute or has_relative or has_full_url
+          has_fragment_link = '#"' in cell_str or '#cite_note' in cell_str
           # Exclude file/special links in any form
           has_file_link = (
               'href="/wiki/File:' in cell_str
@@ -333,7 +334,7 @@ class DataCleanup:
               or 'href="./Special:' in cell_str
               or '/wiki/Special:' in cell_str
           )
-          if has_wiki_link and not has_file_link:
+          if has_wiki_link and not has_file_link and not has_fragment_link:
               # #region agent log
               try:
                   _log_path = Path(__file__).resolve().parent.parent.parent / ".cursor" / "debug.log"
@@ -962,7 +963,8 @@ class Offices:
                       path = "/wiki/" + raw_href
                   full_url = normalize_wiki_url(f"https://en.wikipedia.org{path}") or f"https://en.wikipedia.org{path}"
                   self.Logger.debug_log(f"found full url {full_url}", True)
-                  should_ignore = any(re.search(pattern, full_url) for pattern in self.patterns_to_ignore())
+                  has_fragment = "#" in full_url
+                  should_ignore = any(re.search(pattern, full_url) for pattern in self.patterns_to_ignore()) or has_fragment
                   party_links = {p.get('link') for p in party_list.get(country, []) if p.get('link')}
                   if not should_ignore and full_url not in party_links:
                       self.Logger.debug_log(f"URL passed all checks: {full_url}", True)
