@@ -423,7 +423,14 @@ class Offices:
     candidate = link.strip()
     if not candidate or candidate == "No link":
       return False
-    return candidate.startswith("https://en.wikipedia.org/wiki/")
+    if not candidate.startswith("https://en.wikipedia.org/wiki/"):
+      return False
+    # Keep ignore_non_links useful for parser junk rows too (e.g. congress/election links).
+    if any(re.search(pattern, candidate) for pattern in self.patterns_to_ignore()):
+      return False
+    if "/wiki/File:" in candidate or "/wiki/Special:" in candidate:
+      return False
+    return True
 
 
   def process_table(self, html_content, table_config, office_details, url, party_list, progress_callback=None, max_rows=None):

@@ -196,3 +196,50 @@ def test_rtl_parse_reads_rightmost_link_when_link_column_is_one_based_1():
 
     assert len(rows) == 1
     assert rows[0]["Wiki Link"].endswith("/wiki/Rightmost_Senator")
+
+
+def test_ignore_non_links_drops_non_person_wiki_links():
+    logger = _Logger()
+    offices = Offices(logger, biography=None, data_cleanup=DataCleanup(logger))
+    html = """
+    <table>
+      <tr><th>#</th><th>Link</th><th>Party</th><th>Dates</th></tr>
+      <tr><td>1</td><td><a href="/wiki/118th_United_States_Congress">118th Congress</a></td><td>N/A</td><td>Jan 1, 2023 – Jan 1, 2025</td></tr>
+      <tr><td>2</td><td><a href="/wiki/Real_Person">Real Person</a></td><td>Democratic</td><td>Jan 1, 2025 – present</td></tr>
+    </table>
+    """
+    table_config = {
+        "table_no": 1,
+        "table_rows": 1,
+        "link_column": 1,
+        "party_column": 2,
+        "term_start_column": 3,
+        "term_end_column": 3,
+        "district_column": 0,
+        "run_dynamic_parse": False,
+        "read_columns_right_to_left": False,
+        "find_date_in_infobox": False,
+        "years_only": False,
+        "parse_rowspan": False,
+        "consolidate_rowspan_terms": False,
+        "rep_link": False,
+        "party_link": False,
+        "party_ignore": False,
+        "district_ignore": True,
+        "district_at_large": False,
+        "ignore_non_links": True,
+    }
+    office_details = {
+        "office_country": "United States",
+        "office_level": "Federal",
+        "office_branch": "Legislative",
+        "office_department": "Senate",
+        "office_name": "Ignore test",
+        "office_state": "",
+        "office_notes": "",
+    }
+
+    rows = offices.process_table(html, table_config, office_details, "https://en.wikipedia.org/wiki/Test", {"United States": []})
+
+    assert len(rows) == 1
+    assert rows[0]["Wiki Link"].endswith("/wiki/Real_Person")
