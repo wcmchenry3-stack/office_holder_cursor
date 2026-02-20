@@ -170,3 +170,50 @@ def get_dead_link_wiki_urls(conn: sqlite3.Connection | None = None) -> set[str]:
     finally:
         if own_conn:
             conn.close()
+
+
+def list_individuals_for_office_category(
+    office_category_id: int,
+    living_only: bool = False,
+    valid_page_paths_only: bool = False,
+    conn: sqlite3.Connection | None = None,
+) -> list[dict[str, Any]]:
+    """Return individuals connected to office terms in a given office category."""
+    own_conn = conn is None
+    if own_conn:
+        conn = get_connection()
+    try:
+        where = ["od.office_category_id = ?", "i.id IS NOT NULL"]
+        params: list[Any] = [office_category_id]
+        if living_only:
+            where.append("i.death_date IS NULL")
+        if valid_page_paths_only:
+            where.append("i.page_path IS NOT NULL")
+            where.append("TRIM(i.page_path) <> ''")
+        cur = conn.execute(
+            f"""
+            SELECT
+                s.name AS state_name,
+                od.name AS senate_class,
+                i.page_path,
+                ot.term_start,
+                ot.term_end,
+                i.birth_date,
+                i.death_date,
+                i.id,
+                i.wiki_url,
+                i.full_name
+            FROM office_details od
+            LEFT JOIN office_terms ot ON ot.office_details_id = od.id
+            LEFT JOIN individuals i ON ot.individual_id = i.id
+            LEFT JOIN source_pages sp ON od.source_page_id = sp.id
+            LEFT JOIN states s ON sp.state_id = s.id
+            WHERE {' AND '.join(where)}
+            ORDER BY i.id, ot.term_start
+            """,
+            tuple(params),
+        )
+        return [_row_to_dict(r) for r in cur.fetchall()]
+    finally:
+        if own_conn:
+            conn.close()

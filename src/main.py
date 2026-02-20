@@ -2037,6 +2037,7 @@ def _run_job_worker(
     max_rows_per_table: int | None,
     office_id_list: list[int] | None,
     individual_ref: str | None = None,
+    individual_id_list: list[int] | None = None,
     force_overwrite: bool = False,
 ):
     def progress_callback(phase: str, current: int, total: int, message: str, extra: dict):
@@ -2065,6 +2066,7 @@ def _run_job_worker(
             max_rows_per_table=max_rows_per_table,
             office_ids=office_id_list,
             individual_ref=individual_ref,
+            individual_ids=individual_id_list,
             progress_callback=progress_callback,
             cancel_check=cancel_check,
             force_overwrite=force_overwrite,
@@ -2086,11 +2088,15 @@ async def api_run(
     individual_ref: str = Form(""),
     office_category_id: str = Form(""),
     force_overwrite: str = Form(""),
+    living_only: str = Form(""),
+    valid_page_paths_only: str = Form(""),
 ):
     if run_mode == "single_bio" and not individual_ref.strip():
         raise HTTPException(status_code=400, detail="Individual (ID or Wikipedia URL) required for re-run bio.")
     force_overwrite_bool = str(force_overwrite).strip().lower() in ("1", "true", "yes")
     office_category_id_int = _parse_optional_int(office_category_id)
+    living_only_bool = str(living_only).strip().lower() in ("1", "true", "yes")
+    valid_page_paths_only_bool = str(valid_page_paths_only).strip().lower() in ("1", "true", "yes")
     run_bio = run_mode == "delta_live"
     run_office_bio = run_mode not in ("full_no_bio", "delta_no_bio", "full_no_bio_refresh", "delta_no_bio_refresh")
     refresh_table_cache = run_mode in ("full_no_bio_refresh", "delta_no_bio_refresh")
@@ -2104,6 +2110,7 @@ async def api_run(
         mode = run_mode
 
     office_id_list: list[int] | None = None
+    individual_id_list: list[int] | None = None
     if run_mode == "populate_category_terms":
         if not office_category_id_int:
             raise HTTPException(status_code=400, detail="Office category is required for category populate run.")
@@ -2111,6 +2118,27 @@ async def api_run(
         if not office_id_list:
             raise HTTPException(status_code=400, detail="No enabled office tables found for the selected office category.")
         mode = "delta"
+        run_bio = False
+        run_office_bio = False
+        refresh_table_cache = False
+    elif run_mode == "selected_bios_by_category":
+        if not office_category_id_int:
+            raise HTTPException(status_code=400, detail="Office category is required for selected bios run.")
+        matches = db_individuals.list_individuals_for_office_category(
+            office_category_id_int,
+            living_only=living_only_bool,
+            valid_page_paths_only=valid_page_paths_only_bool,
+        )
+        matched_ids = sorted({int(r.get("id")) for r in matches if r.get("id")})
+        if not force_overwrite_bool:
+            matched_ids = [
+                i for i in matched_ids
+                if not ((db_individuals.get_individual(i) or {}).get("birth_date") or "").strip()
+            ]
+        if not matched_ids:
+            raise HTTPException(status_code=400, detail="No matching individuals for selected filters.")
+        individual_id_list = matched_ids
+        mode = "selected_bios"
         run_bio = False
         run_office_bio = False
         refresh_table_cache = False
@@ -2129,11 +2157,43 @@ async def api_run(
         }
     thread = threading.Thread(
         target=_run_job_worker,
-        args=(job_id, mode, run_bio, run_office_bio, refresh_table_cache, False, False, None, office_id_list, individual_ref.strip() or None, force_overwrite_bool),
+        args=(job_id, mode, run_bio, run_office_bio, refresh_table_cache, False, False, None, office_id_list, individual_ref.strip() or None, individual_id_list, force_overwrite_bool),
     )
     thread.start()
     return JSONResponse({"job_id": job_id}, status_code=202)
 
+
+
+
+@app.get("/api/run/matching-individuals")
+async def api_run_matching_individuals(
+    office_category_id: int,
+    living_only: int = 0,
+    force_overwrite: int = 0,
+    valid_page_paths_only: int = 0,
+):
+    rows = db_individuals.list_individuals_for_office_category(
+        office_category_id,
+        living_only=bool(living_only),
+        valid_page_paths_only=bool(valid_page_paths_only),
+    )
+    unique_ids = sorted({int(r.get("id")) for r in rows if r.get("id")})
+    eligible_ids = list(unique_ids)
+    if not bool(force_overwrite):
+        eligible_ids = [
+            i for i in unique_ids
+            if not ((db_individuals.get_individual(i) or {}).get("birth_date") or "").strip()
+        ]
+    return JSONResponse({
+        "office_category_id": office_category_id,
+        "living_only": bool(living_only),
+        "force_overwrite": bool(force_overwrite),
+        "valid_page_paths_only": bool(valid_page_paths_only),
+        "matching_records": len(rows),
+        "matching_individuals": len(unique_ids),
+        "eligible_individuals": len(eligible_ids),
+        "eligible_ids": eligible_ids,
+    })
 
 @app.get("/api/run/status/{job_id}")
 async def api_run_status(job_id: str):
