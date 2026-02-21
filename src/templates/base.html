@@ -43,7 +43,7 @@
       <li><a href="/report/milestones">Milestone report</a></li>
     </ul>
   </nav>
-  <main class="container">
+  <main class="container{% block container_class %}{% endblock %}">
     {% block content %}{% endblock %}
     <p class="storage-note"><small>All data (offices, parties, individuals, office terms) is saved locally in <code>data/office_holder.db</code> and persists after you close the browser or restart the app.</small></p>
   </main>

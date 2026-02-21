@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}{{ "Edit" if office else "New" }} office – Office Holder{% endblock %}
+{% block container_class %} container-wide{% endblock %}
 {% block content %}
 {% if form_template == "page_form" %}
 <p role="status" style="background:var(--bg2, #f0f0f0); border:1px solid var(--border, #ccc); border-radius:4px; padding:0.35rem 0.75rem; margin-bottom:1rem; font-size:0.9rem;">Form: <strong>page_form</strong> (template: page_form.html)</p>
@@ -39,6 +40,12 @@
     {% endfor %}
     {% endfor %}
     <li style="margin-top:0.5rem; padding-top:0.5rem; border-top:1px solid var(--border, #ccc);">
+      <button type="button" class="btn btn-secondary btn-sm" id="sideShowAllTablesBtn" style="width:100%; margin-bottom:0.35rem;" data-action="show-all-tables" data-url-source="page">Show all tables</button>
+      <button type="button" class="btn btn-sm" id="sideSavePageBtn" style="width:100%; margin-bottom:0.35rem;">Save page</button>
+      <button type="button" class="btn btn-danger btn-sm" id="sideDeletePageBtn" style="width:100%; margin-bottom:0.35rem;">Delete page</button>
+      <a href="/offices{% if list_return_query is defined and list_return_query %}?{{ list_return_query }}{% endif %}" class="btn btn-secondary btn-sm" style="display:block; width:100%; margin-bottom:0.35rem; text-align:center;">Cancel</a>
+      <label style="display:block; margin-bottom:0.35rem;"><input type="checkbox" id="sideAllowReuseTables" {% if page_data.allow_reuse_tables %}checked{% endif %}> Reuse of tables</label>
+      <label style="display:block; margin-bottom:0.5rem;"><input type="checkbox" id="sidePageEnabled" {% if page_data.enabled %}checked{% endif %}> Enable page</label>
       <form method="post" action="/offices/add-office-to-page">
         <input type="hidden" name="source_page_id" value="{{ source_page_id }}">
         <button type="submit" class="btn btn-secondary btn-sm" style="width:100%;">Add office</button>
@@ -110,12 +117,12 @@
         </div>
       </div>
       <div class="form-group"><label>Notes</label><input type="text" name="notes" value="{{ page_data.notes or '' }}"></div>
-      <div class="form-group checkbox-group"><label><input type="checkbox" name="enabled" value="1" {% if page_data.enabled %}checked{% endif %}> Page enabled</label></div>
-      <div class="form-group checkbox-group"><label><input type="checkbox" name="allow_reuse_tables" value="1" {% if page_data.allow_reuse_tables %}checked{% endif %}> Allow reuse of tables</label></div>
+      <div class="form-group checkbox-group"><label><input type="checkbox" id="pageEnabledInput" name="enabled" value="1" {% if page_data.enabled %}checked{% endif %}> Page enabled</label></div>
+      <div class="form-group checkbox-group"><label><input type="checkbox" id="allowReuseTablesInput" name="allow_reuse_tables" value="1" {% if page_data.allow_reuse_tables %}checked{% endif %}> Allow reuse of tables</label></div>
       <p class="form-note">When checked, table numbers must be unique per page. When unchecked, different offices can use the same table number.</p>
       <div class="actions">
         <a href="/offices{% if list_return_query is defined and list_return_query %}?{{ list_return_query }}{% endif %}" class="btn btn-secondary">Cancel</a>
-        <form method="post" action="/pages/{{ source_page_id }}/delete" style="display:inline;" onsubmit="return confirm('Delete this page and all its offices and tables? This cannot be undone.');">
+        <form method="post" action="/pages/{{ source_page_id }}/delete" id="deletePageForm" style="display:inline;" onsubmit="return confirm('Delete this page and all its offices and tables? This cannot be undone.');">
           <button type="submit" class="btn btn-danger">Delete page</button>
         </form>
         <button type="button" class="btn btn-secondary" id="showAllTablesBtnMulti" data-action="show-all-tables" data-url-source="page">Show all tables</button>
@@ -238,6 +245,21 @@
           <button type="button" class="btn btn-secondary btn-sm" data-action="export-debug">Export debug file</button>
           <a href="/data/office-terms?office_id={{ o.id }}" class="btn btn-secondary btn-sm" target="_blank" rel="noopener">View current terms</a>
           <button type="button" class="btn btn-secondary btn-sm" data-action="populate-terms" data-office-id="{{ o.id }}">Populate terms</button>
+        </div>
+        <div class="table-inline-panels" style="margin-top:0.75rem;">
+          <div class="preview-panel table-preview-panel" style="display:none; margin-top:0.5rem;">
+            <h3>Preview</h3>
+            <div class="table-preview-content"></div>
+            <button type="button" class="btn btn-secondary btn-sm table-preview-stop" style="display:none; margin-top:0.25rem;">Stop</button>
+          </div>
+          <div class="preview-panel table-raw-panel" style="display:none; margin-top:0.5rem;">
+            <h3>Selected table (raw)</h3>
+            <div class="table-raw-content"></div>
+          </div>
+          <div class="preview-panel table-html-panel" style="display:none; margin-top:0.5rem;">
+            <h3>Table HTML</h3>
+            <div class="table-html-content"></div>
+          </div>
         </div>
       </div>
       {% endfor %}
@@ -750,6 +772,27 @@
     if (confirmEl) confirmEl.style.display = 'none';
     allTablesPendingUrl = null;
   });
+
+  var sideSavePageBtn = document.getElementById('sideSavePageBtn');
+  var sideDeletePageBtn = document.getElementById('sideDeletePageBtn');
+  var sideAllowReuseTables = document.getElementById('sideAllowReuseTables');
+  var sidePageEnabled = document.getElementById('sidePageEnabled');
+  var allowReuseTablesInput = document.getElementById('allowReuseTablesInput');
+  var pageEnabledInput = document.getElementById('pageEnabledInput');
+  var pageForm = document.getElementById('pageForm');
+  if (sideSavePageBtn && pageForm) sideSavePageBtn.addEventListener('click', function() { pageForm.requestSubmit(); });
+  if (sideDeletePageBtn) sideDeletePageBtn.addEventListener('click', function() {
+    var deleteForm = document.getElementById('deletePageForm');
+    if (deleteForm) deleteForm.requestSubmit();
+  });
+  if (sideAllowReuseTables && allowReuseTablesInput) {
+    sideAllowReuseTables.addEventListener('change', function() { allowReuseTablesInput.checked = sideAllowReuseTables.checked; });
+    allowReuseTablesInput.addEventListener('change', function() { sideAllowReuseTables.checked = allowReuseTablesInput.checked; });
+  }
+  if (sidePageEnabled && pageEnabledInput) {
+    sidePageEnabled.addEventListener('change', function() { pageEnabledInput.checked = sidePageEnabled.checked; });
+    pageEnabledInput.addEventListener('change', function() { sidePageEnabled.checked = pageEnabledInput.checked; });
+  }
 
   {% if office %}
   function getFormDraft() {
@@ -1374,20 +1417,28 @@
           .catch(function() { if (el) { el.textContent = 'Request failed'; el.className = 'alert alert-error'; } });
         return;
       }
-      if (action === 'preview-all') { runPreview({ showAll: true, draft: draft }); return; }
+      var tablePreviewPanel = block ? block.querySelector('.table-preview-panel') : null;
+      var tablePreviewContent = block ? block.querySelector('.table-preview-content') : null;
+      var tablePreviewStop = block ? block.querySelector('.table-preview-stop') : null;
+      var tableRawPanel = block ? block.querySelector('.table-raw-panel') : null;
+      var tableRawContent = block ? block.querySelector('.table-raw-content') : null;
+      var tableHtmlPanel = block ? block.querySelector('.table-html-panel') : null;
+      var tableHtmlContent = block ? block.querySelector('.table-html-content') : null;
+
+      if (action === 'preview-all') { runPreview({ showAll: true, draft: draft, panel: tablePreviewPanel, content: tablePreviewContent, stopBtn: tablePreviewStop }); return; }
       if (action === 'preview-top-x') {
         var raw = window.prompt('Show how many rows?', '10');
         if (raw == null) return;
         var num = parseInt(raw, 10);
         if (isNaN(num) || num < 1) { alert('Please enter a number greater than 0.'); return; }
         if (num > 2000) { num = 2000; }
-        runPreview({ maxRows: num, draft: draft });
+        runPreview({ maxRows: num, draft: draft, panel: tablePreviewPanel, content: tablePreviewContent, stopBtn: tablePreviewStop });
         return;
       }
       if (action === 'show-selected-table') {
         if (!draft.url) { alert('Enter a URL first.'); return; }
-        var panel = document.getElementById('rawTablePanel');
-        var content = document.getElementById('rawTableContent');
+        var panel = tableRawPanel || document.getElementById('rawTablePanel');
+        var content = tableRawContent || document.getElementById('rawTableContent');
         if (panel) panel.style.display = 'block';
         if (content) content.innerHTML = '<p>Loading…</p>';
         fetch('/api/raw-table-preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: draft.url, table_no: draft.table_no || 1 }) })
@@ -1409,8 +1460,8 @@
       }
       if (action === 'show-table-html') {
         if (!draft.url) { alert('Enter a URL first.'); return; }
-        var panel = document.getElementById('tableHtmlPanel');
-        var content = document.getElementById('tableHtmlContent');
+        var panel = tableHtmlPanel || document.getElementById('tableHtmlPanel');
+        var content = tableHtmlContent || document.getElementById('tableHtmlContent');
         if (panel) panel.style.display = 'block';
         if (content) content.innerHTML = '<p>Loading…</p>';
         fetch('/api/table-html', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: draft.url, table_no: draft.table_no || 1 }) })
@@ -1513,9 +1564,9 @@
     content.innerHTML = '<p>No rows parsed. Check table number and column mapping.</p>';
   }
   function runPreview(opts) {
-    var panel = document.getElementById('previewPanel');
-    var content = document.getElementById('previewContent');
-    var previewStopBtn = document.getElementById('previewStopBtn');
+    var panel = opts.panel || document.getElementById('previewPanel');
+    var content = opts.content || document.getElementById('previewContent');
+    var previewStopBtn = opts.stopBtn || document.getElementById('previewStopBtn');
     panel.style.display = 'block';
     content.innerHTML = '<p>Loading preview…</p>';
     if (previewStopBtn) previewStopBtn.style.display = 'none';
