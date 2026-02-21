@@ -1096,14 +1096,11 @@
         .then(function(r) {
           return handleSaveAllResponse(r, pageAction).then(function(data) {
             var idx = 0;
+            var finalRedirect = (data && data.redirect) ? data.redirect : null;
             function next() {
               if (idx >= officeForms.length) {
                 setStatus('Saved.');
-                var firstForm = officeForms[0];
-                var firstAction = firstForm ? (firstForm.getAttribute('action') || firstForm.action) : '';
-                var firstOfficeId = typeof firstAction === 'string' ? (firstAction.match(/\/offices\/(\d+)/) || [])[1] : null;
-                if (firstOfficeId) window.location.href = '/offices/' + firstOfficeId + '?saved=1';
-                else window.location.href = '/offices?saved=1';
+                window.location.href = finalRedirect || window.location.pathname;
                 return;
               }
               var of = officeForms[idx++];
@@ -1111,7 +1108,10 @@
               if (typeof officeAction !== 'string') officeAction = '';
               return fetch(officeAction, { method: 'POST', headers: saveAllHeaders, body: formToBody(of) })
                 .then(function(res) {
-                  return handleSaveAllResponse(res, officeAction).then(function() { return next(); });
+                  return handleSaveAllResponse(res, officeAction).then(function(stepData) {
+                    if (stepData && stepData.redirect) finalRedirect = stepData.redirect;
+                    return next();
+                  });
                 });
             }
             return next();

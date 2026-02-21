@@ -795,7 +795,9 @@ async def office_update(request: Request, office_id: int):
     save_all = request.headers.get("X-Save-All") == "1"
     try:
         _validate_level_state_city(data.get("level_id"), data.get("state_id"), data.get("city_id"), data.get("branch_id"))
-        db_offices.update_office(office_id, data, office_only=office_only)
+        updated = db_offices.update_office(office_id, data, office_only=office_only)
+        if not updated:
+            raise ValueError("Save failed: office was not updated")
     except ValueError as e:
         from urllib.parse import quote
         q = "?error=" + quote(str(e))
