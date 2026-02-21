@@ -1875,6 +1875,7 @@ async def api_test_script_template_page_details(source_page_id: int):
                     "district_ignore": bool(tc.get("district_ignore")),
                     "district_at_large": bool(tc.get("district_at_large")),
                     "ignore_non_links": bool(tc.get("ignore_non_links")),
+                    "remove_duplicates": bool(tc.get("remove_duplicates")),
                 }
             )
         office_rows.append({"id": office.get("id"), "name": office.get("name") or "", "table_configs": table_configs})
