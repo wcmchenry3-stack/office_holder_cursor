@@ -24,6 +24,46 @@
   <div class="form-group"><label><input id="enabled" type="checkbox" checked> Enabled</label></div>
   <div class="form-group"><label>Wikipedia URL</label><input id="source_url" type="text" placeholder="https://en.wikipedia.org/wiki/..." required></div>
 
+  {% if can_use_office_templates %}
+  <details style="margin-bottom:1rem;">
+    <summary><strong>Copy from existing office table config (optional)</strong></summary>
+    <p class="form-note" style="margin-top:0.5rem;">This copies values into this test only. Future office config changes will not affect the saved test script.</p>
+    <div class="form-row">
+      <div class="form-group" style="min-width:360px;">
+        <label>Search page URL or office name</label>
+        <input id="officeTemplateSearch" type="text" placeholder="e.g. California State Senate">
+      </div>
+      <div class="form-group" style="align-self:end;">
+        <button id="officeTemplateSearchBtn" type="button">Search</button>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group" style="min-width:360px;">
+        <label>Page</label>
+        <select id="officeTemplatePage" disabled>
+          <option value="">Select a page…</option>
+        </select>
+      </div>
+      <div class="form-group" style="min-width:260px;">
+        <label>Office details</label>
+        <select id="officeTemplateOffice" disabled>
+          <option value="">Select office details…</option>
+        </select>
+      </div>
+      <div class="form-group" style="min-width:260px;">
+        <label>Table</label>
+        <select id="officeTemplateTable" disabled>
+          <option value="">Select table…</option>
+        </select>
+      </div>
+      <div class="form-group" style="align-self:end;">
+        <button id="applyOfficeTemplateBtn" type="button" disabled>Copy to test config</button>
+      </div>
+    </div>
+    <div id="officeTemplateMsg" class="form-note"></div>
+  </details>
+  {% endif %}
+
   <h3>Table parsing config (same options as office config)</h3>
   <div id="tableConfigPanel">
     <div class="form-row">
@@ -130,6 +170,8 @@ let lastPreview = null;
 let editingTestId = null;
 let editingOriginalHtmlFile = null;
 let preservedConfigExtras = {};
+let officeTemplatePages = [];
+let officeTemplateOffices = [];
 
 function parseJsonOrEmpty(text) {
   const t = (text || '').trim();
@@ -170,6 +212,170 @@ function buildConfig() {
     use_full_page_for_table: document.getElementById('use_full_page_for_table').checked,
   };
   return {...base, ...preservedConfigExtras};
+}
+
+function setOfficeTemplateMessage(message, isError = false) {
+  const el = document.getElementById('officeTemplateMsg');
+  if (!el) return;
+  el.style.color = isError ? '#c62828' : '';
+  el.textContent = message || '';
+}
+
+function resetOfficeTemplateOfficeAndTable() {
+  officeTemplateOffices = [];
+  const officeSelect = document.getElementById('officeTemplateOffice');
+  const tableSelect = document.getElementById('officeTemplateTable');
+  const applyBtn = document.getElementById('applyOfficeTemplateBtn');
+  if (!officeSelect || !tableSelect || !applyBtn) return;
+  officeSelect.innerHTML = '<option value="">Select office details…</option>';
+  officeSelect.disabled = true;
+  tableSelect.innerHTML = '<option value="">Select table…</option>';
+  tableSelect.disabled = true;
+  applyBtn.disabled = true;
+}
+
+function renderOfficeTemplatePages() {
+  const pageSelect = document.getElementById('officeTemplatePage');
+  if (!pageSelect) return;
+  pageSelect.innerHTML = '<option value="">Select a page…</option>';
+  for (const page of officeTemplatePages) {
+    const details = [page.country_name, page.state_name, page.level_name, page.branch_name].filter(Boolean).join(' • ');
+    const label = `${page.url || '(no url)'}${details ? ' — ' + details : ''}`;
+    const option = document.createElement('option');
+    option.value = String(page.id);
+    option.textContent = label;
+    pageSelect.appendChild(option);
+  }
+  pageSelect.disabled = officeTemplatePages.length === 0;
+  resetOfficeTemplateOfficeAndTable();
+}
+
+function renderOfficeTemplateOffices() {
+  const officeSelect = document.getElementById('officeTemplateOffice');
+  const tableSelect = document.getElementById('officeTemplateTable');
+  const applyBtn = document.getElementById('applyOfficeTemplateBtn');
+  if (!officeSelect || !tableSelect || !applyBtn) return;
+  officeSelect.innerHTML = '<option value="">Select office details…</option>';
+  for (const office of officeTemplateOffices) {
+    const option = document.createElement('option');
+    option.value = String(office.id);
+    option.textContent = office.name || `Office #${office.id}`;
+    officeSelect.appendChild(option);
+  }
+  officeSelect.disabled = officeTemplateOffices.length === 0;
+  tableSelect.innerHTML = '<option value="">Select table…</option>';
+  tableSelect.disabled = true;
+  applyBtn.disabled = true;
+}
+
+function onOfficeTemplateOfficeChange() {
+  const officeSelect = document.getElementById('officeTemplateOffice');
+  const tableSelect = document.getElementById('officeTemplateTable');
+  const applyBtn = document.getElementById('applyOfficeTemplateBtn');
+  if (!officeSelect || !tableSelect || !applyBtn) return;
+  const officeId = parseInt(officeSelect.value || '', 10);
+  const office = officeTemplateOffices.find((row) => row.id === officeId);
+  tableSelect.innerHTML = '<option value="">Select table…</option>';
+  applyBtn.disabled = true;
+  if (!office) {
+    tableSelect.disabled = true;
+    return;
+  }
+  const tcs = Array.isArray(office.table_configs) ? office.table_configs : [];
+  for (const tc of tcs) {
+    const option = document.createElement('option');
+    option.value = String(tc.id);
+    option.textContent = `Table ${tc.table_no || '?'}${tc.name ? ' — ' + tc.name : ''}${tc.enabled ? '' : ' (disabled)'}`;
+    tableSelect.appendChild(option);
+  }
+  tableSelect.disabled = tcs.length === 0;
+  setOfficeTemplateMessage(tcs.length ? '' : 'Selected office has no table configs.', tcs.length === 0);
+}
+
+async function searchOfficeTemplates() {
+  const input = document.getElementById('officeTemplateSearch');
+  if (!input) return;
+  const q = (input.value || '').trim();
+  if (!q) {
+    setOfficeTemplateMessage('Enter text to search page URL or office name.', true);
+    return;
+  }
+  setOfficeTemplateMessage('Searching...');
+  try {
+    const r = await fetch(`/api/test-scripts/office-templates/pages?q=${encodeURIComponent(q)}`);
+    const data = await r.json();
+    if (!r.ok || data.ok === false) {
+      setOfficeTemplateMessage((data && (data.detail || data.error)) || 'Search failed.', true);
+      return;
+    }
+    officeTemplatePages = Array.isArray(data.pages) ? data.pages : [];
+    renderOfficeTemplatePages();
+    setOfficeTemplateMessage(officeTemplatePages.length ? `Found ${officeTemplatePages.length} page${officeTemplatePages.length === 1 ? '' : 's'}.` : 'No matching pages found.');
+  } catch (e) {
+    setOfficeTemplateMessage('Search error: ' + e, true);
+  }
+}
+
+async function onOfficeTemplatePageChange() {
+  const pageSelect = document.getElementById('officeTemplatePage');
+  if (!pageSelect) return;
+  const pageId = parseInt(pageSelect.value || '', 10);
+  resetOfficeTemplateOfficeAndTable();
+  if (!pageId) return;
+  setOfficeTemplateMessage('Loading page details...');
+  try {
+    const r = await fetch(`/api/test-scripts/office-templates/pages/${pageId}`);
+    const data = await r.json();
+    if (!r.ok || data.ok === false) {
+      setOfficeTemplateMessage((data && (data.detail || data.error)) || 'Unable to load page details.', true);
+      return;
+    }
+    officeTemplateOffices = Array.isArray(data.offices) ? data.offices : [];
+    renderOfficeTemplateOffices();
+    setOfficeTemplateMessage(officeTemplateOffices.length ? 'Select office details and table to copy values.' : 'This page has no office details.');
+  } catch (e) {
+    setOfficeTemplateMessage('Page details error: ' + e, true);
+  }
+}
+
+function applySelectedOfficeTemplate() {
+  const pageSelect = document.getElementById('officeTemplatePage');
+  const officeSelect = document.getElementById('officeTemplateOffice');
+  const tableSelect = document.getElementById('officeTemplateTable');
+  if (!pageSelect || !officeSelect || !tableSelect) return;
+  const pageId = parseInt(pageSelect.value || '', 10);
+  const officeId = parseInt(officeSelect.value || '', 10);
+  const tableId = parseInt(tableSelect.value || '', 10);
+  const page = officeTemplatePages.find((row) => row.id === pageId);
+  const office = officeTemplateOffices.find((row) => row.id === officeId);
+  const tc = (office && Array.isArray(office.table_configs)) ? office.table_configs.find((row) => row.id === tableId) : null;
+  if (!page || !office || !tc) {
+    setOfficeTemplateMessage('Select page, office details, and table first.', true);
+    return;
+  }
+  document.getElementById('source_url').value = page.url || '';
+  document.getElementById('table_name').value = tc.name || '';
+  document.getElementById('table_no').value = tc.table_no ?? 1;
+  document.getElementById('table_rows').value = tc.table_rows ?? 4;
+  document.getElementById('link_column').value = tc.link_column ?? 1;
+  document.getElementById('party_column').value = tc.party_column ?? 0;
+  document.getElementById('term_start_column').value = tc.term_start_column ?? 4;
+  document.getElementById('term_end_column').value = tc.term_end_column ?? 5;
+  document.getElementById('district_column').value = tc.district_column ?? 0;
+  document.getElementById('term_dates_merged').checked = !!tc.term_dates_merged;
+  document.getElementById('party_ignore').checked = !!tc.party_ignore;
+  document.getElementById('ignore_non_links').checked = !!tc.ignore_non_links;
+  document.getElementById('district_mode').value = tc.district_ignore ? 'no_district' : (tc.district_at_large ? 'at_large' : 'column');
+  document.getElementById('dynamic_parse').checked = !!tc.dynamic_parse;
+  document.getElementById('read_right_to_left').checked = !!tc.read_right_to_left;
+  document.getElementById('date_source').value = tc.find_date_in_infobox ? 'find_date_in_infobox' : (tc.years_only ? 'years_only' : 'not_applicable');
+  document.getElementById('parse_rowspan').checked = !!tc.parse_rowspan;
+  document.getElementById('consolidate_rowspan_terms').checked = !!tc.consolidate_rowspan_terms;
+  document.getElementById('rep_link').checked = !!tc.rep_link;
+  document.getElementById('party_link').checked = !!tc.party_link;
+  document.getElementById('use_full_page_for_table').checked = !!tc.use_full_page_for_table;
+  syncTableConfigControls();
+  setOfficeTemplateMessage('Copied template values into the form. This test script remains independent from office configs.');
 }
 
 function renderParsedTablePreview(data) {
@@ -444,5 +650,17 @@ document.getElementById('cancelEditBtn').addEventListener('click', cancelEditMod
   document.getElementById(id).addEventListener('change', syncTableConfigControls);
 });
 syncTableConfigControls();
+
+const officeTemplateSearchBtn = document.getElementById('officeTemplateSearchBtn');
+if (officeTemplateSearchBtn) {
+  officeTemplateSearchBtn.addEventListener('click', searchOfficeTemplates);
+  document.getElementById('officeTemplatePage').addEventListener('change', onOfficeTemplatePageChange);
+  document.getElementById('officeTemplateOffice').addEventListener('change', onOfficeTemplateOfficeChange);
+  document.getElementById('officeTemplateTable').addEventListener('change', () => {
+    const applyBtn = document.getElementById('applyOfficeTemplateBtn');
+    if (applyBtn) applyBtn.disabled = !document.getElementById('officeTemplateTable').value;
+  });
+  document.getElementById('applyOfficeTemplateBtn').addEventListener('click', applySelectedOfficeTemplate);
+}
 </script>
 {% endblock %}

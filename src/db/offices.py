@@ -791,6 +791,45 @@ def list_offices_for_page(source_page_id: int, conn: sqlite3.Connection | None =
             conn.close()
 
 
+def search_pages_for_test_script_templates(query: str, limit: int = 25, conn: sqlite3.Connection | None = None) -> list[dict[str, Any]]:
+    """Search source pages (hierarchy mode) by URL and office name for test-script template selection."""
+    own_conn = conn is None
+    if own_conn:
+        conn = get_connection()
+    try:
+        if not _use_hierarchy(conn):
+            return []
+        q = (query or "").strip()
+        if not q:
+            return []
+        limit = max(1, min(int(limit or 25), 100))
+        like = f"%{q}%"
+        cur = conn.execute(
+            """SELECT p.id, p.url,
+                      c.name AS country_name, s.name AS state_name, l.name AS level_name, b.name AS branch_name,
+                      COUNT(DISTINCT od.id) AS office_count
+               FROM source_pages p
+               LEFT JOIN office_details od ON od.source_page_id = p.id
+               LEFT JOIN countries c ON c.id = p.country_id
+               LEFT JOIN states s ON s.id = p.state_id
+               LEFT JOIN levels l ON l.id = p.level_id
+               LEFT JOIN branches b ON b.id = p.branch_id
+               WHERE p.url LIKE ? OR EXISTS (
+                   SELECT 1 FROM office_details od2
+                   WHERE od2.source_page_id = p.id
+                     AND od2.name LIKE ?
+               )
+               GROUP BY p.id
+               ORDER BY p.url
+               LIMIT ?""",
+            (like, like, limit),
+        )
+        return [_row_to_dict(r) for r in cur.fetchall()]
+    finally:
+        if own_conn:
+            conn.close()
+
+
 def _insert_one_table_config(
     conn: sqlite3.Connection, od_id: int, tc: dict[str, Any], enabled: int
 ) -> None:
