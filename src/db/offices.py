@@ -799,7 +799,7 @@ def _insert_one_table_config(
               term_start_column, term_end_column, district_column, dynamic_parse, read_right_to_left, find_date_in_infobox,
               parse_rowspan, rep_link, party_link, enabled, use_full_page_for_table, years_only,
               term_dates_merged, party_ignore, district_ignore, district_at_large, ignore_non_links, consolidate_rowspan_terms, notes, name, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))""",
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))""",
         (
             od_id,
             int(tc.get("table_no", 1)),
@@ -1183,7 +1183,7 @@ def update_office(office_id: int, data: dict[str, Any], conn: sqlite3.Connection
                                   term_start_column, term_end_column, district_column, dynamic_parse, read_right_to_left, find_date_in_infobox,
                                   parse_rowspan, rep_link, party_link, enabled, use_full_page_for_table, years_only,
                                   term_dates_merged, party_ignore, district_ignore, district_at_large, ignore_non_links, consolidate_rowspan_terms, notes, name, created_at, updated_at)
-                               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))""",
+                               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))""",
                             (
                                 office_id,
                                 int(tc.get("table_no", 1)),
