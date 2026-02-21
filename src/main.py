@@ -1823,7 +1823,63 @@ async def test_script_result_page(request: Request, result_id: str):
 @app.get("/test-scripts", response_class=HTMLResponse)
 async def test_scripts_page(request: Request):
     tests = db_test_scripts.list_tests()
-    return templates.TemplateResponse("test_scripts.html", {"request": request, "tests": tests})
+    return templates.TemplateResponse(
+        "test_scripts.html",
+        {
+            "request": request,
+            "tests": tests,
+            "can_use_office_templates": db_offices.use_hierarchy(),
+        },
+    )
+
+
+@app.get("/api/test-scripts/office-templates/pages")
+async def api_test_script_template_pages(q: str = Query(""), limit: int = Query(25)):
+    rows = db_offices.search_pages_for_test_script_templates(q, limit=limit)
+    return JSONResponse({"ok": True, "pages": rows})
+
+
+@app.get("/api/test-scripts/office-templates/pages/{source_page_id}")
+async def api_test_script_template_page_details(source_page_id: int):
+    page = db_offices.get_page(source_page_id)
+    if not page:
+        raise HTTPException(status_code=404, detail="Page not found")
+    offices = db_offices.list_offices_for_page(source_page_id)
+    office_rows = []
+    for office in offices:
+        table_configs = []
+        for tc in office.get("table_configs") or []:
+            table_configs.append(
+                {
+                    "id": tc.get("id"),
+                    "name": tc.get("name") or "",
+                    "enabled": bool(tc.get("enabled")),
+                    "table_no": tc.get("table_no"),
+                    "table_rows": tc.get("table_rows"),
+                    "link_column": tc.get("link_column"),
+                    "party_column": tc.get("party_column"),
+                    "term_start_column": tc.get("term_start_column"),
+                    "term_end_column": tc.get("term_end_column"),
+                    "district_column": tc.get("district_column"),
+                    "dynamic_parse": bool(tc.get("dynamic_parse")),
+                    "read_right_to_left": bool(tc.get("read_right_to_left")),
+                    "find_date_in_infobox": bool(tc.get("find_date_in_infobox")),
+                    "years_only": bool(tc.get("years_only")),
+                    "parse_rowspan": bool(tc.get("parse_rowspan")),
+                    "consolidate_rowspan_terms": bool(tc.get("consolidate_rowspan_terms")),
+                    "rep_link": bool(tc.get("rep_link")),
+                    "party_link": bool(tc.get("party_link")),
+                    "use_full_page_for_table": bool(tc.get("use_full_page_for_table")),
+                    "term_dates_merged": bool(tc.get("term_dates_merged")),
+                    "party_ignore": bool(tc.get("party_ignore")),
+                    "district_ignore": bool(tc.get("district_ignore")),
+                    "district_at_large": bool(tc.get("district_at_large")),
+                    "ignore_non_links": bool(tc.get("ignore_non_links")),
+                    "remove_duplicates": bool(tc.get("remove_duplicates")),
+                }
+            )
+        office_rows.append({"id": office.get("id"), "name": office.get("name") or "", "table_configs": table_configs})
+    return JSONResponse({"ok": True, "page": {"id": page.get("id"), "url": page.get("url") or ""}, "offices": office_rows})
 
 
 @app.get("/api/test-scripts/{test_id}")
