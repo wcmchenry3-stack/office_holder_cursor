@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}{{ "Edit" if office else "New" }} office – Office Holder{% endblock %}
+{% block container_class %} container-wide{% endblock %}
 {% block content %}
 {% if form_template == "page_form" %}
 <p role="status" style="background:var(--bg2, #f0f0f0); border:1px solid var(--border, #ccc); border-radius:4px; padding:0.35rem 0.75rem; margin-bottom:1rem; font-size:0.9rem;">Form: <strong>page_form</strong> (template: page_form.html)</p>
