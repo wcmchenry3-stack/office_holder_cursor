@@ -1645,6 +1645,24 @@ class Biography:
                   match_candidates = set()
                   for partial_url in urls_to_try:
                       match_candidates |= _slug_variants_for_path(partial_url)
+
+                  role_key_raw = (table_config_to_parse.get("infobox_role_key") or "").strip()
+                  role_key = re.sub(r"\s+", " ", role_key_raw.lower())
+
+                  def _normalize_role_text(text: str) -> str:
+                      return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9]+", " ", (text or "").lower())).strip()
+
+                  def _role_matches(text: str) -> bool:
+                      if not role_key:
+                          return True
+                      hay = _normalize_role_text(text)
+                      if not hay:
+                          return False
+                      needle = _normalize_role_text(role_key)
+                      if not needle:
+                          return True
+                      return re.search(r"(^|\b)" + re.escape(needle) + r"(\b|$)", hay) is not None
+
                   all_terms = []  # Collect all matching term (start, end) from every matching row in the infobox
                   for tr in infobox.find_all('tr'):
                       self.Logger.debug_log( f"found tr \n {tr}" , True )
@@ -1653,8 +1671,9 @@ class Biography:
                       raw_href = a.get("href", "") if a else ""
                       norm_path = _normalize_infobox_href(raw_href)
                       norm_path_lower = (norm_path or "").lower()
-                      link_matches = a and any(cand in norm_path_lower for cand in match_candidates)
-                      if link_matches:
+                      link_matches = a and (norm_path_lower in match_candidates or (norm_path_lower.rsplit("/", 1)[-1] in match_candidates if norm_path_lower else False))
+                      role_matches = _role_matches(row_text)
+                      if link_matches and role_matches:
                           # Examine the next two sibling rows for date information
                           self.Logger.debug_log( f"found match. starting to iterate" , True )
                           tr_cur = tr
@@ -1713,6 +1732,8 @@ class Biography:
                                   # If dates are invalid, continue to the next sibling row
                           if not term_added_this_tr:
                               infobox_items.append("%s -> checked 2 sibling rows; no valid dates" % row_desc)
+                      elif link_matches and role_key and not role_matches:
+                          infobox_items.append("Skipped row for role key %r: %r" % (role_key_raw, row_text[:100]))
                   # Single fetch: also collect birth/death from same infobox so runner can skip second fetch
                   details = self.parse_infobox(infobox)
                   details["wiki_url"] = normalize_wiki_url(wiki_link) or wiki_link
@@ -1727,7 +1748,7 @@ class Biography:
                   self._last_bio_details = None
                   infobox_items.append("No infobox in page.")
               elif not infobox_items:
-                  infobox_items.append("Infobox found; no rows matching office link/name.")
+                  infobox_items.append("Infobox found; no rows matching office link/name%s." % (" + role key" if role_key else ""))
           else:
               self._last_bio_details = None
               infobox_items.append("Failed to fetch page: HTTP %s" % response.status_code)
