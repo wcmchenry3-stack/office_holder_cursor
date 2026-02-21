@@ -57,6 +57,7 @@ def migrate_to_fk(conn=None):
         # Add term_dates_merged, party_ignore, district_ignore, district_at_large to offices
         _migrate_offices_parsing_options(conn)
         _migrate_ignore_non_links(conn)
+        _migrate_remove_duplicates(conn)
         # Add is_dead_link to individuals if missing
         _migrate_individuals_dead_link(conn)
         # Alt links: new table, backfill from offices.alt_link, verify, then drop offices.alt_link
@@ -511,7 +512,7 @@ def _migrate_to_page_office_table_hierarchy(conn):
                   table_no, table_rows, link_column, party_column, term_start_column, term_end_column, district_column,
                   dynamic_parse, read_right_to_left, find_date_in_infobox, parse_rowspan, consolidate_rowspan_terms,
                   rep_link, party_link, alt_link_include_main, use_full_page_for_table, years_only,
-                  term_dates_merged, party_ignore, district_ignore, district_at_large, created_at
+                  term_dates_merged, party_ignore, district_ignore, district_at_large, remove_duplicates, created_at
            FROM offices ORDER BY id"""
     ).fetchall()
 
@@ -549,8 +550,8 @@ def _migrate_to_page_office_table_hierarchy(conn):
             """INSERT INTO office_table_config (office_details_id, table_no, table_rows, link_column, party_column,
                   term_start_column, term_end_column, district_column, dynamic_parse, read_right_to_left, find_date_in_infobox,
                   parse_rowspan, rep_link, party_link, enabled, use_full_page_for_table, years_only,
-                  term_dates_merged, party_ignore, district_ignore, district_at_large, consolidate_rowspan_terms, notes, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))""",
+                  term_dates_merged, party_ignore, district_ignore, district_at_large, remove_duplicates, consolidate_rowspan_terms, notes, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))""",
             (
                 od_id,
                 int(o["table_no"] or 1),
@@ -573,6 +574,7 @@ def _migrate_to_page_office_table_hierarchy(conn):
                 1 if o["party_ignore"] else 0,
                 1 if o["district_ignore"] else 0,
                 1 if o["district_at_large"] else 0,
+                1 if o.get("remove_duplicates") else 0,
                 1 if o["consolidate_rowspan_terms"] else 0,
                 o["notes"] or None,
             ),
@@ -683,4 +685,15 @@ def _migrate_ignore_non_links(conn):
     otc_cols = _columns(conn, "office_table_config")
     if "ignore_non_links" not in otc_cols:
         conn.execute("ALTER TABLE office_table_config ADD COLUMN ignore_non_links INTEGER NOT NULL DEFAULT 0")
+    conn.commit()
+
+
+def _migrate_remove_duplicates(conn):
+    """Add remove_duplicates to offices and office_table_config if missing."""
+    offices_cols = _columns(conn, "offices")
+    if "remove_duplicates" not in offices_cols:
+        conn.execute("ALTER TABLE offices ADD COLUMN remove_duplicates INTEGER NOT NULL DEFAULT 0")
+    otc_cols = _columns(conn, "office_table_config")
+    if "remove_duplicates" not in otc_cols:
+        conn.execute("ALTER TABLE office_table_config ADD COLUMN remove_duplicates INTEGER NOT NULL DEFAULT 0")
     conn.commit()

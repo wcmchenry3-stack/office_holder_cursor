@@ -55,6 +55,8 @@ def parse_full_table_for_export(
         cached_table_html=table_html, progress_callback=progress_callback,
     )
     years_only = bool(office_row.get("years_only"))
+    if bool(office_row.get("remove_duplicates")):
+        table_data = _dedupe_parsed_rows(table_data, years_only=years_only)
     rows_out = []
     for row in table_data:
         normalized = _normalize_row_for_import(row, years_only=years_only, include_no_link=True)
@@ -233,6 +235,30 @@ def _holder_keys_from_parsed_rows(
             end_key = (term_end_val if term_end_val is not None else "") or (str(term_end_year) if term_end_year is not None else "")
         keys.add((wiki_url, start_key, end_key))
     return keys
+
+
+def _dedupe_parsed_rows(table_data: list[dict], years_only: bool) -> list[dict]:
+    """Remove duplicate parsed rows by (wiki link, term start, term end, party, district).
+    Uses normalized term values so the behavior matches the DB-write path."""
+    seen: set[tuple[str, str, str, str, str]] = set()
+    out: list[dict] = []
+    for row in table_data:
+        normalized = _normalize_row_for_import(row, years_only=years_only)
+        if normalized is None and (row.get("Wiki Link") or "") in ("", "No link") and row.get("_name_from_table"):
+            normalized = _normalize_row_for_import(row, years_only=years_only, include_no_link=True)
+        if normalized is None:
+            out.append(row)
+            continue
+        _, term_start_val, term_end_val, _ts_imp, _te_imp, term_start_year, term_end_year = normalized
+        wiki_link = row.get("Wiki Link") or ""
+        term_start_key = term_start_val if term_start_val is not None else (str(term_start_year) if term_start_year is not None else "")
+        term_end_key = term_end_val if term_end_val is not None else (str(term_end_year) if term_end_year is not None else "")
+        key = (wiki_link, term_start_key, term_end_key, (row.get("Party") or ""), (row.get("District") or ""))
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(row)
+    return out
 
 
 def run_with_db(
@@ -629,6 +655,8 @@ def run_with_db(
         )
         if max_rows_per_table is not None and max_rows_per_table >= 0:
             table_data = table_data[: max_rows_per_table]
+        if bool(office_row.get("remove_duplicates")):
+            table_data = _dedupe_parsed_rows(table_data, years_only=bool(office_row.get("years_only")))
 
         if has_existing and len(table_data) == 0:
             logger.log(f"Repopulate validation failed for {office_name}: table parsed to zero rows (existing had {len(existing_terms)}). Keeping existing terms.", True)
@@ -1102,6 +1130,8 @@ def preview_with_config(
             cached_table_html=cached_table_html, progress_callback=progress_callback,
             max_rows=max_rows,
         )
+        if bool(office_row.get("remove_duplicates")):
+            table_data = _dedupe_parsed_rows(table_data, years_only=bool(office_row.get("years_only")))
     except Exception as e:
         raw_max = max_rows if max_rows is not None else 100
         raw = get_raw_table_preview(url, int(office_row.get("table_no") or 1), raw_max)

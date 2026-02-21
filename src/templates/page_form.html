@@ -158,7 +158,7 @@
       </div>
       <div class="form-group checkbox-group"><label><input type="checkbox" name="alt_link_include_main" value="1" {% if o.alt_link_include_main %}checked{% endif %}> Include main office link in search</label></div>
       <h3>Table parsing</h3>
-      {% set tclist = o.table_configs if o.table_configs and o.table_configs|length > 0 else [{'id': none, 'name': '', 'table_no': o.table_no or 1, 'table_rows': o.table_rows or 4, 'link_column': o.link_column or 1, 'party_column': o.party_column or 0, 'term_start_column': o.term_start_column or 4, 'term_end_column': o.term_end_column or 5, 'district_column': o.district_column or 0, 'dynamic_parse': o.dynamic_parse, 'read_right_to_left': o.read_right_to_left, 'find_date_in_infobox': o.find_date_in_infobox, 'years_only': o.years_only, 'parse_rowspan': o.parse_rowspan, 'consolidate_rowspan_terms': o.consolidate_rowspan_terms, 'rep_link': o.rep_link, 'party_link': o.party_link, 'enabled': o.enabled, 'use_full_page_for_table': o.use_full_page_for_table, 'term_dates_merged': o.term_dates_merged, 'party_ignore': o.party_ignore, 'district_ignore': o.district_ignore, 'district_at_large': o.district_at_large, 'ignore_non_links': o.ignore_non_links, 'notes': o.notes or ''}] %}
+      {% set tclist = o.table_configs if o.table_configs and o.table_configs|length > 0 else [{'id': none, 'name': '', 'table_no': o.table_no or 1, 'table_rows': o.table_rows or 4, 'link_column': o.link_column or 1, 'party_column': o.party_column or 0, 'term_start_column': o.term_start_column or 4, 'term_end_column': o.term_end_column or 5, 'district_column': o.district_column or 0, 'dynamic_parse': o.dynamic_parse, 'read_right_to_left': o.read_right_to_left, 'find_date_in_infobox': o.find_date_in_infobox, 'years_only': o.years_only, 'parse_rowspan': o.parse_rowspan, 'consolidate_rowspan_terms': o.consolidate_rowspan_terms, 'rep_link': o.rep_link, 'party_link': o.party_link, 'enabled': o.enabled, 'use_full_page_for_table': o.use_full_page_for_table, 'term_dates_merged': o.term_dates_merged, 'party_ignore': o.party_ignore, 'district_ignore': o.district_ignore, 'district_at_large': o.district_at_large, 'ignore_non_links': o.ignore_non_links, 'remove_duplicates': o.remove_duplicates, 'notes': o.notes or ''}] %}
       <div class="table-config-blocks" data-office-id="{{ o.id }}">
       {% for tc in tclist %}
       <div class="table-config-block" id="section-table-{{ tc.id if tc.id else (o.id ~ '-t' ~ loop.index) }}" data-office-id="{{ o.id }}" data-tc-id="{{ tc.id or '' }}" style="margin-bottom:1.5rem; padding:1rem; border:1px solid var(--border, #ccc); border-radius:6px;">
@@ -180,6 +180,7 @@
           <div class="form-group checkbox-group"><label><input type="checkbox" name="tc_term_dates_merged_{{ loop.index0 }}" value="1" {% if tc.term_dates_merged %}checked{% endif %}> Term dates merged</label></div>
           <div class="form-group checkbox-group"><label><input type="checkbox" name="tc_party_ignore" value="1" {% if tc.party_ignore %}checked{% endif %}> Ignore party</label></div>
           <div class="form-group checkbox-group"><label><input type="checkbox" name="tc_ignore_non_links" value="1" {% if tc.ignore_non_links %}checked{% endif %}> Ignore non-links</label></div>
+          <div class="form-group checkbox-group"><label><input type="checkbox" name="tc_remove_duplicates" value="1" {% if tc.remove_duplicates %}checked{% endif %}> Remove duplicates</label></div>
           <div class="form-group">
             <label>District</label>
             <select name="tc_district_mode">
@@ -368,6 +369,7 @@
     <div class="form-group checkbox-group">
       <label><input type="checkbox" name="party_ignore" value="1" id="partyIgnore" {% if office and office.party_ignore %}checked{% endif %}> Ignore party</label>
       <label><input type="checkbox" name="ignore_non_links" value="1" id="ignoreNonLinks" {% if office and office.ignore_non_links %}checked{% endif %}> Ignore non-links</label>
+      <label><input type="checkbox" name="remove_duplicates" value="1" {% if office and office.remove_duplicates %}checked{% endif %}> Remove duplicates</label>
       <p class="form-note">Do not extract party; store null. Party column is grayed out — do not enter.</p>
     </div>
     <div class="form-group" id="districtModeGroup">
@@ -789,6 +791,7 @@
       term_dates_merged: !!form.term_dates_merged?.checked,
       party_ignore: !!form.party_ignore?.checked,
       ignore_non_links: !!form.ignore_non_links?.checked,
+      remove_duplicates: !!form.remove_duplicates?.checked,
       district_ignore: (form.district_mode?.value || 'column') === 'no_district',
       district_at_large: (form.district_mode?.value || 'column') === 'at_large'
     };
@@ -853,6 +856,7 @@
       term_dates_merged: elChecked('term_dates_merged', 'tc_term_dates_merged'),
       party_ignore: elChecked('party_ignore', 'tc_party_ignore'),
       ignore_non_links: elChecked('ignore_non_links', 'tc_ignore_non_links'),
+      remove_duplicates: elChecked('remove_duplicates', 'tc_remove_duplicates'),
       district_ignore: distMode() === 'no_district',
       district_at_large: distMode() === 'at_large'
     };

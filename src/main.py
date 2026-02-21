@@ -109,6 +109,7 @@ def _office_draft_from_body(body: dict, *, include_ref_names: bool = False) -> d
         "district_ignore": district_ignore,
         "district_at_large": district_at_large,
         "ignore_non_links": body.get("ignore_non_links") in (True, 1, "1", "true", "TRUE"),
+        "remove_duplicates": body.get("remove_duplicates") in (True, 1, "1", "true", "TRUE"),
     }
     if include_ref_names:
         country_id = int(body.get("country_id") or 0)
@@ -325,6 +326,7 @@ async def office_create(request: Request):
         "district_ignore": (form.get("district_mode") or "column") == "no_district",
         "district_at_large": (form.get("district_mode") or "column") == "at_large",
         "ignore_non_links": form.get("ignore_non_links") == "1",
+        "remove_duplicates": form.get("remove_duplicates") == "1",
     }
     try:
         _validate_level_state_city(data.get("level_id"), data.get("state_id"), data.get("city_id"), data.get("branch_id"))
@@ -489,6 +491,7 @@ async def office_add_to_page(request: Request):
         "party_ignore": bool(first.get("party_ignore")),
         "district_ignore": bool(first.get("district_ignore")),
         "ignore_non_links": bool(first.get("ignore_non_links")),
+        "remove_duplicates": bool(first.get("remove_duplicates")),
         "district_at_large": bool(first.get("district_at_large")),
     }
     try:
@@ -739,6 +742,7 @@ def _form_to_table_config(form, i: int) -> dict:
         "district_ignore": dist_mode == "no_district",
         "district_at_large": dist_mode == "at_large",
         "ignore_non_links": _bool("ignore_non_links", "tc_ignore_non_links"),
+        "remove_duplicates": _bool("remove_duplicates", "tc_remove_duplicates"),
         "notes": _get("notes", "tc_notes") or "",
         "name": _get("name", "tc_name") or "",
     }
@@ -777,6 +781,7 @@ async def office_update(request: Request, office_id: int):
         "district_ignore": (form.get("district_mode") or "column") == "no_district",
         "district_at_large": (form.get("district_mode") or "column") == "at_large",
         "ignore_non_links": form.get("ignore_non_links") == "1",
+        "remove_duplicates": form.get("remove_duplicates") == "1",
     }
     tc_ids = form.getlist("tc_id")
     tc_table_nos = form.getlist("tc_table_no")
@@ -926,6 +931,7 @@ async def office_duplicate(office_id: int):
         "party_ignore": bool(office.get("party_ignore")),
         "district_ignore": bool(office.get("district_ignore")),
         "ignore_non_links": bool(office.get("ignore_non_links")),
+        "remove_duplicates": bool(office.get("remove_duplicates")),
         "district_at_large": bool(office.get("district_at_large")),
     }
     table_configs = office.get("table_configs")
@@ -2594,6 +2600,7 @@ def _export_job_worker(job_id: str, office_name: str, config: dict):
             "district_ignore": _config_bool_export(config.get("district_ignore")),
             "district_at_large": _config_bool_export(config.get("district_at_large")),
             "ignore_non_links": _config_bool_export(config.get("ignore_non_links")),
+            "remove_duplicates": _config_bool_export(config.get("remove_duplicates")),
             "country_name": "", "level_name": "", "branch_name": "", "state_name": "",
         }
         full_rows = parse_full_table_for_export(office_row, table_html, url, progress_callback=progress_callback)
@@ -2914,6 +2921,7 @@ async def api_office_debug_export(request: Request):
                 "party_ignore": _config_bool(config.get("party_ignore")),
                 "district_ignore": _config_bool(config.get("district_ignore")),
                 "district_at_large": _config_bool(config.get("district_at_large")),
+                "remove_duplicates": _config_bool(config.get("remove_duplicates")),
                 "country_name": "", "level_name": "", "branch_name": "", "state_name": "",
             }
             full_rows = parse_full_table_for_export(office_row, table_html, office_row["url"])
