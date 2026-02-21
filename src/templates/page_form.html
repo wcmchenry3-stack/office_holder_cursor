@@ -208,7 +208,7 @@
               <option value="years_only" {% if tc.years_only %}selected{% endif %}>Table has years only</option>
             </select>
           </div>
-          <div class="form-group"><label>Infobox role key (optional)</label><input type="text" name="tc_infobox_role_key" value="{{ tc.infobox_role_key or "" }}" placeholder="e.g. senior judge"></div>
+          <div class="form-group"><label>Infobox role key (optional) <span title="Use exact role phrase to disambiguate shared links. Example: &quot;chief judge&quot; or &quot;senior judge&quot;. If you use &quot;judge&quot;, it may also match chief/senior rows unless those words are absent.">ⓘ</span></label><input type="text" name="tc_infobox_role_key" value="{{ tc.infobox_role_key or "" }}" placeholder="e.g. senior judge"></div>
           <div class="form-group checkbox-group"><label><input type="checkbox" name="tc_parse_rowspan" value="1" {% if tc.parse_rowspan %}checked{% endif %}> Parse rowspan</label></div>
           <div class="form-group checkbox-group"><label><input type="checkbox" name="tc_consolidate_rowspan_terms" value="1" {% if tc.consolidate_rowspan_terms %}checked{% endif %}> Consolidate rowspan terms</label></div>
           <div class="form-group checkbox-group"><label><input type="checkbox" name="tc_rep_link" value="1" {% if tc.rep_link %}checked{% endif %}> Rep link</label></div>
@@ -422,7 +422,7 @@
         <option value="years_only" {% if office and office.years_only %}selected{% endif %}>Table has years only</option>
       </select>
       <p class="form-note">Find date in infobox: get full dates from bios. Table has years only: table has year ranges only (stores start/end year). Choose one or not applicable.</p>
-      <label>Infobox role key (optional) <input type="text" name="infobox_role_key" value="{{ office.infobox_role_key if office else "" }}" placeholder="e.g. senior judge"></label>
+      <label>Infobox role key (optional) <span title="Use exact role phrase to disambiguate shared links. Example: &quot;chief judge&quot; or &quot;senior judge&quot;. If you use &quot;judge&quot;, it may also match chief/senior rows unless those words are absent.">ⓘ</span> <input type="text" name="infobox_role_key" value="{{ office.infobox_role_key if office else "" }}" placeholder="e.g. senior judge"></label>
     </div>
     <div class="form-group checkbox-group">
       <label><input type="checkbox" name="parse_rowspan" value="1" {% if office and office.parse_rowspan %}checked{% endif %}> Parse rowspan</label>

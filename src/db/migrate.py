@@ -706,6 +706,13 @@ def _migrate_infobox_role_key(conn):
         otc_cols = _columns(conn, "office_table_config")
     except sqlite3.OperationalError:
         return
+    changed = False
     if "infobox_role_key" not in otc_cols:
         conn.execute("ALTER TABLE office_table_config ADD COLUMN infobox_role_key TEXT NOT NULL DEFAULT ''")
+        changed = True
+    offices_cols = _columns(conn, "offices")
+    if "infobox_role_key" not in offices_cols:
+        conn.execute("ALTER TABLE offices ADD COLUMN infobox_role_key TEXT NOT NULL DEFAULT ''")
+        changed = True
+    if changed:
         conn.commit()

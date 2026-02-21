@@ -182,6 +182,7 @@ CREATE TABLE IF NOT EXISTS offices (
     district_at_large INTEGER NOT NULL DEFAULT 0,
     ignore_non_links INTEGER NOT NULL DEFAULT 0,
     remove_duplicates INTEGER NOT NULL DEFAULT 0,
+    infobox_role_key TEXT NOT NULL DEFAULT '',
     created_at TEXT DEFAULT (datetime('now'))
 );
 

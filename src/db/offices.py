@@ -369,7 +369,7 @@ def list_offices(conn: sqlite3.Connection | None = None) -> list[dict[str, Any]]
                       o.parse_rowspan, o.consolidate_rowspan_terms, o.rep_link, o.party_link, o.alt_link_include_main,
                       o.use_full_page_for_table, o.years_only,
                       o.term_dates_merged, o.party_ignore, o.district_ignore, o.district_at_large,
-                      o.created_at
+                      o.infobox_role_key, o.created_at
                FROM offices o
                LEFT JOIN countries c ON c.id = o.country_id
                LEFT JOIN states s ON s.id = o.state_id
@@ -1282,7 +1282,7 @@ def update_office(office_id: int, data: dict[str, Any], conn: sqlite3.Connection
                 term_start_column=?, term_end_column=?, district_column=?,
                 dynamic_parse=?, read_right_to_left=?, find_date_in_infobox=?,
                 parse_rowspan=?, consolidate_rowspan_terms=?, rep_link=?, party_link=?, alt_link_include_main=?, use_full_page_for_table=?, years_only=?,
-                term_dates_merged=?, party_ignore=?, district_ignore=?, district_at_large=?, ignore_non_links=?, remove_duplicates=?
+                term_dates_merged=?, party_ignore=?, district_ignore=?, district_at_large=?, ignore_non_links=?, remove_duplicates=?, infobox_role_key=?
             WHERE id=?""",
             (
                 country_id,
@@ -1317,6 +1317,7 @@ def update_office(office_id: int, data: dict[str, Any], conn: sqlite3.Connection
                 1 if district_at_large else 0,
                 1 if row_data.get("ignore_non_links") in (True, 1, "TRUE", "true", "1") else 0,
                 1 if row_data.get("remove_duplicates") in (True, 1, "TRUE", "true", "1") else 0,
+                (row_data.get("infobox_role_key") or "").strip(),
                 office_id,
             ),
         )
