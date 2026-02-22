@@ -2109,7 +2109,15 @@ async def api_test_script_template_page_details(source_page_id: int):
                     "infobox_role_key": (tc.get("infobox_role_key") or "").strip(),
                 }
             )
-        office_rows.append({"id": office.get("id"), "name": office.get("name") or "", "table_configs": table_configs})
+        office_rows.append(
+            {
+                "id": office.get("id"),
+                "name": office.get("name") or "",
+                "alt_links": db_offices.list_alt_links(int(office.get("id") or 0)),
+                "alt_link_include_main": bool(office.get("alt_link_include_main")),
+                "table_configs": table_configs,
+            }
+        )
     return JSONResponse({"ok": True, "page": {"id": page.get("id"), "url": page.get("url") or ""}, "offices": office_rows})
 
 
