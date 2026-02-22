@@ -922,11 +922,11 @@ def create_office_for_page(source_page_id: int, data: dict[str, Any], conn: sqli
             if len(table_nos) != len(set(table_nos)):
                 raise ValueError("Duplicate table_no within office")
             page_data = get_page(source_page_id, conn)
-            if page_data and page_data.get("allow_reuse_tables"):
+            if page_data and not page_data.get("allow_reuse_tables"):
                 other_nos = _table_nos_on_page(conn, source_page_id)
                 if set(table_nos) & other_nos:
                     raise ValueError(
-                        "Table numbers must be unique per page when 'Allow reuse of tables' is checked"
+                        "Table numbers must be unique per page when 'Allow reuse of tables' is unchecked"
                     )
         enabled = 1 if row_data.get("enabled") in (True, 1, "TRUE", "true", "1") else 0
         _ocid = row_data.get("office_category_id")
@@ -1169,19 +1169,20 @@ def update_office(office_id: int, data: dict[str, Any], conn: sqlite3.Connection
                 if len(table_nos) != len(set(table_nos)):
                     raise ValueError("Duplicate table_no within office")
                 page_data = get_page(page_id, conn)
-                if page_data and page_data.get("allow_reuse_tables"):
+                if page_data and not page_data.get("allow_reuse_tables"):
                     other_nos = _table_nos_on_page(conn, page_id, exclude_office_details_id=office_id)
                     if set(table_nos) & other_nos:
                         raise ValueError(
-                            "Table numbers must be unique per page when 'Allow reuse of tables' is checked"
+                            "Table numbers must be unique per page when 'Allow reuse of tables' is unchecked"
                         )
-                existing_ids = {
-                    r[0]
-                    for r in conn.execute(
-                        "SELECT id FROM office_table_config WHERE office_details_id = ?", (office_id,)
-                    ).fetchall()
-                }
-                kept_ids = []
+                existing_rows = conn.execute(
+                    "SELECT id, table_no FROM office_table_config WHERE office_details_id = ?",
+                    (office_id,),
+                ).fetchall()
+                existing_ids = {r[0] for r in existing_rows}
+                existing_by_table_no = {int(r[1]): int(r[0]) for r in existing_rows}
+
+                prepared_configs = []
                 for tc in table_configs:
                     tc_id = tc.get("id")
                     tc_table_no = int(tc.get("table_no", 1))
@@ -1194,14 +1195,22 @@ def update_office(office_id: int, data: dict[str, Any], conn: sqlite3.Connection
                         except (TypeError, ValueError):
                             existing_tc_id = None
                     if existing_tc_id is None:
-                        # Defensive fallback: if id was not submitted, update by unique (office_details_id, table_no)
-                        # instead of inserting duplicate table_no and failing the save.
-                        existing_by_no = conn.execute(
-                            "SELECT id FROM office_table_config WHERE office_details_id = ? AND table_no = ?",
-                            (office_id, tc_table_no),
-                        ).fetchone()
-                        if existing_by_no:
-                            existing_tc_id = int(existing_by_no[0])
+                        # Defensive fallback: if id was not submitted, match by the currently persisted table_no
+                        # using a snapshot taken before any updates in this request.
+                        existing_tc_id = existing_by_table_no.get(tc_table_no)
+                    prepared_configs.append((tc, tc_table_no, existing_tc_id))
+
+                # Avoid transient unique constraint conflicts while renumbering within an office
+                # (e.g. 2->3 and 3->4 in one save) by first moving rows being updated to temp values.
+                update_ids = [existing_tc_id for _, _, existing_tc_id in prepared_configs if existing_tc_id is not None]
+                for idx, existing_tc_id in enumerate(update_ids):
+                    conn.execute(
+                        "UPDATE office_table_config SET table_no = ? WHERE id = ?",
+                        (-(office_id * 1000000 + idx + 1), existing_tc_id),
+                    )
+
+                kept_ids = []
+                for tc, tc_table_no, existing_tc_id in prepared_configs:
                     if existing_tc_id is not None:
                         t_merged = _bool(tc, "term_dates_merged")
                         conn.execute(
