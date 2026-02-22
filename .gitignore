@@ -27,3 +27,6 @@ env/
 
 # Optional local config overrides (keep example.json tracked)
 config/local.json
+
+# Generated debug/test artifacts
+test_scripts/*.html

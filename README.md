@@ -116,6 +116,36 @@ flowchart LR
 
 ---
 
+
+## Windows PowerShell quick commands
+
+Use these command forms in **PowerShell** (not bash syntax):
+
+```powershell
+# Run targeted tests
+$env:PYTHONPATH = "."
+python -m pytest -q src/scraper/test_infobox_role_key.py src/scraper/test_script_runner.py
+
+# If pytest command/module is missing
+python -m pip install pytest
+
+# Read one table config by office_table_config.id
+Invoke-RestMethod -Method GET -Uri "http://127.0.0.1:8000/api/table-configs/880"
+
+# Save infobox_role_key directly by office_table_config.id
+$body = @{ infobox_role_key = "senior judge" } | ConvertTo-Json
+Invoke-RestMethod -Method POST -Uri "http://127.0.0.1:8000/api/table-configs/880/set-infobox-role-key" -ContentType "application/json" -Body $body
+
+# Cross-platform CLI helper (works in PowerShell/cmd/bash)
+python scripts/infobox_role_key_cli.py --base-url http://127.0.0.1:8000 --table-config-id 880 --role-key "senior judge"
+```
+
+Notes:
+- `PYTHONPATH=. pytest ...` is bash syntax and will fail in PowerShell.
+- `GET ...` is not a PowerShell command; use `Invoke-RestMethod`.
+
+---
+
 ## Git and data
 
 - Repo is safe to refresh: `data/`, `*.db`, `logs/`, and `debug/` are in `.gitignore`. Your DB, logs, and debug exports are not removed on pull.
