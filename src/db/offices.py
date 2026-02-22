@@ -333,7 +333,7 @@ def list_runnable_units(conn: sqlite3.Connection | None = None) -> list[dict[str
                       tc.term_start_column, tc.term_end_column, tc.district_column, tc.dynamic_parse, tc.read_right_to_left,
                       tc.find_date_in_infobox, tc.parse_rowspan, tc.rep_link, tc.party_link, tc.enabled AS tc_enabled,
                       tc.use_full_page_for_table, tc.years_only, tc.term_dates_merged, tc.party_ignore, tc.district_ignore, tc.district_at_large, tc.ignore_non_links, tc.remove_duplicates,
-                      tc.consolidate_rowspan_terms, tc.infobox_role_key_filter_id, rkf.role_key AS infobox_role_key, tc.notes AS tc_notes, tc.created_at
+                      tc.consolidate_rowspan_terms, tc.infobox_role_key_filter_id, COALESCE(rkf.role_key, "") AS infobox_role_key, tc.notes AS tc_notes, tc.created_at
                FROM source_pages p
                JOIN office_details od ON od.source_page_id = p.id AND od.enabled = 1
                JOIN office_table_config tc ON tc.office_details_id = od.id AND tc.enabled = 1
@@ -387,7 +387,7 @@ def list_offices(conn: sqlite3.Connection | None = None) -> list[dict[str, Any]]
                           tc.term_start_column, tc.term_end_column, tc.district_column, tc.dynamic_parse, tc.read_right_to_left,
                           tc.find_date_in_infobox, tc.parse_rowspan, tc.rep_link, tc.party_link, tc.enabled AS tc_enabled,
                           tc.use_full_page_for_table, tc.years_only, tc.term_dates_merged, tc.party_ignore, tc.district_ignore, tc.district_at_large, tc.ignore_non_links, tc.remove_duplicates,
-                          tc.consolidate_rowspan_terms, tc.infobox_role_key_filter_id, rkf.role_key AS infobox_role_key, tc.notes AS tc_notes, tc.name AS tc_name, tc.created_at
+                          tc.consolidate_rowspan_terms, tc.infobox_role_key_filter_id, COALESCE(rkf.role_key, "") AS infobox_role_key, tc.notes AS tc_notes, tc.name AS tc_name, tc.created_at
                    FROM office_details od
                    JOIN source_pages p ON p.id = od.source_page_id
                    LEFT JOIN office_table_config tc ON tc.office_details_id = od.id
@@ -435,12 +435,13 @@ def list_offices(conn: sqlite3.Connection | None = None) -> list[dict[str, Any]]
                       o.parse_rowspan, o.consolidate_rowspan_terms, o.rep_link, o.party_link, o.alt_link_include_main,
                       o.use_full_page_for_table, o.years_only,
                       o.term_dates_merged, o.party_ignore, o.district_ignore, o.district_at_large,
-                      o.infobox_role_key, o.created_at
+                      o.infobox_role_key_filter_id, COALESCE(rkf.role_key, "") AS infobox_role_key, o.created_at
                FROM offices o
                LEFT JOIN countries c ON c.id = o.country_id
                LEFT JOIN states s ON s.id = o.state_id
                LEFT JOIN levels l ON l.id = o.level_id
                LEFT JOIN branches b ON b.id = o.branch_id
+               LEFT JOIN infobox_role_key_filter rkf ON rkf.id = o.infobox_role_key_filter_id
                ORDER BY c.name, o.name"""
         )
         return [_row_to_dict(r) for r in cur.fetchall()]
@@ -574,7 +575,7 @@ def get_office(office_id: int, conn: sqlite3.Connection | None = None) -> dict[s
                           tc.term_start_column, tc.term_end_column, tc.district_column, tc.dynamic_parse, tc.read_right_to_left,
                           tc.find_date_in_infobox, tc.parse_rowspan, tc.rep_link, tc.party_link, tc.enabled AS tc_enabled,
                           tc.use_full_page_for_table, tc.years_only, tc.term_dates_merged, tc.party_ignore, tc.district_ignore, tc.district_at_large, tc.ignore_non_links, tc.remove_duplicates,
-                          tc.consolidate_rowspan_terms, tc.infobox_role_key_filter_id, rkf.role_key AS infobox_role_key, tc.notes AS tc_notes, tc.name AS tc_name, tc.created_at
+                          tc.consolidate_rowspan_terms, tc.infobox_role_key_filter_id, COALESCE(rkf.role_key, "") AS infobox_role_key, tc.notes AS tc_notes, tc.name AS tc_name, tc.created_at
                    FROM office_details od
                    JOIN source_pages p ON p.id = od.source_page_id
                    LEFT JOIN office_table_config tc ON tc.office_details_id = od.id
@@ -609,12 +610,14 @@ def get_office(office_id: int, conn: sqlite3.Connection | None = None) -> dict[s
             flat["office_category_id"] = rd0.get("office_category_id")
             return flat
         cur = conn.execute(
-            """SELECT o.*, c.name AS country_name, s.name AS state_name, l.name AS level_name, b.name AS branch_name
+            """SELECT o.*, c.name AS country_name, s.name AS state_name, l.name AS level_name, b.name AS branch_name,
+                         o.infobox_role_key_filter_id, COALESCE(rkf.role_key, "") AS infobox_role_key
                FROM offices o
                LEFT JOIN countries c ON c.id = o.country_id
                LEFT JOIN states s ON s.id = o.state_id
                LEFT JOIN levels l ON l.id = o.level_id
                LEFT JOIN branches b ON b.id = o.branch_id
+               LEFT JOIN infobox_role_key_filter rkf ON rkf.id = o.infobox_role_key_filter_id
                WHERE o.id = ?""",
             (office_id,),
         )
@@ -815,7 +818,7 @@ def list_offices_for_page(source_page_id: int, conn: sqlite3.Connection | None =
                           tc.term_start_column, tc.term_end_column, tc.district_column, tc.dynamic_parse, tc.read_right_to_left,
                           tc.find_date_in_infobox, tc.parse_rowspan, tc.rep_link, tc.party_link, tc.enabled AS tc_enabled,
                           tc.use_full_page_for_table, tc.years_only, tc.term_dates_merged, tc.party_ignore, tc.district_ignore, tc.district_at_large, tc.ignore_non_links, tc.remove_duplicates,
-                          tc.consolidate_rowspan_terms, tc.infobox_role_key_filter_id, rkf.role_key AS infobox_role_key, tc.notes AS tc_notes, tc.name AS tc_name, tc.created_at
+                          tc.consolidate_rowspan_terms, tc.infobox_role_key_filter_id, COALESCE(rkf.role_key, "") AS infobox_role_key, tc.notes AS tc_notes, tc.name AS tc_name, tc.created_at
                    FROM office_details od
                    JOIN source_pages p ON p.id = od.source_page_id
                    LEFT JOIN office_table_config tc ON tc.office_details_id = od.id
