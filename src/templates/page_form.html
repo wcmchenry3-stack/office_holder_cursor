@@ -19,6 +19,7 @@
 </p>
 {% endif %}
 {% if saved %}<div class="alert alert-success">Saved.</div>{% endif %}
+{% if page_saved %}<div class="alert alert-success">Page settings saved. Office/table settings are unchanged until you save an office section.</div>{% endif %}
 {% if validation_error %}
 <div class="alert alert-error" role="alert" style="border-width:2px; font-weight:600; margin-bottom:1rem;">
   <strong>Save failed – validation error</strong><br>
@@ -55,7 +56,7 @@
 </aside>
 <div class="page-edit-main" style="margin-right:13rem;">
   <div class="save-all-bar" style="margin-bottom:1rem;" data-source-page-id="{{ source_page_id }}">
-    <button type="button" class="btn save-all-btn" id="saveAllBtn">Save</button>
+    <button type="button" class="btn save-all-btn" id="saveAllBtn">Save all (page + offices + tables)</button>
     <span class="save-all-status" id="saveAllStatus" style="margin-left:0.5rem; font-size:0.9rem; color:var(--muted, #666);"></span>
   </div>
   <section id="section-page" style="margin-bottom:2rem;" data-page-url="{{ (page_data.url or '')|e }}">
@@ -121,6 +122,7 @@
       <div class="form-group checkbox-group"><label><input type="checkbox" id="allowReuseTablesInput" name="allow_reuse_tables" value="1" {% if page_data.allow_reuse_tables %}checked{% endif %}> Allow reuse of tables</label></div>
       <p class="form-note">When checked, table numbers must be unique per page. When unchecked, different offices can use the same table number.</p>
       <div class="actions">
+        <button type="submit" class="btn">Save page</button>
         <a href="/offices{% if list_return_query is defined and list_return_query %}?{{ list_return_query }}{% endif %}" class="btn btn-secondary">Cancel</a>
         <form method="post" action="/pages/{{ source_page_id }}/delete" id="deletePageForm" style="display:inline;" onsubmit="return confirm('Delete this page and all its offices and tables? This cannot be undone.');">
           <button type="submit" class="btn btn-danger">Delete page</button>
@@ -165,7 +167,7 @@
       </div>
       <div class="form-group checkbox-group"><label><input type="checkbox" name="alt_link_include_main" value="1" {% if o.alt_link_include_main %}checked{% endif %}> Include main office link in search</label></div>
       <h3>Table parsing</h3>
-      {% set tclist = o.table_configs if o.table_configs and o.table_configs|length > 0 else [{'id': none, 'name': '', 'table_no': o.table_no or 1, 'table_rows': o.table_rows or 4, 'link_column': o.link_column or 1, 'party_column': o.party_column or 0, 'term_start_column': o.term_start_column or 4, 'term_end_column': o.term_end_column or 5, 'district_column': o.district_column or 0, 'dynamic_parse': o.dynamic_parse, 'read_right_to_left': o.read_right_to_left, 'find_date_in_infobox': o.find_date_in_infobox, 'years_only': o.years_only, 'parse_rowspan': o.parse_rowspan, 'consolidate_rowspan_terms': o.consolidate_rowspan_terms, 'rep_link': o.rep_link, 'party_link': o.party_link, 'enabled': o.enabled, 'use_full_page_for_table': o.use_full_page_for_table, 'term_dates_merged': o.term_dates_merged, 'party_ignore': o.party_ignore, 'district_ignore': o.district_ignore, 'district_at_large': o.district_at_large, 'ignore_non_links': o.ignore_non_links, 'remove_duplicates': o.remove_duplicates, 'notes': o.notes or ''}] %}
+      {% set tclist = o.table_configs if o.table_configs and o.table_configs|length > 0 else [{'id': none, 'name': '', 'table_no': o.table_no or 1, 'table_rows': o.table_rows or 4, 'link_column': o.link_column or 1, 'party_column': o.party_column or 0, 'term_start_column': o.term_start_column or 4, 'term_end_column': o.term_end_column or 5, 'district_column': o.district_column or 0, 'dynamic_parse': o.dynamic_parse, 'read_right_to_left': o.read_right_to_left, 'find_date_in_infobox': o.find_date_in_infobox, 'years_only': o.years_only, 'parse_rowspan': o.parse_rowspan, 'consolidate_rowspan_terms': o.consolidate_rowspan_terms, 'rep_link': o.rep_link, 'party_link': o.party_link, 'enabled': o.enabled, 'use_full_page_for_table': o.use_full_page_for_table, 'term_dates_merged': o.term_dates_merged, 'party_ignore': o.party_ignore, 'district_ignore': o.district_ignore, 'district_at_large': o.district_at_large, 'ignore_non_links': o.ignore_non_links, 'remove_duplicates': o.remove_duplicates, 'infobox_role_key': o.infobox_role_key or '', 'notes': o.notes or ''}] %}
       <div class="table-config-blocks" data-office-id="{{ o.id }}">
       {% for tc in tclist %}
       <div class="table-config-block" id="section-table-{{ tc.id if tc.id else (o.id ~ '-t' ~ loop.index) }}" data-office-id="{{ o.id }}" data-tc-id="{{ tc.id or '' }}" style="margin-bottom:1.5rem; padding:1rem; border:1px solid var(--border, #ccc); border-radius:6px;">
@@ -208,6 +210,7 @@
               <option value="years_only" {% if tc.years_only %}selected{% endif %}>Table has years only</option>
             </select>
           </div>
+          <div class="form-group"><label>Infobox role key (optional) <span title="Use exact role phrase to disambiguate shared links. Example: &quot;chief judge&quot; or &quot;senior judge&quot;. If you use &quot;judge&quot;, it may also match chief/senior rows unless those words are absent.">ⓘ</span></label><input type="text" name="tc_infobox_role_key" value="{{ tc.infobox_role_key or "" }}" placeholder="e.g. senior judge"></div>
           <div class="form-group checkbox-group"><label><input type="checkbox" name="tc_parse_rowspan" value="1" {% if tc.parse_rowspan %}checked{% endif %}> Parse rowspan</label></div>
           <div class="form-group checkbox-group"><label><input type="checkbox" name="tc_consolidate_rowspan_terms" value="1" {% if tc.consolidate_rowspan_terms %}checked{% endif %}> Consolidate rowspan terms</label></div>
           <div class="form-group checkbox-group"><label><input type="checkbox" name="tc_rep_link" value="1" {% if tc.rep_link %}checked{% endif %}> Rep link</label></div>
@@ -217,6 +220,7 @@
         </div>
         <div class="form-group"><label>Notes</label><input type="text" name="tc_notes" value="{{ tc.notes or '' }}"></div>
         <div class="actions" style="margin-top:0.5rem;">
+          <button type="submit" class="btn btn-sm">Save office + tables</button>
           <button type="button" class="btn btn-secondary btn-sm remove-table-btn">Remove table</button>
           {% if tc.id %}
           <button type="button" class="btn btn-danger btn-sm delete-table-btn" data-office-id="{{ o.id }}" data-tc-id="{{ tc.id }}">Delete table</button>
@@ -266,6 +270,7 @@
       </div>
       <button type="button" class="btn btn-secondary add-table-btn" data-office-id="{{ o.id }}" style="margin-bottom:1rem;">Add table</button>
       <div class="actions">
+        <button type="submit" name="action" value="save" class="btn">Save office + tables</button>
         <a href="/offices{% if list_return_query is defined and list_return_query %}?{{ list_return_query }}{% endif %}" class="btn btn-secondary">Cancel</a>
       </div>
     </form>
@@ -421,6 +426,7 @@
         <option value="years_only" {% if office and office.years_only %}selected{% endif %}>Table has years only</option>
       </select>
       <p class="form-note">Find date in infobox: get full dates from bios. Table has years only: table has year ranges only (stores start/end year). Choose one or not applicable.</p>
+      <label>Infobox role key (optional) <span title="Use exact role phrase to disambiguate shared links. Example: &quot;chief judge&quot; or &quot;senior judge&quot;. If you use &quot;judge&quot;, it may also match chief/senior rows unless those words are absent.">ⓘ</span> <input type="text" name="infobox_role_key" value="{{ office.infobox_role_key if office else "" }}" placeholder="e.g. senior judge"></label>
     </div>
     <div class="form-group checkbox-group">
       <label><input type="checkbox" name="parse_rowspan" value="1" {% if office and office.parse_rowspan %}checked{% endif %}> Parse rowspan</label>
@@ -861,6 +867,13 @@
       var n = el(name, tcName);
       return n && n.checked;
     }
+    function elText(name, tcName, def) {
+      var n = el(name, tcName);
+      if (!n) return def;
+      var v = n.value;
+      if (v == null) return def;
+      return String(v).trim();
+    }
     function dateSource() {
       var n = el('date_source', 'tc_date_source');
       return n ? n.value : 'not_applicable';
@@ -900,6 +913,7 @@
       party_ignore: elChecked('party_ignore', 'tc_party_ignore'),
       ignore_non_links: elChecked('ignore_non_links', 'tc_ignore_non_links'),
       remove_duplicates: elChecked('remove_duplicates', 'tc_remove_duplicates'),
+      infobox_role_key: elText('infobox_role_key', 'tc_infobox_role_key', ''),
       district_ignore: distMode() === 'no_district',
       district_at_large: distMode() === 'at_large'
     };
@@ -1086,14 +1100,11 @@
         .then(function(r) {
           return handleSaveAllResponse(r, pageAction).then(function(data) {
             var idx = 0;
+            var finalRedirect = (data && data.redirect) ? data.redirect : null;
             function next() {
               if (idx >= officeForms.length) {
                 setStatus('Saved.');
-                var firstForm = officeForms[0];
-                var firstAction = firstForm ? (firstForm.getAttribute('action') || firstForm.action) : '';
-                var firstOfficeId = typeof firstAction === 'string' ? (firstAction.match(/\/offices\/(\d+)/) || [])[1] : null;
-                if (firstOfficeId) window.location.href = '/offices/' + firstOfficeId + '?saved=1';
-                else window.location.href = '/offices?saved=1';
+                window.location.href = finalRedirect || window.location.pathname;
                 return;
               }
               var of = officeForms[idx++];
@@ -1101,7 +1112,10 @@
               if (typeof officeAction !== 'string') officeAction = '';
               return fetch(officeAction, { method: 'POST', headers: saveAllHeaders, body: formToBody(of) })
                 .then(function(res) {
-                  return handleSaveAllResponse(res, officeAction).then(function() { return next(); });
+                  return handleSaveAllResponse(res, officeAction).then(function(stepData) {
+                    if (stepData && stepData.redirect) finalRedirect = stepData.redirect;
+                    return next();
+                  });
                 });
             }
             return next();
@@ -1169,6 +1183,8 @@
         clone.querySelector('input[name="tc_term_end_column"]').value = '5';
         clone.querySelector('input[name="tc_district_column"]').value = '0';
         clone.querySelector('input[name="tc_notes"]').value = '';
+        var roleInput = clone.querySelector('input[name="tc_infobox_role_key"]');
+        if (roleInput) roleInput.value = '';
         var deleteForm = clone.querySelector('form[action*="/table/"]');
         if (deleteForm) deleteForm.remove();
         var h4 = clone.querySelector('h4');

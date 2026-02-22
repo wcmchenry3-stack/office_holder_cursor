@@ -68,6 +68,7 @@ def migrate_to_fk(conn=None):
         _migrate_allow_reuse_tables_and_table_no_unique(conn)
         # office_table_config: add name (table name for outline)
         _migrate_office_table_config_name(conn)
+        _migrate_infobox_role_key(conn)
         # office_category tables and office_details.office_category_id
         _migrate_office_category(conn)
         # cities table and source_pages.city_id
@@ -697,3 +698,21 @@ def _migrate_remove_duplicates(conn):
     if "remove_duplicates" not in otc_cols:
         conn.execute("ALTER TABLE office_table_config ADD COLUMN remove_duplicates INTEGER NOT NULL DEFAULT 0")
     conn.commit()
+
+
+def _migrate_infobox_role_key(conn):
+    """Add infobox_role_key to office_table_config if missing."""
+    try:
+        otc_cols = _columns(conn, "office_table_config")
+    except sqlite3.OperationalError:
+        return
+    changed = False
+    if "infobox_role_key" not in otc_cols:
+        conn.execute("ALTER TABLE office_table_config ADD COLUMN infobox_role_key TEXT NOT NULL DEFAULT ''")
+        changed = True
+    offices_cols = _columns(conn, "offices")
+    if "infobox_role_key" not in offices_cols:
+        conn.execute("ALTER TABLE offices ADD COLUMN infobox_role_key TEXT NOT NULL DEFAULT ''")
+        changed = True
+    if changed:
+        conn.commit()

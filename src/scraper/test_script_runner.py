@@ -109,6 +109,7 @@ DEFAULT_TABLE_CONFIG = {
     "district_ignore": False,
     "district_at_large": False,
     "ignore_non_links": False,
+    "infobox_role_key": "",
 }
 
 

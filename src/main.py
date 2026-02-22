@@ -6,6 +6,7 @@ From project root: office_holder/
 """
 
 import json
+import sqlite3
 import re
 import tempfile
 from datetime import datetime
@@ -110,6 +111,7 @@ def _office_draft_from_body(body: dict, *, include_ref_names: bool = False) -> d
         "district_at_large": district_at_large,
         "ignore_non_links": body.get("ignore_non_links") in (True, 1, "1", "true", "TRUE"),
         "remove_duplicates": body.get("remove_duplicates") in (True, 1, "1", "true", "TRUE"),
+        "infobox_role_key": (body.get("infobox_role_key") or "").strip(),
     }
     if include_ref_names:
         country_id = int(body.get("country_id") or 0)
@@ -198,6 +200,7 @@ async def offices_list(
     office_count: str | None = Query("all"),
 ):
     saved = request.query_params.get("saved") == "1"
+    page_saved = request.query_params.get("page_saved") == "1"
     validation_error = request.query_params.get("error") or None
     imported_count = request.query_params.get("count")
     imported_errors = request.query_params.get("errors")
@@ -327,6 +330,7 @@ async def office_create(request: Request):
         "district_at_large": (form.get("district_mode") or "column") == "at_large",
         "ignore_non_links": form.get("ignore_non_links") == "1",
         "remove_duplicates": form.get("remove_duplicates") == "1",
+        "infobox_role_key": (form.get("infobox_role_key") or "").strip(),
     }
     try:
         _validate_level_state_city(data.get("level_id"), data.get("state_id"), data.get("city_id"), data.get("branch_id"))
@@ -590,7 +594,7 @@ async def page_update(request: Request, source_page_id: int):
             return JSONResponse({"ok": False, "error": str(e), "redirect": redirect_url})
         return RedirectResponse(redirect_url, status_code=302)
     first_office_id = db_offices.list_offices_for_page(source_page_id)[0]["id"]
-    url = f"/offices/{first_office_id}?saved=1"
+    url = f"/offices/{first_office_id}?page_saved=1"
     if nav_q or list_return_q:
         url += "&" + _page_redirect_query(nav_q, list_return_q)
     url += "#section-page"
@@ -638,6 +642,7 @@ async def office_edit_page(request: Request, office_id: int):
         for o in offices_on_page or []:
             o["terms_count"] = db_office_terms.count_terms_for_office(o["id"])
     saved = request.query_params.get("saved") == "1"
+    page_saved = request.query_params.get("page_saved") == "1"
     validation_error = request.query_params.get("error") or None
     nav_ids_raw = request.query_params.get("nav_ids") or ""
     nav_ids = [int(x.strip()) for x in nav_ids_raw.split(",") if x.strip().isdigit()]
@@ -676,7 +681,7 @@ async def office_edit_page(request: Request, office_id: int):
     )
     return templates.TemplateResponse(
         "page_form.html",
-        {"request": request, "office": office, "offices_on_page": offices_on_page, "source_page_id": source_page_id, "page_data": page_data, "countries": countries, "levels": levels, "branches": branches, "states": states, "cities": cities, "nav_ids": nav_ids_raw, "nav_prev_id": nav_prev_id, "nav_next_id": nav_next_id, "nav_current": nav_current, "nav_total": nav_total, "list_return_query": list_return_query, "terms_count": terms_count, "saved": saved, "validation_error": validation_error, "form_template": "page_form", "office_categories": office_categories},
+        {"request": request, "office": office, "offices_on_page": offices_on_page, "source_page_id": source_page_id, "page_data": page_data, "countries": countries, "levels": levels, "branches": branches, "states": states, "cities": cities, "nav_ids": nav_ids_raw, "nav_prev_id": nav_prev_id, "nav_next_id": nav_next_id, "nav_current": nav_current, "nav_total": nav_total, "list_return_query": list_return_query, "terms_count": terms_count, "saved": saved, "page_saved": page_saved, "validation_error": validation_error, "form_template": "page_form", "office_categories": office_categories},
         headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
     )
 
@@ -745,6 +750,7 @@ def _form_to_table_config(form, i: int) -> dict:
         "remove_duplicates": _bool("remove_duplicates", "tc_remove_duplicates"),
         "notes": _get("notes", "tc_notes") or "",
         "name": _get("name", "tc_name") or "",
+        "infobox_role_key": (_get("infobox_role_key", "tc_infobox_role_key") or "").strip(),
     }
 
 
@@ -782,6 +788,7 @@ async def office_update(request: Request, office_id: int):
         "district_at_large": (form.get("district_mode") or "column") == "at_large",
         "ignore_non_links": form.get("ignore_non_links") == "1",
         "remove_duplicates": form.get("remove_duplicates") == "1",
+        "infobox_role_key": (form.get("infobox_role_key") or "").strip(),
     }
     tc_ids = form.getlist("tc_id")
     tc_table_nos = form.getlist("tc_table_no")
@@ -791,7 +798,52 @@ async def office_update(request: Request, office_id: int):
     save_all = request.headers.get("X-Save-All") == "1"
     try:
         _validate_level_state_city(data.get("level_id"), data.get("state_id"), data.get("city_id"), data.get("branch_id"))
-        db_offices.update_office(office_id, data, office_only=office_only)
+        updated = db_offices.update_office(office_id, data, office_only=office_only)
+        if not updated:
+            raise ValueError("Save failed: office was not updated")
+        # Verify infobox_role_key persistence before returning saved=1.
+        saved_office = db_offices.get_office(office_id)
+        if not saved_office:
+            raise ValueError("Save verification failed: office not found after update")
+        expected_role_keys: dict[int, str] = {}
+        submitted_tcs = data.get("table_configs")
+        if isinstance(submitted_tcs, list) and submitted_tcs:
+            for tc in submitted_tcs:
+                try:
+                    tno = int(tc.get("table_no") or 1)
+                except (TypeError, ValueError):
+                    tno = 1
+                expected_role_keys[tno] = (tc.get("infobox_role_key") or "").strip()
+        else:
+            try:
+                tno = int(data.get("table_no") or 1)
+            except (TypeError, ValueError):
+                tno = 1
+            expected_role_keys[tno] = (data.get("infobox_role_key") or "").strip()
+
+        actual_role_keys: dict[int, str] = {}
+        saved_tcs = saved_office.get("table_configs") if isinstance(saved_office, dict) else None
+        if isinstance(saved_tcs, list) and saved_tcs:
+            for tc in saved_tcs:
+                try:
+                    tno = int(tc.get("table_no") or 1)
+                except (TypeError, ValueError):
+                    continue
+                actual_role_keys[tno] = (tc.get("infobox_role_key") or "").strip()
+        else:
+            try:
+                tno = int(saved_office.get("table_no") or 1)
+            except (TypeError, ValueError):
+                tno = 1
+            actual_role_keys[tno] = (saved_office.get("infobox_role_key") or "").strip()
+
+        mismatches = []
+        for tno, expected_val in expected_role_keys.items():
+            actual_val = (actual_role_keys.get(tno) or "").strip()
+            if expected_val != actual_val:
+                mismatches.append(f"table {tno}: expected {expected_val!r}, got {actual_val!r}")
+        if mismatches:
+            raise ValueError("Save verification failed for infobox_role_key: " + "; ".join(mismatches))
     except ValueError as e:
         from urllib.parse import quote
         q = "?error=" + quote(str(e))
@@ -802,6 +854,18 @@ async def office_update(request: Request, office_id: int):
         redirect_url = f"/offices/{office_id}{q}"
         if save_all:
             return JSONResponse({"ok": False, "error": str(e), "redirect": redirect_url})
+        return RedirectResponse(redirect_url, status_code=302)
+    except sqlite3.IntegrityError as e:
+        from urllib.parse import quote
+        msg = "Save failed due to conflicting table settings: " + str(e)
+        q = "?error=" + quote(msg)
+        if nav_ids:
+            q += "&nav_ids=" + nav_ids
+        if list_return_query:
+            q += "&" + list_return_query
+        redirect_url = f"/offices/{office_id}{q}"
+        if save_all:
+            return JSONResponse({"ok": False, "error": msg, "redirect": redirect_url})
         return RedirectResponse(redirect_url, status_code=302)
     if action == "save":
         q = "?saved=1"
@@ -955,6 +1019,164 @@ async def api_office_enabled(office_id: int, enabled: int = Form(1)):
 async def api_offices_enabled_all(enabled: int = Form(1)):
     db_offices.set_all_offices_enabled(enabled == 1)
     return JSONResponse({"ok": True, "enabled": enabled})
+
+
+@app.get("/api/offices/{office_id}/table-configs")
+async def api_office_table_configs(office_id: int, table_no: int | None = None):
+    """Return saved table config details for one office (including infobox_role_key)."""
+    office = db_offices.get_office(office_id)
+    if not office:
+        raise HTTPException(status_code=404, detail="Office not found")
+    tcs = office.get("table_configs") if isinstance(office.get("table_configs"), list) and office.get("table_configs") else []
+    if not tcs:
+        tcs = [{
+            "id": office.get("id"),
+            "table_no": office.get("table_no"),
+            "infobox_role_key": (office.get("infobox_role_key") or "").strip(),
+        }]
+    if table_no is not None:
+        tcs = [tc for tc in tcs if int(tc.get("table_no") or 1) == int(table_no)]
+    out = []
+    for tc in tcs:
+        out.append({
+            "id": tc.get("id"),
+            "table_no": int(tc.get("table_no") or 1),
+            "name": tc.get("name") or "",
+            "enabled": bool(tc.get("enabled")),
+            "find_date_in_infobox": bool(tc.get("find_date_in_infobox")),
+            "infobox_role_key": (tc.get("infobox_role_key") or "").strip(),
+        })
+    return JSONResponse({"ok": True, "office_id": office_id, "table_configs": out})
+
+
+@app.post("/api/offices/{office_id}/set-infobox-role-key")
+async def api_office_set_infobox_role_key(office_id: int, request: Request):
+    """Set infobox_role_key for a specific office table_no and return persisted table details.
+    Body JSON: {"table_no": 1, "infobox_role_key": "chief judge"}
+    Also accepts table_config_id to target a specific office_table_config row.
+    """
+    office = db_offices.get_office(office_id)
+    if not office:
+        raise HTTPException(status_code=404, detail="Office not found")
+    body = {}
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    tcs = office.get("table_configs") if isinstance(office.get("table_configs"), list) and office.get("table_configs") else []
+    table_config_id_raw = (body or {}).get("table_config_id")
+    table_no_raw = (body or {}).get("table_no")
+    table_no = None
+    if table_config_id_raw not in (None, ""):
+        try:
+            table_config_id = int(table_config_id_raw)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="table_config_id must be an integer")
+        match_tc = None
+        for tc in tcs:
+            try:
+                tc_id = int(tc.get("id") or 0)
+            except (TypeError, ValueError):
+                tc_id = 0
+            if tc_id == table_config_id:
+                match_tc = tc
+                break
+        if not match_tc:
+            raise HTTPException(status_code=404, detail=f"No table config {table_config_id} found for office {office_id}")
+        table_no = int(match_tc.get("table_no") or 1)
+    elif table_no_raw not in (None, ""):
+        try:
+            table_no = int(table_no_raw)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="table_no must be an integer")
+    elif len(tcs) == 1:
+        table_no = int(tcs[0].get("table_no") or 1)
+    else:
+        available = [{"table_config_id": tc.get("id"), "table_no": tc.get("table_no")} for tc in tcs]
+        raise HTTPException(status_code=400, detail={"message": "Provide table_no or table_config_id", "available_tables": available})
+
+    role_key = ((body or {}).get("infobox_role_key") or "").strip()
+    updated = db_offices.set_infobox_role_key(office_id, table_no, role_key)
+    if not updated:
+        available = [{"table_config_id": tc.get("id"), "table_no": tc.get("table_no")} for tc in tcs]
+        raise HTTPException(status_code=404, detail={"message": f"No table config found for office {office_id} table_no {table_no}", "available_tables": available})
+    office_after = db_offices.get_office(office_id)
+    tcs = office_after.get("table_configs") if isinstance(office_after.get("table_configs"), list) else []
+    match = None
+    for tc in tcs:
+        if int(tc.get("table_no") or 1) == table_no:
+            match = tc
+            break
+    if match is None and not tcs:
+        match = {
+            "id": office_after.get("id"),
+            "table_no": office_after.get("table_no"),
+            "infobox_role_key": (office_after.get("infobox_role_key") or "").strip(),
+            "enabled": office_after.get("enabled"),
+            "find_date_in_infobox": office_after.get("find_date_in_infobox"),
+        }
+    return JSONResponse({
+        "ok": True,
+        "message": "Saved",
+        "office_id": office_id,
+        "table_config": {
+            "id": match.get("id") if match else None,
+            "table_no": int(match.get("table_no") or table_no) if match else table_no,
+            "infobox_role_key": (match.get("infobox_role_key") or "").strip() if match else role_key,
+            "enabled": bool(match.get("enabled")) if match else True,
+            "find_date_in_infobox": bool(match.get("find_date_in_infobox")) if match else False,
+        },
+    })
+
+
+@app.get("/api/table-configs/{table_config_id}")
+async def api_table_config_get(table_config_id: int):
+    """Return one table config row (including infobox_role_key) by office_table_config.id."""
+    office = db_offices.get_office_by_table_config_id(table_config_id)
+    if not office:
+        raise HTTPException(status_code=404, detail=f"Table config {table_config_id} not found")
+    return JSONResponse({
+        "ok": True,
+        "table_config": {
+            "id": int(office.get("id") or table_config_id),
+            "office_details_id": int(office.get("office_details_id") or 0) or None,
+            "table_no": int(office.get("table_no") or 1),
+            "name": office.get("name") or "",
+            "infobox_role_key": (office.get("infobox_role_key") or "").strip(),
+        },
+    })
+
+
+@app.post("/api/table-configs/{table_config_id}/set-infobox-role-key")
+async def api_table_config_set_infobox_role_key(table_config_id: int, request: Request):
+    """Set infobox_role_key directly by office_table_config.id.
+
+    Body JSON: {"infobox_role_key": "chief judge"}
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    role_key = ((body or {}).get("infobox_role_key") or "").strip()
+    updated = db_offices.set_infobox_role_key_by_table_config_id(table_config_id, role_key)
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Table config {table_config_id} not found")
+    office = db_offices.get_office_by_table_config_id(table_config_id)
+    if not office:
+        raise HTTPException(status_code=404, detail=f"Table config {table_config_id} not found after save")
+    return JSONResponse(
+        {
+            "ok": True,
+            "message": "Saved",
+            "table_config": {
+                "id": int(office.get("id") or table_config_id),
+                "office_details_id": int(office.get("office_details_id") or 0) or None,
+                "table_no": int(office.get("table_no") or 1),
+                "name": office.get("name") or "",
+                "infobox_role_key": (office.get("infobox_role_key") or "").strip(),
+            },
+        }
+    )
 
 
 @app.get("/api/offices/{office_id}/test-config")
@@ -1876,6 +2098,7 @@ async def api_test_script_template_page_details(source_page_id: int):
                     "district_at_large": bool(tc.get("district_at_large")),
                     "ignore_non_links": bool(tc.get("ignore_non_links")),
                     "remove_duplicates": bool(tc.get("remove_duplicates")),
+                    "infobox_role_key": (tc.get("infobox_role_key") or "").strip(),
                 }
             )
         office_rows.append({"id": office.get("id"), "name": office.get("name") or "", "table_configs": table_configs})

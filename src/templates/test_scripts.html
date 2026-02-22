@@ -105,6 +105,7 @@
           <option value="years_only">Table has years only</option>
         </select>
       </div>
+      <div class="form-group"><label>Infobox role key (optional) <span title="Use exact role phrase (e.g. &quot;chief judge&quot;, &quot;senior judge&quot;). &quot;judge&quot; can also match those rows.">ⓘ</span></label><input type="text" id="infobox_role_key" placeholder="e.g. senior judge"></div>
       <div class="form-group checkbox-group"><label><input type="checkbox" id="parse_rowspan"> Parse rowspan</label></div>
       <div class="form-group checkbox-group"><label><input type="checkbox" id="consolidate_rowspan_terms"> Consolidate consecutive terms (rowspan)</label></div>
       <div class="form-group checkbox-group"><label><input type="checkbox" id="rep_link"> Rep link</label></div>
@@ -212,6 +213,7 @@ function buildConfig() {
     rep_link: document.getElementById('rep_link').checked,
     party_link: document.getElementById('party_link').checked,
     use_full_page_for_table: document.getElementById('use_full_page_for_table').checked,
+    infobox_role_key: (document.getElementById('infobox_role_key').value || "").trim(),
   };
   return {...base, ...preservedConfigExtras};
 }
@@ -377,6 +379,7 @@ function applySelectedOfficeTemplate() {
   document.getElementById('rep_link').checked = !!tc.rep_link;
   document.getElementById('party_link').checked = !!tc.party_link;
   document.getElementById('use_full_page_for_table').checked = !!tc.use_full_page_for_table;
+  document.getElementById('infobox_role_key').value = tc.infobox_role_key || '';
   syncTableConfigControls();
   setOfficeTemplateMessage('Copied template values into the form. This test script remains independent from office configs.');
 }
@@ -477,6 +480,7 @@ async function editOne(id) {
     document.getElementById('rep_link').checked = !!c.rep_link;
     document.getElementById('party_link').checked = !!c.party_link;
     document.getElementById('use_full_page_for_table').checked = !!c.use_full_page_for_table;
+    document.getElementById('infobox_role_key').value = c.infobox_role_key || '';
 
     document.getElementById('expected_json').value = t.expected_json ? JSON.stringify(t.expected_json, null, 2) : '';
     document.getElementById('editModeName').textContent = `${t.name || ''} (#${t.id})`;
