@@ -2341,10 +2341,46 @@ def _run_job_worker(
     individual_id_list: list[int] | None = None,
     force_overwrite: bool = False,
 ):
+    def _default_run_progress() -> dict:
+        return {
+            "office": {"current": 0, "total": 1, "message": "Starting…"},
+            "table": {"current": 0, "total": 0, "message": ""},
+            "infobox": {"current": 0, "total": 0, "message": ""},
+            "bio": {"current": 0, "total": 0, "message": ""},
+        }
+
+    def _phase_bucket(phase: str) -> str:
+        p = (phase or "").strip().lower()
+        if p in ("bio", "living"):
+            return "bio"
+        if p == "infobox":
+            return "infobox"
+        if p == "table":
+            return "table"
+        return "office"
+
     def progress_callback(phase: str, current: int, total: int, message: str, extra: dict):
         with _run_job_lock:
             if job_id in _run_job_store:
-                _run_job_store[job_id].update({
+                job = _run_job_store[job_id]
+                progress = job.get("progress")
+                if not isinstance(progress, dict):
+                    progress = _default_run_progress()
+                for bucket_name, defaults in _default_run_progress().items():
+                    bucket = progress.get(bucket_name)
+                    if not isinstance(bucket, dict):
+                        progress[bucket_name] = dict(defaults)
+                bucket_name = _phase_bucket(phase)
+                bucket = progress[bucket_name]
+                bucket.update({
+                    "current": current,
+                    "total": total,
+                    "message": message,
+                })
+                job["progress"] = progress
+
+                # Legacy top-level fields for existing polling clients.
+                job.update({
                     "phase": phase,
                     "current": current,
                     "total": total,
@@ -2447,6 +2483,12 @@ async def api_run(
     with _run_job_lock:
         _run_job_store[job_id] = {
             "status": "running",
+            "progress": {
+                "office": {"current": 0, "total": 1, "message": "Starting…"},
+                "table": {"current": 0, "total": 0, "message": ""},
+                "infobox": {"current": 0, "total": 0, "message": ""},
+                "bio": {"current": 0, "total": 0, "message": ""},
+            },
             "phase": "init",
             "current": 0,
             "total": 1,
