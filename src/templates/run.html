@@ -55,8 +55,25 @@
     <strong>Job running</strong> — do not close this page
   </div>
   <div id="progressMessage" class="running-message"></div>
-  <div class="progress-bar-wrap">
-    <div id="progressBar" class="progress-bar" style="width:0%"></div>
+  <div id="parsingProgressGroup" class="progress-group">
+    <div class="progress-row">
+      <div id="officeProgressLabel" class="progress-label">Offices: 0 / 0</div>
+      <div class="progress-bar-wrap"><div id="officeProgressBar" class="progress-bar" style="width:0%"></div></div>
+    </div>
+    <div class="progress-row">
+      <div id="tableProgressLabel" class="progress-label">Tables: 0 / 0</div>
+      <div class="progress-bar-wrap"><div id="tableProgressBar" class="progress-bar" style="width:0%"></div></div>
+    </div>
+    <div class="progress-row">
+      <div id="infoboxProgressLabel" class="progress-label">Infobox: 0 / 0</div>
+      <div class="progress-bar-wrap"><div id="infoboxProgressBar" class="progress-bar" style="width:0%"></div></div>
+    </div>
+  </div>
+  <div id="bioProgressGroup" class="progress-group" style="display:none;">
+    <div class="progress-row">
+      <div id="bioProgressLabel" class="progress-label">Bios: 0 / 0</div>
+      <div class="progress-bar-wrap"><div id="bioProgressBar" class="progress-bar" style="width:0%"></div></div>
+    </div>
   </div>
   <div id="progressDetail" class="running-detail"></div>
   <button type="button" class="btn btn-secondary" id="runStopBtn" style="margin-top:0.75rem;">Stop</button>
@@ -98,6 +115,9 @@
   border-radius: 4px;
   overflow: hidden;
 }
+.progress-group { margin-top: 0.5rem; }
+.progress-row + .progress-row { margin-top: 0.5rem; }
+.progress-label { font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.2rem; }
 .progress-bar {
   height: 100%;
   background: var(--accent);
@@ -170,14 +190,49 @@ document.getElementById('runForm').addEventListener('submit', async (e) => {
   const resultEl = document.getElementById('result');
   const runningPanel = document.getElementById('runningPanel');
   const progressMessage = document.getElementById('progressMessage');
-  const progressBar = document.getElementById('progressBar');
   const progressDetail = document.getElementById('progressDetail');
+  const parsingProgressGroup = document.getElementById('parsingProgressGroup');
+  const bioProgressGroup = document.getElementById('bioProgressGroup');
+
+  const officeProgressLabel = document.getElementById('officeProgressLabel');
+  const officeProgressBar = document.getElementById('officeProgressBar');
+  const tableProgressLabel = document.getElementById('tableProgressLabel');
+  const tableProgressBar = document.getElementById('tableProgressBar');
+  const infoboxProgressLabel = document.getElementById('infoboxProgressLabel');
+  const infoboxProgressBar = document.getElementById('infoboxProgressBar');
+  const bioProgressLabel = document.getElementById('bioProgressLabel');
+  const bioProgressBar = document.getElementById('bioProgressBar');
+
+  const setProgress = (labelEl, barEl, label, current, total) => {
+    const safeCurrent = Number(current) || 0;
+    const safeTotal = Number(total) || 0;
+    const pct = safeTotal > 0 ? Math.round((safeCurrent / safeTotal) * 100) : 0;
+    labelEl.textContent = `${label}: ${safeCurrent} / ${safeTotal}`;
+    barEl.style.width = pct + '%';
+  };
+
+  const resetProgressGroups = () => {
+    setProgress(officeProgressLabel, officeProgressBar, 'Offices', 0, 0);
+    setProgress(tableProgressLabel, tableProgressBar, 'Tables', 0, 0);
+    setProgress(infoboxProgressLabel, infoboxProgressBar, 'Infobox', 0, 0);
+    setProgress(bioProgressLabel, bioProgressBar, 'Bios', 0, 0);
+    parsingProgressGroup.style.display = 'block';
+    bioProgressGroup.style.display = 'none';
+  };
+
+  const extractProgress = (statusObj, key, fallbackCurrent = 0, fallbackTotal = 0) => {
+    const progressRoot = statusObj.progress || (statusObj.extra && statusObj.extra.progress) || {};
+    const nested = (progressRoot[key]) || {};
+    const current = nested.current !== undefined ? nested.current : fallbackCurrent;
+    const total = nested.total !== undefined ? nested.total : fallbackTotal;
+    return { current, total };
+  };
 
   btn.disabled = true;
   resultEl.style.display = 'none';
   runningPanel.style.display = 'block';
   progressMessage.textContent = 'Starting…';
-  progressBar.style.width = '0%';
+  resetProgressGroups();
   progressDetail.textContent = '';
   const stopBtn = document.getElementById('runStopBtn');
   if (stopBtn) stopBtn.disabled = false;
@@ -206,13 +261,24 @@ document.getElementById('runForm').addEventListener('submit', async (e) => {
     try {
       const r = await fetch('/api/run/status/' + jobId);
       const s = await r.json();
-      const total = s.total || 1;
-      const current = s.current || 0;
-      const pct = total > 0 ? Math.round((current / total) * 100) : 0;
-      progressBar.style.width = pct + '%';
       progressMessage.textContent = s.message || s.phase || 'Running…';
+
+      const officeP = extractProgress(s, 'office', s.current || 0, s.total || 0);
+      const tableP = extractProgress(s, 'table', 0, 0);
+      const infoboxP = extractProgress(s, 'infobox', 0, 0);
+      const bioP = extractProgress(s, 'bio', (s.phase === 'bio' ? (s.current || 0) : 0), (s.phase === 'bio' ? (s.total || 0) : 0));
+
+      setProgress(officeProgressLabel, officeProgressBar, 'Offices', officeP.current, officeP.total);
+      setProgress(tableProgressLabel, tableProgressBar, 'Tables', tableP.current, tableP.total);
+      setProgress(infoboxProgressLabel, infoboxProgressBar, 'Infobox', infoboxP.current, infoboxP.total);
+      setProgress(bioProgressLabel, bioProgressBar, 'Bios', bioP.current, bioP.total);
+
+      const bioPhaseActive = s.phase === 'bio' || s.phase === 'living' || ((Number(bioP.total) || 0) > 0 && (Number(bioP.current) || 0) >= 0);
+      parsingProgressGroup.style.display = bioPhaseActive ? 'none' : 'block';
+      bioProgressGroup.style.display = bioPhaseActive ? 'block' : 'none';
+
       let detail = s.phase ? s.phase : '';
-      if (total > 1) detail += ' — ' + current + ' / ' + total;
+      if ((s.total || 0) > 1) detail += ' — ' + (s.current || 0) + ' / ' + (s.total || 0);
       if (s.extra && s.extra.terms_so_far !== undefined) detail += ' — ' + s.extra.terms_so_far + ' terms so far';
       if (s.extra && s.extra.bio_skipped !== undefined) detail += ' — ' + s.extra.bio_skipped + ' skipped (in DB)';
       progressDetail.textContent = detail;
