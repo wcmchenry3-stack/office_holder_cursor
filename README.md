@@ -143,6 +143,7 @@ python scripts/infobox_role_key_cli.py --base-url http://127.0.0.1:8000 --table-
 Notes:
 - `PYTHONPATH=. pytest ...` is bash syntax and will fail in PowerShell.
 - `GET ...` is not a PowerShell command; use `Invoke-RestMethod`.
+- PowerShell does not support bash-style `&&` in older versions; run commands on separate lines (or use `;`).
 
 ---
 

@@ -9,6 +9,9 @@ from src.scraper.table_cache import get_table_html_cached
 
 TIMEOUT = 10
 
+# This module provides helper functions used by the app; it is not a pytest test module.
+__test__ = False
+
 
 def test_office_config(office_row: dict) -> tuple[bool, str]:
     """
