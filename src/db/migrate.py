@@ -71,6 +71,7 @@ def migrate_to_fk(conn=None):
         _migrate_infobox_role_key(conn)
         # office_category tables and office_details.office_category_id
         _migrate_office_category(conn)
+        _migrate_infobox_role_key_filter(conn)
         # cities table and source_pages.city_id
         _migrate_city(conn)
     finally:
@@ -649,6 +650,34 @@ def _migrate_office_category(conn):
         )
         conn.commit()
 
+
+
+
+def _migrate_infobox_role_key_filter(conn):
+    """Create infobox_role_key_filter and junction tables if missing."""
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS infobox_role_key_filter (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            role_key TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS infobox_role_key_filter_countries (
+            filter_id INTEGER NOT NULL REFERENCES infobox_role_key_filter(id),
+            country_id INTEGER NOT NULL REFERENCES countries(id),
+            PRIMARY KEY (filter_id, country_id)
+        );
+        CREATE TABLE IF NOT EXISTS infobox_role_key_filter_levels (
+            filter_id INTEGER NOT NULL REFERENCES infobox_role_key_filter(id),
+            level_id INTEGER NOT NULL REFERENCES levels(id),
+            PRIMARY KEY (filter_id, level_id)
+        );
+        CREATE TABLE IF NOT EXISTS infobox_role_key_filter_branches (
+            filter_id INTEGER NOT NULL REFERENCES infobox_role_key_filter(id),
+            branch_id INTEGER NOT NULL REFERENCES branches(id),
+            PRIMARY KEY (filter_id, branch_id)
+        );
+    """)
+    conn.commit()
 
 def _migrate_city(conn):
     """Create cities table if missing; add city_id to source_pages if missing."""
