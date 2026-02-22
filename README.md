@@ -136,6 +136,10 @@ Invoke-RestMethod -Method GET -Uri "http://127.0.0.1:8000/api/table-configs/880"
 $body = @{ infobox_role_key = "senior judge" } | ConvertTo-Json
 Invoke-RestMethod -Method POST -Uri "http://127.0.0.1:8000/api/table-configs/880/set-infobox-role-key" -ContentType "application/json" -Body $body
 
+# POST page form data (same route used by the UI page form)
+$form = @{ url = "https://en.wikipedia.org/wiki/District_Court_for_the_Northern_Mariana_Islands"; country_id = 1 }
+Invoke-WebRequest -Method POST -Uri "http://127.0.0.1:8000/pages/876" -Form $form -MaximumRedirection 0
+
 # Cross-platform CLI helper (works in PowerShell/cmd/bash)
 python scripts/infobox_role_key_cli.py --base-url http://127.0.0.1:8000 --table-config-id 880 --role-key "senior judge"
 ```
@@ -144,6 +148,8 @@ Notes:
 - `PYTHONPATH=. pytest ...` is bash syntax and will fail in PowerShell.
 - `GET ...` is not a PowerShell command; use `Invoke-RestMethod`.
 - PowerShell does not support bash-style `&&` in older versions; run commands on separate lines (or use `;`).
+- `POST ...` / `GET ...` are not PowerShell commands; use `Invoke-RestMethod` or `Invoke-WebRequest` with `-Method`.
+- In PowerShell, `curl` is an alias for `Invoke-WebRequest` (not GNU curl syntax). Use `curl.exe` if you want native curl flags like `-X`.
 
 ---
 
