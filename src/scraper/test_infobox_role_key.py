@@ -1,5 +1,7 @@
+import pytest
+
 from src.scraper.logger import Logger
-from src.scraper.table_parser import Biography, DataCleanup
+from src.scraper.table_parser import Biography, DataCleanup, parse_infobox_role_key_query
 
 
 class _Resp:
@@ -44,6 +46,8 @@ def _build_infobox_html_with_all_three_roles() -> str:
       <tr><td><b>In office</b><br>January 1, 1990 – January 1, 2000</td></tr>
       <tr><th>Judge of the <a href="/wiki/District_Court_for_the_Northern_Mariana_Islands">District Court</a></th></tr>
       <tr><td><b>In office</b><br>January 1, 1980 – January 1, 1990</td></tr>
+      <tr><th>Associate Justice of the <a href="/wiki/District_Court_for_the_Northern_Mariana_Islands">District Court</a></th></tr>
+      <tr><td><b>In office</b><br>January 1, 1970 – January 1, 1980</td></tr>
     </table>
     """
 
@@ -65,7 +69,7 @@ def test_find_term_dates_filters_by_infobox_role_key(monkeypatch):
             "rep_link": False,
             "alt_links": ["/wiki/District_Court_for_the_Northern_Mariana_Islands"],
             "alt_link_include_main": False,
-            "infobox_role_key": "senior judge",
+            "infobox_role_key": "\"senior judge\"",
         },
         {"office_state": ""},
         "",
@@ -116,7 +120,7 @@ def test_find_term_dates_role_key_matches_when_first_link_is_not_office(monkeypa
             "rep_link": False,
             "alt_links": ["/wiki/District_Court_for_the_Northern_Mariana_Islands"],
             "alt_link_include_main": False,
-            "infobox_role_key": "senior judge",
+            "infobox_role_key": "\"senior judge\"",
         },
         {"office_state": ""},
         "",
@@ -142,10 +146,20 @@ def test_find_term_dates_role_key_supports_excludes(monkeypatch):
             "rep_link": False,
             "alt_links": ["/wiki/District_Court_for_the_Northern_Mariana_Islands"],
             "alt_link_include_main": False,
-            "infobox_role_key": 'judge -"chief judge" -"senior judge"',
+            "infobox_role_key": '"judge" "associate justice" -"chief judge" -"senior judge"',
         },
         {"office_state": ""},
         "",
     )
 
-    assert terms == [("1980-01-01", "1990-01-01")]
+    assert terms == [("1980-01-01", "1990-01-01"), ("1970-01-01", "1980-01-01")]
+
+
+def test_infobox_role_key_requires_quoted_terms():
+    with pytest.raises(ValueError):
+        parse_infobox_role_key_query('judge -"chief judge"')
+
+
+def test_infobox_role_key_rejects_unclosed_quotes():
+    with pytest.raises(ValueError):
+        parse_infobox_role_key_query('"judge" -"chief judge')
