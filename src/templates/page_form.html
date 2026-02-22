@@ -19,6 +19,7 @@
 </p>
 {% endif %}
 {% if saved %}<div class="alert alert-success">Saved.</div>{% endif %}
+{% if page_saved %}<div class="alert alert-success">Page settings saved. Office/table settings are unchanged until you save an office section.</div>{% endif %}
 {% if validation_error %}
 <div class="alert alert-error" role="alert" style="border-width:2px; font-weight:600; margin-bottom:1rem;">
   <strong>Save failed – validation error</strong><br>

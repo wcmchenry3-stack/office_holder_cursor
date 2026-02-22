@@ -200,6 +200,7 @@ async def offices_list(
     office_count: str | None = Query("all"),
 ):
     saved = request.query_params.get("saved") == "1"
+    page_saved = request.query_params.get("page_saved") == "1"
     validation_error = request.query_params.get("error") or None
     imported_count = request.query_params.get("count")
     imported_errors = request.query_params.get("errors")
@@ -593,7 +594,7 @@ async def page_update(request: Request, source_page_id: int):
             return JSONResponse({"ok": False, "error": str(e), "redirect": redirect_url})
         return RedirectResponse(redirect_url, status_code=302)
     first_office_id = db_offices.list_offices_for_page(source_page_id)[0]["id"]
-    url = f"/offices/{first_office_id}?saved=1"
+    url = f"/offices/{first_office_id}?page_saved=1"
     if nav_q or list_return_q:
         url += "&" + _page_redirect_query(nav_q, list_return_q)
     url += "#section-page"
@@ -641,6 +642,7 @@ async def office_edit_page(request: Request, office_id: int):
         for o in offices_on_page or []:
             o["terms_count"] = db_office_terms.count_terms_for_office(o["id"])
     saved = request.query_params.get("saved") == "1"
+    page_saved = request.query_params.get("page_saved") == "1"
     validation_error = request.query_params.get("error") or None
     nav_ids_raw = request.query_params.get("nav_ids") or ""
     nav_ids = [int(x.strip()) for x in nav_ids_raw.split(",") if x.strip().isdigit()]
@@ -679,7 +681,7 @@ async def office_edit_page(request: Request, office_id: int):
     )
     return templates.TemplateResponse(
         "page_form.html",
-        {"request": request, "office": office, "offices_on_page": offices_on_page, "source_page_id": source_page_id, "page_data": page_data, "countries": countries, "levels": levels, "branches": branches, "states": states, "cities": cities, "nav_ids": nav_ids_raw, "nav_prev_id": nav_prev_id, "nav_next_id": nav_next_id, "nav_current": nav_current, "nav_total": nav_total, "list_return_query": list_return_query, "terms_count": terms_count, "saved": saved, "validation_error": validation_error, "form_template": "page_form", "office_categories": office_categories},
+        {"request": request, "office": office, "offices_on_page": offices_on_page, "source_page_id": source_page_id, "page_data": page_data, "countries": countries, "levels": levels, "branches": branches, "states": states, "cities": cities, "nav_ids": nav_ids_raw, "nav_prev_id": nav_prev_id, "nav_next_id": nav_next_id, "nav_current": nav_current, "nav_total": nav_total, "list_return_query": list_return_query, "terms_count": terms_count, "saved": saved, "page_saved": page_saved, "validation_error": validation_error, "form_template": "page_form", "office_categories": office_categories},
         headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
     )
 
