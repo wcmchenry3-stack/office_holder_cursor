@@ -922,11 +922,11 @@ def create_office_for_page(source_page_id: int, data: dict[str, Any], conn: sqli
             if len(table_nos) != len(set(table_nos)):
                 raise ValueError("Duplicate table_no within office")
             page_data = get_page(source_page_id, conn)
-            if page_data and page_data.get("allow_reuse_tables"):
+            if page_data and not page_data.get("allow_reuse_tables"):
                 other_nos = _table_nos_on_page(conn, source_page_id)
                 if set(table_nos) & other_nos:
                     raise ValueError(
-                        "Table numbers must be unique per page when 'Allow reuse of tables' is checked"
+                        "Table numbers must be unique per page when 'Allow reuse of tables' is unchecked"
                     )
         enabled = 1 if row_data.get("enabled") in (True, 1, "TRUE", "true", "1") else 0
         _ocid = row_data.get("office_category_id")
@@ -1169,11 +1169,11 @@ def update_office(office_id: int, data: dict[str, Any], conn: sqlite3.Connection
                 if len(table_nos) != len(set(table_nos)):
                     raise ValueError("Duplicate table_no within office")
                 page_data = get_page(page_id, conn)
-                if page_data and page_data.get("allow_reuse_tables"):
+                if page_data and not page_data.get("allow_reuse_tables"):
                     other_nos = _table_nos_on_page(conn, page_id, exclude_office_details_id=office_id)
                     if set(table_nos) & other_nos:
                         raise ValueError(
-                            "Table numbers must be unique per page when 'Allow reuse of tables' is checked"
+                            "Table numbers must be unique per page when 'Allow reuse of tables' is unchecked"
                         )
                 existing_ids = {
                     r[0]

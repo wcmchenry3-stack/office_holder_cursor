@@ -120,7 +120,7 @@
       <div class="form-group"><label>Notes</label><input type="text" name="notes" value="{{ page_data.notes or '' }}"></div>
       <div class="form-group checkbox-group"><label><input type="checkbox" id="pageEnabledInput" name="enabled" value="1" {% if page_data.enabled %}checked{% endif %}> Page enabled</label></div>
       <div class="form-group checkbox-group"><label><input type="checkbox" id="allowReuseTablesInput" name="allow_reuse_tables" value="1" {% if page_data.allow_reuse_tables %}checked{% endif %}> Allow reuse of tables</label></div>
-      <p class="form-note">When checked, table numbers must be unique per page. When unchecked, different offices can use the same table number.</p>
+      <p class="form-note">When unchecked, table numbers must be unique per page. When checked, different offices can use the same table number.</p>
       <div class="actions">
         <button type="submit" class="btn">Save page</button>
         <a href="/offices{% if list_return_query is defined and list_return_query %}?{{ list_return_query }}{% endif %}" class="btn btn-secondary">Cancel</a>
