@@ -6,6 +6,7 @@ From project root: office_holder/
 """
 
 import json
+import sqlite3
 import re
 import tempfile
 from datetime import datetime
@@ -808,6 +809,18 @@ async def office_update(request: Request, office_id: int):
         redirect_url = f"/offices/{office_id}{q}"
         if save_all:
             return JSONResponse({"ok": False, "error": str(e), "redirect": redirect_url})
+        return RedirectResponse(redirect_url, status_code=302)
+    except sqlite3.IntegrityError as e:
+        from urllib.parse import quote
+        msg = "Save failed due to conflicting table settings: " + str(e)
+        q = "?error=" + quote(msg)
+        if nav_ids:
+            q += "&nav_ids=" + nav_ids
+        if list_return_query:
+            q += "&" + list_return_query
+        redirect_url = f"/offices/{office_id}{q}"
+        if save_all:
+            return JSONResponse({"ok": False, "error": msg, "redirect": redirect_url})
         return RedirectResponse(redirect_url, status_code=302)
     if action == "save":
         q = "?saved=1"

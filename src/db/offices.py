@@ -1184,8 +1184,25 @@ def update_office(office_id: int, data: dict[str, Any], conn: sqlite3.Connection
                 kept_ids = []
                 for tc in table_configs:
                     tc_id = tc.get("id")
-                    if tc_id is not None and int(tc_id) in existing_ids:
-                        tc_id = int(tc_id)
+                    tc_table_no = int(tc.get("table_no", 1))
+                    existing_tc_id = None
+                    if tc_id is not None:
+                        try:
+                            tc_id_int = int(tc_id)
+                            if tc_id_int in existing_ids:
+                                existing_tc_id = tc_id_int
+                        except (TypeError, ValueError):
+                            existing_tc_id = None
+                    if existing_tc_id is None:
+                        # Defensive fallback: if id was not submitted, update by unique (office_details_id, table_no)
+                        # instead of inserting duplicate table_no and failing the save.
+                        existing_by_no = conn.execute(
+                            "SELECT id FROM office_table_config WHERE office_details_id = ? AND table_no = ?",
+                            (office_id, tc_table_no),
+                        ).fetchone()
+                        if existing_by_no:
+                            existing_tc_id = int(existing_by_no[0])
+                    if existing_tc_id is not None:
                         t_merged = _bool(tc, "term_dates_merged")
                         conn.execute(
                             """UPDATE office_table_config SET table_no=?, table_rows=?, link_column=?, party_column=?,
@@ -1194,7 +1211,7 @@ def update_office(office_id: int, data: dict[str, Any], conn: sqlite3.Connection
                                   years_only=?, term_dates_merged=?, party_ignore=?, district_ignore=?, district_at_large=?, ignore_non_links=?, remove_duplicates=?,
                                   consolidate_rowspan_terms=?, infobox_role_key=?, notes=?, name=?, updated_at=datetime('now') WHERE id=?""",
                             (
-                                int(tc.get("table_no", 1)),
+                                tc_table_no,
                                 int(tc.get("table_rows", 4)),
                                 int(tc.get("link_column", 1)),
                                 int(tc.get("party_column", 0)),
@@ -1220,10 +1237,10 @@ def update_office(office_id: int, data: dict[str, Any], conn: sqlite3.Connection
                                 (tc.get("infobox_role_key") or "").strip(),
                                 tc.get("notes") or "",
                                 tc.get("name") or "",
-                                tc_id,
+                                existing_tc_id,
                             ),
                         )
-                        kept_ids.append(tc_id)
+                        kept_ids.append(existing_tc_id)
                     else:
                         t_merged = _bool(tc, "term_dates_merged")
                         conn.execute(
@@ -1234,7 +1251,7 @@ def update_office(office_id: int, data: dict[str, Any], conn: sqlite3.Connection
                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))""",
                             (
                                 office_id,
-                                int(tc.get("table_no", 1)),
+                                tc_table_no,
                                 int(tc.get("table_rows", 4)),
                                 int(tc.get("link_column", 1)),
                                 int(tc.get("party_column", 0)),
