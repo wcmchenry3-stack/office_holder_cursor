@@ -105,7 +105,16 @@
           <option value="years_only">Table has years only</option>
         </select>
       </div>
-      <div class="form-group"><label>Infobox role key (optional) <span title="Use exact role phrase (e.g. &quot;chief judge&quot;, &quot;senior judge&quot;). &quot;judge&quot; can also match those rows.">ⓘ</span></label><input type="text" id="infobox_role_key" placeholder="e.g. senior judge"></div>
+      <div class="form-group">
+        <label>Infobox role key filter (optional)</label>
+        <select id="infobox_role_key_filter_id">
+          <option value="">— None —</option>
+          {% for f in infobox_role_key_filters or [] %}
+          <option value="{{ f.id }}">{{ f.name }}{% if f.role_key %} — {{ f.role_key }}{% endif %}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group"><label>Infobox role key (effective text) <span title="Legacy scripts store key text directly. Selecting a filter will populate this value so behavior stays unchanged.">ⓘ</span></label><input type="text" id="infobox_role_key" placeholder='e.g. "senior judge"'></div>
       <div class="form-group checkbox-group"><label><input type="checkbox" id="parse_rowspan"> Parse rowspan</label></div>
       <div class="form-group checkbox-group"><label><input type="checkbox" id="consolidate_rowspan_terms"> Consolidate consecutive terms (rowspan)</label></div>
       <div class="form-group checkbox-group"><label><input type="checkbox" id="rep_link"> Rep link</label></div>
@@ -185,6 +194,7 @@ let editingOriginalHtmlFile = null;
 let preservedConfigExtras = {};
 let officeTemplatePages = [];
 let officeTemplateOffices = [];
+const infoboxRoleKeyFilters = {{ (infobox_role_key_filters or []) | tojson }};
 
 function parseJsonOrEmpty(text) {
   const t = (text || '').trim();
@@ -204,6 +214,7 @@ function buildConfig() {
     .split(/[\n,]/)
     .map((v) => v.trim())
     .filter(Boolean);
+  const selectedFilterIdRaw = (document.getElementById('infobox_role_key_filter_id')?.value || '').trim();
   const base = {
     name: (document.getElementById('table_name').value || '').trim(),
     table_no: n('table_no', 1),
@@ -229,10 +240,46 @@ function buildConfig() {
     party_link: document.getElementById('party_link').checked,
     use_full_page_for_table: document.getElementById('use_full_page_for_table').checked,
     infobox_role_key: (document.getElementById('infobox_role_key').value || "").trim(),
+    infobox_role_key_filter_id: selectedFilterIdRaw && selectedFilterIdRaw !== '__legacy__' ? parseInt(selectedFilterIdRaw, 10) : null,
     alt_links: altLinks,
     alt_link_include_main: document.getElementById('alt_link_include_main').checked,
   };
-  return {...base, ...preservedConfigExtras};
+  const config = {...base, ...preservedConfigExtras};
+  if (!config.infobox_role_key_filter_id) delete config.infobox_role_key_filter_id;
+  return config;
+}
+
+function syncInfoboxRoleKeyFromFilterSelection() {
+  const select = document.getElementById('infobox_role_key_filter_id');
+  const input = document.getElementById('infobox_role_key');
+  if (!select || !input) return;
+  const selected = (select.value || '').trim();
+  if (!selected || selected === '__legacy__') return;
+  const filter = infoboxRoleKeyFilters.find((row) => String(row.id) === selected);
+  if (filter && typeof filter.role_key === 'string') input.value = filter.role_key;
+}
+
+function setInfoboxRoleKeyControls(roleKey, filterId) {
+  const select = document.getElementById('infobox_role_key_filter_id');
+  const input = document.getElementById('infobox_role_key');
+  if (!select || !input) return;
+  const keyText = (roleKey || '').trim();
+  const normalizedFilterId = (filterId === null || filterId === undefined) ? '' : String(filterId).trim();
+  const hasKnownOption = normalizedFilterId && infoboxRoleKeyFilters.some((row) => String(row.id) === normalizedFilterId);
+  const legacyOption = select.querySelector('option[value="__legacy__"]');
+  if (legacyOption) legacyOption.remove();
+  if (hasKnownOption) {
+    select.value = normalizedFilterId;
+  } else if (keyText) {
+    const opt = document.createElement('option');
+    opt.value = '__legacy__';
+    opt.textContent = 'Legacy/custom key text';
+    select.appendChild(opt);
+    select.value = '__legacy__';
+  } else {
+    select.value = '';
+  }
+  input.value = keyText;
 }
 
 function setOfficeTemplateMessage(message, isError = false) {
@@ -396,7 +443,7 @@ function applySelectedOfficeTemplate() {
   document.getElementById('rep_link').checked = !!tc.rep_link;
   document.getElementById('party_link').checked = !!tc.party_link;
   document.getElementById('use_full_page_for_table').checked = !!tc.use_full_page_for_table;
-  document.getElementById('infobox_role_key').value = tc.infobox_role_key || '';
+  setInfoboxRoleKeyControls(tc.infobox_role_key || '', tc.infobox_role_key_filter_id);
   const officeAltLinks = Array.isArray(office.alt_links) ? office.alt_links : [];
   document.getElementById('alt_links').value = officeAltLinks.join('\n');
   document.getElementById('alt_link_include_main').checked = !!office.alt_link_include_main;
@@ -500,7 +547,7 @@ async function editOne(id) {
     document.getElementById('rep_link').checked = !!c.rep_link;
     document.getElementById('party_link').checked = !!c.party_link;
     document.getElementById('use_full_page_for_table').checked = !!c.use_full_page_for_table;
-    document.getElementById('infobox_role_key').value = c.infobox_role_key || '';
+    setInfoboxRoleKeyControls(c.infobox_role_key || '', c.infobox_role_key_filter_id);
     const testAltLinks = Array.isArray(c.alt_links) ? c.alt_links : [];
     document.getElementById('alt_links').value = testAltLinks.join('\n');
     document.getElementById('alt_link_include_main').checked = !!c.alt_link_include_main;
@@ -521,6 +568,7 @@ function cancelEditMode() {
   editingTestId = null;
   editingOriginalHtmlFile = null;
   preservedConfigExtras = {};
+  setInfoboxRoleKeyControls('', null);
   document.getElementById('editModeBanner').style.display = 'none';
   document.getElementById('editModeName').textContent = '';
   document.getElementById('saveBtn').textContent = 'Save test script';
@@ -693,5 +741,8 @@ if (officeTemplateSearchBtn) {
   });
   document.getElementById('applyOfficeTemplateBtn').addEventListener('click', applySelectedOfficeTemplate);
 }
+const infoboxRoleKeyFilterSelect = document.getElementById('infobox_role_key_filter_id');
+if (infoboxRoleKeyFilterSelect) infoboxRoleKeyFilterSelect.addEventListener('change', syncInfoboxRoleKeyFromFilterSelection);
+setInfoboxRoleKeyControls('', null);
 </script>
 {% endblock %}

@@ -15,6 +15,7 @@ from src.scraper.logger import Logger
 from src.scraper import parse_core
 from src.scraper.runner import parse_full_table_for_export
 from src.scraper.wiki_fetch import wiki_url_to_rest_html_url, normalize_wiki_url
+from src.db.infobox_role_key_filter import get_infobox_role_key_filter
 from src.db.connection import ensure_data_dir, get_log_dir
 
 
@@ -165,7 +166,20 @@ def run_test_script_from_html(
     expected_json: Any = None,
 ) -> dict[str, Any]:
     parsed_type = (test_type or "table_config").strip()
-    cfg = config_json or {}
+    cfg = dict(config_json or {})
+    if parsed_type == "table_config":
+        raw_filter_id = cfg.get("infobox_role_key_filter_id")
+        filter_id = None
+        if isinstance(raw_filter_id, str):
+            raw_filter_id = raw_filter_id.strip()
+        if isinstance(raw_filter_id, int):
+            filter_id = raw_filter_id
+        elif isinstance(raw_filter_id, str) and raw_filter_id.isdigit():
+            filter_id = int(raw_filter_id)
+        if filter_id:
+            role_filter = get_infobox_role_key_filter(filter_id)
+            if role_filter and (role_filter.get("role_key") or "").strip():
+                cfg["infobox_role_key"] = (role_filter.get("role_key") or "").strip()
     if parsed_type == "table_config":
         actual = _run_table_test(html_content, cfg, source_url.strip())
     elif parsed_type == "infobox":
