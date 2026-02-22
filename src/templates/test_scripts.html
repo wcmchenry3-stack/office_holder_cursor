@@ -112,6 +112,17 @@
       <div class="form-group checkbox-group"><label><input type="checkbox" id="party_link"> Party link</label></div>
       <div class="form-group checkbox-group"><label><input type="checkbox" id="use_full_page_for_table"> Use full page for table fetch</label></div>
     </div>
+
+    <div class="form-row">
+      <div class="form-group" style="min-width:360px;">
+        <label>Alternative links for search (optional)</label>
+        <textarea id="alt_links" rows="3" placeholder="/wiki/Some_Office\n/wiki/Another_Office"></textarea>
+        <div class="form-note">Enter one link per line (or comma-separated). Used when finding dates in member pages.</div>
+      </div>
+      <div class="form-group checkbox-group" style="align-self:center;">
+        <label><input type="checkbox" id="alt_link_include_main"> Include main page link in search</label>
+      </div>
+    </div>
   </div>
 
   <div class="form-group">
@@ -189,6 +200,10 @@ function n(id, fallback) {
 function buildConfig() {
   const districtMode = document.getElementById('district_mode').value;
   const dateSource = document.getElementById('date_source').value;
+  const altLinks = (document.getElementById('alt_links').value || '')
+    .split(/[\n,]/)
+    .map((v) => v.trim())
+    .filter(Boolean);
   const base = {
     name: (document.getElementById('table_name').value || '').trim(),
     table_no: n('table_no', 1),
@@ -214,6 +229,8 @@ function buildConfig() {
     party_link: document.getElementById('party_link').checked,
     use_full_page_for_table: document.getElementById('use_full_page_for_table').checked,
     infobox_role_key: (document.getElementById('infobox_role_key').value || "").trim(),
+    alt_links: altLinks,
+    alt_link_include_main: document.getElementById('alt_link_include_main').checked,
   };
   return {...base, ...preservedConfigExtras};
 }
@@ -380,6 +397,9 @@ function applySelectedOfficeTemplate() {
   document.getElementById('party_link').checked = !!tc.party_link;
   document.getElementById('use_full_page_for_table').checked = !!tc.use_full_page_for_table;
   document.getElementById('infobox_role_key').value = tc.infobox_role_key || '';
+  const officeAltLinks = Array.isArray(office.alt_links) ? office.alt_links : [];
+  document.getElementById('alt_links').value = officeAltLinks.join('\n');
+  document.getElementById('alt_link_include_main').checked = !!office.alt_link_include_main;
   syncTableConfigControls();
   setOfficeTemplateMessage('Copied template values into the form. This test script remains independent from office configs.');
 }
@@ -481,6 +501,9 @@ async function editOne(id) {
     document.getElementById('party_link').checked = !!c.party_link;
     document.getElementById('use_full_page_for_table').checked = !!c.use_full_page_for_table;
     document.getElementById('infobox_role_key').value = c.infobox_role_key || '';
+    const testAltLinks = Array.isArray(c.alt_links) ? c.alt_links : [];
+    document.getElementById('alt_links').value = testAltLinks.join('\n');
+    document.getElementById('alt_link_include_main').checked = !!c.alt_link_include_main;
 
     document.getElementById('expected_json').value = t.expected_json ? JSON.stringify(t.expected_json, null, 2) : '';
     document.getElementById('editModeName').textContent = `${t.name || ''} (#${t.id})`;
