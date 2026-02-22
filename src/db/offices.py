@@ -1381,6 +1381,42 @@ def set_all_offices_enabled(enabled: bool, conn: sqlite3.Connection | None = Non
             conn.close()
 
 
+def set_infobox_role_key(
+    office_id: int,
+    table_no: int,
+    infobox_role_key: str,
+    conn: sqlite3.Connection | None = None,
+) -> bool:
+    """Set infobox_role_key for one office/table_no. Returns True when a row was updated.
+
+    Hierarchy mode: updates office_table_config by (office_details_id, table_no).
+    Legacy mode: updates offices row (table_no ignored, single config per office).
+    """
+    own_conn = conn is None
+    if own_conn:
+        conn = get_connection()
+    try:
+        key = (infobox_role_key or "").strip()
+        if _use_hierarchy(conn):
+            cur = conn.execute(
+                """UPDATE office_table_config
+                       SET infobox_role_key = ?, updated_at = datetime('now')
+                     WHERE office_details_id = ? AND table_no = ?""",
+                (key, office_id, int(table_no or 1)),
+            )
+            conn.commit()
+            return cur.rowcount > 0
+        cur = conn.execute(
+            "UPDATE offices SET infobox_role_key = ? WHERE id = ?",
+            (key, office_id),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        if own_conn:
+            conn.close()
+
+
 def delete_table(office_table_config_id: int, conn: sqlite3.Connection | None = None) -> bool:
     """Delete one office_table_config and its office_terms. Fails if it would leave the office with zero configs."""
     own_conn = conn is None

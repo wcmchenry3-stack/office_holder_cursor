@@ -1019,6 +1019,84 @@ async def api_offices_enabled_all(enabled: int = Form(1)):
     return JSONResponse({"ok": True, "enabled": enabled})
 
 
+@app.get("/api/offices/{office_id}/table-configs")
+async def api_office_table_configs(office_id: int, table_no: int | None = None):
+    """Return saved table config details for one office (including infobox_role_key)."""
+    office = db_offices.get_office(office_id)
+    if not office:
+        raise HTTPException(status_code=404, detail="Office not found")
+    tcs = office.get("table_configs") if isinstance(office.get("table_configs"), list) and office.get("table_configs") else []
+    if not tcs:
+        tcs = [{
+            "id": office.get("id"),
+            "table_no": office.get("table_no"),
+            "infobox_role_key": (office.get("infobox_role_key") or "").strip(),
+        }]
+    if table_no is not None:
+        tcs = [tc for tc in tcs if int(tc.get("table_no") or 1) == int(table_no)]
+    out = []
+    for tc in tcs:
+        out.append({
+            "id": tc.get("id"),
+            "table_no": int(tc.get("table_no") or 1),
+            "name": tc.get("name") or "",
+            "enabled": bool(tc.get("enabled")),
+            "find_date_in_infobox": bool(tc.get("find_date_in_infobox")),
+            "infobox_role_key": (tc.get("infobox_role_key") or "").strip(),
+        })
+    return JSONResponse({"ok": True, "office_id": office_id, "table_configs": out})
+
+
+@app.post("/api/offices/{office_id}/set-infobox-role-key")
+async def api_office_set_infobox_role_key(office_id: int, request: Request):
+    """Set infobox_role_key for a specific office table_no and return persisted table details.
+    Body JSON: {"table_no": 1, "infobox_role_key": "chief judge"}
+    """
+    office = db_offices.get_office(office_id)
+    if not office:
+        raise HTTPException(status_code=404, detail="Office not found")
+    body = {}
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    try:
+        table_no = int((body or {}).get("table_no") or 1)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="table_no must be an integer")
+    role_key = ((body or {}).get("infobox_role_key") or "").strip()
+    updated = db_offices.set_infobox_role_key(office_id, table_no, role_key)
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"No table config found for office {office_id} table_no {table_no}")
+    office_after = db_offices.get_office(office_id)
+    tcs = office_after.get("table_configs") if isinstance(office_after.get("table_configs"), list) else []
+    match = None
+    for tc in tcs:
+        if int(tc.get("table_no") or 1) == table_no:
+            match = tc
+            break
+    if match is None and not tcs:
+        match = {
+            "id": office_after.get("id"),
+            "table_no": office_after.get("table_no"),
+            "infobox_role_key": (office_after.get("infobox_role_key") or "").strip(),
+            "enabled": office_after.get("enabled"),
+            "find_date_in_infobox": office_after.get("find_date_in_infobox"),
+        }
+    return JSONResponse({
+        "ok": True,
+        "message": "Saved",
+        "office_id": office_id,
+        "table_config": {
+            "id": match.get("id") if match else None,
+            "table_no": int(match.get("table_no") or table_no) if match else table_no,
+            "infobox_role_key": (match.get("infobox_role_key") or "").strip() if match else role_key,
+            "enabled": bool(match.get("enabled")) if match else True,
+            "find_date_in_infobox": bool(match.get("find_date_in_infobox")) if match else False,
+        },
+    })
+
+
 @app.get("/api/offices/{office_id}/test-config")
 async def api_office_test_config(office_id: int):
     office = db_offices.get_office(office_id)
