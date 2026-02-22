@@ -799,6 +799,49 @@ async def office_update(request: Request, office_id: int):
         updated = db_offices.update_office(office_id, data, office_only=office_only)
         if not updated:
             raise ValueError("Save failed: office was not updated")
+        # Verify infobox_role_key persistence before returning saved=1.
+        saved_office = db_offices.get_office(office_id)
+        if not saved_office:
+            raise ValueError("Save verification failed: office not found after update")
+        expected_role_keys: dict[int, str] = {}
+        submitted_tcs = data.get("table_configs")
+        if isinstance(submitted_tcs, list) and submitted_tcs:
+            for tc in submitted_tcs:
+                try:
+                    tno = int(tc.get("table_no") or 1)
+                except (TypeError, ValueError):
+                    tno = 1
+                expected_role_keys[tno] = (tc.get("infobox_role_key") or "").strip()
+        else:
+            try:
+                tno = int(data.get("table_no") or 1)
+            except (TypeError, ValueError):
+                tno = 1
+            expected_role_keys[tno] = (data.get("infobox_role_key") or "").strip()
+
+        actual_role_keys: dict[int, str] = {}
+        saved_tcs = saved_office.get("table_configs") if isinstance(saved_office, dict) else None
+        if isinstance(saved_tcs, list) and saved_tcs:
+            for tc in saved_tcs:
+                try:
+                    tno = int(tc.get("table_no") or 1)
+                except (TypeError, ValueError):
+                    continue
+                actual_role_keys[tno] = (tc.get("infobox_role_key") or "").strip()
+        else:
+            try:
+                tno = int(saved_office.get("table_no") or 1)
+            except (TypeError, ValueError):
+                tno = 1
+            actual_role_keys[tno] = (saved_office.get("infobox_role_key") or "").strip()
+
+        mismatches = []
+        for tno, expected_val in expected_role_keys.items():
+            actual_val = (actual_role_keys.get(tno) or "").strip()
+            if expected_val != actual_val:
+                mismatches.append(f"table {tno}: expected {expected_val!r}, got {actual_val!r}")
+        if mismatches:
+            raise ValueError("Save verification failed for infobox_role_key: " + "; ".join(mismatches))
     except ValueError as e:
         from urllib.parse import quote
         q = "?error=" + quote(str(e))
