@@ -43,7 +43,6 @@ from src.scraper.runner import run_with_db, preview_with_config, parse_full_tabl
 from src.scraper.config_test import test_office_config, get_raw_table_preview, get_all_tables_preview, get_table_html, get_table_header_from_html
 from src.scraper.test_script_runner import run_test_script, run_test_script_from_html
 from src.scraper.wiki_fetch import WIKIPEDIA_REQUEST_HEADERS, wiki_url_to_rest_html_url, normalize_wiki_url
-from src.scraper.table_parser import parse_infobox_role_key_query
 
 app = FastAPI(title="Office Holder")
 # Resolve to absolute path so template dir is correct regardless of process cwd
@@ -113,7 +112,7 @@ def _office_draft_from_body(body: dict, *, include_ref_names: bool = False) -> d
         "district_at_large": district_at_large,
         "ignore_non_links": body.get("ignore_non_links") in (True, 1, "1", "true", "TRUE"),
         "remove_duplicates": body.get("remove_duplicates") in (True, 1, "1", "true", "TRUE"),
-        "infobox_role_key": _validate_infobox_role_key(body.get("infobox_role_key")),
+        "infobox_role_key": (body.get("infobox_role_key") or "").strip(),
     }
     if include_ref_names:
         country_id = int(body.get("country_id") or 0)
@@ -178,11 +177,22 @@ def _list_return_query(
     return "&".join(parts)
 
 
-def _validate_infobox_role_key(role_key: str | None) -> str:
-    """Normalize and validate strict quoted infobox role key syntax."""
-    cleaned = (role_key or "").strip()
-    parse_infobox_role_key_query(cleaned)
-    return cleaned
+def _validate_infobox_role_key_filter_id(filter_id: str | int | None) -> int | None:
+    """Normalize and validate optional infobox role-key filter id."""
+    if filter_id is None:
+        return None
+    raw = str(filter_id).strip()
+    if not raw:
+        return None
+    try:
+        fid = int(raw)
+    except (TypeError, ValueError) as e:
+        raise ValueError("Infobox role key filter must be an integer") from e
+    if fid <= 0:
+        return None
+    if not db_infobox_role_key_filter.get_infobox_role_key_filter(fid):
+        raise ValueError(f"Infobox role key filter {fid} was not found")
+    return fid
 
 
 def _parse_optional_int(value: str | None) -> int | None:
@@ -339,7 +349,7 @@ async def office_create(request: Request):
         "district_at_large": (form.get("district_mode") or "column") == "at_large",
         "ignore_non_links": form.get("ignore_non_links") == "1",
         "remove_duplicates": form.get("remove_duplicates") == "1",
-        "infobox_role_key": _validate_infobox_role_key(form.get("infobox_role_key")),
+        "infobox_role_key": (form.get("infobox_role_key") or "").strip(),
     }
     try:
         _validate_level_state_city(data.get("level_id"), data.get("state_id"), data.get("city_id"), data.get("branch_id"))
@@ -685,12 +695,16 @@ async def office_edit_page(request: Request, office_id: int):
     state_id_for_cities = (page_data or {}).get("state_id")
     cities = db_refs.list_cities(state_id_for_cities) if state_id_for_cities else []
     terms_count = db_office_terms.count_terms_for_office(office_id)
+    context_obj = page_data or office
     office_categories = db_office_category.list_categories_for_office(
-        office.get("country_id"), office.get("level_id"), office.get("branch_id")
+        context_obj.get("country_id"), context_obj.get("level_id"), context_obj.get("branch_id")
+    )
+    infobox_role_key_filters = db_infobox_role_key_filter.list_filters_for_context(
+        context_obj.get("country_id"), context_obj.get("level_id"), context_obj.get("branch_id")
     )
     return templates.TemplateResponse(
         "page_form.html",
-        {"request": request, "office": office, "offices_on_page": offices_on_page, "source_page_id": source_page_id, "page_data": page_data, "countries": countries, "levels": levels, "branches": branches, "states": states, "cities": cities, "nav_ids": nav_ids_raw, "nav_prev_id": nav_prev_id, "nav_next_id": nav_next_id, "nav_current": nav_current, "nav_total": nav_total, "list_return_query": list_return_query, "terms_count": terms_count, "saved": saved, "page_saved": page_saved, "validation_error": validation_error, "form_template": "page_form", "office_categories": office_categories},
+        {"request": request, "office": office, "offices_on_page": offices_on_page, "source_page_id": source_page_id, "page_data": page_data, "countries": countries, "levels": levels, "branches": branches, "states": states, "cities": cities, "nav_ids": nav_ids_raw, "nav_prev_id": nav_prev_id, "nav_next_id": nav_next_id, "nav_current": nav_current, "nav_total": nav_total, "list_return_query": list_return_query, "terms_count": terms_count, "saved": saved, "page_saved": page_saved, "validation_error": validation_error, "form_template": "page_form", "office_categories": office_categories, "infobox_role_key_filters": infobox_role_key_filters},
         headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
     )
 
@@ -759,7 +773,7 @@ def _form_to_table_config(form, i: int) -> dict:
         "remove_duplicates": _bool("remove_duplicates", "tc_remove_duplicates"),
         "notes": _get("notes", "tc_notes") or "",
         "name": _get("name", "tc_name") or "",
-        "infobox_role_key": _validate_infobox_role_key(_get("infobox_role_key", "tc_infobox_role_key")),
+        "infobox_role_key_filter_id": _validate_infobox_role_key_filter_id(_get("infobox_role_key_filter_id", "tc_infobox_role_key_filter_id")),
     }
 
 
@@ -797,7 +811,7 @@ async def office_update(request: Request, office_id: int):
         "district_at_large": (form.get("district_mode") or "column") == "at_large",
         "ignore_non_links": form.get("ignore_non_links") == "1",
         "remove_duplicates": form.get("remove_duplicates") == "1",
-        "infobox_role_key": _validate_infobox_role_key(form.get("infobox_role_key")),
+        "infobox_role_key_filter_id": _validate_infobox_role_key_filter_id(form.get("infobox_role_key_filter_id")),
     }
     tc_ids = form.getlist("tc_id")
     tc_table_nos = form.getlist("tc_table_no")
@@ -822,13 +836,13 @@ async def office_update(request: Request, office_id: int):
                     tno = int(tc.get("table_no") or 1)
                 except (TypeError, ValueError):
                     tno = 1
-                expected_role_keys[tno] = (tc.get("infobox_role_key") or "").strip()
+                expected_role_keys[tno] = str(tc.get("infobox_role_key_filter_id") or "")
         else:
             try:
                 tno = int(data.get("table_no") or 1)
             except (TypeError, ValueError):
                 tno = 1
-            expected_role_keys[tno] = (data.get("infobox_role_key") or "").strip()
+            expected_role_keys[tno] = str(data.get("infobox_role_key_filter_id") or "")
 
         actual_role_keys: dict[int, str] = {}
         saved_tcs = saved_office.get("table_configs") if isinstance(saved_office, dict) else None
@@ -838,13 +852,13 @@ async def office_update(request: Request, office_id: int):
                     tno = int(tc.get("table_no") or 1)
                 except (TypeError, ValueError):
                     continue
-                actual_role_keys[tno] = (tc.get("infobox_role_key") or "").strip()
+                actual_role_keys[tno] = str(tc.get("infobox_role_key_filter_id") or "")
         else:
             try:
                 tno = int(saved_office.get("table_no") or 1)
             except (TypeError, ValueError):
                 tno = 1
-            actual_role_keys[tno] = (saved_office.get("infobox_role_key") or "").strip()
+            actual_role_keys[tno] = str(saved_office.get("infobox_role_key_filter_id") or "")
 
         mismatches = []
         for tno, expected_val in expected_role_keys.items():
@@ -852,7 +866,7 @@ async def office_update(request: Request, office_id: int):
             if expected_val != actual_val:
                 mismatches.append(f"table {tno}: expected {expected_val!r}, got {actual_val!r}")
         if mismatches:
-            raise ValueError("Save verification failed for infobox_role_key: " + "; ".join(mismatches))
+            raise ValueError("Save verification failed for infobox_role_key_filter_id: " + "; ".join(mismatches))
     except ValueError as e:
         from urllib.parse import quote
         q = "?error=" + quote(str(e))
@@ -1041,6 +1055,7 @@ async def api_office_table_configs(office_id: int, table_no: int | None = None):
         tcs = [{
             "id": office.get("id"),
             "table_no": office.get("table_no"),
+            "infobox_role_key_filter_id": office.get("infobox_role_key_filter_id"),
             "infobox_role_key": (office.get("infobox_role_key") or "").strip(),
         }]
     if table_no is not None:
@@ -1053,6 +1068,7 @@ async def api_office_table_configs(office_id: int, table_no: int | None = None):
             "name": tc.get("name") or "",
             "enabled": bool(tc.get("enabled")),
             "find_date_in_infobox": bool(tc.get("find_date_in_infobox")),
+            "infobox_role_key_filter_id": tc.get("infobox_role_key_filter_id"),
             "infobox_role_key": (tc.get("infobox_role_key") or "").strip(),
         })
     return JSONResponse({"ok": True, "office_id": office_id, "table_configs": out})
@@ -1060,80 +1076,62 @@ async def api_office_table_configs(office_id: int, table_no: int | None = None):
 
 @app.post("/api/offices/{office_id}/set-infobox-role-key")
 async def api_office_set_infobox_role_key(office_id: int, request: Request):
-    """Set infobox_role_key for a specific office table_no and return persisted table details.
-    Body JSON: {"table_no": 1, "infobox_role_key": "chief judge"}
-    Also accepts table_config_id to target a specific office_table_config row.
+    """Deprecated: use /api/offices/{office_id}/set-infobox-role-key-filter."""
+    return JSONResponse(
+        {
+            "ok": False,
+            "deprecated": True,
+            "message": "Use /api/offices/{office_id}/set-infobox-role-key-filter with table_config_id and infobox_role_key_filter_id.",
+        },
+        status_code=410,
+    )
+
+
+@app.post("/api/offices/{office_id}/set-infobox-role-key-filter")
+async def api_office_set_infobox_role_key_filter(office_id: int, request: Request):
+    """Set infobox role-key filter by office table_config_id.
+
+    Body JSON: {"table_config_id": 123, "infobox_role_key_filter_id": 7}
     """
     office = db_offices.get_office(office_id)
     if not office:
         raise HTTPException(status_code=404, detail="Office not found")
-    body = {}
     try:
         body = await request.json()
     except Exception:
         body = {}
-    tcs = office.get("table_configs") if isinstance(office.get("table_configs"), list) and office.get("table_configs") else []
     table_config_id_raw = (body or {}).get("table_config_id")
-    table_no_raw = (body or {}).get("table_no")
-    table_no = None
-    if table_config_id_raw not in (None, ""):
-        try:
-            table_config_id = int(table_config_id_raw)
-        except (TypeError, ValueError):
-            raise HTTPException(status_code=400, detail="table_config_id must be an integer")
-        match_tc = None
-        for tc in tcs:
-            try:
-                tc_id = int(tc.get("id") or 0)
-            except (TypeError, ValueError):
-                tc_id = 0
-            if tc_id == table_config_id:
-                match_tc = tc
-                break
-        if not match_tc:
-            raise HTTPException(status_code=404, detail=f"No table config {table_config_id} found for office {office_id}")
-        table_no = int(match_tc.get("table_no") or 1)
-    elif table_no_raw not in (None, ""):
-        try:
-            table_no = int(table_no_raw)
-        except (TypeError, ValueError):
-            raise HTTPException(status_code=400, detail="table_no must be an integer")
-    elif len(tcs) == 1:
-        table_no = int(tcs[0].get("table_no") or 1)
-    else:
-        available = [{"table_config_id": tc.get("id"), "table_no": tc.get("table_no")} for tc in tcs]
-        raise HTTPException(status_code=400, detail={"message": "Provide table_no or table_config_id", "available_tables": available})
-
-    role_key = _validate_infobox_role_key((body or {}).get("infobox_role_key"))
-    updated = db_offices.set_infobox_role_key(office_id, table_no, role_key)
+    if table_config_id_raw in (None, ""):
+        raise HTTPException(status_code=400, detail="table_config_id is required")
+    try:
+        table_config_id = int(table_config_id_raw)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="table_config_id must be an integer")
+    tcs = office.get("table_configs") if isinstance(office.get("table_configs"), list) and office.get("table_configs") else []
+    match_tc = next((tc for tc in tcs if int(tc.get("id") or 0) == table_config_id), None)
+    if not match_tc:
+        raise HTTPException(status_code=404, detail=f"No table config {table_config_id} found for office {office_id}")
+    try:
+        filter_id = _validate_infobox_role_key_filter_id((body or {}).get("infobox_role_key_filter_id"))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    updated = db_offices.set_infobox_role_key_by_table_config_id(table_config_id, str(filter_id or ""))
     if not updated:
-        available = [{"table_config_id": tc.get("id"), "table_no": tc.get("table_no")} for tc in tcs]
-        raise HTTPException(status_code=404, detail={"message": f"No table config found for office {office_id} table_no {table_no}", "available_tables": available})
-    office_after = db_offices.get_office(office_id)
-    tcs = office_after.get("table_configs") if isinstance(office_after.get("table_configs"), list) else []
-    match = None
-    for tc in tcs:
-        if int(tc.get("table_no") or 1) == table_no:
-            match = tc
-            break
-    if match is None and not tcs:
-        match = {
-            "id": office_after.get("id"),
-            "table_no": office_after.get("table_no"),
-            "infobox_role_key": (office_after.get("infobox_role_key") or "").strip(),
-            "enabled": office_after.get("enabled"),
-            "find_date_in_infobox": office_after.get("find_date_in_infobox"),
-        }
+        raise HTTPException(status_code=404, detail=f"Table config {table_config_id} not found")
+    office_after = db_offices.get_office_by_table_config_id(table_config_id)
+    if not office_after:
+        raise HTTPException(status_code=404, detail=f"Table config {table_config_id} not found after save")
     return JSONResponse({
         "ok": True,
         "message": "Saved",
         "office_id": office_id,
         "table_config": {
-            "id": match.get("id") if match else None,
-            "table_no": int(match.get("table_no") or table_no) if match else table_no,
-            "infobox_role_key": (match.get("infobox_role_key") or "").strip() if match else role_key,
-            "enabled": bool(match.get("enabled")) if match else True,
-            "find_date_in_infobox": bool(match.get("find_date_in_infobox")) if match else False,
+            "id": int(office_after.get("id") or table_config_id),
+            "table_no": int(office_after.get("table_no") or 1),
+            "infobox_role_key_filter_id": office_after.get("infobox_role_key_filter_id"),
+            "infobox_role_key": (office_after.get("infobox_role_key") or "").strip(),
+            "enabled": bool(office_after.get("enabled")),
+            "find_date_in_infobox": bool(office_after.get("find_date_in_infobox")),
         },
     })
 
@@ -1151,6 +1149,7 @@ async def api_table_config_get(table_config_id: int):
             "office_details_id": int(office.get("office_details_id") or 0) or None,
             "table_no": int(office.get("table_no") or 1),
             "name": office.get("name") or "",
+            "infobox_role_key_filter_id": office.get("infobox_role_key_filter_id"),
             "infobox_role_key": (office.get("infobox_role_key") or "").strip(),
         },
     })
@@ -1158,16 +1157,28 @@ async def api_table_config_get(table_config_id: int):
 
 @app.post("/api/table-configs/{table_config_id}/set-infobox-role-key")
 async def api_table_config_set_infobox_role_key(table_config_id: int, request: Request):
-    """Set infobox_role_key directly by office_table_config.id.
+    """Deprecated: use /api/table-configs/{table_config_id}/set-infobox-role-key-filter."""
+    return JSONResponse(
+        {
+            "ok": False,
+            "deprecated": True,
+            "message": "Use /api/table-configs/{table_config_id}/set-infobox-role-key-filter with infobox_role_key_filter_id.",
+        },
+        status_code=410,
+    )
 
-    Body JSON: {"infobox_role_key": "chief judge"}
-    """
+
+@app.post("/api/table-configs/{table_config_id}/set-infobox-role-key-filter")
+async def api_table_config_set_infobox_role_key_filter(table_config_id: int, request: Request):
     try:
         body = await request.json()
     except Exception:
         body = {}
-    role_key = _validate_infobox_role_key((body or {}).get("infobox_role_key"))
-    updated = db_offices.set_infobox_role_key_by_table_config_id(table_config_id, role_key)
+    try:
+        filter_id = _validate_infobox_role_key_filter_id((body or {}).get("infobox_role_key_filter_id"))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    updated = db_offices.set_infobox_role_key_by_table_config_id(table_config_id, str(filter_id or ""))
     if not updated:
         raise HTTPException(status_code=404, detail=f"Table config {table_config_id} not found")
     office = db_offices.get_office_by_table_config_id(table_config_id)
@@ -1182,6 +1193,7 @@ async def api_table_config_set_infobox_role_key(table_config_id: int, request: R
                 "office_details_id": int(office.get("office_details_id") or 0) or None,
                 "table_no": int(office.get("table_no") or 1),
                 "name": office.get("name") or "",
+                "infobox_role_key_filter_id": office.get("infobox_role_key_filter_id"),
                 "infobox_role_key": (office.get("infobox_role_key") or "").strip(),
             },
         }
@@ -2226,7 +2238,8 @@ async def api_test_script_template_page_details(source_page_id: int):
                     "district_at_large": bool(tc.get("district_at_large")),
                     "ignore_non_links": bool(tc.get("ignore_non_links")),
                     "remove_duplicates": bool(tc.get("remove_duplicates")),
-                    "infobox_role_key": (tc.get("infobox_role_key") or "").strip(),
+                    "infobox_role_key_filter_id": tc.get("infobox_role_key_filter_id"),
+            "infobox_role_key": (tc.get("infobox_role_key") or "").strip(),
                 }
             )
         office_rows.append(

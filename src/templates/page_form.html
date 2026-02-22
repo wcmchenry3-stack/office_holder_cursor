@@ -167,7 +167,7 @@
       </div>
       <div class="form-group checkbox-group"><label><input type="checkbox" name="alt_link_include_main" value="1" {% if o.alt_link_include_main %}checked{% endif %}> Include main office link in search</label></div>
       <h3>Table parsing</h3>
-      {% set tclist = o.table_configs if o.table_configs and o.table_configs|length > 0 else [{'id': none, 'name': '', 'table_no': o.table_no or 1, 'table_rows': o.table_rows or 4, 'link_column': o.link_column or 1, 'party_column': o.party_column or 0, 'term_start_column': o.term_start_column or 4, 'term_end_column': o.term_end_column or 5, 'district_column': o.district_column or 0, 'dynamic_parse': o.dynamic_parse, 'read_right_to_left': o.read_right_to_left, 'find_date_in_infobox': o.find_date_in_infobox, 'years_only': o.years_only, 'parse_rowspan': o.parse_rowspan, 'consolidate_rowspan_terms': o.consolidate_rowspan_terms, 'rep_link': o.rep_link, 'party_link': o.party_link, 'enabled': o.enabled, 'use_full_page_for_table': o.use_full_page_for_table, 'term_dates_merged': o.term_dates_merged, 'party_ignore': o.party_ignore, 'district_ignore': o.district_ignore, 'district_at_large': o.district_at_large, 'ignore_non_links': o.ignore_non_links, 'remove_duplicates': o.remove_duplicates, 'infobox_role_key': o.infobox_role_key or '', 'notes': o.notes or ''}] %}
+      {% set tclist = o.table_configs if o.table_configs and o.table_configs|length > 0 else [{'id': none, 'name': '', 'table_no': o.table_no or 1, 'table_rows': o.table_rows or 4, 'link_column': o.link_column or 1, 'party_column': o.party_column or 0, 'term_start_column': o.term_start_column or 4, 'term_end_column': o.term_end_column or 5, 'district_column': o.district_column or 0, 'dynamic_parse': o.dynamic_parse, 'read_right_to_left': o.read_right_to_left, 'find_date_in_infobox': o.find_date_in_infobox, 'years_only': o.years_only, 'parse_rowspan': o.parse_rowspan, 'consolidate_rowspan_terms': o.consolidate_rowspan_terms, 'rep_link': o.rep_link, 'party_link': o.party_link, 'enabled': o.enabled, 'use_full_page_for_table': o.use_full_page_for_table, 'term_dates_merged': o.term_dates_merged, 'party_ignore': o.party_ignore, 'district_ignore': o.district_ignore, 'district_at_large': o.district_at_large, 'ignore_non_links': o.ignore_non_links, 'remove_duplicates': o.remove_duplicates, 'infobox_role_key_filter_id': o.infobox_role_key_filter_id, 'infobox_role_key': o.infobox_role_key or '', 'notes': o.notes or ''}] %}
       <div class="table-config-blocks" data-office-id="{{ o.id }}">
       {% for tc in tclist %}
       <div class="table-config-block" id="section-table-{{ tc.id if tc.id else (o.id ~ '-t' ~ loop.index) }}" data-office-id="{{ o.id }}" data-tc-id="{{ tc.id or '' }}" style="margin-bottom:1.5rem; padding:1rem; border:1px solid var(--border, #ccc); border-radius:6px;">
@@ -210,7 +210,7 @@
               <option value="years_only" {% if tc.years_only %}selected{% endif %}>Table has years only</option>
             </select>
           </div>
-          <div class="form-group"><label>Infobox role key (optional) <span title="Use exact role phrase to disambiguate shared links. Example: &quot;chief judge&quot; or &quot;senior judge&quot;. If you use &quot;judge&quot;, it may also match chief/senior rows unless those words are absent.">ⓘ</span></label><input type="text" name="tc_infobox_role_key" value="{{ tc.infobox_role_key or "" }}" placeholder="e.g. senior judge"></div>
+          <div class="form-group"><label>Infobox role key filter (optional)</label><select name="tc_infobox_role_key_filter_id"><option value="">— None —</option>{% for f in infobox_role_key_filters or [] %}<option value="{{ f.id }}" {% if (tc.infobox_role_key_filter_id|string) == (f.id|string) %}selected{% endif %}>{{ f.name }}{% if f.role_key %} — {{ f.role_key }}{% endif %}</option>{% endfor %}</select></div>
           <div class="form-group checkbox-group"><label><input type="checkbox" name="tc_parse_rowspan" value="1" {% if tc.parse_rowspan %}checked{% endif %}> Parse rowspan</label></div>
           <div class="form-group checkbox-group"><label><input type="checkbox" name="tc_consolidate_rowspan_terms" value="1" {% if tc.consolidate_rowspan_terms %}checked{% endif %}> Consolidate rowspan terms</label></div>
           <div class="form-group checkbox-group"><label><input type="checkbox" name="tc_rep_link" value="1" {% if tc.rep_link %}checked{% endif %}> Rep link</label></div>
@@ -913,7 +913,7 @@
       party_ignore: elChecked('party_ignore', 'tc_party_ignore'),
       ignore_non_links: elChecked('ignore_non_links', 'tc_ignore_non_links'),
       remove_duplicates: elChecked('remove_duplicates', 'tc_remove_duplicates'),
-      infobox_role_key: elText('infobox_role_key', 'tc_infobox_role_key', ''),
+      infobox_role_key_filter_id: elVal('infobox_role_key_filter_id', 'tc_infobox_role_key_filter_id', ''),
       district_ignore: distMode() === 'no_district',
       district_at_large: distMode() === 'at_large'
     };
@@ -1183,8 +1183,8 @@
         clone.querySelector('input[name="tc_term_end_column"]').value = '5';
         clone.querySelector('input[name="tc_district_column"]').value = '0';
         clone.querySelector('input[name="tc_notes"]').value = '';
-        var roleInput = clone.querySelector('input[name="tc_infobox_role_key"]');
-        if (roleInput) roleInput.value = '';
+        var roleSelect = clone.querySelector('select[name="tc_infobox_role_key_filter_id"]');
+        if (roleSelect) roleSelect.value = '';
         var deleteForm = clone.querySelector('form[action*="/table/"]');
         if (deleteForm) deleteForm.remove();
         var h4 = clone.querySelector('h4');
