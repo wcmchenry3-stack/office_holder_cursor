@@ -2191,6 +2191,7 @@ async def test_scripts_page(request: Request):
             "request": request,
             "tests": tests,
             "can_use_office_templates": db_offices.use_hierarchy(),
+            "infobox_role_key_filters": db_infobox_role_key_filter.list_infobox_role_key_filters(),
         },
     )
 

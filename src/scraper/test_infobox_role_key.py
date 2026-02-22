@@ -2,6 +2,7 @@ import pytest
 
 from src.scraper.logger import Logger
 from src.scraper.table_parser import Biography, DataCleanup, parse_infobox_role_key_query
+from src.scraper.test_script_runner import run_test_script_from_html
 
 
 class _Resp:
@@ -163,3 +164,52 @@ def test_infobox_role_key_requires_quoted_terms():
 def test_infobox_role_key_rejects_unclosed_quotes():
     with pytest.raises(ValueError):
         parse_infobox_role_key_query('"judge" -"chief judge')
+
+
+def test_run_test_script_resolves_infobox_role_key_from_filter_id(monkeypatch):
+    captured = {}
+
+    def fake_parse(office_row, selected_table_html, _url):
+        captured["role_key"] = office_row.get("infobox_role_key")
+        return []
+
+    monkeypatch.setattr("src.scraper.test_script_runner.get_infobox_role_key_filter", lambda fid: {"id": fid, "role_key": '"senior judge"'})
+    monkeypatch.setattr("src.scraper.test_script_runner.parse_full_table_for_export", fake_parse)
+
+    html = "<table><tr><th>Name</th></tr><tr><td>A</td></tr></table>"
+    result = run_test_script_from_html(
+        test_type="table_config",
+        html_content=html,
+        config_json={
+            "table_no": 1,
+            "infobox_role_key": '"chief judge"',
+            "infobox_role_key_filter_id": 42,
+        },
+    )
+
+    assert result["actual"] == []
+    assert captured["role_key"] == '"senior judge"'
+
+
+def test_run_test_script_keeps_legacy_infobox_role_key_when_filter_missing(monkeypatch):
+    captured = {}
+
+    def fake_parse(office_row, selected_table_html, _url):
+        captured["role_key"] = office_row.get("infobox_role_key")
+        return []
+
+    monkeypatch.setattr("src.scraper.test_script_runner.get_infobox_role_key_filter", lambda _fid: None)
+    monkeypatch.setattr("src.scraper.test_script_runner.parse_full_table_for_export", fake_parse)
+
+    html = "<table><tr><th>Name</th></tr><tr><td>A</td></tr></table>"
+    run_test_script_from_html(
+        test_type="table_config",
+        html_content=html,
+        config_json={
+            "table_no": 1,
+            "infobox_role_key": '"senior judge"',
+            "infobox_role_key_filter_id": 9999,
+        },
+    )
+
+    assert captured["role_key"] == '"senior judge"'
