@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}{{ "Edit" if filter_obj else "New" }} infobox role key filter – Office Holder{% endblock %}
+{% block content %}
+<h1>{{ "Edit" if filter_obj else "New" }} infobox role key filter</h1>
+{% if validation_error %}<div class="alert alert-error">{{ validation_error }}</div>{% endif %}
+<p class="form-note">Leave a list empty (select none) for "All". Otherwise only the selected values apply for that dimension.</p>
+<form method="post" action="{% if filter_obj %}/refs/infobox-role-key-filters/{{ filter_obj.id }}{% else %}/refs/infobox-role-key-filters/new{% endif %}">
+  <div class="form-group">
+    <label for="name">Name</label>
+    <input type="text" id="name" name="name" value="{{ filter_obj.name if filter_obj else (form_name if form_name is defined else '') }}" required placeholder="Filter name">
+  </div>
+  <div class="form-group">
+    <label for="role_key">Role key</label>
+    <input type="text" id="role_key" name="role_key" value="{{ filter_obj.role_key if filter_obj else (form_role_key if form_role_key is defined else '') }}" required placeholder="Infobox role key">
+  </div>
+  <div class="form-group">
+    <label for="country_ids">Countries (optional; leave empty for all)</label>
+    <select id="country_ids" name="country_ids" multiple size="6">
+      {% for c in countries %}
+      <option value="{{ c.id }}" {% if filter_obj and c.id in (filter_obj.country_ids or []) %}selected{% elif form_country_ids is defined and c.id in form_country_ids %}selected{% endif %}>{{ c.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="form-group">
+    <label for="level_ids">Levels (optional; leave empty for all)</label>
+    <select id="level_ids" name="level_ids" multiple size="4">
+      {% for l in levels %}
+      <option value="{{ l.id }}" {% if filter_obj and l.id in (filter_obj.level_ids or []) %}selected{% elif form_level_ids is defined and l.id in form_level_ids %}selected{% endif %}>{{ l.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="form-group">
+    <label for="branch_ids">Branches (optional; leave empty for all)</label>
+    <select id="branch_ids" name="branch_ids" multiple size="4">
+      {% for b in branches %}
+      <option value="{{ b.id }}" {% if filter_obj and b.id in (filter_obj.branch_ids or []) %}selected{% elif form_branch_ids is defined and b.id in form_branch_ids %}selected{% endif %}>{{ b.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="actions">
+    <button type="submit" class="btn">Save</button>
+    <a href="/refs/infobox-role-key-filters" class="btn btn-secondary">Cancel</a>
+  </div>
+</form>
+{% endblock %}

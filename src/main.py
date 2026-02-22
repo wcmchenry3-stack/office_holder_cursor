@@ -33,6 +33,7 @@ from src.db import offices as db_offices
 from src.db import parties as db_parties
 from src.db import refs as db_refs
 from src.db import office_category as db_office_category
+from src.db import infobox_role_key_filter as db_infobox_role_key_filter
 from src.db import individuals as db_individuals
 from src.db import office_terms as db_office_terms
 from src.db import reports as db_reports
@@ -1930,6 +1931,125 @@ async def refs_office_category_delete(category_id: int):
     except ValueError as e:
         from urllib.parse import quote
         return RedirectResponse("/refs/office-categories?error=" + quote(str(e)), status_code=302)
+
+
+# ---------- Infobox role key filters (reference data) ----------
+@app.get("/refs/infobox-role-key-filters", response_class=HTMLResponse)
+async def refs_infobox_role_key_filters_list(request: Request):
+    saved = request.query_params.get("saved") == "1"
+    error = request.query_params.get("error") or None
+    filters = db_infobox_role_key_filter.list_infobox_role_key_filters()
+    return templates.TemplateResponse(
+        "refs_infobox_role_key_filters.html",
+        {"request": request, "filters": filters, "saved": saved, "error": error},
+    )
+
+
+@app.get("/refs/infobox-role-key-filters/new", response_class=HTMLResponse)
+async def refs_infobox_role_key_filter_new(request: Request):
+    countries = db_refs.list_countries()
+    levels = db_refs.list_levels()
+    branches = db_refs.list_branches()
+    return templates.TemplateResponse(
+        "refs_infobox_role_key_filter_form.html",
+        {"request": request, "filter_obj": None, "countries": countries, "levels": levels, "branches": branches},
+    )
+
+
+@app.post("/refs/infobox-role-key-filters/new")
+async def refs_infobox_role_key_filter_create(request: Request):
+    form = await request.form()
+    name = (form.get("name") or "").strip()
+    role_key = (form.get("role_key") or "").strip()
+    country_ids = _form_ids(form, "country_ids")
+    level_ids = _form_ids(form, "level_ids")
+    branch_ids = _form_ids(form, "branch_ids")
+    try:
+        db_infobox_role_key_filter.create_infobox_role_key_filter(name, role_key, country_ids, level_ids, branch_ids)
+        return RedirectResponse("/refs/infobox-role-key-filters?saved=1", status_code=302)
+    except ValueError as e:
+        countries = db_refs.list_countries()
+        levels = db_refs.list_levels()
+        branches = db_refs.list_branches()
+        return templates.TemplateResponse(
+            "refs_infobox_role_key_filter_form.html",
+            {
+                "request": request,
+                "filter_obj": None,
+                "countries": countries,
+                "levels": levels,
+                "branches": branches,
+                "validation_error": str(e),
+                "form_name": name,
+                "form_role_key": role_key,
+                "form_country_ids": country_ids,
+                "form_level_ids": level_ids,
+                "form_branch_ids": branch_ids,
+            },
+        )
+
+
+@app.get("/refs/infobox-role-key-filters/{filter_id}", response_class=HTMLResponse)
+async def refs_infobox_role_key_filter_edit(request: Request, filter_id: int):
+    filter_obj = db_infobox_role_key_filter.get_infobox_role_key_filter(filter_id)
+    if not filter_obj:
+        raise HTTPException(status_code=404)
+    countries = db_refs.list_countries()
+    levels = db_refs.list_levels()
+    branches = db_refs.list_branches()
+    return templates.TemplateResponse(
+        "refs_infobox_role_key_filter_form.html",
+        {"request": request, "filter_obj": filter_obj, "countries": countries, "levels": levels, "branches": branches},
+    )
+
+
+@app.post("/refs/infobox-role-key-filters/{filter_id}")
+async def refs_infobox_role_key_filter_update(request: Request, filter_id: int):
+    form = await request.form()
+    name = (form.get("name") or "").strip()
+    role_key = (form.get("role_key") or "").strip()
+    country_ids = _form_ids(form, "country_ids")
+    level_ids = _form_ids(form, "level_ids")
+    branch_ids = _form_ids(form, "branch_ids")
+    try:
+        updated = db_infobox_role_key_filter.update_infobox_role_key_filter(
+            filter_id, name, role_key, country_ids, level_ids, branch_ids
+        )
+        if not updated:
+            raise HTTPException(status_code=404)
+        return RedirectResponse("/refs/infobox-role-key-filters?saved=1", status_code=302)
+    except ValueError as e:
+        filter_obj = db_infobox_role_key_filter.get_infobox_role_key_filter(filter_id)
+        if not filter_obj:
+            raise HTTPException(status_code=404)
+        filter_obj = {
+            **filter_obj,
+            "name": name,
+            "role_key": role_key,
+            "country_ids": country_ids,
+            "level_ids": level_ids,
+            "branch_ids": branch_ids,
+        }
+        countries = db_refs.list_countries()
+        levels = db_refs.list_levels()
+        branches = db_refs.list_branches()
+        return templates.TemplateResponse(
+            "refs_infobox_role_key_filter_form.html",
+            {
+                "request": request,
+                "filter_obj": filter_obj,
+                "countries": countries,
+                "levels": levels,
+                "branches": branches,
+                "validation_error": str(e),
+            },
+        )
+
+
+@app.post("/refs/infobox-role-key-filters/{filter_id}/delete")
+async def refs_infobox_role_key_filter_delete(filter_id: int):
+    db_infobox_role_key_filter.delete_infobox_role_key_filter(filter_id)
+    return RedirectResponse("/refs/infobox-role-key-filters", status_code=302)
 
 
 # ---------- Reference data (for dropdowns) ----------

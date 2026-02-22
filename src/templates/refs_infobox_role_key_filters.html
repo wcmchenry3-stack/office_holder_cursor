@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Infobox role key filters – Office Holder{% endblock %}
+{% block content %}
+<h1>Infobox role key filters</h1>
+{% if saved %}<div class="alert alert-success">Saved to local database.</div>{% endif %}
+{% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
+<div class="actions">
+  <a href="/refs/infobox-role-key-filters/new" class="btn">Add infobox role key filter</a>
+  <a href="/refs" class="btn btn-secondary">Back to Reference data</a>
+</div>
+{% if filters %}
+<table class="table">
+  <thead>
+    <tr><th>Name</th><th>Role key</th><th></th></tr>
+  </thead>
+  <tbody>
+    {% for f in filters %}
+    <tr>
+      <td><a href="/refs/infobox-role-key-filters/{{ f.id }}">{{ f.name or '—' }}</a></td>
+      <td><code>{{ f.role_key or '—' }}</code></td>
+      <td>
+        <a href="/refs/infobox-role-key-filters/{{ f.id }}" class="btn btn-sm btn-secondary">Edit</a>
+        <form action="/refs/infobox-role-key-filters/{{ f.id }}/delete" method="post" style="display:inline;" onsubmit="return confirm('Delete this filter?');">
+          <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>No infobox role key filters yet. <a href="/refs/infobox-role-key-filters/new">Add one</a>.</p>
+{% endif %}
+{% endblock %}

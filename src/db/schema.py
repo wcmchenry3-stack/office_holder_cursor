@@ -58,6 +58,28 @@ CREATE TABLE IF NOT EXISTS office_category_branches (
     PRIMARY KEY (category_id, branch_id)
 );
 
+-- Infobox role key filter: optional label per infobox role key; scoped by country/level/branch (empty = all)
+CREATE TABLE IF NOT EXISTS infobox_role_key_filter (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    role_key TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS infobox_role_key_filter_countries (
+    filter_id INTEGER NOT NULL REFERENCES infobox_role_key_filter(id),
+    country_id INTEGER NOT NULL REFERENCES countries(id),
+    PRIMARY KEY (filter_id, country_id)
+);
+CREATE TABLE IF NOT EXISTS infobox_role_key_filter_levels (
+    filter_id INTEGER NOT NULL REFERENCES infobox_role_key_filter(id),
+    level_id INTEGER NOT NULL REFERENCES levels(id),
+    PRIMARY KEY (filter_id, level_id)
+);
+CREATE TABLE IF NOT EXISTS infobox_role_key_filter_branches (
+    filter_id INTEGER NOT NULL REFERENCES infobox_role_key_filter(id),
+    branch_id INTEGER NOT NULL REFERENCES branches(id),
+    PRIMARY KEY (filter_id, branch_id)
+);
+
 -- Individuals: one row per person (keyed by Wikipedia URL)
 CREATE TABLE IF NOT EXISTS individuals (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
