@@ -85,6 +85,7 @@ def _parse_office_html(
     offices_parser: Any,
     cached_table_html: str | None = None,
     progress_callback: Callable[[str, int, int, str, dict], None] | None = None,
+    progress_extra: dict[str, Any] | None = None,
     max_rows: int | None = None,
 ) -> list[dict[str, Any]]:
     """Single code path: build config from office_row and run parser. Returns list of row dicts (parser output).
@@ -97,9 +98,13 @@ def _parse_office_html(
     if cached_table_html is not None:
         html_content = cached_table_html
         table_config = {**table_config, "table_no": 1}
+
+    infobox_extra = dict(progress_extra or {})
+
     def infobox_progress(current: int, total: int, message: str):
         if progress_callback:
-            progress_callback("infobox", current, total, message, {})
+            progress_callback("infobox", current, total, message, infobox_extra)
+
     return offices_parser.process_table(
         html_content, table_config, office_details, url, party_list,
         progress_callback=infobox_progress if progress_callback else None,
@@ -535,9 +540,11 @@ def run_with_db(
     bio_cancelled = False
 
     for idx, office_row in enumerate(offices):
+        office_index = idx + 1
+        office_total = len(offices)
         if cancel_check and cancel_check():
             logger.log("Run cancelled by user.", True)
-            report("office", idx, len(offices), "Cancelled", {"terms_so_far": total_terms})
+            report("office", idx, office_total, "Cancelled", {"terms_so_far": total_terms})
             # Build partial result (no DB write or bio after cancel)
             preview_rows = None
             if dry_run or test_run:
@@ -590,17 +597,33 @@ def run_with_db(
         office_id = office_row["id"]
         url = office_row.get("url") or ""
         office_name = office_row.get("name") or f"Office {office_id}"
+        table_no = int(office_row.get("table_no") or 1)
+        table_progress_extra = {
+            "office_id": office_id,
+            "office_name": office_name,
+            "office_index": office_index,
+            "office_total": office_total,
+            "table_no": table_no,
+            "table_index": office_index,
+            "table_total": office_total,
+        }
+        report(
+            "table",
+            office_index,
+            office_total,
+            f"{office_name} (table {table_no})",
+            table_progress_extra,
+        )
         if not url:
             logger.log(f"Skipping office id {office_id}: no URL", True)
-            report("office", idx + 1, len(offices), f"Skipped (no URL): {office_name}", {"terms_so_far": total_terms})
+            report("office", office_index, office_total, f"Skipped (no URL): {office_name}", {"terms_so_far": total_terms, **table_progress_extra})
             continue
-        report("office", idx + 1, len(offices), office_name, {"terms_so_far": total_terms})
-        logger.log(f"Processing office {idx+1}/{len(offices)}: {office_name} ({url})", True)
+        report("office", office_index, office_total, office_name, {"terms_so_far": total_terms, **table_progress_extra})
+        logger.log(f"Processing office {office_index}/{office_total}: {office_name} ({url})", True)
 
         existing_terms = db_office_terms.get_existing_terms_for_office(office_id)
         has_existing = len(existing_terms) > 0
 
-        table_no = int(office_row.get("table_no") or 1)
         use_full_page = bool(office_row.get("use_full_page_for_table"))
         cache_result = get_table_html_cached(url.strip(), table_no, refresh=refresh_table_cache, use_full_page=use_full_page)
         if "error" in cache_result:
@@ -652,6 +675,7 @@ def run_with_db(
         table_data = _parse_office_html(
             office_row, html_content, url, party_list, offices_parser,
             cached_table_html=cached_table_html, progress_callback=report,
+            progress_extra=table_progress_extra,
         )
         if max_rows_per_table is not None and max_rows_per_table >= 0:
             table_data = table_data[: max_rows_per_table]
