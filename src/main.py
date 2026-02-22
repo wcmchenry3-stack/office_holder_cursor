@@ -1051,6 +1051,7 @@ async def api_office_table_configs(office_id: int, table_no: int | None = None):
 async def api_office_set_infobox_role_key(office_id: int, request: Request):
     """Set infobox_role_key for a specific office table_no and return persisted table details.
     Body JSON: {"table_no": 1, "infobox_role_key": "chief judge"}
+    Also accepts table_config_id to target a specific office_table_config row.
     """
     office = db_offices.get_office(office_id)
     if not office:
@@ -1060,14 +1061,43 @@ async def api_office_set_infobox_role_key(office_id: int, request: Request):
         body = await request.json()
     except Exception:
         body = {}
-    try:
-        table_no = int((body or {}).get("table_no") or 1)
-    except (TypeError, ValueError):
-        raise HTTPException(status_code=400, detail="table_no must be an integer")
+    tcs = office.get("table_configs") if isinstance(office.get("table_configs"), list) and office.get("table_configs") else []
+    table_config_id_raw = (body or {}).get("table_config_id")
+    table_no_raw = (body or {}).get("table_no")
+    table_no = None
+    if table_config_id_raw not in (None, ""):
+        try:
+            table_config_id = int(table_config_id_raw)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="table_config_id must be an integer")
+        match_tc = None
+        for tc in tcs:
+            try:
+                tc_id = int(tc.get("id") or 0)
+            except (TypeError, ValueError):
+                tc_id = 0
+            if tc_id == table_config_id:
+                match_tc = tc
+                break
+        if not match_tc:
+            raise HTTPException(status_code=404, detail=f"No table config {table_config_id} found for office {office_id}")
+        table_no = int(match_tc.get("table_no") or 1)
+    elif table_no_raw not in (None, ""):
+        try:
+            table_no = int(table_no_raw)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="table_no must be an integer")
+    elif len(tcs) == 1:
+        table_no = int(tcs[0].get("table_no") or 1)
+    else:
+        available = [{"table_config_id": tc.get("id"), "table_no": tc.get("table_no")} for tc in tcs]
+        raise HTTPException(status_code=400, detail={"message": "Provide table_no or table_config_id", "available_tables": available})
+
     role_key = ((body or {}).get("infobox_role_key") or "").strip()
     updated = db_offices.set_infobox_role_key(office_id, table_no, role_key)
     if not updated:
-        raise HTTPException(status_code=404, detail=f"No table config found for office {office_id} table_no {table_no}")
+        available = [{"table_config_id": tc.get("id"), "table_no": tc.get("table_no")} for tc in tcs]
+        raise HTTPException(status_code=404, detail={"message": f"No table config found for office {office_id} table_no {table_no}", "available_tables": available})
     office_after = db_offices.get_office(office_id)
     tcs = office_after.get("table_configs") if isinstance(office_after.get("table_configs"), list) else []
     match = None

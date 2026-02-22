@@ -29,15 +29,23 @@ def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--base-url", default="http://127.0.0.1:8000", help="Base app URL")
     p.add_argument("--office-id", type=int, required=True)
-    p.add_argument("--table-no", type=int, default=1)
+    p.add_argument("--table-no", type=int, default=None)
+    p.add_argument("--table-config-id", type=int, default=None)
     p.add_argument("--role-key", default="")
     args = p.parse_args()
 
     set_url = f"{args.base_url}/api/offices/{args.office_id}/set-infobox-role-key"
-    get_url = f"{args.base_url}/api/offices/{args.office_id}/table-configs?table_no={args.table_no}"
+    get_url = f"{args.base_url}/api/offices/{args.office_id}/table-configs"
+    if args.table_no is not None:
+        get_url += f"?table_no={args.table_no}"
 
     try:
-        save_res = _http_json(set_url, method="POST", payload={"table_no": args.table_no, "infobox_role_key": args.role_key})
+        payload = {"infobox_role_key": args.role_key}
+        if args.table_config_id is not None:
+            payload["table_config_id"] = args.table_config_id
+        elif args.table_no is not None:
+            payload["table_no"] = args.table_no
+        save_res = _http_json(set_url, method="POST", payload=payload)
         print("Save response:")
         print(json.dumps(save_res, indent=2))
 
