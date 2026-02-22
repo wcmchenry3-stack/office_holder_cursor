@@ -1127,6 +1127,56 @@ async def api_office_set_infobox_role_key(office_id: int, request: Request):
     })
 
 
+@app.get("/api/table-configs/{table_config_id}")
+async def api_table_config_get(table_config_id: int):
+    """Return one table config row (including infobox_role_key) by office_table_config.id."""
+    office = db_offices.get_office_by_table_config_id(table_config_id)
+    if not office:
+        raise HTTPException(status_code=404, detail=f"Table config {table_config_id} not found")
+    return JSONResponse({
+        "ok": True,
+        "table_config": {
+            "id": int(office.get("id") or table_config_id),
+            "office_details_id": int(office.get("office_details_id") or 0) or None,
+            "table_no": int(office.get("table_no") or 1),
+            "name": office.get("name") or "",
+            "infobox_role_key": (office.get("infobox_role_key") or "").strip(),
+        },
+    })
+
+
+@app.post("/api/table-configs/{table_config_id}/set-infobox-role-key")
+async def api_table_config_set_infobox_role_key(table_config_id: int, request: Request):
+    """Set infobox_role_key directly by office_table_config.id.
+
+    Body JSON: {"infobox_role_key": "chief judge"}
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    role_key = ((body or {}).get("infobox_role_key") or "").strip()
+    updated = db_offices.set_infobox_role_key_by_table_config_id(table_config_id, role_key)
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Table config {table_config_id} not found")
+    office = db_offices.get_office_by_table_config_id(table_config_id)
+    if not office:
+        raise HTTPException(status_code=404, detail=f"Table config {table_config_id} not found after save")
+    return JSONResponse(
+        {
+            "ok": True,
+            "message": "Saved",
+            "table_config": {
+                "id": int(office.get("id") or table_config_id),
+                "office_details_id": int(office.get("office_details_id") or 0) or None,
+                "table_no": int(office.get("table_no") or 1),
+                "name": office.get("name") or "",
+                "infobox_role_key": (office.get("infobox_role_key") or "").strip(),
+            },
+        }
+    )
+
+
 @app.get("/api/offices/{office_id}/test-config")
 async def api_office_test_config(office_id: int):
     office = db_offices.get_office(office_id)

@@ -1417,6 +1417,48 @@ def set_infobox_role_key(
             conn.close()
 
 
+def set_infobox_role_key_by_table_config_id(
+    office_table_config_id: int,
+    infobox_role_key: str,
+    conn: sqlite3.Connection | None = None,
+) -> bool:
+    """Set infobox_role_key for one office_table_config row by id.
+
+    This is the least ambiguous write path in hierarchy mode and is useful for
+    command-line/debug workflows where callers already have otc.id.
+    Returns True when a row was updated.
+    """
+    own_conn = conn is None
+    if own_conn:
+        conn = get_connection()
+    try:
+        key = (infobox_role_key or "").strip()
+        if _use_hierarchy(conn):
+            cur = conn.execute(
+                """UPDATE office_table_config
+                       SET infobox_role_key = ?, updated_at = datetime('now')
+                     WHERE id = ?""",
+                (key, int(office_table_config_id)),
+            )
+            conn.commit()
+            return cur.rowcount > 0
+        row = conn.execute(
+            "SELECT id FROM offices WHERE id = ?",
+            (int(office_table_config_id),),
+        ).fetchone()
+        if not row:
+            return False
+        cur = conn.execute(
+            "UPDATE offices SET infobox_role_key = ? WHERE id = ?",
+            (key, int(office_table_config_id)),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        if own_conn:
+            conn.close()
+
+
 def delete_table(office_table_config_id: int, conn: sqlite3.Connection | None = None) -> bool:
     """Delete one office_table_config and its office_terms. Fails if it would leave the office with zero configs."""
     own_conn = conn is None
