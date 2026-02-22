@@ -1,5 +1,6 @@
 """Migration: ensure ref tables exist and offices/parties use FK columns."""
 
+import re
 import sqlite3
 
 from .connection import get_connection
@@ -68,10 +69,10 @@ def migrate_to_fk(conn=None):
         _migrate_allow_reuse_tables_and_table_no_unique(conn)
         # office_table_config: add name (table name for outline)
         _migrate_office_table_config_name(conn)
-        _migrate_infobox_role_key(conn)
         # office_category tables and office_details.office_category_id
         _migrate_office_category(conn)
         _migrate_infobox_role_key_filter(conn)
+        _migrate_office_table_config_infobox_role_key_filter_id(conn)
         # cities table and source_pages.city_id
         _migrate_city(conn)
     finally:
@@ -677,6 +678,80 @@ def _migrate_infobox_role_key_filter(conn):
             PRIMARY KEY (filter_id, branch_id)
         );
     """)
+    conn.commit()
+
+
+def _normalize_role_key(role_key: str) -> str:
+    return re.sub(r"\s+", "_", (role_key or "").strip().lower())
+
+
+def _migrate_office_table_config_infobox_role_key_filter_id(conn):
+    """Add office_table_config.infobox_role_key_filter_id and backfill from legacy infobox_role_key when present."""
+    try:
+        otc_cols = _columns(conn, "office_table_config")
+    except sqlite3.OperationalError:
+        return
+
+    if "infobox_role_key_filter_id" not in otc_cols:
+        conn.execute(
+            "ALTER TABLE office_table_config ADD COLUMN infobox_role_key_filter_id INTEGER REFERENCES infobox_role_key_filter(id)"
+        )
+        conn.commit()
+
+    if "infobox_role_key" not in otc_cols:
+        return
+
+    rows = conn.execute(
+        """SELECT tc.id, tc.infobox_role_key, p.country_id, p.level_id, p.branch_id
+               FROM office_table_config tc
+               JOIN office_details od ON od.id = tc.office_details_id
+               JOIN source_pages p ON p.id = od.source_page_id
+              WHERE tc.infobox_role_key_filter_id IS NULL
+                AND TRIM(COALESCE(tc.infobox_role_key, '')) != ''"""
+    ).fetchall()
+
+    def _ensure_filter(role_key: str, country_id: int | None, level_id: int | None, branch_id: int | None) -> int:
+        normalized = _normalize_role_key(role_key)
+        candidate_ids = [
+            r[0]
+            for r in conn.execute(
+                "SELECT id FROM infobox_role_key_filter WHERE role_key = ?",
+                (normalized,),
+            ).fetchall()
+        ]
+        for fid in candidate_ids:
+            c = {r[0] for r in conn.execute("SELECT country_id FROM infobox_role_key_filter_countries WHERE filter_id = ?", (fid,)).fetchall()}
+            l = {r[0] for r in conn.execute("SELECT level_id FROM infobox_role_key_filter_levels WHERE filter_id = ?", (fid,)).fetchall()}
+            b = {r[0] for r in conn.execute("SELECT branch_id FROM infobox_role_key_filter_branches WHERE filter_id = ?", (fid,)).fetchall()}
+            if c == ({country_id} if country_id else set()) and l == ({level_id} if level_id else set()) and b == ({branch_id} if branch_id else set()):
+                return int(fid)
+
+        scope = f"c{country_id or 0}_l{level_id or 0}_b{branch_id or 0}"
+        base_name = f"{normalized}__{scope}"
+        name = base_name
+        suffix = 2
+        while conn.execute("SELECT 1 FROM infobox_role_key_filter WHERE name = ?", (name,)).fetchone():
+            name = f"{base_name}_{suffix}"
+            suffix += 1
+        conn.execute(
+            "INSERT INTO infobox_role_key_filter (name, role_key) VALUES (?, ?)",
+            (name, normalized),
+        )
+        fid = int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
+        if country_id:
+            conn.execute("INSERT OR IGNORE INTO infobox_role_key_filter_countries (filter_id, country_id) VALUES (?, ?)", (fid, country_id))
+        if level_id:
+            conn.execute("INSERT OR IGNORE INTO infobox_role_key_filter_levels (filter_id, level_id) VALUES (?, ?)", (fid, level_id))
+        if branch_id:
+            conn.execute("INSERT OR IGNORE INTO infobox_role_key_filter_branches (filter_id, branch_id) VALUES (?, ?)", (fid, branch_id))
+        return fid
+
+    for tc_id, role_key, country_id, level_id, branch_id in rows:
+        fid = _ensure_filter(role_key, country_id, level_id, branch_id)
+        conn.execute(
+            "UPDATE office_table_config SET infobox_role_key_filter_id = ? WHERE id = ?",
+            (fid, tc_id),
+        )
     conn.commit()
 
 def _migrate_city(conn):
