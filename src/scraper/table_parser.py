@@ -1666,12 +1666,16 @@ class Biography:
                   all_terms = []  # Collect all matching term (start, end) from every matching row in the infobox
                   for tr in infobox.find_all('tr'):
                       self.Logger.debug_log( f"found tr \n {tr}" , True )
-                      a = tr.find('a', href=True)
+                      links = tr.find_all('a', href=True)
                       row_text = tr.get_text(" ", strip=True)
-                      raw_href = a.get("href", "") if a else ""
-                      norm_path = _normalize_infobox_href(raw_href)
-                      norm_path_lower = (norm_path or "").lower()
-                      link_matches = a and (norm_path_lower in match_candidates or (norm_path_lower.rsplit("/", 1)[-1] in match_candidates if norm_path_lower else False))
+                      link_matches = False
+                      for a in links:
+                          raw_href = a.get("href", "") if a else ""
+                          norm_path = _normalize_infobox_href(raw_href)
+                          norm_path_lower = (norm_path or "").lower()
+                          if norm_path_lower in match_candidates or (norm_path_lower.rsplit("/", 1)[-1] in match_candidates if norm_path_lower else False):
+                              link_matches = True
+                              break
                       role_matches = _role_matches(row_text)
                       if link_matches and role_matches:
                           # Examine the next two sibling rows for date information
@@ -1795,5 +1799,4 @@ class Biography:
           pass
       # #endregion
       return ([("YYYY-00-00", "YYYY-00-00")], infobox_items if infobox_items else ["No dates found (placeholder)."])
-
 
