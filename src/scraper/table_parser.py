@@ -47,6 +47,54 @@ def _dates_from_cell_data_sort_value(cell):
   return (vals[0], vals[-1])
 
 
+def parse_infobox_role_key_query(raw_query: str) -> tuple[list[str], list[str]]:
+  """Parse infobox role query into (includes, excludes) with strict quoting.
+
+  Accepted examples:
+  - "judge"
+  - "judge" "associate justice" -"chief judge" -"senior judge"
+  """
+  expr = (raw_query or "").strip()
+  if not expr:
+    return ([], [])
+
+  includes: list[str] = []
+  excludes: list[str] = []
+  pos = 0
+  n = len(expr)
+
+  def _normalize_role_text(text: str) -> str:
+    return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9]+", " ", (text or "").lower())).strip()
+
+  while pos < n:
+    while pos < n and expr[pos].isspace():
+      pos += 1
+    if pos >= n:
+      break
+    neg = False
+    if expr[pos] == "-":
+      neg = True
+      pos += 1
+      if pos >= n:
+        raise ValueError("Invalid infobox role key: trailing '-' must be followed by a quoted term.")
+    if expr[pos] != '"':
+      raise ValueError("Invalid infobox role key: every term must be quoted (use -\"term\" for excludes).")
+    pos += 1
+    end = expr.find('"', pos)
+    if end == -1:
+      raise ValueError("Invalid infobox role key: unclosed quoted term.")
+    term = _normalize_role_text(expr[pos:end])
+    if not term:
+      raise ValueError("Invalid infobox role key: empty quoted terms are not allowed.")
+    if neg:
+      excludes.append(term)
+    else:
+      includes.append(term)
+    pos = end + 1
+
+  return (includes, excludes)
+
+
 def _emit_merged_run(run, years_only, out):
   """Merge a run of consecutive term rows into one row; append to out."""
   # #region agent log
@@ -1658,23 +1706,7 @@ class Biography:
                       # `hay` and `phrase` are already normalized to lowercase words/spaces.
                       return re.search(r"(^|\s)" + re.escape(phrase) + r"(\s|$)", hay) is not None
 
-                  def _parse_role_query(expr: str) -> tuple[list[str], list[str]]:
-                      includes: list[str] = []
-                      excludes: list[str] = []
-                      # Supports terms like: judge -"chief judge" -"senior judge"
-                      for m in re.finditer(r'(-?)"([^"]+)"|(-?)(\S+)', expr or ""):
-                          neg = bool((m.group(1) or m.group(3) or "").strip())
-                          raw = (m.group(2) or m.group(4) or "").strip()
-                          term = _normalize_role_text(raw)
-                          if not term:
-                              continue
-                          if neg:
-                              excludes.append(term)
-                          else:
-                              includes.append(term)
-                      return includes, excludes
-
-                  role_includes, role_excludes = _parse_role_query(role_key)
+                  role_includes, role_excludes = parse_infobox_role_key_query(role_key_raw)
 
                   def _role_matches(text: str) -> bool:
                       if not role_key:
@@ -1682,12 +1714,8 @@ class Biography:
                       hay = _normalize_role_text(text)
                       if not hay:
                           return False
-                      if not role_includes and not role_excludes:
-                          needle = _normalize_role_text(role_key)
-                          return _contains_phrase(hay, needle) if needle else True
-                      for inc in role_includes:
-                          if not _contains_phrase(hay, inc):
-                              return False
+                      if role_includes and not any(_contains_phrase(hay, inc) for inc in role_includes):
+                          return False
                       for exc in role_excludes:
                           if _contains_phrase(hay, exc):
                               return False

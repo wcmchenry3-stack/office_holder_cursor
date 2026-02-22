@@ -42,6 +42,7 @@ from src.scraper.runner import run_with_db, preview_with_config, parse_full_tabl
 from src.scraper.config_test import test_office_config, get_raw_table_preview, get_all_tables_preview, get_table_html, get_table_header_from_html
 from src.scraper.test_script_runner import run_test_script, run_test_script_from_html
 from src.scraper.wiki_fetch import WIKIPEDIA_REQUEST_HEADERS, wiki_url_to_rest_html_url, normalize_wiki_url
+from src.scraper.table_parser import parse_infobox_role_key_query
 
 app = FastAPI(title="Office Holder")
 # Resolve to absolute path so template dir is correct regardless of process cwd
@@ -111,7 +112,7 @@ def _office_draft_from_body(body: dict, *, include_ref_names: bool = False) -> d
         "district_at_large": district_at_large,
         "ignore_non_links": body.get("ignore_non_links") in (True, 1, "1", "true", "TRUE"),
         "remove_duplicates": body.get("remove_duplicates") in (True, 1, "1", "true", "TRUE"),
-        "infobox_role_key": (body.get("infobox_role_key") or "").strip(),
+        "infobox_role_key": _validate_infobox_role_key(body.get("infobox_role_key")),
     }
     if include_ref_names:
         country_id = int(body.get("country_id") or 0)
@@ -174,6 +175,13 @@ def _list_return_query(
     if office_count is not None and str(office_count).strip() and str(office_count).strip() != "all":
         parts.append("office_count=" + str(office_count).strip())
     return "&".join(parts)
+
+
+def _validate_infobox_role_key(role_key: str | None) -> str:
+    """Normalize and validate strict quoted infobox role key syntax."""
+    cleaned = (role_key or "").strip()
+    parse_infobox_role_key_query(cleaned)
+    return cleaned
 
 
 def _parse_optional_int(value: str | None) -> int | None:
@@ -330,7 +338,7 @@ async def office_create(request: Request):
         "district_at_large": (form.get("district_mode") or "column") == "at_large",
         "ignore_non_links": form.get("ignore_non_links") == "1",
         "remove_duplicates": form.get("remove_duplicates") == "1",
-        "infobox_role_key": (form.get("infobox_role_key") or "").strip(),
+        "infobox_role_key": _validate_infobox_role_key(form.get("infobox_role_key")),
     }
     try:
         _validate_level_state_city(data.get("level_id"), data.get("state_id"), data.get("city_id"), data.get("branch_id"))
@@ -750,7 +758,7 @@ def _form_to_table_config(form, i: int) -> dict:
         "remove_duplicates": _bool("remove_duplicates", "tc_remove_duplicates"),
         "notes": _get("notes", "tc_notes") or "",
         "name": _get("name", "tc_name") or "",
-        "infobox_role_key": (_get("infobox_role_key", "tc_infobox_role_key") or "").strip(),
+        "infobox_role_key": _validate_infobox_role_key(_get("infobox_role_key", "tc_infobox_role_key")),
     }
 
 
@@ -788,7 +796,7 @@ async def office_update(request: Request, office_id: int):
         "district_at_large": (form.get("district_mode") or "column") == "at_large",
         "ignore_non_links": form.get("ignore_non_links") == "1",
         "remove_duplicates": form.get("remove_duplicates") == "1",
-        "infobox_role_key": (form.get("infobox_role_key") or "").strip(),
+        "infobox_role_key": _validate_infobox_role_key(form.get("infobox_role_key")),
     }
     tc_ids = form.getlist("tc_id")
     tc_table_nos = form.getlist("tc_table_no")
@@ -1095,7 +1103,7 @@ async def api_office_set_infobox_role_key(office_id: int, request: Request):
         available = [{"table_config_id": tc.get("id"), "table_no": tc.get("table_no")} for tc in tcs]
         raise HTTPException(status_code=400, detail={"message": "Provide table_no or table_config_id", "available_tables": available})
 
-    role_key = ((body or {}).get("infobox_role_key") or "").strip()
+    role_key = _validate_infobox_role_key((body or {}).get("infobox_role_key"))
     updated = db_offices.set_infobox_role_key(office_id, table_no, role_key)
     if not updated:
         available = [{"table_config_id": tc.get("id"), "table_no": tc.get("table_no")} for tc in tcs]
@@ -1157,7 +1165,7 @@ async def api_table_config_set_infobox_role_key(table_config_id: int, request: R
         body = await request.json()
     except Exception:
         body = {}
-    role_key = ((body or {}).get("infobox_role_key") or "").strip()
+    role_key = _validate_infobox_role_key((body or {}).get("infobox_role_key"))
     updated = db_offices.set_infobox_role_key_by_table_config_id(table_config_id, role_key)
     if not updated:
         raise HTTPException(status_code=404, detail=f"Table config {table_config_id} not found")
