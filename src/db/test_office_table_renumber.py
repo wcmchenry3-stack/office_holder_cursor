@@ -37,6 +37,32 @@ def _tc(table_no, tc_id=None, name=""):
     return row
 
 
+def test_create_office_with_row_filter_columns_persists_values(tmp_path: Path):
+    db_path = tmp_path / "test_filter.db"
+    init_db(db_path)
+    conn = get_connection(db_path)
+    try:
+        data = _base_data([
+            {
+                **_tc(1, name="filtered"),
+                "filter_column": 5,
+                "filter_criteria": "Associate Justice",
+            }
+        ])
+
+        office_id = offices.create_office(data, conn)
+
+        saved = conn.execute(
+            "SELECT filter_column, filter_criteria FROM office_table_config WHERE office_details_id = ?",
+            (office_id,),
+        ).fetchone()
+        assert saved is not None
+        assert int(saved["filter_column"]) == 5
+        assert (saved["filter_criteria"] or "") == "Associate Justice"
+    finally:
+        conn.close()
+
+
 def test_update_office_allows_renumbering_without_transient_unique_conflict(tmp_path: Path):
     db_path = tmp_path / "test.db"
     init_db(db_path)
