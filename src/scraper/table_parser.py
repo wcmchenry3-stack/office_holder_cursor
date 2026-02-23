@@ -482,6 +482,25 @@ class Offices:
     return True
 
 
+  def _row_matches_filter(self, row, table_config):
+    """Return True when row passes optional single-column text filter."""
+    filter_col = table_config.get("row_filter_column", -1)
+    criteria = (table_config.get("row_filter_criteria") or "").strip()
+    if filter_col is None:
+      filter_col = -1
+    try:
+      filter_col = int(filter_col)
+    except (TypeError, ValueError):
+      filter_col = -1
+    if filter_col < 0 or not criteria:
+      return True
+    cells = row.find_all(['td', 'th'])
+    if filter_col >= len(cells):
+      return False
+    cell_text = re.sub(r"\s+", " ", cells[filter_col].get_text(" ", strip=True) or "").strip().lower()
+    target = re.sub(r"\s+", " ", criteria).strip().lower()
+    return target in cell_text
+
   def process_table(self, html_content, table_config, office_details, url, party_list, progress_callback=None, max_rows=None):
     self.Logger.log(f"---------------\n\n Processing table with config: {table_config}", True)
 
@@ -529,6 +548,8 @@ class Offices:
             self.Logger.debug_log( f"cells from process table {cells}" , True )
 
             cells_td = row.find_all('td')
+            if not self._row_matches_filter(row, table_config):
+                continue
             row_results = self.parse_table_row(row, table_config, office_details, url,  previous_row_wiki_link, previous_row_district, previous_row_party, party_list)
             if row_results and table_config.get("ignore_non_links"):
                 row_results = [r for r in row_results if self._is_valid_wiki_link(r.get("Wiki Link"))]
