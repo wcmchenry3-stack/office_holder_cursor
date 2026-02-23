@@ -73,6 +73,7 @@ def migrate_to_fk(conn=None):
         _migrate_office_category(conn)
         _migrate_infobox_role_key_filter(conn)
         _migrate_office_table_config_infobox_role_key_filter_id(conn)
+        _migrate_infobox_role_key_filter_role_key_format(conn)
         # cities table and source_pages.city_id
         _migrate_city(conn)
     finally:
@@ -682,7 +683,7 @@ def _migrate_infobox_role_key_filter(conn):
 
 
 def _normalize_role_key(role_key: str) -> str:
-    return re.sub(r"\s+", "_", (role_key or "").strip().lower())
+    return re.sub(r"\s+", " ", (role_key or "").strip().lower())
 
 
 def _migrate_office_table_config_infobox_role_key_filter_id(conn):
@@ -753,6 +754,35 @@ def _migrate_office_table_config_infobox_role_key_filter_id(conn):
             (fid, tc_id),
         )
     conn.commit()
+
+
+def _migrate_infobox_role_key_filter_role_key_format(conn):
+    """Repair legacy migrated role_key expressions that were normalized with underscores.
+
+    Early migrations converted whitespace to underscores, which breaks quoted include/exclude
+    parsing for expressions such as "associate justice" -"chief justice".
+    """
+    try:
+        rows = conn.execute(
+            "SELECT id, role_key FROM infobox_role_key_filter "
+            "WHERE INSTR(role_key, CHAR(34)) > 0 AND INSTR(role_key, '_') > 0"
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return
+    if not rows:
+        return
+
+    changed = False
+    for fid, role_key in rows:
+        original = (role_key or "").strip()
+        if not original:
+            continue
+        fixed = re.sub(r"\s+", " ", original.replace("_", " ")).strip()
+        if fixed and fixed != original:
+            conn.execute("UPDATE infobox_role_key_filter SET role_key = ? WHERE id = ?", (fixed, int(fid)))
+            changed = True
+    if changed:
+        conn.commit()
 
 def _migrate_city(conn):
     """Create cities table if missing; add city_id to source_pages if missing."""
