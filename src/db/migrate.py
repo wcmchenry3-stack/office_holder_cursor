@@ -59,6 +59,7 @@ def migrate_to_fk(conn=None):
         _migrate_offices_parsing_options(conn)
         _migrate_ignore_non_links(conn)
         _migrate_remove_duplicates(conn)
+        _migrate_row_filter_columns(conn)
         # Add is_dead_link to individuals if missing
         _migrate_individuals_dead_link(conn)
         # Alt links: new table, backfill from offices.alt_link, verify, then drop offices.alt_link
@@ -831,6 +832,22 @@ def _migrate_remove_duplicates(conn):
     otc_cols = _columns(conn, "office_table_config")
     if "remove_duplicates" not in otc_cols:
         conn.execute("ALTER TABLE office_table_config ADD COLUMN remove_duplicates INTEGER NOT NULL DEFAULT 0")
+    conn.commit()
+
+
+def _migrate_row_filter_columns(conn):
+    """Add optional row filter columns to offices and office_table_config if missing."""
+    offices_cols = _columns(conn, "offices")
+    if "filter_column" not in offices_cols:
+        conn.execute("ALTER TABLE offices ADD COLUMN filter_column INTEGER NOT NULL DEFAULT 0")
+    if "filter_criteria" not in offices_cols:
+        conn.execute("ALTER TABLE offices ADD COLUMN filter_criteria TEXT NOT NULL DEFAULT ''")
+
+    otc_cols = _columns(conn, "office_table_config")
+    if "filter_column" not in otc_cols:
+        conn.execute("ALTER TABLE office_table_config ADD COLUMN filter_column INTEGER NOT NULL DEFAULT 0")
+    if "filter_criteria" not in otc_cols:
+        conn.execute("ALTER TABLE office_table_config ADD COLUMN filter_criteria TEXT NOT NULL DEFAULT ''")
     conn.commit()
 
 

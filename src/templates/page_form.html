@@ -167,7 +167,7 @@
       </div>
       <div class="form-group checkbox-group"><label><input type="checkbox" name="alt_link_include_main" value="1" {% if o.alt_link_include_main %}checked{% endif %}> Include main office link in search</label></div>
       <h3>Table parsing</h3>
-      {% set tclist = o.table_configs if o.table_configs and o.table_configs|length > 0 else [{'id': none, 'name': '', 'table_no': o.table_no or 1, 'table_rows': o.table_rows or 4, 'link_column': o.link_column or 1, 'party_column': o.party_column or 0, 'term_start_column': o.term_start_column or 4, 'term_end_column': o.term_end_column or 5, 'district_column': o.district_column or 0, 'dynamic_parse': o.dynamic_parse, 'read_right_to_left': o.read_right_to_left, 'find_date_in_infobox': o.find_date_in_infobox, 'years_only': o.years_only, 'parse_rowspan': o.parse_rowspan, 'consolidate_rowspan_terms': o.consolidate_rowspan_terms, 'rep_link': o.rep_link, 'party_link': o.party_link, 'enabled': o.enabled, 'use_full_page_for_table': o.use_full_page_for_table, 'term_dates_merged': o.term_dates_merged, 'party_ignore': o.party_ignore, 'district_ignore': o.district_ignore, 'district_at_large': o.district_at_large, 'ignore_non_links': o.ignore_non_links, 'remove_duplicates': o.remove_duplicates, 'infobox_role_key_filter_id': o.infobox_role_key_filter_id, 'infobox_role_key': o.infobox_role_key or '', 'notes': o.notes or ''}] %}
+      {% set tclist = o.table_configs if o.table_configs and o.table_configs|length > 0 else [{'id': none, 'name': '', 'table_no': o.table_no or 1, 'table_rows': o.table_rows or 4, 'link_column': o.link_column or 1, 'party_column': o.party_column or 0, 'term_start_column': o.term_start_column or 4, 'term_end_column': o.term_end_column or 5, 'district_column': o.district_column or 0, 'filter_column': o.filter_column or 0, 'filter_criteria': o.filter_criteria or '', 'dynamic_parse': o.dynamic_parse, 'read_right_to_left': o.read_right_to_left, 'find_date_in_infobox': o.find_date_in_infobox, 'years_only': o.years_only, 'parse_rowspan': o.parse_rowspan, 'consolidate_rowspan_terms': o.consolidate_rowspan_terms, 'rep_link': o.rep_link, 'party_link': o.party_link, 'enabled': o.enabled, 'use_full_page_for_table': o.use_full_page_for_table, 'term_dates_merged': o.term_dates_merged, 'party_ignore': o.party_ignore, 'district_ignore': o.district_ignore, 'district_at_large': o.district_at_large, 'ignore_non_links': o.ignore_non_links, 'remove_duplicates': o.remove_duplicates, 'infobox_role_key_filter_id': o.infobox_role_key_filter_id, 'infobox_role_key': o.infobox_role_key or '', 'notes': o.notes or ''}] %}
       <div class="table-config-blocks" data-office-id="{{ o.id }}">
       {% for tc in tclist %}
       <div class="table-config-block" id="section-table-{{ tc.id if tc.id else (o.id ~ '-t' ~ loop.index) }}" data-office-id="{{ o.id }}" data-tc-id="{{ tc.id or '' }}" style="margin-bottom:1.5rem; padding:1rem; border:1px solid var(--border, #ccc); border-radius:6px;">
@@ -184,6 +184,8 @@
           <div class="form-group"><label>Term start column</label><input type="number" name="tc_term_start_column" value="{{ tc.term_start_column or 4 }}" min="0"></div>
           <div class="form-group"><label>Term end column</label><input type="number" name="tc_term_end_column" value="{{ tc.term_end_column or 5 }}" min="0"></div>
           <div class="form-group"><label>District column</label><input type="number" name="tc_district_column" value="{{ tc.district_column or 0 }}" min="0"></div>
+          <div class="form-group"><label>Filter column (optional)</label><input type="number" name="tc_filter_column" value="{{ tc.filter_column or 0 }}" min="0"></div>
+          <div class="form-group"><label>Filter criteria (optional)</label><input type="text" name="tc_filter_criteria" value="{{ tc.filter_criteria or "" }}" placeholder="e.g. Associate Justice"></div>
         </div>
         <div class="form-row">
           <div class="form-group checkbox-group"><label><input type="checkbox" name="tc_term_dates_merged_{{ loop.index0 }}" value="1" {% if tc.term_dates_merged %}checked{% endif %}> Term dates merged</label></div>
@@ -387,6 +389,8 @@
     <div class="form-group"><label>Term start column</label><input type="number" name="term_start_column" id="termStartColumn" value="{{ office.term_start_column if office else 4 }}" min="0"></div>
     <div class="form-group" id="termEndColumnGroup"><label>Term end column</label><input type="number" name="term_end_column" id="termEndColumn" value="{{ office.term_end_column if office else 5 }}" min="0" placeholder="—"></div>
     <div class="form-group" id="districtColumnGroup"><label>District column</label><input type="number" name="district_column" id="districtColumn" value="{{ office.district_column if office else 0 }}" min="0" placeholder="—"></div>
+    <div class="form-group"><label>Filter column (optional)</label><input type="number" name="filter_column" value="{{ office.filter_column if office else 0 }}" min="0"></div>
+    <div class="form-group"><label>Filter criteria (optional)</label><input type="text" name="filter_criteria" value="{{ office.filter_criteria if office else "" }}" placeholder="e.g. Associate Justice"></div>
   </div>
   <div class="form-row">
     <div class="form-group checkbox-group">
@@ -826,6 +830,8 @@
         return parseInt(form.term_end_column?.value, 10) || 5;
       })(),
       district_column: parseInt(form.district_column?.value, 10) || 0,
+      filter_column: parseInt(form.filter_column?.value, 10) || 0,
+      filter_criteria: (form.filter_criteria?.value || "").trim(),
       dynamic_parse: !!form.dynamic_parse?.checked,
       read_right_to_left: !!form.read_right_to_left?.checked,
       find_date_in_infobox: (form.date_source?.value || 'not_applicable') === 'find_date_in_infobox',
@@ -898,6 +904,8 @@
       term_start_column: elVal('term_start_column', 'tc_term_start_column', 4),
       term_end_column: elChecked('term_dates_merged', 'tc_term_dates_merged') ? elVal('term_start_column', 'tc_term_start_column', 4) : elVal('term_end_column', 'tc_term_end_column', 5),
       district_column: elVal('district_column', 'tc_district_column', 0),
+      filter_column: elVal('filter_column', 'tc_filter_column', 0),
+      filter_criteria: elText('filter_criteria', 'tc_filter_criteria', ''),
       dynamic_parse: elChecked('dynamic_parse', 'tc_dynamic_parse'),
       read_right_to_left: elChecked('read_right_to_left', 'tc_read_right_to_left'),
       find_date_in_infobox: dateSource() === 'find_date_in_infobox',
@@ -1182,6 +1190,8 @@
         clone.querySelector('input[name="tc_term_start_column"]').value = '4';
         clone.querySelector('input[name="tc_term_end_column"]').value = '5';
         clone.querySelector('input[name="tc_district_column"]').value = '0';
+        clone.querySelector('input[name="tc_filter_column"]').value = '0';
+        clone.querySelector('input[name="tc_filter_criteria"]').value = '';
         clone.querySelector('input[name="tc_notes"]').value = '';
         var roleSelect = clone.querySelector('select[name="tc_infobox_role_key_filter_id"]');
         if (roleSelect) roleSelect.value = '';

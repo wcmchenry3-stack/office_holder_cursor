@@ -65,6 +65,8 @@ def _flatten_hierarchy_row(
         "term_start_column": _int(tc.get("term_start_column"), 4),
         "term_end_column": _int(tc.get("term_end_column"), 5),
         "district_column": _int(tc.get("district_column"), 0),
+        "filter_column": _int(tc.get("filter_column"), 0),
+        "filter_criteria": (tc.get("filter_criteria") or "").strip(),
         "dynamic_parse": bool(tc.get("dynamic_parse") if tc.get("dynamic_parse") is not None else 0),
         "read_right_to_left": bool(tc.get("read_right_to_left") if tc.get("read_right_to_left") is not None else 0),
         "find_date_in_infobox": bool(tc.get("find_date_in_infobox") if tc.get("find_date_in_infobox") is not None else 0),
@@ -99,6 +101,8 @@ def _tc_row_to_config(rd: dict[str, Any]) -> dict[str, Any]:
         "term_start_column": rd.get("term_start_column"),
         "term_end_column": rd.get("term_end_column"),
         "district_column": rd.get("district_column"),
+        "filter_column": rd.get("filter_column"),
+        "filter_criteria": (rd.get("filter_criteria") or ""),
         "dynamic_parse": rd.get("dynamic_parse"),
         "read_right_to_left": rd.get("read_right_to_left"),
         "find_date_in_infobox": rd.get("find_date_in_infobox"),
@@ -237,14 +241,17 @@ def validate_office_table_config(
         term_start_column = int(data.get("term_start_column", 4))
         term_end_column = int(data.get("term_end_column", 5))
         district_column = int(data.get("district_column", 0))
+        filter_column = int(data.get("filter_column", 0))
     except (TypeError, ValueError):
-        raise ValueError("link, party, term start, term end, and district columns must be integers") from None
+        raise ValueError("link, party, term start, term end, district, and filter columns must be integers") from None
 
     dynamic_parse = data.get("dynamic_parse") in (True, 1, "1", "true", "TRUE")
     if link_column < 1 and not dynamic_parse:
         raise ValueError("link column must be at least 1")
     if term_start_column < 1 or term_end_column < 1:
         raise ValueError("term start and term end columns must be at least 1")
+    if filter_column < 0:
+        raise ValueError("filter column must be 0 or greater")
 
     # Build list of (value, field_name) for columns that must be pairwise distinct (only positive values count).
     # When term_dates_merged, only one "term" column counts for distinctness.
@@ -330,7 +337,7 @@ def list_runnable_units(conn: sqlite3.Connection | None = None) -> list[dict[str
             """SELECT p.id AS page_id, p.country_id, p.state_id, p.city_id, p.level_id, p.branch_id, p.url, p.notes AS page_notes, p.enabled AS page_enabled,
                       od.id AS office_details_id, od.name, od.department, od.notes, od.alt_link_include_main, od.enabled AS od_enabled,
                       tc.id AS office_table_config_id, tc.table_no, tc.table_rows, tc.link_column, tc.party_column,
-                      tc.term_start_column, tc.term_end_column, tc.district_column, tc.dynamic_parse, tc.read_right_to_left,
+                      tc.term_start_column, tc.term_end_column, tc.district_column, tc.filter_column, tc.filter_criteria, tc.dynamic_parse, tc.read_right_to_left,
                       tc.find_date_in_infobox, tc.parse_rowspan, tc.rep_link, tc.party_link, tc.enabled AS tc_enabled,
                       tc.use_full_page_for_table, tc.years_only, tc.term_dates_merged, tc.party_ignore, tc.district_ignore, tc.district_at_large, tc.ignore_non_links, tc.remove_duplicates,
                       tc.consolidate_rowspan_terms, tc.infobox_role_key_filter_id, COALESCE(rkf.role_key, "") AS infobox_role_key, tc.notes AS tc_notes, tc.created_at
@@ -359,7 +366,7 @@ def list_runnable_units(conn: sqlite3.Connection | None = None) -> list[dict[str
             )
             p = {"url": rd.get("url"), "country_id": rd.get("country_id"), "state_id": rd.get("state_id"), "city_id": rd.get("city_id"), "level_id": rd.get("level_id"), "branch_id": rd.get("branch_id"), "notes": rd.get("page_notes"), "enabled": rd.get("page_enabled")}
             od = {"id": od_id, "name": rd.get("name"), "department": rd.get("department"), "notes": rd.get("notes"), "alt_link_include_main": rd.get("alt_link_include_main"), "enabled": rd.get("od_enabled")}
-            tc = {"table_no": rd.get("table_no"), "table_rows": rd.get("table_rows"), "link_column": rd.get("link_column"), "party_column": rd.get("party_column"), "term_start_column": rd.get("term_start_column"), "term_end_column": rd.get("term_end_column"), "district_column": rd.get("district_column"), "dynamic_parse": rd.get("dynamic_parse"), "read_right_to_left": rd.get("read_right_to_left"), "find_date_in_infobox": rd.get("find_date_in_infobox"), "parse_rowspan": rd.get("parse_rowspan"), "rep_link": rd.get("rep_link"), "party_link": rd.get("party_link"), "enabled": rd.get("tc_enabled"), "use_full_page_for_table": rd.get("use_full_page_for_table"), "years_only": rd.get("years_only"), "term_dates_merged": rd.get("term_dates_merged"), "party_ignore": rd.get("party_ignore"), "district_ignore": rd.get("district_ignore"), "district_at_large": rd.get("district_at_large"), "ignore_non_links": rd.get("ignore_non_links"), "remove_duplicates": rd.get("remove_duplicates"), "consolidate_rowspan_terms": rd.get("consolidate_rowspan_terms"), "infobox_role_key_filter_id": rd.get("infobox_role_key_filter_id"), "infobox_role_key": rd.get("infobox_role_key"), "notes": rd.get("tc_notes"), "created_at": rd.get("created_at")}
+            tc = {"table_no": rd.get("table_no"), "table_rows": rd.get("table_rows"), "link_column": rd.get("link_column"), "party_column": rd.get("party_column"), "term_start_column": rd.get("term_start_column"), "term_end_column": rd.get("term_end_column"), "district_column": rd.get("district_column"), "filter_column": rd.get("filter_column"), "filter_criteria": rd.get("filter_criteria"), "dynamic_parse": rd.get("dynamic_parse"), "read_right_to_left": rd.get("read_right_to_left"), "find_date_in_infobox": rd.get("find_date_in_infobox"), "parse_rowspan": rd.get("parse_rowspan"), "rep_link": rd.get("rep_link"), "party_link": rd.get("party_link"), "enabled": rd.get("tc_enabled"), "use_full_page_for_table": rd.get("use_full_page_for_table"), "years_only": rd.get("years_only"), "term_dates_merged": rd.get("term_dates_merged"), "party_ignore": rd.get("party_ignore"), "district_ignore": rd.get("district_ignore"), "district_at_large": rd.get("district_at_large"), "ignore_non_links": rd.get("ignore_non_links"), "remove_duplicates": rd.get("remove_duplicates"), "consolidate_rowspan_terms": rd.get("consolidate_rowspan_terms"), "infobox_role_key_filter_id": rd.get("infobox_role_key_filter_id"), "infobox_role_key": rd.get("infobox_role_key"), "notes": rd.get("tc_notes"), "created_at": rd.get("created_at")}
             flat = _flatten_hierarchy_row(p, od, tc, c, s, lv, b, alt_links)
             flat["id"] = rd["office_table_config_id"]
             flat["office_details_id"] = od_id
@@ -384,7 +391,7 @@ def list_offices(conn: sqlite3.Connection | None = None) -> list[dict[str, Any]]
                 """SELECT p.id AS page_id, p.country_id, p.state_id, p.city_id, p.level_id, p.branch_id, p.url, p.notes AS page_notes, p.enabled AS page_enabled,
                           od.id AS office_details_id, od.name, od.department, od.notes, od.alt_link_include_main, od.enabled AS od_enabled,
                           tc.id AS tc_id, tc.table_no, tc.table_rows, tc.link_column, tc.party_column,
-                          tc.term_start_column, tc.term_end_column, tc.district_column, tc.dynamic_parse, tc.read_right_to_left,
+                          tc.term_start_column, tc.term_end_column, tc.district_column, tc.filter_column, tc.filter_criteria, tc.dynamic_parse, tc.read_right_to_left,
                           tc.find_date_in_infobox, tc.parse_rowspan, tc.rep_link, tc.party_link, tc.enabled AS tc_enabled,
                           tc.use_full_page_for_table, tc.years_only, tc.term_dates_merged, tc.party_ignore, tc.district_ignore, tc.district_at_large, tc.ignore_non_links, tc.remove_duplicates,
                           tc.consolidate_rowspan_terms, tc.infobox_role_key_filter_id, COALESCE(rkf.role_key, "") AS infobox_role_key, tc.notes AS tc_notes, tc.name AS tc_name, tc.created_at
@@ -418,7 +425,7 @@ def list_offices(conn: sqlite3.Connection | None = None) -> list[dict[str, Any]]
                         table_configs.append(_tc_row_to_config(rd))
                 table_configs.sort(key=lambda x: (x.get("table_no") or 0, x.get("id") or 0))
                 first_tc = table_configs[0] if table_configs else {}
-                tc_flat = {"table_no": first_tc.get("table_no"), "table_rows": first_tc.get("table_rows"), "link_column": first_tc.get("link_column"), "party_column": first_tc.get("party_column"), "term_start_column": first_tc.get("term_start_column"), "term_end_column": first_tc.get("term_end_column"), "district_column": first_tc.get("district_column"), "dynamic_parse": first_tc.get("dynamic_parse"), "read_right_to_left": first_tc.get("read_right_to_left"), "find_date_in_infobox": first_tc.get("find_date_in_infobox"), "parse_rowspan": first_tc.get("parse_rowspan"), "rep_link": first_tc.get("rep_link"), "party_link": first_tc.get("party_link"), "enabled": first_tc.get("enabled"), "use_full_page_for_table": first_tc.get("use_full_page_for_table"), "years_only": first_tc.get("years_only"), "term_dates_merged": first_tc.get("term_dates_merged"), "party_ignore": first_tc.get("party_ignore"), "district_ignore": first_tc.get("district_ignore"), "district_at_large": first_tc.get("district_at_large"), "ignore_non_links": first_tc.get("ignore_non_links"), "remove_duplicates": first_tc.get("remove_duplicates"), "consolidate_rowspan_terms": first_tc.get("consolidate_rowspan_terms"), "infobox_role_key_filter_id": first_tc.get("infobox_role_key_filter_id"), "infobox_role_key": first_tc.get("infobox_role_key"), "notes": first_tc.get("notes"), "created_at": first_tc.get("created_at")}
+                tc_flat = {"table_no": first_tc.get("table_no"), "table_rows": first_tc.get("table_rows"), "link_column": first_tc.get("link_column"), "party_column": first_tc.get("party_column"), "term_start_column": first_tc.get("term_start_column"), "term_end_column": first_tc.get("term_end_column"), "district_column": first_tc.get("district_column"), "filter_column": first_tc.get("filter_column"), "filter_criteria": first_tc.get("filter_criteria"), "dynamic_parse": first_tc.get("dynamic_parse"), "read_right_to_left": first_tc.get("read_right_to_left"), "find_date_in_infobox": first_tc.get("find_date_in_infobox"), "parse_rowspan": first_tc.get("parse_rowspan"), "rep_link": first_tc.get("rep_link"), "party_link": first_tc.get("party_link"), "enabled": first_tc.get("enabled"), "use_full_page_for_table": first_tc.get("use_full_page_for_table"), "years_only": first_tc.get("years_only"), "term_dates_merged": first_tc.get("term_dates_merged"), "party_ignore": first_tc.get("party_ignore"), "district_ignore": first_tc.get("district_ignore"), "district_at_large": first_tc.get("district_at_large"), "ignore_non_links": first_tc.get("ignore_non_links"), "remove_duplicates": first_tc.get("remove_duplicates"), "consolidate_rowspan_terms": first_tc.get("consolidate_rowspan_terms"), "infobox_role_key_filter_id": first_tc.get("infobox_role_key_filter_id"), "infobox_role_key": first_tc.get("infobox_role_key"), "notes": first_tc.get("notes"), "created_at": first_tc.get("created_at")}
                 flat = _flatten_hierarchy_row(p, od, tc_flat, c, s, lv, b, alt_links)
                 flat["id"] = od_id
                 flat["source_page_id"] = rd0.get("page_id")
@@ -572,7 +579,7 @@ def get_office(office_id: int, conn: sqlite3.Connection | None = None) -> dict[s
                 """SELECT p.id AS page_id, p.country_id, p.state_id, p.city_id, p.level_id, p.branch_id, p.url, p.notes AS page_notes, p.enabled AS page_enabled,
                           od.id AS office_details_id, od.name, od.department, od.notes, od.alt_link_include_main, od.enabled AS od_enabled, od.office_category_id,
                           tc.id AS tc_id, tc.table_no, tc.table_rows, tc.link_column, tc.party_column,
-                          tc.term_start_column, tc.term_end_column, tc.district_column, tc.dynamic_parse, tc.read_right_to_left,
+                          tc.term_start_column, tc.term_end_column, tc.district_column, tc.filter_column, tc.filter_criteria, tc.dynamic_parse, tc.read_right_to_left,
                           tc.find_date_in_infobox, tc.parse_rowspan, tc.rep_link, tc.party_link, tc.enabled AS tc_enabled,
                           tc.use_full_page_for_table, tc.years_only, tc.term_dates_merged, tc.party_ignore, tc.district_ignore, tc.district_at_large, tc.ignore_non_links, tc.remove_duplicates,
                           tc.consolidate_rowspan_terms, tc.infobox_role_key_filter_id, COALESCE(rkf.role_key, "") AS infobox_role_key, tc.notes AS tc_notes, tc.name AS tc_name, tc.created_at
@@ -602,7 +609,7 @@ def get_office(office_id: int, conn: sqlite3.Connection | None = None) -> dict[s
                     table_configs.append(_tc_row_to_config(rd))
             table_configs.sort(key=lambda x: (x.get("table_no") or 0, x.get("id") or 0))
             first_tc = table_configs[0] if table_configs else {}
-            tc_flat = {"table_no": first_tc.get("table_no"), "table_rows": first_tc.get("table_rows"), "link_column": first_tc.get("link_column"), "party_column": first_tc.get("party_column"), "term_start_column": first_tc.get("term_start_column"), "term_end_column": first_tc.get("term_end_column"), "district_column": first_tc.get("district_column"), "dynamic_parse": first_tc.get("dynamic_parse"), "read_right_to_left": first_tc.get("read_right_to_left"), "find_date_in_infobox": first_tc.get("find_date_in_infobox"), "parse_rowspan": first_tc.get("parse_rowspan"), "rep_link": first_tc.get("rep_link"), "party_link": first_tc.get("party_link"), "enabled": first_tc.get("enabled"), "use_full_page_for_table": first_tc.get("use_full_page_for_table"), "years_only": first_tc.get("years_only"), "term_dates_merged": first_tc.get("term_dates_merged"), "party_ignore": first_tc.get("party_ignore"), "district_ignore": first_tc.get("district_ignore"), "district_at_large": first_tc.get("district_at_large"), "ignore_non_links": first_tc.get("ignore_non_links"), "remove_duplicates": first_tc.get("remove_duplicates"), "consolidate_rowspan_terms": first_tc.get("consolidate_rowspan_terms"), "infobox_role_key_filter_id": first_tc.get("infobox_role_key_filter_id"), "infobox_role_key": first_tc.get("infobox_role_key"), "notes": first_tc.get("notes"), "created_at": first_tc.get("created_at")}
+            tc_flat = {"table_no": first_tc.get("table_no"), "table_rows": first_tc.get("table_rows"), "link_column": first_tc.get("link_column"), "party_column": first_tc.get("party_column"), "term_start_column": first_tc.get("term_start_column"), "term_end_column": first_tc.get("term_end_column"), "district_column": first_tc.get("district_column"), "filter_column": first_tc.get("filter_column"), "filter_criteria": first_tc.get("filter_criteria"), "dynamic_parse": first_tc.get("dynamic_parse"), "read_right_to_left": first_tc.get("read_right_to_left"), "find_date_in_infobox": first_tc.get("find_date_in_infobox"), "parse_rowspan": first_tc.get("parse_rowspan"), "rep_link": first_tc.get("rep_link"), "party_link": first_tc.get("party_link"), "enabled": first_tc.get("enabled"), "use_full_page_for_table": first_tc.get("use_full_page_for_table"), "years_only": first_tc.get("years_only"), "term_dates_merged": first_tc.get("term_dates_merged"), "party_ignore": first_tc.get("party_ignore"), "district_ignore": first_tc.get("district_ignore"), "district_at_large": first_tc.get("district_at_large"), "ignore_non_links": first_tc.get("ignore_non_links"), "remove_duplicates": first_tc.get("remove_duplicates"), "consolidate_rowspan_terms": first_tc.get("consolidate_rowspan_terms"), "infobox_role_key_filter_id": first_tc.get("infobox_role_key_filter_id"), "infobox_role_key": first_tc.get("infobox_role_key"), "notes": first_tc.get("notes"), "created_at": first_tc.get("created_at")}
             flat = _flatten_hierarchy_row(p, od, tc_flat, c, s, lv, b, alt_links)
             flat["id"] = od_id
             flat["source_page_id"] = rd0.get("page_id")
@@ -815,7 +822,7 @@ def list_offices_for_page(source_page_id: int, conn: sqlite3.Connection | None =
             """SELECT p.id AS page_id, p.country_id, p.state_id, p.city_id, p.level_id, p.branch_id, p.url, p.notes AS page_notes, p.enabled AS page_enabled,
                           od.id AS office_details_id, od.name, od.department, od.notes, od.alt_link_include_main, od.enabled AS od_enabled, od.office_category_id,
                           tc.id AS tc_id, tc.table_no, tc.table_rows, tc.link_column, tc.party_column,
-                          tc.term_start_column, tc.term_end_column, tc.district_column, tc.dynamic_parse, tc.read_right_to_left,
+                          tc.term_start_column, tc.term_end_column, tc.district_column, tc.filter_column, tc.filter_criteria, tc.dynamic_parse, tc.read_right_to_left,
                           tc.find_date_in_infobox, tc.parse_rowspan, tc.rep_link, tc.party_link, tc.enabled AS tc_enabled,
                           tc.use_full_page_for_table, tc.years_only, tc.term_dates_merged, tc.party_ignore, tc.district_ignore, tc.district_at_large, tc.ignore_non_links, tc.remove_duplicates,
                           tc.consolidate_rowspan_terms, tc.infobox_role_key_filter_id, COALESCE(rkf.role_key, "") AS infobox_role_key, tc.notes AS tc_notes, tc.name AS tc_name, tc.created_at
@@ -852,7 +859,7 @@ def list_offices_for_page(source_page_id: int, conn: sqlite3.Connection | None =
                     table_configs.append(_tc_row_to_config(rd))
             table_configs.sort(key=lambda x: (x.get("table_no") or 0, x.get("id") or 0))
             first_tc = table_configs[0] if table_configs else {}
-            tc_flat = {"table_no": first_tc.get("table_no"), "table_rows": first_tc.get("table_rows"), "link_column": first_tc.get("link_column"), "party_column": first_tc.get("party_column"), "term_start_column": first_tc.get("term_start_column"), "term_end_column": first_tc.get("term_end_column"), "district_column": first_tc.get("district_column"), "dynamic_parse": first_tc.get("dynamic_parse"), "read_right_to_left": first_tc.get("read_right_to_left"), "find_date_in_infobox": first_tc.get("find_date_in_infobox"), "parse_rowspan": first_tc.get("parse_rowspan"), "rep_link": first_tc.get("rep_link"), "party_link": first_tc.get("party_link"), "enabled": first_tc.get("enabled"), "use_full_page_for_table": first_tc.get("use_full_page_for_table"), "years_only": first_tc.get("years_only"), "term_dates_merged": first_tc.get("term_dates_merged"), "party_ignore": first_tc.get("party_ignore"), "district_ignore": first_tc.get("district_ignore"), "district_at_large": first_tc.get("district_at_large"), "ignore_non_links": first_tc.get("ignore_non_links"), "remove_duplicates": first_tc.get("remove_duplicates"), "consolidate_rowspan_terms": first_tc.get("consolidate_rowspan_terms"), "infobox_role_key_filter_id": first_tc.get("infobox_role_key_filter_id"), "infobox_role_key": first_tc.get("infobox_role_key"), "notes": first_tc.get("notes"), "created_at": first_tc.get("created_at")}
+            tc_flat = {"table_no": first_tc.get("table_no"), "table_rows": first_tc.get("table_rows"), "link_column": first_tc.get("link_column"), "party_column": first_tc.get("party_column"), "term_start_column": first_tc.get("term_start_column"), "term_end_column": first_tc.get("term_end_column"), "district_column": first_tc.get("district_column"), "filter_column": first_tc.get("filter_column"), "filter_criteria": first_tc.get("filter_criteria"), "dynamic_parse": first_tc.get("dynamic_parse"), "read_right_to_left": first_tc.get("read_right_to_left"), "find_date_in_infobox": first_tc.get("find_date_in_infobox"), "parse_rowspan": first_tc.get("parse_rowspan"), "rep_link": first_tc.get("rep_link"), "party_link": first_tc.get("party_link"), "enabled": first_tc.get("enabled"), "use_full_page_for_table": first_tc.get("use_full_page_for_table"), "years_only": first_tc.get("years_only"), "term_dates_merged": first_tc.get("term_dates_merged"), "party_ignore": first_tc.get("party_ignore"), "district_ignore": first_tc.get("district_ignore"), "district_at_large": first_tc.get("district_at_large"), "ignore_non_links": first_tc.get("ignore_non_links"), "remove_duplicates": first_tc.get("remove_duplicates"), "consolidate_rowspan_terms": first_tc.get("consolidate_rowspan_terms"), "infobox_role_key_filter_id": first_tc.get("infobox_role_key_filter_id"), "infobox_role_key": first_tc.get("infobox_role_key"), "notes": first_tc.get("notes"), "created_at": first_tc.get("created_at")}
             flat = _flatten_hierarchy_row(p, od, tc_flat, c, s, lv, b, alt_links)
             flat["id"] = od_id
             flat["source_page_id"] = rd0.get("page_id")
@@ -911,7 +918,7 @@ def _insert_one_table_config(
     t_merged = _bool(tc, "term_dates_merged")
     conn.execute(
         """INSERT INTO office_table_config (office_details_id, table_no, table_rows, link_column, party_column,
-              term_start_column, term_end_column, district_column, dynamic_parse, read_right_to_left, find_date_in_infobox,
+              term_start_column, term_end_column, district_column, filter_column, filter_criteria, dynamic_parse, read_right_to_left, find_date_in_infobox,
               parse_rowspan, rep_link, party_link, enabled, use_full_page_for_table, years_only,
               term_dates_merged, party_ignore, district_ignore, district_at_large, ignore_non_links, remove_duplicates, consolidate_rowspan_terms, infobox_role_key_filter_id, notes, name, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))""",
@@ -924,6 +931,8 @@ def _insert_one_table_config(
             int(tc.get("term_start_column", 4)),
             int(tc.get("term_end_column", 5)),
             int(tc.get("district_column", 0)),
+            int(tc.get("filter_column", 0)),
+            (tc.get("filter_criteria") or "").strip(),
             1 if tc.get("dynamic_parse") in (True, 1, "TRUE", "true", "1") else 0,
             1 if tc.get("read_right_to_left") in (True, 1, "TRUE", "true", "1") else 0,
             1 if tc.get("find_date_in_infobox") in (True, 1, "TRUE", "true", "1") else 0,
@@ -1287,7 +1296,7 @@ def update_office(office_id: int, data: dict[str, Any], conn: sqlite3.Connection
                         t_merged = _bool(tc, "term_dates_merged")
                         conn.execute(
                             """UPDATE office_table_config SET table_no=?, table_rows=?, link_column=?, party_column=?,
-                                  term_start_column=?, term_end_column=?, district_column=?, dynamic_parse=?, read_right_to_left=?,
+                                  term_start_column=?, term_end_column=?, district_column=?, filter_column=?, filter_criteria=?, dynamic_parse=?, read_right_to_left=?,
                                   find_date_in_infobox=?, parse_rowspan=?, rep_link=?, party_link=?, enabled=?, use_full_page_for_table=?,
                                   years_only=?, term_dates_merged=?, party_ignore=?, district_ignore=?, district_at_large=?, ignore_non_links=?, remove_duplicates=?,
                                   consolidate_rowspan_terms=?, infobox_role_key_filter_id=?, notes=?, name=?, updated_at=datetime('now') WHERE id=?""",
@@ -1299,6 +1308,8 @@ def update_office(office_id: int, data: dict[str, Any], conn: sqlite3.Connection
                                 int(tc.get("term_start_column", 4)),
                                 int(tc.get("term_end_column", 5)),
                                 int(tc.get("district_column", 0)),
+                                int(tc.get("filter_column", 0)),
+                                (tc.get("filter_criteria") or "").strip(),
                                 1 if tc.get("dynamic_parse") in (True, 1, "TRUE", "true", "1") else 0,
                                 1 if tc.get("read_right_to_left") in (True, 1, "TRUE", "true", "1") else 0,
                                 1 if tc.get("find_date_in_infobox") in (True, 1, "TRUE", "true", "1") else 0,
@@ -1326,7 +1337,7 @@ def update_office(office_id: int, data: dict[str, Any], conn: sqlite3.Connection
                         t_merged = _bool(tc, "term_dates_merged")
                         conn.execute(
                             """INSERT INTO office_table_config (office_details_id, table_no, table_rows, link_column, party_column,
-                                  term_start_column, term_end_column, district_column, dynamic_parse, read_right_to_left, find_date_in_infobox,
+                                  term_start_column, term_end_column, district_column, filter_column, filter_criteria, dynamic_parse, read_right_to_left, find_date_in_infobox,
                                   parse_rowspan, rep_link, party_link, enabled, use_full_page_for_table, years_only,
                                   term_dates_merged, party_ignore, district_ignore, district_at_large, ignore_non_links, remove_duplicates, consolidate_rowspan_terms, infobox_role_key_filter_id, notes, name, created_at, updated_at)
                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))""",
@@ -1339,6 +1350,8 @@ def update_office(office_id: int, data: dict[str, Any], conn: sqlite3.Connection
                                 int(tc.get("term_start_column", 4)),
                                 int(tc.get("term_end_column", 5)),
                                 int(tc.get("district_column", 0)),
+                                int(tc.get("filter_column", 0)),
+                                (tc.get("filter_criteria") or "").strip(),
                                 1 if tc.get("dynamic_parse") in (True, 1, "TRUE", "true", "1") else 0,
                                 1 if tc.get("read_right_to_left") in (True, 1, "TRUE", "true", "1") else 0,
                                 1 if tc.get("find_date_in_infobox") in (True, 1, "TRUE", "true", "1") else 0,
@@ -1553,7 +1566,7 @@ def get_office_by_table_config_id(
                           od.id AS office_details_id, od.name, od.department, od.notes,
                           od.alt_link_include_main, od.enabled AS od_enabled, od.office_category_id,
                           tc.id AS tc_id, tc.table_no, tc.table_rows, tc.link_column, tc.party_column,
-                          tc.term_start_column, tc.term_end_column, tc.district_column,
+                          tc.term_start_column, tc.term_end_column, tc.district_column, tc.filter_column, tc.filter_criteria,
                           tc.dynamic_parse, tc.read_right_to_left, tc.find_date_in_infobox,
                           tc.parse_rowspan, tc.rep_link, tc.party_link, tc.enabled AS tc_enabled,
                           tc.use_full_page_for_table, tc.years_only, tc.term_dates_merged,
@@ -1611,6 +1624,8 @@ def get_office_by_table_config_id(
                 "term_start_column": rd.get("term_start_column"),
                 "term_end_column": rd.get("term_end_column"),
                 "district_column": rd.get("district_column"),
+                "filter_column": rd.get("filter_column"),
+                "filter_criteria": (rd.get("filter_criteria") or ""),
                 "dynamic_parse": rd.get("dynamic_parse"),
                 "read_right_to_left": rd.get("read_right_to_left"),
                 "find_date_in_infobox": rd.get("find_date_in_infobox"),
@@ -1918,6 +1933,8 @@ def office_row_to_table_config(row: dict[str, Any], alt_links: list[str] | None 
         "term_start_column": _col_1based_to_0based(row.get("term_start_column")),
         "term_end_column": _col_1based_to_0based(row.get("term_end_column")),
         "district_column": _col_1based_to_0based(row.get("district_column")),
+        "row_filter_column": _col_1based_to_0based(row.get("filter_column")),
+        "row_filter_criteria": (row.get("filter_criteria") or "").strip(),
         "run_dynamic_parse": bool(row.get("dynamic_parse")),
         "find_date_in_infobox": bool(row.get("find_date_in_infobox")),
         "years_only": bool(row.get("years_only")),

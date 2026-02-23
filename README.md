@@ -109,7 +109,7 @@ flowchart LR
 
 ## Using the UI
 
-- **Offices:** Add/edit office configs (Wikipedia list URL, table number, column mapping, flags). Use **Bulk import** with a path like `sample files/OfficeTables - Sheet1 (1).csv` to load many at once. **Test config**, **Preview**, **Show all tables**, **Show selected table** (raw cell text for the configured table only), **Show table HTML**, **Export debug file** use the current form values.
+- **Offices:** Add/edit office configs (Wikipedia list URL, table number, column mapping, flags). Includes an optional per-table row filter (`filter_column` + `filter_criteria`) to only parse rows whose selected column text contains the criteria. Use **Bulk import** with a path like `sample files/OfficeTables - Sheet1 (1).csv` to load many at once. **Test config**, **Preview**, **Show all tables**, **Show selected table** (raw cell text for the configured table only), **Show table HTML**, **Export debug file** use the current form values.
 - **Parties:** Manage the party list (country, name, Wikipedia link) used when resolving party from table links.
 - **Run:** Choose run mode (Full / Delta / Live person / Single bio / Category bio selection), pick office category filters when relevant, and run. Category bio selection shows match counts before run and supports force update plus valid page-path filtering.
 - **Individuals / Office terms:** View scraped data.

@@ -273,3 +273,100 @@ def test_dynamic_parse_ignores_fragment_links_when_finding_link_column():
 
     assert success is True
     assert parsed["link_column"] == 1
+
+
+def test_process_table_applies_optional_row_filter():
+    logger = _Logger()
+    offices = Offices(logger, biography=None, data_cleanup=DataCleanup(logger))
+    html = """
+    <table>
+      <tr><th>#</th><th>Name</th><th>Position</th><th>Dates</th></tr>
+      <tr><td>1</td><td><a href="/wiki/A">A</a></td><td>Associate Justice</td><td>Jan 1, 2000 – Jan 1, 2006</td></tr>
+      <tr><td>2</td><td><a href="/wiki/B">B</a></td><td>Chief Justice</td><td>Jan 1, 2006 – Jan 1, 2010</td></tr>
+    </table>
+    """
+    table_config = {
+        "table_no": 1,
+        "table_rows": 1,
+        "link_column": 1,
+        "party_column": 0,
+        "term_start_column": 3,
+        "term_end_column": 3,
+        "district_column": 0,
+        "run_dynamic_parse": False,
+        "read_columns_right_to_left": False,
+        "find_date_in_infobox": False,
+        "years_only": False,
+        "parse_rowspan": False,
+        "consolidate_rowspan_terms": False,
+        "rep_link": False,
+        "party_link": False,
+        "party_ignore": True,
+        "district_ignore": True,
+        "district_at_large": False,
+        "ignore_non_links": False,
+        "row_filter_column": 2,
+        "row_filter_criteria": "Associate Justice",
+    }
+    office_details = {
+        "office_country": "United States",
+        "office_level": "Federal",
+        "office_branch": "Judicial",
+        "office_department": "Supreme Court",
+        "office_name": "Justice",
+        "office_state": "",
+        "office_notes": "",
+    }
+    party_list = {"United States": []}
+
+    rows = offices.process_table(html, table_config, office_details, "https://en.wikipedia.org/wiki/Test", party_list)
+
+    assert len(rows) == 1
+    assert rows[0]["Wiki Link"].endswith("/wiki/A")
+
+
+def test_process_table_without_row_filter_returns_all_rows():
+    logger = _Logger()
+    offices = Offices(logger, biography=None, data_cleanup=DataCleanup(logger))
+    html = """
+    <table>
+      <tr><th>#</th><th>Name</th><th>Position</th><th>Dates</th></tr>
+      <tr><td>1</td><td><a href="/wiki/A">A</a></td><td>Associate Justice</td><td>Jan 1, 2000 – Jan 1, 2006</td></tr>
+      <tr><td>2</td><td><a href="/wiki/B">B</a></td><td>Chief Justice</td><td>Jan 1, 2006 – Jan 1, 2010</td></tr>
+    </table>
+    """
+    table_config = {
+        "table_no": 1,
+        "table_rows": 1,
+        "link_column": 1,
+        "party_column": 0,
+        "term_start_column": 3,
+        "term_end_column": 3,
+        "district_column": 0,
+        "run_dynamic_parse": False,
+        "read_columns_right_to_left": False,
+        "find_date_in_infobox": False,
+        "years_only": False,
+        "parse_rowspan": False,
+        "consolidate_rowspan_terms": False,
+        "rep_link": False,
+        "party_link": False,
+        "party_ignore": True,
+        "district_ignore": True,
+        "district_at_large": False,
+        "ignore_non_links": False,
+    }
+    office_details = {
+        "office_country": "United States",
+        "office_level": "Federal",
+        "office_branch": "Judicial",
+        "office_department": "Supreme Court",
+        "office_name": "Justice",
+        "office_state": "",
+        "office_notes": "",
+    }
+    party_list = {"United States": []}
+
+    rows = offices.process_table(html, table_config, office_details, "https://en.wikipedia.org/wiki/Test", party_list)
+
+    assert len(rows) == 2
