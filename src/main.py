@@ -112,8 +112,11 @@ def _office_draft_from_body(body: dict, *, include_ref_names: bool = False) -> d
         "district_at_large": district_at_large,
         "ignore_non_links": body.get("ignore_non_links") in (True, 1, "1", "true", "TRUE"),
         "remove_duplicates": body.get("remove_duplicates") in (True, 1, "1", "true", "TRUE"),
-        "infobox_role_key": (body.get("infobox_role_key") or "").strip(),
+        "infobox_role_key_filter_id": _validate_infobox_role_key_filter_id(body.get("infobox_role_key_filter_id")),
     }
+    draft["infobox_role_key"] = (body.get("infobox_role_key") or "").strip() or _resolve_infobox_role_key_from_filter_id(
+        draft.get("infobox_role_key_filter_id")
+    )
     if include_ref_names:
         country_id = int(body.get("country_id") or 0)
         draft["country_name"] = db_refs.get_country_name(country_id)
@@ -193,6 +196,20 @@ def _validate_infobox_role_key_filter_id(filter_id: str | int | None) -> int | N
     if not db_infobox_role_key_filter.get_infobox_role_key_filter(fid):
         raise ValueError(f"Infobox role key filter {fid} was not found")
     return fid
+
+
+def _resolve_infobox_role_key_from_filter_id(filter_id: str | int | None) -> str:
+    """Resolve filter id to role_key text; return empty string when missing/unset."""
+    try:
+        fid = _validate_infobox_role_key_filter_id(filter_id)
+    except ValueError:
+        return ""
+    if not fid:
+        return ""
+    f = db_infobox_role_key_filter.get_infobox_role_key_filter(fid)
+    if not f:
+        return ""
+    return (f.get("role_key") or "").strip()
 
 
 def _parse_optional_int(value: str | None) -> int | None:
@@ -3072,8 +3089,12 @@ def _export_job_worker(job_id: str, office_name: str, config: dict):
             "district_at_large": _config_bool_export(config.get("district_at_large")),
             "ignore_non_links": _config_bool_export(config.get("ignore_non_links")),
             "remove_duplicates": _config_bool_export(config.get("remove_duplicates")),
+            "infobox_role_key_filter_id": config.get("infobox_role_key_filter_id"),
             "country_name": "", "level_name": "", "branch_name": "", "state_name": "",
         }
+        office_row["infobox_role_key"] = (config.get("infobox_role_key") or "").strip() or _resolve_infobox_role_key_from_filter_id(
+            office_row.get("infobox_role_key_filter_id")
+        )
         full_rows = parse_full_table_for_export(office_row, table_html, url, progress_callback=progress_callback)
         timestamp = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
         safe_name = _sanitize_debug_filename(office_name)
@@ -3393,8 +3414,12 @@ async def api_office_debug_export(request: Request):
                 "district_ignore": _config_bool(config.get("district_ignore")),
                 "district_at_large": _config_bool(config.get("district_at_large")),
                 "remove_duplicates": _config_bool(config.get("remove_duplicates")),
+                "infobox_role_key_filter_id": config.get("infobox_role_key_filter_id"),
                 "country_name": "", "level_name": "", "branch_name": "", "state_name": "",
             }
+            office_row["infobox_role_key"] = (config.get("infobox_role_key") or "").strip() or _resolve_infobox_role_key_from_filter_id(
+                office_row.get("infobox_role_key_filter_id")
+            )
             full_rows = parse_full_table_for_export(office_row, table_html, office_row["url"])
         except Exception as e:
             full_rows = []
