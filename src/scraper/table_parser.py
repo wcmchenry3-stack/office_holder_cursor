@@ -77,20 +77,30 @@ def parse_infobox_role_key_query(raw_query: str) -> tuple[list[str], list[str]]:
       pos += 1
       if pos >= n:
         raise ValueError("Invalid infobox role key: trailing '-' must be followed by a quoted term.")
-    if expr[pos] != '"':
-      raise ValueError("Invalid infobox role key: every term must be quoted (use -\"term\" for excludes).")
-    pos += 1
-    end = expr.find('"', pos)
-    if end == -1:
-      raise ValueError("Invalid infobox role key: unclosed quoted term.")
-    term = _normalize_role_text(expr[pos:end])
+    if expr[pos] == '"':
+      pos += 1
+      end = expr.find('"', pos)
+      if end == -1:
+        raise ValueError("Invalid infobox role key: unclosed quoted term.")
+      raw_term = expr[pos:end]
+      pos = end + 1
+    else:
+      # Backward compatibility: allow unquoted single-token includes like: judge -"chief judge"
+      # Excludes still must be quoted to avoid ambiguous parsing.
+      if neg:
+        raise ValueError("Invalid infobox role key: excludes must be quoted (use -\"term\").")
+      end = pos
+      while end < n and not expr[end].isspace():
+        end += 1
+      raw_term = expr[pos:end]
+      pos = end
+    term = _normalize_role_text(raw_term)
     if not term:
       raise ValueError("Invalid infobox role key: empty quoted terms are not allowed.")
     if neg:
       excludes.append(term)
     else:
       includes.append(term)
-    pos = end + 1
 
   return (includes, excludes)
 
