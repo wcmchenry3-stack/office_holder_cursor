@@ -354,10 +354,10 @@ def test_find_link_fallback_works_with_rtl_by_probing_right_side_columns():
     table_config = {
         "table_no": 1,
         "table_rows": 1,
-        "link_column": 2,  # footnote column after RTL mapping in this synthetic case
+        "link_column": 1,  # maps to footnote column after RTL transform when total_columns=4
         "party_column": 1,
-        "term_start_column": 0,
-        "term_end_column": 0,
+        "term_start_column": 3,  # maps to date column 0 after RTL transform
+        "term_end_column": 3,
         "district_column": -1,
         "run_dynamic_parse": False,
         "read_columns_right_to_left": True,
@@ -405,7 +405,7 @@ def test_find_link_fallback_rtl_clamps_when_term_start_column_is_out_of_bounds()
     table_config = {
         "table_no": 1,
         "table_rows": 1,
-        "link_column": 2,
+        "link_column": 1,  # maps to footnote column after RTL transform when total_columns=4
         "party_column": 1,
         "term_start_column": 99,  # out of bounds should still allow RTL fallback probe
         "term_end_column": 99,
@@ -437,6 +437,102 @@ def test_find_link_fallback_rtl_clamps_when_term_start_column_is_out_of_bounds()
 
     assert len(rows) == 1
     assert rows[0]["Wiki Link"].endswith("/wiki/Right_Holder")
+
+
+def test_find_link_does_not_fallback_when_configured_column_has_no_links():
+    logger = _Logger()
+    offices = Offices(logger, biography=None, data_cleanup=DataCleanup(logger))
+    html = """
+    <table>
+      <tr><th>#</th><th>Class A</th><th>Class B</th><th>Term</th></tr>
+      <tr>
+        <td>1</td>
+        <td><a href="/wiki/Class_A_Senator">Class A Senator</a></td>
+        <td>Vacant</td>
+        <td>Jan 1, 2000 – Jan 1, 2004</td>
+      </tr>
+    </table>
+    """
+    table_config = {
+        "table_no": 1,
+        "table_rows": 1,
+        "link_column": 2,  # configured side has no links in this row
+        "party_column": -1,
+        "term_start_column": 3,
+        "term_end_column": 3,
+        "district_column": -1,
+        "run_dynamic_parse": False,
+        "read_columns_right_to_left": False,
+        "find_date_in_infobox": False,
+        "years_only": False,
+        "parse_rowspan": False,
+        "consolidate_rowspan_terms": False,
+        "rep_link": False,
+        "party_link": False,
+        "party_ignore": True,
+        "district_ignore": True,
+        "district_at_large": False,
+        "ignore_non_links": True,
+    }
+    office_details = {
+        "office_country": "United States",
+        "office_level": "Federal",
+        "office_branch": "Legislative",
+        "office_department": "Senate",
+        "office_name": "Class Test",
+        "office_state": "",
+        "office_notes": "",
+    }
+
+    rows = offices.process_table(html, table_config, office_details, "https://en.wikipedia.org/wiki/Test", {"United States": []})
+
+    assert rows == []
+
+
+def test_find_link_keeps_party_links_when_ignore_non_links_is_false():
+    logger = _Logger()
+    offices = Offices(logger, biography=None, data_cleanup=DataCleanup(logger))
+    html = """
+    <table>
+      <tr><th>#</th><th>Link</th><th>Dates</th></tr>
+      <tr><td>1</td><td><a href="/wiki/Michigan_Democratic_Party">Michigan Democratic Party</a></td><td>Jan 1, 2000 – Jan 1, 2002</td></tr>
+    </table>
+    """
+    table_config = {
+        "table_no": 1,
+        "table_rows": 1,
+        "link_column": 1,
+        "party_column": -1,
+        "term_start_column": 2,
+        "term_end_column": 2,
+        "district_column": -1,
+        "run_dynamic_parse": False,
+        "read_columns_right_to_left": False,
+        "find_date_in_infobox": False,
+        "years_only": False,
+        "parse_rowspan": False,
+        "consolidate_rowspan_terms": False,
+        "rep_link": False,
+        "party_link": False,
+        "party_ignore": True,
+        "district_ignore": True,
+        "district_at_large": False,
+        "ignore_non_links": False,
+    }
+    office_details = {
+        "office_country": "United States",
+        "office_level": "State",
+        "office_branch": "Executive",
+        "office_department": "Governor",
+        "office_name": "State of Michigan",
+        "office_state": "Michigan",
+        "office_notes": "",
+    }
+
+    rows = offices.process_table(html, table_config, office_details, "https://en.wikipedia.org/wiki/Test", {"United States": []})
+
+    assert len(rows) == 1
+    assert rows[0]["Wiki Link"].endswith("/wiki/Michigan_Democratic_Party")
 
 
 def test_find_link_ignores_alt_link_targets_and_uses_person_link():

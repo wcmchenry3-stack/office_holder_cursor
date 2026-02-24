@@ -477,6 +477,8 @@ class Offices:
     # Keep ignore_non_links useful for parser junk rows too (e.g. congress/election links).
     if any(re.search(pattern, candidate) for pattern in self.patterns_to_ignore()):
       return False
+    if re.search(r'/wiki/[\w%]+_Party(?:_\([^)]*\))?$', candidate):
+      return False
     if "/wiki/File:" in candidate or "/wiki/Special:" in candidate:
       return False
     return True
@@ -987,7 +989,6 @@ class Offices:
         r"/wiki/([\w%]+)_\d{1,2}(th|st|nd|rd)_congressional_district",
         r'/wiki/\d{4}_[\w\d]+_elections_in_[\w\d]+',
         r'/wiki/\d{4}_[\w\d]+_election',
-        r'/wiki/[\w%]+_Party(?:_\([^)]*\))?$',  # party organization pages (not office holders)
         r'/wiki/(19|20)\d{2}(_\d)?$',  # year links e.g. /wiki/2024 from date columns
     )
 
@@ -1060,9 +1061,11 @@ class Offices:
         pass
     # #endregion
 
+    had_links_in_configured_col = False
     if self.column_present(link_column, cells):
         self.Logger.debug_log("url column present", True)
         link_tags = cells[link_column].find_all('a', href=True)
+        had_links_in_configured_col = len(link_tags) > 0
         try:
           for link_tag in link_tags:
               self.Logger.debug_log(f"looking at {link_tag} in {link_tags}", True)
@@ -1099,6 +1102,10 @@ class Offices:
     # #endregion
 
     # Fallback: wrong link column often points at footnote-only cells.
+    # Only run fallback when configured column had link markup but no acceptable candidate.
+    if not had_links_in_configured_col:
+      return None
+
     # Probe holder side of row based on configured direction to avoid unrelated link columns.
     term_start_col = table_config_to_parse.get("term_start_column")
     try:
