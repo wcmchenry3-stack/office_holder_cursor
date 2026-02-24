@@ -1191,6 +1191,21 @@ class Offices:
           ds, de = _dates_from_cell_data_sort_value(cell)
           if ds and de:
             term_start, term_end = ds, de
+        # Fallback: misconfigured term column on some tables; search row for a true date range cell.
+        if (not term_start or term_start == "Invalid date" or not term_end or term_end == "Invalid date"):
+          for i, c in enumerate(cells):
+            if i == term_start_column:
+              continue
+            txt = c.get_text(separator=' ').strip() if c else ""
+            if not txt:
+              continue
+            if not any(d in txt for d in ["–", " - ", " to "]):
+              continue
+            cand_start, cand_end = self.DataCleanup.parse_date_info(txt, "both")
+            if cand_start and cand_end and cand_start != "Invalid date" and cand_end != "Invalid date" and cand_start != cand_end:
+              self.Logger.debug_log(f"extract_term_dates fallback: using range from col {i}", True)
+              term_start, term_end = cand_start, cand_end
+              break
         return (term_start, term_end, None, None)
 
       self.Logger.debug_log( f"parse_table_row found start and end dates not in same column" , True )
