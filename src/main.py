@@ -623,6 +623,7 @@ async def page_update(request: Request, source_page_id: int):
         "notes": (form.get("notes") or "").strip(),
         "enabled": form.get("enabled") == "1",
         "allow_reuse_tables": form.get("allow_reuse_tables") == "1",
+        "disable_auto_table_update": form.get("disable_auto_table_update") == "1",
     }
     try:
         _validate_level_state_city(page_data.get("level_id"), page_data.get("state_id"), page_data.get("city_id"), page_data.get("branch_id"))

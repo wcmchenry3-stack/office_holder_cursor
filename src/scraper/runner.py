@@ -266,6 +266,58 @@ def _dedupe_parsed_rows(table_data: list[dict], years_only: bool) -> list[dict]:
     return out
 
 
+
+
+def _missing_holder_keys(existing_terms: list[dict[str, Any]], table_data: list[dict[str, Any]], office_id: int, years_only: bool, *, key_years_only: bool = False) -> set[tuple]:
+    old_holders = {_holder_key_from_existing_term_years(t) for t in existing_terms} if key_years_only else {_holder_key_from_existing_term(t) for t in existing_terms}
+    new_holders = _holder_keys_from_parsed_rows(table_data, office_id, years_only, key_years_only=key_years_only)
+    return old_holders - new_holders
+
+
+def _try_auto_update_table_no(
+    office_row: dict[str, Any],
+    existing_terms: list[dict[str, Any]],
+    party_list: list,
+    offices_parser: Any,
+    *,
+    refresh_table_cache: bool,
+    years_only: bool,
+    key_years_only: bool,
+    current_missing_count: int,
+) -> tuple[int | None, list[dict[str, Any]] | None]:
+    if bool(office_row.get("disable_auto_table_update")):
+        return (None, None)
+    url = (office_row.get("url") or "").strip()
+    current_table_no = int(office_row.get("table_no") or 1)
+    page_result = get_table_html_cached(url, 1, refresh=refresh_table_cache, use_full_page=bool(office_row.get("use_full_page_for_table")))
+    num_tables = int(page_result.get("num_tables") or 0)
+    if num_tables <= 1:
+        return (None, None)
+    best_table_no = None
+    best_rows = None
+    best_missing = current_missing_count
+    for candidate_no in range(1, num_tables + 1):
+        if candidate_no == current_table_no:
+            continue
+        candidate_result = get_table_html_cached(url, candidate_no, refresh=refresh_table_cache, use_full_page=bool(office_row.get("use_full_page_for_table")))
+        html = candidate_result.get("html") or ""
+        if not html:
+            continue
+        candidate_office = {**office_row, "table_no": candidate_no, "find_date_in_infobox": False}
+        table_data = _parse_office_html(
+            candidate_office, html, url, party_list, offices_parser,
+            cached_table_html=html, progress_callback=None,
+        )
+        if not table_data:
+            continue
+        missing = _missing_holder_keys(existing_terms, table_data, int(office_row.get("id") or 0), years_only, key_years_only=key_years_only)
+        if len(missing) < best_missing:
+            best_missing = len(missing)
+            best_table_no = candidate_no
+            best_rows = table_data
+            if best_missing == 0:
+                break
+    return (best_table_no, best_rows)
 def run_with_db(
     run_mode: str = "delta",  # full | delta | live_person | single_bio | bios_only
     run_bio: bool = False,
@@ -659,13 +711,31 @@ def run_with_db(
             new_holders_years = _holder_keys_from_parsed_rows(table_data_pre, office_id, years_only_pre, key_years_only=True)
             missing_years = old_holders_years - new_holders_years
             if missing_years:
+                if run_mode == "full":
+                    found_table_no, found_rows = _try_auto_update_table_no(
+                        office_row, existing_terms, party_list, offices_parser,
+                        refresh_table_cache=refresh_table_cache,
+                        years_only=years_only_pre,
+                        key_years_only=True,
+                        current_missing_count=len(missing_years),
+                    )
+                    if found_table_no and found_rows is not None:
+                        logger.log(f"Auto-updated table_no for {office_name}: {table_no} -> {found_table_no} based on validation match.", True)
+                        office_row["table_no"] = int(found_table_no)
+                        table_no = int(found_table_no)
+                        table_data_pre = found_rows
+                        missing_years = _missing_holder_keys(existing_terms, table_data_pre, office_id, years_only_pre, key_years_only=True)
+                        if not (dry_run or test_run):
+                            with get_connection() as conn:
+                                conn.execute("UPDATE office_table_config SET table_no = ?, updated_at=datetime('now') WHERE id = ?", (table_no, office_id))
+                                conn.commit()
                 missing_list = _missing_holders_display(existing_terms, missing_years, _holder_key_from_existing_term_years)
                 missing_str = _format_missing_holders(missing_list)
                 force_replace_early = force_overwrite or (force_replace_office_ids and office_id in force_replace_office_ids)
                 if force_replace_early:
                     logger.log(f"Force overwrite for {office_name}: table-only check found new list missing {len(missing_years)} holder(s); replacing anyway. Missing: {missing_str}", True)
                     replaceable_office_ids.add(office_id)
-                else:
+                elif missing_years:
                     logger.log(f"Repopulate validation failed for {office_name}: table-only check found new list missing {len(missing_years)} office holder(s). Skipping infobox fetch. Keeping existing terms. Missing: {missing_str}", True)
                     revalidate_failed_offices.append((office_id, "New list is missing office holders that were in existing data. Kept existing terms."))
                     revalidate_missing_holders_list.append(missing_list)
@@ -694,16 +764,36 @@ def run_with_db(
             new_holders = _holder_keys_from_parsed_rows(table_data, office_id, years_only)
             missing = old_holders - new_holders
             if missing:
+                if run_mode == "full":
+                    found_table_no, found_rows = _try_auto_update_table_no(
+                        office_row, existing_terms, party_list, offices_parser,
+                        refresh_table_cache=refresh_table_cache,
+                        years_only=years_only,
+                        key_years_only=False,
+                        current_missing_count=len(missing),
+                    )
+                    if found_table_no and found_rows is not None:
+                        logger.log(f"Auto-updated table_no for {office_name}: {table_no} -> {found_table_no} based on holder match.", True)
+                        office_row["table_no"] = int(found_table_no)
+                        table_no = int(found_table_no)
+                        table_data = found_rows
+                        missing = _missing_holder_keys(existing_terms, table_data, office_id, years_only)
+                        if not (dry_run or test_run):
+                            with get_connection() as conn:
+                                conn.execute("UPDATE office_table_config SET table_no = ?, updated_at=datetime('now') WHERE id = ?", (table_no, office_id))
+                                conn.commit()
                 missing_list = _missing_holders_display(existing_terms, missing, _holder_key_from_existing_term)
                 missing_str = _format_missing_holders(missing_list)
                 if force_replace:
                     logger.log(f"Force override for {office_name}: replacing despite {len(missing)} holder(s) missing from new list. Missing: {missing_str}", True)
                     replaceable_office_ids.add(office_id)
-                else:
+                elif missing:
                     logger.log(f"Repopulate validation failed for {office_name}: new list is missing {len(missing)} office holder(s) that were in existing data. Keeping existing terms. Missing: {missing_str}", True)
                     revalidate_failed_offices.append((office_id, "New list is missing office holders that were in existing data. Kept existing terms."))
                     revalidate_missing_holders_list.append(missing_list)
                     continue
+                else:
+                    replaceable_office_ids.add(office_id)
             else:
                 replaceable_office_ids.add(office_id)
         if cancel_check and cancel_check():

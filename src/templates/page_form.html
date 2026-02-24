@@ -46,6 +46,7 @@
       <button type="button" class="btn btn-danger btn-sm" id="sideDeletePageBtn" style="width:100%; margin-bottom:0.35rem;">Delete page</button>
       <a href="/offices{% if list_return_query is defined and list_return_query %}?{{ list_return_query }}{% endif %}" class="btn btn-secondary btn-sm" style="display:block; width:100%; margin-bottom:0.35rem; text-align:center;">Cancel</a>
       <label style="display:block; margin-bottom:0.35rem;"><input type="checkbox" id="sideAllowReuseTables" {% if page_data.allow_reuse_tables %}checked{% endif %}> Reuse of tables</label>
+      <label style="display:block; margin-bottom:0.35rem;"><input type="checkbox" id="sideDisableAutoTableUpdate" {% if page_data.disable_auto_table_update %}checked{% endif %}> Disable auto table update</label>
       <label style="display:block; margin-bottom:0.5rem;"><input type="checkbox" id="sidePageEnabled" {% if page_data.enabled %}checked{% endif %}> Enable page</label>
       <form method="post" action="/offices/add-office-to-page">
         <input type="hidden" name="source_page_id" value="{{ source_page_id }}">
@@ -120,6 +121,7 @@
       <div class="form-group"><label>Notes</label><input type="text" name="notes" value="{{ page_data.notes or '' }}"></div>
       <div class="form-group checkbox-group"><label><input type="checkbox" id="pageEnabledInput" name="enabled" value="1" {% if page_data.enabled %}checked{% endif %}> Page enabled</label></div>
       <div class="form-group checkbox-group"><label><input type="checkbox" id="allowReuseTablesInput" name="allow_reuse_tables" value="1" {% if page_data.allow_reuse_tables %}checked{% endif %}> Allow reuse of tables</label></div>
+      <div class="form-group checkbox-group"><label><input type="checkbox" id="disableAutoTableUpdateInput" name="disable_auto_table_update" value="1" {% if page_data.disable_auto_table_update %}checked{% endif %}> Disable auto table number update in full runs</label></div>
       <p class="form-note">When unchecked, table numbers must be unique per page. When checked, different offices can use the same table number.</p>
       <div class="actions">
         <button type="submit" class="btn">Save page</button>
@@ -787,7 +789,9 @@
   var sideDeletePageBtn = document.getElementById('sideDeletePageBtn');
   var sideAllowReuseTables = document.getElementById('sideAllowReuseTables');
   var sidePageEnabled = document.getElementById('sidePageEnabled');
+  var sideDisableAutoTableUpdate = document.getElementById('sideDisableAutoTableUpdate');
   var allowReuseTablesInput = document.getElementById('allowReuseTablesInput');
+  var disableAutoTableUpdateInput = document.getElementById('disableAutoTableUpdateInput');
   var pageEnabledInput = document.getElementById('pageEnabledInput');
   var pageForm = document.getElementById('pageForm');
   if (sideSavePageBtn && pageForm) sideSavePageBtn.addEventListener('click', function() { pageForm.requestSubmit(); });
@@ -798,6 +802,10 @@
   if (sideAllowReuseTables && allowReuseTablesInput) {
     sideAllowReuseTables.addEventListener('change', function() { allowReuseTablesInput.checked = sideAllowReuseTables.checked; });
     allowReuseTablesInput.addEventListener('change', function() { sideAllowReuseTables.checked = allowReuseTablesInput.checked; });
+  }
+  if (sideDisableAutoTableUpdate && disableAutoTableUpdateInput) {
+    sideDisableAutoTableUpdate.addEventListener('change', function() { disableAutoTableUpdateInput.checked = sideDisableAutoTableUpdate.checked; });
+    disableAutoTableUpdateInput.addEventListener('change', function() { sideDisableAutoTableUpdate.checked = disableAutoTableUpdateInput.checked; });
   }
   if (sidePageEnabled && pageEnabledInput) {
     sidePageEnabled.addEventListener('change', function() { pageEnabledInput.checked = sidePageEnabled.checked; });
