@@ -987,6 +987,7 @@ class Offices:
         r"/wiki/([\w%]+)_\d{1,2}(th|st|nd|rd)_congressional_district",
         r'/wiki/\d{4}_[\w\d]+_elections_in_[\w\d]+',
         r'/wiki/\d{4}_[\w\d]+_election',
+        r'/wiki/[\w%]+_Party(?:_\([^)]*\))?$',  # party organization pages (not office holders)
         r'/wiki/(19|20)\d{2}(_\d)?$',  # year links e.g. /wiki/2024 from date columns
     )
 
@@ -1087,15 +1088,21 @@ class Offices:
     # #endregion
 
     # Fallback: wrong link column often points at footnote-only cells.
-    # Probe only columns before term_start_column to avoid Lt. Governor links on the right.
+    # Probe holder side of row based on configured direction to avoid unrelated link columns.
     term_start_col = table_config_to_parse.get("term_start_column")
     try:
       term_start_col = int(term_start_col) if term_start_col is not None else -1
     except (TypeError, ValueError):
       term_start_col = -1
-    max_probe_col = term_start_col if term_start_col >= 0 else len(cells)
-    max_probe_col = min(max_probe_col, len(cells))
-    for ci in range(max_probe_col):
+    rtl = bool(table_config_to_parse.get("read_columns_right_to_left"))
+    if rtl:
+      start_ci = max(0, term_start_col) if term_start_col >= 0 else 0
+      probe_indices = range(start_ci, len(cells))
+    else:
+      max_probe_col = term_start_col if term_start_col >= 0 else len(cells)
+      max_probe_col = min(max_probe_col, len(cells))
+      probe_indices = range(max_probe_col)
+    for ci in probe_indices:
       if ci == link_column:
         continue
       for link_tag in cells[ci].find_all('a', href=True):
