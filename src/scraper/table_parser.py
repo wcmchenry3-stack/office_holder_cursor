@@ -77,20 +77,30 @@ def parse_infobox_role_key_query(raw_query: str) -> tuple[list[str], list[str]]:
       pos += 1
       if pos >= n:
         raise ValueError("Invalid infobox role key: trailing '-' must be followed by a quoted term.")
-    if expr[pos] != '"':
-      raise ValueError("Invalid infobox role key: every term must be quoted (use -\"term\" for excludes).")
-    pos += 1
-    end = expr.find('"', pos)
-    if end == -1:
-      raise ValueError("Invalid infobox role key: unclosed quoted term.")
-    term = _normalize_role_text(expr[pos:end])
+    if expr[pos] == '"':
+      pos += 1
+      end = expr.find('"', pos)
+      if end == -1:
+        raise ValueError("Invalid infobox role key: unclosed quoted term.")
+      raw_term = expr[pos:end]
+      pos = end + 1
+    else:
+      # Backward compatibility: allow unquoted single-token includes like: judge -"chief judge"
+      # Excludes still must be quoted to avoid ambiguous parsing.
+      if neg:
+        raise ValueError("Invalid infobox role key: excludes must be quoted (use -\"term\").")
+      end = pos
+      while end < n and not expr[end].isspace():
+        end += 1
+      raw_term = expr[pos:end]
+      pos = end
+    term = _normalize_role_text(raw_term)
     if not term:
       raise ValueError("Invalid infobox role key: empty quoted terms are not allowed.")
     if neg:
       excludes.append(term)
     else:
       includes.append(term)
-    pos = end + 1
 
   return (includes, excludes)
 
@@ -477,6 +487,8 @@ class Offices:
     # Keep ignore_non_links useful for parser junk rows too (e.g. congress/election links).
     if any(re.search(pattern, candidate) for pattern in self.patterns_to_ignore()):
       return False
+    if re.search(r'/wiki/[\w%]+_Party(?:_\([^)]*\))?$', candidate):
+      return False
     if "/wiki/File:" in candidate or "/wiki/Special:" in candidate:
       return False
     return True
@@ -767,7 +779,7 @@ class Offices:
         self.Logger.debug_log( "not running run_dynamic_parse" , True )
 
       # Ensure there are enough cells to avoid IndexError - do not use for rowspan, as it often will cause an error
-      if len(cells) <= table_config_to_parse["table_rows"] and table_config_to_parse["parse_rowspan"] == False :  # Adjust this number based on the expected minimum number of cells
+      if len(cells) < table_config_to_parse["table_rows"] and table_config_to_parse["parse_rowspan"] == False :  # Adjust this number based on the expected minimum number of cells
           self.Logger.log( 'issue with table rows' , True )
           return None  # or some default data structure
       # With rowspan, skip only rows that have too few cells to parse any term (need at least 2 to try; continuation rows often have 3)
@@ -776,7 +788,7 @@ class Offices:
           return None
       # Skip rows that don't have enough columns to include term_end (e.g. President-only continuation rows). When parse_rowspan, continuation rows have fewer cells so column indices don't align—skip check.
       term_end_col = table_config_to_parse.get("term_end_column", -1)
-      if term_end_col >= 0 and len(cells) <= term_end_col and not table_config_to_parse.get("parse_rowspan"):
+      if term_end_col >= 0 and len(cells) <= term_end_col and not table_config_to_parse.get("parse_rowspan") and not table_config_to_parse.get("find_date_in_infobox"):
           self.Logger.log( 'skipping row (too few columns for term_end)' , True )
           return None
 
@@ -814,6 +826,11 @@ class Offices:
       '''
 
       # figure out party (skip and keep null when party_ignore)
+      # Only treat as rowspan continuation when row is truly short; otherwise avoid carrying stale values across full rows.
+      if found_rowspan and not is_short_continuation:
+        self.Logger.debug_log("row has no link but is not a short continuation; skipping row to avoid stale carry-over", True)
+        return None
+
       if table_config_to_parse.get("party_ignore"):
         party = None
         self.Logger.debug_log( "party_ignore: not extracting party" , True )
@@ -863,32 +880,40 @@ class Offices:
         self.Logger.debug_log("running parse rowspan on term", True)
         term_tuples = []
         best_single = None  # fallback when no range found
-        for col_no in range_total_columns:  # Assuming total_columns is correctly calculated elsewhere
 
-              self.Logger.debug_log(f"running parse iteration {col_no} with term", True)
-              raw = self.extract_term_dates( wiki_link , cells , office_details , table_config_to_parse , col_no , url , district )
-              if isinstance(raw, list):
-                  term_tuples = raw
-                  break
-              term_start, term_end, term_start_year, term_end_year = raw
+        # For true short continuation rows we may need to probe each cell because configured indices no longer align.
+        # For non-short rows, avoid scanning every column (can accidentally parse election-year columns as terms).
+        if is_short_continuation:
+          for col_no in range_total_columns:
 
-              ignore_terms = ( None , "Invalid date" )
-              if table_config_to_parse.get("years_only"):
-                  if term_start_year is not None or term_end_year is not None:
-                      self.Logger.debug_log(f"found years-only term start year {term_start_year} end year {term_end_year}", True)
-                      term_tuples = [(term_start, term_end, term_start_year, term_end_year)]
-                      break
-              elif term_start not in ignore_terms and term_end not in ignore_terms:
-                  self.Logger.debug_log(f"found results for term start {term_start} and term end {term_end}", True)
-                  # Prefer a range (start != end); otherwise keep as fallback and try next column
-                  if term_start != term_end:
-                      term_tuples = [(term_start, term_end, term_start_year, term_end_year)]
-                      break
-                  if best_single is None:
-                      best_single = (term_start, term_end, term_start_year, term_end_year)
+                self.Logger.debug_log(f"running parse iteration {col_no} with term", True)
+                raw = self.extract_term_dates( wiki_link , cells , office_details , table_config_to_parse , col_no , url , district )
+                if isinstance(raw, list):
+                    term_tuples = raw
+                    break
+                term_start, term_end, term_start_year, term_end_year = raw
+
+                ignore_terms = ( None , "Invalid date" )
+                if table_config_to_parse.get("years_only"):
+                    if term_start_year is not None or term_end_year is not None:
+                        self.Logger.debug_log(f"found years-only term start year {term_start_year} end year {term_end_year}", True)
+                        term_tuples = [(term_start, term_end, term_start_year, term_end_year)]
+                        break
+                elif term_start not in ignore_terms and term_end not in ignore_terms:
+                    self.Logger.debug_log(f"found results for term start {term_start} and term end {term_end}", True)
+                    # Prefer a range (start != end); otherwise keep as fallback and try next column
+                    if term_start != term_end:
+                        term_tuples = [(term_start, term_end, term_start_year, term_end_year)]
+                        break
+                    if best_single is None:
+                        best_single = (term_start, term_end, term_start_year, term_end_year)
+        else:
+          raw = self.extract_term_dates(wiki_link, cells, office_details, table_config_to_parse, None, url, district)
+          term_tuples = raw if isinstance(raw, list) else [raw]
+
         # For short rowspan rows: try start from one cell, end from next (e.g. 3-cell row has start col0, end col1)
         n_cells = len(cells)
-        if (not term_tuples or (len(term_tuples) == 1 and term_tuples[0][0] == term_tuples[0][1])) and n_cells >= 2:
+        if is_short_continuation and (not term_tuples or (len(term_tuples) == 1 and term_tuples[0][0] == term_tuples[0][1])) and n_cells >= 2:
           for (sc, ec) in [(0, 1), (1, 2)]:
             if ec >= n_cells:
               continue
@@ -996,6 +1021,39 @@ class Offices:
 
     link_column = table_config_to_parse["link_column"]
     country = office_details["office_country"]
+    alt_links = set((table_config_to_parse.get("alt_links") or []))
+
+    def _path_from_full_url(full_url: str) -> str:
+      try:
+        parsed = urlparse(full_url or "")
+        return parsed.path or ""
+      except Exception:
+        return ""
+
+    def _candidate_from_link_tag(link_tag):
+      href = (link_tag.get('href') or '') if link_tag else ''
+      if '/File:' in href:
+        return None
+      raw_href = href.strip()
+      # Relative hrefs like "./Title" produce invalid URLs; normalize to /wiki/Title
+      if raw_href.startswith("./"):
+          path = "/wiki/" + raw_href[2:].lstrip("/")
+      elif raw_href.startswith("/wiki/"):
+          path = raw_href
+      elif raw_href.startswith("/"):
+          path = "/wiki" + raw_href
+      else:
+          path = "/wiki/" + raw_href
+      full_url = normalize_wiki_url(f"https://en.wikipedia.org{path}") or f"https://en.wikipedia.org{path}"
+      full_path = _path_from_full_url(full_url)
+      has_fragment = "#" in full_url
+      should_ignore = any(re.search(pattern, full_url) for pattern in self.patterns_to_ignore()) or has_fragment
+      party_links = {p.get('link') for p in party_list.get(country, []) if p.get('link')}
+      if full_path and full_path in alt_links:
+        return None
+      if should_ignore or full_url in party_links:
+        return None
+      return full_url
 
     self.Logger.debug_log(f"country in find_link: {country}", True)
 
@@ -1013,47 +1071,26 @@ class Offices:
         pass
     # #endregion
 
+    had_links_in_configured_col = False
     if self.column_present(link_column, cells):
         self.Logger.debug_log("url column present", True)
         link_tags = cells[link_column].find_all('a', href=True)
+        had_links_in_configured_col = len(link_tags) > 0
         try:
           for link_tag in link_tags:
               self.Logger.debug_log(f"looking at {link_tag} in {link_tags}", True)
-              if '/File:' not in link_tag['href']:
-                  raw_href = (link_tag['href'] or "").strip()
-                  # Relative hrefs like "./Title" produce invalid URLs; normalize to /wiki/Title
-                  if raw_href.startswith("./"):
-                      path = "/wiki/" + raw_href[2:].lstrip("/")
-                  elif raw_href.startswith("/wiki/"):
-                      path = raw_href
-                  elif raw_href.startswith("/"):
-                      path = "/wiki" + raw_href
-                  else:
-                      path = "/wiki/" + raw_href
-                  full_url = normalize_wiki_url(f"https://en.wikipedia.org{path}") or f"https://en.wikipedia.org{path}"
-                  self.Logger.debug_log(f"found full url {full_url}", True)
-                  has_fragment = "#" in full_url
-                  should_ignore = any(re.search(pattern, full_url) for pattern in self.patterns_to_ignore()) or has_fragment
-                  party_links = {p.get('link') for p in party_list.get(country, []) if p.get('link')}
-                  if not should_ignore and full_url not in party_links:
-                      self.Logger.debug_log(f"URL passed all checks: {full_url}", True)
-                      # #region agent log
-                      try:
-                          _f = open(_log_path, "a", encoding="utf-8")
-                          _f.write(json.dumps({"location": "table_parser:find_link", "message": "returned", "data": {"find_link_returned": True, "url": full_url}, "timestamp": __import__("time").time() * 1000, "hypothesisId": "H1"}) + "\n")
-                          _f.close()
-                      except Exception:
-                          pass
-                      # #endregion
-                      return full_url
+              full_url = _candidate_from_link_tag(link_tag)
+              if full_url:
+                  self.Logger.debug_log(f"URL passed all checks: {full_url}", True)
                   # #region agent log
                   try:
                       _f = open(_log_path, "a", encoding="utf-8")
-                      _f.write(json.dumps({"location": "table_parser:find_link", "message": "skip", "data": {"reason": "should_ignore" if should_ignore else "in_party_links", "url": full_url}, "timestamp": __import__("time").time() * 1000, "hypothesisId": "H1"}) + "\n")
+                      _f.write(json.dumps({"location": "table_parser:find_link", "message": "returned", "data": {"find_link_returned": True, "url": full_url}, "timestamp": __import__("time").time() * 1000, "hypothesisId": "H1"}) + "\n")
                       _f.close()
                   except Exception:
                       pass
                   # #endregion
+                  return full_url
 
         except ( ValueError , TypeError , IndexError , AttributeError ) as e:
           self.Logger.log( f"found error when finding url for {full_url} in {cells}" , True )
@@ -1073,6 +1110,36 @@ class Offices:
     except Exception:
         pass
     # #endregion
+
+    # Fallback: wrong link column often points at footnote-only cells.
+    # Only run fallback when configured column had link markup but no acceptable candidate.
+    if not had_links_in_configured_col:
+      return None
+
+    # Probe holder side of row based on configured direction to avoid unrelated link columns.
+    term_start_col = table_config_to_parse.get("term_start_column")
+    try:
+      term_start_col = int(term_start_col) if term_start_col is not None else -1
+    except (TypeError, ValueError):
+      term_start_col = -1
+    rtl = bool(table_config_to_parse.get("read_columns_right_to_left"))
+    if rtl:
+      start_ci = min(max(0, term_start_col), max(0, len(cells) - 1)) if term_start_col >= 0 else 0
+      probe_indices = range(start_ci, len(cells))
+    else:
+      max_probe_col = term_start_col if term_start_col >= 0 else len(cells)
+      max_probe_col = min(max_probe_col, len(cells))
+      probe_indices = range(max_probe_col)
+    for ci in probe_indices:
+      if ci == link_column:
+        continue
+      for link_tag in cells[ci].find_all('a', href=True):
+        full_url = _candidate_from_link_tag(link_tag)
+        if full_url:
+          self.Logger.debug_log(f"find_link fallback matched col {ci}: {full_url}", True)
+          return full_url
+
+    return None
 
 
   def extract_term_dates( self , wiki_link , cells , office_details , table_config_to_parse , parse_row_no , url , district ):
@@ -1102,19 +1169,21 @@ class Offices:
     # Extract and format the term start and end dates
 
     try:
-      self.Logger.debug_log( f"start date column {term_start_column} results: {cells[term_start_column]}" , True )
-      self.Logger.debug_log( f"end date column {term_end_column} results: {cells[term_end_column]}" , True )
+      start_cell = cells[term_start_column] if 0 <= term_start_column < len(cells) else None
+      end_cell = cells[term_end_column] if 0 <= term_end_column < len(cells) else None
+      self.Logger.debug_log( f"start date column {term_start_column} results: {start_cell}" , True )
+      self.Logger.debug_log( f"end date column {term_end_column} results: {end_cell}" , True )
 
       # Years only: table has year ranges only; do not call infobox. Parse year range and leave dates unpopulated.
       if table_config_to_parse.get("years_only") == True:
-        cell_text = cells[term_start_column].get_text(separator=' ').strip()
+        cell_text = start_cell.get_text(separator=' ').strip() if start_cell else ""
         term_start_year, term_end_year = self.DataCleanup.parse_year_range(cell_text)
         self.Logger.debug_log( f" years_only: parsed year range {term_start_year}–{term_end_year} from {cell_text!r}" , True )
         return (None, None, term_start_year, term_end_year)
 
       # Find date in infobox: fetch full dates from person's bio; collect all matching terms from infobox
       if table_config_to_parse["find_date_in_infobox"] == True:
-        self.Logger.debug_log( f" parse_table_row found TRUE in find_date_in_infobox \n\n about to process {cells[term_start_column]}" , True )
+        self.Logger.debug_log( f" parse_table_row found TRUE in find_date_in_infobox \n\n about to process {start_cell}" , True )
         cache = getattr(self, "_infobox_cache", None)
         if cache is not None and wiki_link in cache:
           cached = cache[wiki_link]
@@ -1134,9 +1203,9 @@ class Offices:
         self.Logger.debug_log( f" find_term_dates returned {len(terms_list)} term(s) from infobox" , True )
         # When infobox had no dates (placeholder), use table years only for this record (same as "table has years only")
         if len(terms_list) == 1 and terms_list[0][0] == "YYYY-00-00" and terms_list[0][1] == "YYYY-00-00":
-          cell_text_start = cells[term_start_column].get_text(separator=' ').strip()
+          cell_text_start = start_cell.get_text(separator=' ').strip() if start_cell else ""
           same_column = (term_start_column == term_end_column)
-          cell_text_end = cells[term_end_column].get_text(separator=' ').strip() if not same_column and term_end_column < len(cells) else None
+          cell_text_end = end_cell.get_text(separator=' ').strip() if (not same_column and end_cell is not None) else None
           term_start_year, term_end_year = self.DataCleanup.parse_year_range(cell_text_start)
           # When start and end are in different columns, parse end cell for term_end_year instead of reusing start
           if not same_column and cell_text_end is not None:
@@ -1149,8 +1218,8 @@ class Offices:
       # determine what to do if the term_start and term_end appear in the same columns
       if term_start_column == term_end_column:
         self.Logger.debug_log( f"parse_table_row found start and end dates in same column" , True )
-        self.Logger.debug_log( f" cell with date {cells[term_start_column]}" , True )
-        cell = cells[term_start_column]
+        self.Logger.debug_log( f" cell with date {start_cell}" , True )
+        cell = start_cell
         cell_text = cell.get_text(separator=' ').strip() if cell else ""
         self.Logger.debug_log( f" cell with date with separator {cell_text}" , True )
         term_start, term_end = self.DataCleanup.parse_date_info(cell_text , "both" )  # Use separator to handle <br/>
@@ -1159,6 +1228,21 @@ class Offices:
           ds, de = _dates_from_cell_data_sort_value(cell)
           if ds and de:
             term_start, term_end = ds, de
+        # Fallback: misconfigured term column on some tables; search row for a true date range cell.
+        if (not term_start or term_start == "Invalid date" or not term_end or term_end == "Invalid date"):
+          for i, c in enumerate(cells):
+            if i == term_start_column:
+              continue
+            txt = c.get_text(separator=' ').strip() if c else ""
+            if not txt:
+              continue
+            if not any(d in txt for d in ["–", " - ", " to "]):
+              continue
+            cand_start, cand_end = self.DataCleanup.parse_date_info(txt, "both")
+            if cand_start and cand_end and cand_start != "Invalid date" and cand_end != "Invalid date" and cand_start != cand_end:
+              self.Logger.debug_log(f"extract_term_dates fallback: using range from col {i}", True)
+              term_start, term_end = cand_start, cand_end
+              break
         return (term_start, term_end, None, None)
 
       self.Logger.debug_log( f"parse_table_row found start and end dates not in same column" , True )

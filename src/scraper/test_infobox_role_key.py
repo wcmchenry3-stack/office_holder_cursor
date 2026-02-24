@@ -156,9 +156,16 @@ def test_find_term_dates_role_key_supports_excludes(monkeypatch):
     assert terms == [("1980-01-01", "1990-01-01"), ("1970-01-01", "1980-01-01")]
 
 
-def test_infobox_role_key_requires_quoted_terms():
+def test_infobox_role_key_allows_legacy_unquoted_include_with_quoted_excludes():
+    includes, excludes = parse_infobox_role_key_query('judge -"chief judge" -"senior judge"')
+
+    assert includes == ["judge"]
+    assert excludes == ["chief judge", "senior judge"]
+
+
+def test_infobox_role_key_requires_quoted_excludes_even_with_legacy_include():
     with pytest.raises(ValueError):
-        parse_infobox_role_key_query('judge -"chief judge"')
+        parse_infobox_role_key_query('judge -chief')
 
 
 def test_infobox_role_key_rejects_unclosed_quotes():
