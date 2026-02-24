@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+{% block title %}Run UI Test Scripts – Office Holder{% endblock %}
+{% block content %}
+<h1>Run UI Test Scripts</h1>
+<p>This page automatically runs Playwright UI tests and shows each test result.</p>
+<p><strong>Test file:</strong> <code>{{ test_path }}</code></p>
+
+<div class="card" style="padding:0.75rem; margin:0.75rem 0;">
+  <h3 style="margin-top:0;">Test target settings</h3>
+  <p class="form-note" style="margin-top:0;">Auto-detected values are prefilled. Adjust if needed, then click re-run.</p>
+  <div style="display:grid; grid-template-columns:repeat(2, minmax(240px, 1fr)); gap:0.5rem;">
+    <label>Base URL <input id="cfgBaseUrl" type="text" value="{{ defaults.base_url or 'http://127.0.0.1:8000' }}"></label>
+    <label>Edit office id <input id="cfgEditOfficeId" type="text" value="{{ defaults.edit_office_id or '' }}"></label>
+    <label>Page edit URL <input id="cfgPageEditUrl" type="text" value="{{ defaults.page_edit_url or '' }}"></label>
+    <label>Office A id <input id="cfgOfficeAId" type="text" value="{{ defaults.office_a_id or '' }}"></label>
+    <label>Office B id <input id="cfgOfficeBId" type="text" value="{{ defaults.office_b_id or '' }}"></label>
+  </div>
+  <p style="margin-top:0.75rem;"><button id="rerunBtn" class="btn" type="button">Re-run UI tests</button></p>
+</div>
+
+<p id="runState">Starting test run…</p>
+<div id="progressWrap" style="margin-bottom:0.5rem;">
+  <div id="progressBarOuter" style="width:100%; height:12px; background:#2a2a2a; border-radius:6px; overflow:hidden;">
+    <div id="progressBarInner" style="width:0%; height:100%; background:#4dabf7;"></div>
+  </div>
+  <p id="progressMeta" class="form-note" style="margin:0.35rem 0 0 0;">Queued…</p>
+</div>
+<div id="summary"></div>
+<table id="resultsTable" style="width:100%; border-collapse:collapse; margin-top:1rem;">
+  <thead>
+    <tr>
+      <th style="text-align:left; border-bottom:1px solid #555; padding:0.4rem;">Test</th>
+      <th style="text-align:left; border-bottom:1px solid #555; padding:0.4rem;">Status</th>
+      <th style="text-align:left; border-bottom:1px solid #555; padding:0.4rem;">Details</th>
+    </tr>
+  </thead>
+  <tbody id="resultsBody"></tbody>
+</table>
+<details style="margin-top:1rem;">
+  <summary>Raw command output</summary>
+  <pre id="rawOutput" style="white-space:pre-wrap;"></pre>
+</details>
+
+<script>
+(function() {
+  var runState = document.getElementById('runState');
+  var summaryEl = document.getElementById('summary');
+  var body = document.getElementById('resultsBody');
+  var rawOutput = document.getElementById('rawOutput');
+  var rerunBtn = document.getElementById('rerunBtn');
+
+  function esc(s) {
+    if (s == null) return '';
+    return String(s).replace(/[&<>"']/g, function(c) {
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+
+  function buildPayload() {
+    return {
+      base_url: (document.getElementById('cfgBaseUrl').value || '').trim(),
+      edit_office_id: (document.getElementById('cfgEditOfficeId').value || '').trim(),
+      page_edit_url: (document.getElementById('cfgPageEditUrl').value || '').trim(),
+      office_a_id: (document.getElementById('cfgOfficeAId').value || '').trim(),
+      office_b_id: (document.getElementById('cfgOfficeBId').value || '').trim()
+    };
+  }
+
+  function renderResults(data) {
+    var sum = data.summary || {};
+    summaryEl.innerHTML = '<p><strong>Summary:</strong> ' +
+      'passed=' + (sum.passed || 0) + ', failed=' + (sum.failed || 0) +
+      ', skipped=' + (sum.skipped || 0) + ', errors=' + (sum.errors || 0) + '</p>' +
+      (data.applied_env && Object.keys(data.applied_env).length
+        ? '<p><strong>Applied env:</strong> <code>' + esc(JSON.stringify(data.applied_env)) + '</code></p>'
+        : '');
+
+    var rows = data.tests || [];
+    if (!rows.length) {
+      body.innerHTML = '<tr><td colspan="3" style="padding:0.4rem;">No individual tests reported.</td></tr>';
+    } else {
+      body.innerHTML = rows.map(function(t) {
+        var color = t.status === 'passed' ? '#69db7c' : (t.status === 'skipped' ? '#ffd43b' : '#ff8787');
+        return '<tr>' +
+          '<td style="padding:0.4rem; border-bottom:1px solid #333;"><code>' + esc(t.nodeid || t.name) + '</code></td>' +
+          '<td style="padding:0.4rem; border-bottom:1px solid #333; color:' + color + ';">' + esc(t.status) + '</td>' +
+          '<td style="padding:0.4rem; border-bottom:1px solid #333;">' + esc(t.detail || '') + '</td>' +
+          '</tr>';
+      }).join('');
+    }
+
+    rawOutput.textContent = 'Command: ' + (data.command || '') + '\n' +
+      'Return code: ' + (data.return_code == null ? '' : data.return_code) + '\n\n' +
+      (data.stdout || '') + '\n' + (data.stderr || '') +
+      (data.parse_error ? ('\nXML parse error: ' + data.parse_error) : '');
+
+    runState.textContent = data.ok ? 'UI tests completed.' : 'UI tests completed with failures/errors.';
+  }
+
+  var pollTimer = null;
+  function setProgress(progress, phaseText) {
+    var inner = document.getElementById('progressBarInner');
+    var meta = document.getElementById('progressMeta');
+    if (inner) inner.style.width = Math.max(0, Math.min(100, progress || 0)) + '%';
+    if (meta) meta.textContent = (phaseText || 'Running') + ' (' + (progress || 0) + '%)';
+  }
+
+  function runOnce() {
+    runState.textContent = 'Starting UI test job…';
+    summaryEl.innerHTML = '';
+    body.innerHTML = '';
+    rawOutput.textContent = '';
+    setProgress(5, 'Queued');
+    rerunBtn.disabled = true;
+
+    var startedAt = Date.now();
+    fetch('/api/ui-test-scripts/run/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(buildPayload())
+    })
+      .then(function(r) { return r.json(); })
+      .then(function(startData) {
+        if (!startData.job_id) throw new Error('No job id returned');
+        var jobId = startData.job_id;
+        runState.textContent = 'Running UI tests…';
+
+        function poll() {
+          fetch('/api/ui-test-scripts/run/status/' + encodeURIComponent(jobId))
+            .then(function(r) { return r.json(); })
+            .then(function(st) {
+              var elapsed = Math.round((Date.now() - startedAt) / 1000);
+              setProgress(st.progress || 0, (st.phase || st.message || 'Running') + ' • ' + elapsed + 's');
+              if (st.status === 'done') {
+                setProgress(100, 'Done • ' + elapsed + 's');
+                renderResults(st.result || {});
+                rerunBtn.disabled = false;
+                if (window.playJobCompleteSound) window.playJobCompleteSound();
+                return;
+              }
+              pollTimer = setTimeout(poll, 600);
+            })
+            .catch(function(err) {
+              runState.textContent = 'Failed while polling UI test status.';
+              summaryEl.innerHTML = '<div class="alert alert-error">' + esc(err && err.message ? err.message : 'Status request failed') + '</div>';
+              rerunBtn.disabled = false;
+            });
+        }
+        poll();
+      })
+      .catch(function(err) {
+        runState.textContent = 'Failed to start UI tests.';
+        summaryEl.innerHTML = '<div class="alert alert-error">' + esc(err && err.message ? err.message : 'Request failed') + '</div>';
+        rerunBtn.disabled = false;
+      });
+  }
+
+  rerunBtn.addEventListener('click', runOnce);
+  runOnce();
+})();
+</script>
+{% endblock %}
