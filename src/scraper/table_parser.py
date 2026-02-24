@@ -776,7 +776,7 @@ class Offices:
           return None
       # Skip rows that don't have enough columns to include term_end (e.g. President-only continuation rows). When parse_rowspan, continuation rows have fewer cells so column indices don't align—skip check.
       term_end_col = table_config_to_parse.get("term_end_column", -1)
-      if term_end_col >= 0 and len(cells) <= term_end_col and not table_config_to_parse.get("parse_rowspan"):
+      if term_end_col >= 0 and len(cells) <= term_end_col and not table_config_to_parse.get("parse_rowspan") and not table_config_to_parse.get("find_date_in_infobox"):
           self.Logger.log( 'skipping row (too few columns for term_end)' , True )
           return None
 
@@ -1141,19 +1141,21 @@ class Offices:
     # Extract and format the term start and end dates
 
     try:
-      self.Logger.debug_log( f"start date column {term_start_column} results: {cells[term_start_column]}" , True )
-      self.Logger.debug_log( f"end date column {term_end_column} results: {cells[term_end_column]}" , True )
+      start_cell = cells[term_start_column] if 0 <= term_start_column < len(cells) else None
+      end_cell = cells[term_end_column] if 0 <= term_end_column < len(cells) else None
+      self.Logger.debug_log( f"start date column {term_start_column} results: {start_cell}" , True )
+      self.Logger.debug_log( f"end date column {term_end_column} results: {end_cell}" , True )
 
       # Years only: table has year ranges only; do not call infobox. Parse year range and leave dates unpopulated.
       if table_config_to_parse.get("years_only") == True:
-        cell_text = cells[term_start_column].get_text(separator=' ').strip()
+        cell_text = start_cell.get_text(separator=' ').strip() if start_cell else ""
         term_start_year, term_end_year = self.DataCleanup.parse_year_range(cell_text)
         self.Logger.debug_log( f" years_only: parsed year range {term_start_year}–{term_end_year} from {cell_text!r}" , True )
         return (None, None, term_start_year, term_end_year)
 
       # Find date in infobox: fetch full dates from person's bio; collect all matching terms from infobox
       if table_config_to_parse["find_date_in_infobox"] == True:
-        self.Logger.debug_log( f" parse_table_row found TRUE in find_date_in_infobox \n\n about to process {cells[term_start_column]}" , True )
+        self.Logger.debug_log( f" parse_table_row found TRUE in find_date_in_infobox \n\n about to process {start_cell}" , True )
         cache = getattr(self, "_infobox_cache", None)
         if cache is not None and wiki_link in cache:
           cached = cache[wiki_link]
@@ -1173,9 +1175,9 @@ class Offices:
         self.Logger.debug_log( f" find_term_dates returned {len(terms_list)} term(s) from infobox" , True )
         # When infobox had no dates (placeholder), use table years only for this record (same as "table has years only")
         if len(terms_list) == 1 and terms_list[0][0] == "YYYY-00-00" and terms_list[0][1] == "YYYY-00-00":
-          cell_text_start = cells[term_start_column].get_text(separator=' ').strip()
+          cell_text_start = start_cell.get_text(separator=' ').strip() if start_cell else ""
           same_column = (term_start_column == term_end_column)
-          cell_text_end = cells[term_end_column].get_text(separator=' ').strip() if not same_column and term_end_column < len(cells) else None
+          cell_text_end = end_cell.get_text(separator=' ').strip() if (not same_column and end_cell is not None) else None
           term_start_year, term_end_year = self.DataCleanup.parse_year_range(cell_text_start)
           # When start and end are in different columns, parse end cell for term_end_year instead of reusing start
           if not same_column and cell_text_end is not None:
@@ -1188,8 +1190,8 @@ class Offices:
       # determine what to do if the term_start and term_end appear in the same columns
       if term_start_column == term_end_column:
         self.Logger.debug_log( f"parse_table_row found start and end dates in same column" , True )
-        self.Logger.debug_log( f" cell with date {cells[term_start_column]}" , True )
-        cell = cells[term_start_column]
+        self.Logger.debug_log( f" cell with date {start_cell}" , True )
+        cell = start_cell
         cell_text = cell.get_text(separator=' ').strip() if cell else ""
         self.Logger.debug_log( f" cell with date with separator {cell_text}" , True )
         term_start, term_end = self.DataCleanup.parse_date_info(cell_text , "both" )  # Use separator to handle <br/>

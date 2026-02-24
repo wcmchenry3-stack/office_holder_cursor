@@ -11,6 +11,17 @@ class _Logger:
         return None
 
 
+class _BioInfoboxStub:
+    def __init__(self):
+        self._last_dead_link = False
+        self._last_bio_details = None
+
+    def find_term_dates(self, _wiki_link, _url, _table_config, _office_details, _district):
+        return [("1978-07-14", "1988-11-18")], [
+            "Office row: 'Judge ...' -> date row: 'In office July 14, 1978 – November 18, 1988' -> parsed: 1978-07-14, 1988-11-18"
+        ]
+
+
 def _make_cells():
     html = """
     <tr>
@@ -428,6 +439,57 @@ def test_term_range_fallback_recovers_when_term_column_is_misconfigured():
     assert len(rows) == 1
     assert rows[0]["Term Start"] == "1835-11-03"
     assert rows[0]["Term End"] == "1840-01-07"
+
+
+def test_find_date_in_infobox_still_runs_when_term_column_is_out_of_bounds():
+    logger = _Logger()
+    offices = Offices(logger, biography=_BioInfoboxStub(), data_cleanup=DataCleanup(logger))
+    html = """
+    <table>
+      <tr><th>#</th><th>Name</th><th>Role</th><th>Notes</th></tr>
+      <tr><td>1</td><td><a href="/wiki/Alfred_Laureta">Alfred Laureta</a></td><td>Judge</td><td>n/a</td></tr>
+    </table>
+    """
+    table_config = {
+        "table_no": 1,
+        "table_rows": 3,
+        "link_column": 1,
+        "party_column": -1,
+        "term_start_column": 5,  # intentionally out of bounds
+        "term_end_column": 5,
+        "district_column": -1,
+        "run_dynamic_parse": False,
+        "read_columns_right_to_left": False,
+        "find_date_in_infobox": True,
+        "years_only": False,
+        "parse_rowspan": False,
+        "consolidate_rowspan_terms": False,
+        "rep_link": False,
+        "party_link": False,
+        "party_ignore": True,
+        "district_ignore": True,
+        "district_at_large": False,
+        "ignore_non_links": False,
+        "infobox_role_key": 'judge -"chief judge" -"senior judge"',
+        "alt_links": ["/wiki/District_Court_for_the_Northern_Mariana_Islands"],
+    }
+    office_details = {
+        "office_country": "United States",
+        "office_level": "Federal",
+        "office_branch": "Judicial",
+        "office_department": "District Court",
+        "office_name": "Past",
+        "office_state": "",
+        "office_notes": "",
+    }
+
+    rows = offices.process_table(html, table_config, office_details, "https://en.wikipedia.org/wiki/Test", {"United States": []})
+
+    assert len(rows) == 1
+    assert rows[0]["Wiki Link"].endswith("/wiki/Alfred_Laureta")
+    assert rows[0]["Term Start"] == "1978-07-14"
+    assert rows[0]["Term End"] == "1988-11-18"
+    assert "Office row:" in (rows[0].get("Infobox items") or "")
 
 def test_process_columns_right_to_left_maps_first_column_to_rightmost():
     logger = _Logger()
