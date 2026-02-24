@@ -66,6 +66,8 @@ _export_job_store: dict = {}
 _export_job_lock = threading.Lock()
 _test_script_result_store: dict = {}
 _test_script_result_lock = threading.Lock()
+_ui_test_job_store: dict = {}
+_ui_test_job_lock = threading.Lock()
 
 # Stoppable process types: server-side (e.g. "run") have a cancel endpoint and job store with cancelled flag;
 # client-side (e.g. "preview_all") use a Stop button and a running/stopped flag (optional AbortController).
@@ -2283,38 +2285,24 @@ def _ui_test_env_defaults() -> dict[str, str]:
     return defaults
 
 
-@app.get("/ui-test-scripts", response_class=HTMLResponse)
-async def ui_test_scripts_page(request: Request):
-    return templates.TemplateResponse(
-        "ui_test_scripts.html",
-        {
-            "request": request,
-            "test_path": "src/test_ui_edit_office_playwright.py",
-            "defaults": _ui_test_env_defaults(),
-        },
-    )
+def _set_ui_test_job(job_id: str, **updates) -> None:
+    with _ui_test_job_lock:
+        job = _ui_test_job_store.get(job_id, {})
+        job.update(updates)
+        _ui_test_job_store[job_id] = job
 
 
-@app.post("/api/ui-test-scripts/run")
-async def api_run_ui_test_scripts(request: Request):
+def _execute_ui_test_run(payload: dict, *, job_id: str | None = None) -> dict:
     """Run Playwright UI tests and return per-test results for UI display."""
     test_path = ROOT / "src" / "test_ui_edit_office_playwright.py"
     if not test_path.exists():
-        return JSONResponse(
-            {
-                "ok": False,
-                "error": f"UI test file not found: {test_path}",
-                "tests": [],
-                "summary": {"passed": 0, "failed": 0, "skipped": 0, "errors": 1},
-            },
-            status_code=404,
-        )
+        return {
+            "ok": False,
+            "error": f"UI test file not found: {test_path}",
+            "tests": [],
+            "summary": {"passed": 0, "failed": 0, "skipped": 0, "errors": 1},
+        }
 
-    payload = {}
-    try:
-        payload = await request.json()
-    except Exception:
-        payload = {}
     defaults = _ui_test_env_defaults()
     base_url = str(payload.get("base_url") or defaults.get("base_url") or "http://127.0.0.1:8000").strip()
     page_edit_url = str(payload.get("page_edit_url") or defaults.get("page_edit_url") or "").strip()
@@ -2327,6 +2315,9 @@ async def api_run_ui_test_scripts(request: Request):
         "PLAYWRIGHT_OFFICE_A_ID": str(payload.get("office_a_id") or defaults.get("office_a_id") or "").strip(),
         "PLAYWRIGHT_OFFICE_B_ID": str(payload.get("office_b_id") or defaults.get("office_b_id") or "").strip(),
     }
+
+    if job_id:
+        _set_ui_test_job(job_id, phase="running", progress=30, message="Running pytest...")
 
     with tempfile.NamedTemporaryFile(suffix=".xml", delete=False) as tf:
         junit_path = tf.name
@@ -2345,6 +2336,8 @@ async def api_run_ui_test_scripts(request: Request):
     tests: list[dict] = []
     summary = {"passed": 0, "failed": 0, "skipped": 0, "errors": 0}
     parse_error = None
+    if job_id:
+        _set_ui_test_job(job_id, phase="parsing", progress=75, message="Parsing test results...")
     try:
         xml_root = ET.parse(junit_path).getroot()
         for case in xml_root.findall(".//testcase"):
@@ -2377,7 +2370,7 @@ async def api_run_ui_test_scripts(request: Request):
             pass
 
     ok = proc.returncode == 0 and parse_error is None
-    return {
+    result = {
         "ok": ok,
         "command": " ".join(cmd),
         "return_code": proc.returncode,
@@ -2388,6 +2381,106 @@ async def api_run_ui_test_scripts(request: Request):
         "parse_error": parse_error,
         "applied_env": {k: v for k, v in env_map.items() if v},
     }
+    return result
+
+
+@app.get("/ui-test-scripts", response_class=HTMLResponse)
+async def ui_test_scripts_page(request: Request):
+    return templates.TemplateResponse(
+        "ui_test_scripts.html",
+        {
+            "request": request,
+            "test_path": "src/test_ui_edit_office_playwright.py",
+            "defaults": _ui_test_env_defaults(),
+        },
+    )
+
+
+@app.post("/api/ui-test-scripts/run/start")
+async def api_run_ui_test_scripts_start(request: Request):
+    payload = {}
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    job_id = str(uuid.uuid4())
+    started_at = datetime.utcnow().isoformat()
+    with _ui_test_job_lock:
+        _ui_test_job_store[job_id] = {
+            "job_id": job_id,
+            "status": "running",
+            "phase": "queued",
+            "progress": 5,
+            "message": "Queued",
+            "started_at": started_at,
+            "payload": payload,
+        }
+
+    def _worker():
+        try:
+            result = _execute_ui_test_run(payload, job_id=job_id)
+            _set_ui_test_job(
+                job_id,
+                status="done",
+                phase="done",
+                progress=100,
+                message="Completed",
+                finished_at=datetime.utcnow().isoformat(),
+                result=result,
+            )
+        except Exception as e:
+            _set_ui_test_job(
+                job_id,
+                status="done",
+                phase="done",
+                progress=100,
+                message="Failed",
+                finished_at=datetime.utcnow().isoformat(),
+                result={
+                    "ok": False,
+                    "summary": {"passed": 0, "failed": 0, "skipped": 0, "errors": 1},
+                    "tests": [],
+                    "stdout": "",
+                    "stderr": str(e),
+                    "parse_error": str(e),
+                    "applied_env": {},
+                },
+            )
+
+    threading.Thread(target=_worker, daemon=True).start()
+    return {"ok": True, "job_id": job_id}
+
+
+@app.get("/api/ui-test-scripts/run/status/{job_id}")
+async def api_run_ui_test_scripts_status(job_id: str):
+    with _ui_test_job_lock:
+        job = _ui_test_job_store.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="UI test run not found")
+    response = {
+        "ok": True,
+        "job_id": job_id,
+        "status": job.get("status"),
+        "phase": job.get("phase"),
+        "progress": job.get("progress", 0),
+        "message": job.get("message") or "",
+        "started_at": job.get("started_at"),
+        "finished_at": job.get("finished_at"),
+    }
+    if job.get("status") == "done":
+        response["result"] = job.get("result") or {}
+    return response
+
+
+@app.post("/api/ui-test-scripts/run")
+async def api_run_ui_test_scripts(request: Request):
+    # Backward-compatible synchronous endpoint used by older clients.
+    payload = {}
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    return _execute_ui_test_run(payload)
 
 
 @app.get("/api/test-scripts/office-templates/pages")

@@ -19,6 +19,12 @@
 </div>
 
 <p id="runState">Starting test run…</p>
+<div id="progressWrap" style="margin-bottom:0.5rem;">
+  <div id="progressBarOuter" style="width:100%; height:12px; background:#2a2a2a; border-radius:6px; overflow:hidden;">
+    <div id="progressBarInner" style="width:0%; height:100%; background:#4dabf7;"></div>
+  </div>
+  <p id="progressMeta" class="form-note" style="margin:0.35rem 0 0 0;">Queued…</p>
+</div>
 <div id="summary"></div>
 <table id="resultsTable" style="width:100%; border-collapse:collapse; margin-top:1rem;">
   <thead>
@@ -91,24 +97,60 @@
     runState.textContent = data.ok ? 'UI tests completed.' : 'UI tests completed with failures/errors.';
   }
 
+  var pollTimer = null;
+  function setProgress(progress, phaseText) {
+    var inner = document.getElementById('progressBarInner');
+    var meta = document.getElementById('progressMeta');
+    if (inner) inner.style.width = Math.max(0, Math.min(100, progress || 0)) + '%';
+    if (meta) meta.textContent = (phaseText || 'Running') + ' (' + (progress || 0) + '%)';
+  }
+
   function runOnce() {
-    runState.textContent = 'Running UI tests…';
+    runState.textContent = 'Starting UI test job…';
+    summaryEl.innerHTML = '';
+    body.innerHTML = '';
+    rawOutput.textContent = '';
+    setProgress(5, 'Queued');
     rerunBtn.disabled = true;
-    fetch('/api/ui-test-scripts/run', {
+
+    var startedAt = Date.now();
+    fetch('/api/ui-test-scripts/run/start', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(buildPayload())
     })
       .then(function(r) { return r.json(); })
-      .then(function(data) {
-        renderResults(data);
-        if (window.playJobCompleteSound) window.playJobCompleteSound();
+      .then(function(startData) {
+        if (!startData.job_id) throw new Error('No job id returned');
+        var jobId = startData.job_id;
+        runState.textContent = 'Running UI tests…';
+
+        function poll() {
+          fetch('/api/ui-test-scripts/run/status/' + encodeURIComponent(jobId))
+            .then(function(r) { return r.json(); })
+            .then(function(st) {
+              var elapsed = Math.round((Date.now() - startedAt) / 1000);
+              setProgress(st.progress || 0, (st.phase || st.message || 'Running') + ' • ' + elapsed + 's');
+              if (st.status === 'done') {
+                setProgress(100, 'Done • ' + elapsed + 's');
+                renderResults(st.result || {});
+                rerunBtn.disabled = false;
+                if (window.playJobCompleteSound) window.playJobCompleteSound();
+                return;
+              }
+              pollTimer = setTimeout(poll, 600);
+            })
+            .catch(function(err) {
+              runState.textContent = 'Failed while polling UI test status.';
+              summaryEl.innerHTML = '<div class="alert alert-error">' + esc(err && err.message ? err.message : 'Status request failed') + '</div>';
+              rerunBtn.disabled = false;
+            });
+        }
+        poll();
       })
       .catch(function(err) {
-        runState.textContent = 'Failed to run UI tests.';
+        runState.textContent = 'Failed to start UI tests.';
         summaryEl.innerHTML = '<div class="alert alert-error">' + esc(err && err.message ? err.message : 'Request failed') + '</div>';
-      })
-      .finally(function() {
         rerunBtn.disabled = false;
       });
   }
