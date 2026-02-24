@@ -388,6 +388,109 @@ def test_find_link_fallback_works_with_rtl_by_probing_right_side_columns():
     assert rows[0]["Wiki Link"].endswith("/wiki/Right_Holder")
 
 
+def test_find_link_fallback_rtl_clamps_when_term_start_column_is_out_of_bounds():
+    logger = _Logger()
+    offices = Offices(logger, biography=None, data_cleanup=DataCleanup(logger))
+    html = """
+    <table>
+      <tr><th>A</th><th>B</th><th>C</th><th>D</th></tr>
+      <tr>
+        <td>Jan 1, 2001 – Jan 1, 2002</td>
+        <td>Democratic</td>
+        <td><sup><a href="#cite_note-1">[1]</a></sup></td>
+        <td><a href="/wiki/Right_Holder">Right Holder</a></td>
+      </tr>
+    </table>
+    """
+    table_config = {
+        "table_no": 1,
+        "table_rows": 1,
+        "link_column": 2,
+        "party_column": 1,
+        "term_start_column": 99,  # out of bounds should still allow RTL fallback probe
+        "term_end_column": 99,
+        "district_column": -1,
+        "run_dynamic_parse": False,
+        "read_columns_right_to_left": True,
+        "find_date_in_infobox": False,
+        "years_only": False,
+        "parse_rowspan": False,
+        "consolidate_rowspan_terms": False,
+        "rep_link": False,
+        "party_link": False,
+        "party_ignore": False,
+        "district_ignore": True,
+        "district_at_large": False,
+        "ignore_non_links": False,
+    }
+    office_details = {
+        "office_country": "United States",
+        "office_level": "Federal",
+        "office_branch": "Legislative",
+        "office_department": "Senate",
+        "office_name": "RTL Test",
+        "office_state": "",
+        "office_notes": "",
+    }
+
+    rows = offices.process_table(html, table_config, office_details, "https://en.wikipedia.org/wiki/Test", {"United States": []})
+
+    assert len(rows) == 1
+    assert rows[0]["Wiki Link"].endswith("/wiki/Right_Holder")
+
+
+def test_find_link_ignores_alt_link_targets_and_uses_person_link():
+    logger = _Logger()
+    offices = Offices(logger, biography=None, data_cleanup=DataCleanup(logger))
+    html = """
+    <table>
+      <tr><th>#</th><th>Role</th><th>Name</th><th>Term</th></tr>
+      <tr>
+        <td>1</td>
+        <td><a href="/wiki/District_Court_for_the_Northern_Mariana_Islands">District Court</a></td>
+        <td><a href="/wiki/Alfred_Laureta">Alfred Laureta</a></td>
+        <td>Jan 1, 1978 – Jan 1, 1988</td>
+      </tr>
+    </table>
+    """
+    table_config = {
+        "table_no": 1,
+        "table_rows": 1,
+        "link_column": 1,  # points at office/alt-link target
+        "party_column": -1,
+        "term_start_column": 3,
+        "term_end_column": 3,
+        "district_column": -1,
+        "run_dynamic_parse": False,
+        "read_columns_right_to_left": False,
+        "find_date_in_infobox": False,
+        "years_only": False,
+        "parse_rowspan": False,
+        "consolidate_rowspan_terms": False,
+        "rep_link": False,
+        "party_link": False,
+        "party_ignore": True,
+        "district_ignore": True,
+        "district_at_large": False,
+        "ignore_non_links": False,
+        "alt_links": ["/wiki/District_Court_for_the_Northern_Mariana_Islands"],
+    }
+    office_details = {
+        "office_country": "United States",
+        "office_level": "Federal",
+        "office_branch": "Judicial",
+        "office_department": "District Court",
+        "office_name": "Past",
+        "office_state": "",
+        "office_notes": "",
+    }
+
+    rows = offices.process_table(html, table_config, office_details, "https://en.wikipedia.org/wiki/Test", {"United States": []})
+
+    assert len(rows) == 1
+    assert rows[0]["Wiki Link"].endswith("/wiki/Alfred_Laureta")
+
+
 def test_term_range_fallback_recovers_when_term_column_is_misconfigured():
     logger = _Logger()
     offices = Offices(logger, biography=None, data_cleanup=DataCleanup(logger))

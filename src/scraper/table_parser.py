@@ -1010,6 +1010,14 @@ class Offices:
 
     link_column = table_config_to_parse["link_column"]
     country = office_details["office_country"]
+    alt_links = set((table_config_to_parse.get("alt_links") or []))
+
+    def _path_from_full_url(full_url: str) -> str:
+      try:
+        parsed = urlparse(full_url or "")
+        return parsed.path or ""
+      except Exception:
+        return ""
 
     def _candidate_from_link_tag(link_tag):
       href = (link_tag.get('href') or '') if link_tag else ''
@@ -1026,9 +1034,12 @@ class Offices:
       else:
           path = "/wiki/" + raw_href
       full_url = normalize_wiki_url(f"https://en.wikipedia.org{path}") or f"https://en.wikipedia.org{path}"
+      full_path = _path_from_full_url(full_url)
       has_fragment = "#" in full_url
       should_ignore = any(re.search(pattern, full_url) for pattern in self.patterns_to_ignore()) or has_fragment
       party_links = {p.get('link') for p in party_list.get(country, []) if p.get('link')}
+      if full_path and full_path in alt_links:
+        return None
       if should_ignore or full_url in party_links:
         return None
       return full_url
@@ -1096,7 +1107,7 @@ class Offices:
       term_start_col = -1
     rtl = bool(table_config_to_parse.get("read_columns_right_to_left"))
     if rtl:
-      start_ci = max(0, term_start_col) if term_start_col >= 0 else 0
+      start_ci = min(max(0, term_start_col), max(0, len(cells) - 1)) if term_start_col >= 0 else 0
       probe_indices = range(start_ci, len(cells))
     else:
       max_probe_col = term_start_col if term_start_col >= 0 else len(cells)
