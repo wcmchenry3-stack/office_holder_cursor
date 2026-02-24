@@ -1010,6 +1010,28 @@ class Offices:
     link_column = table_config_to_parse["link_column"]
     country = office_details["office_country"]
 
+    def _candidate_from_link_tag(link_tag):
+      href = (link_tag.get('href') or '') if link_tag else ''
+      if '/File:' in href:
+        return None
+      raw_href = href.strip()
+      # Relative hrefs like "./Title" produce invalid URLs; normalize to /wiki/Title
+      if raw_href.startswith("./"):
+          path = "/wiki/" + raw_href[2:].lstrip("/")
+      elif raw_href.startswith("/wiki/"):
+          path = raw_href
+      elif raw_href.startswith("/"):
+          path = "/wiki" + raw_href
+      else:
+          path = "/wiki/" + raw_href
+      full_url = normalize_wiki_url(f"https://en.wikipedia.org{path}") or f"https://en.wikipedia.org{path}"
+      has_fragment = "#" in full_url
+      should_ignore = any(re.search(pattern, full_url) for pattern in self.patterns_to_ignore()) or has_fragment
+      party_links = {p.get('link') for p in party_list.get(country, []) if p.get('link')}
+      if should_ignore or full_url in party_links:
+        return None
+      return full_url
+
     self.Logger.debug_log(f"country in find_link: {country}", True)
 
     # #region agent log
@@ -1032,41 +1054,18 @@ class Offices:
         try:
           for link_tag in link_tags:
               self.Logger.debug_log(f"looking at {link_tag} in {link_tags}", True)
-              if '/File:' not in link_tag['href']:
-                  raw_href = (link_tag['href'] or "").strip()
-                  # Relative hrefs like "./Title" produce invalid URLs; normalize to /wiki/Title
-                  if raw_href.startswith("./"):
-                      path = "/wiki/" + raw_href[2:].lstrip("/")
-                  elif raw_href.startswith("/wiki/"):
-                      path = raw_href
-                  elif raw_href.startswith("/"):
-                      path = "/wiki" + raw_href
-                  else:
-                      path = "/wiki/" + raw_href
-                  full_url = normalize_wiki_url(f"https://en.wikipedia.org{path}") or f"https://en.wikipedia.org{path}"
-                  self.Logger.debug_log(f"found full url {full_url}", True)
-                  has_fragment = "#" in full_url
-                  should_ignore = any(re.search(pattern, full_url) for pattern in self.patterns_to_ignore()) or has_fragment
-                  party_links = {p.get('link') for p in party_list.get(country, []) if p.get('link')}
-                  if not should_ignore and full_url not in party_links:
-                      self.Logger.debug_log(f"URL passed all checks: {full_url}", True)
-                      # #region agent log
-                      try:
-                          _f = open(_log_path, "a", encoding="utf-8")
-                          _f.write(json.dumps({"location": "table_parser:find_link", "message": "returned", "data": {"find_link_returned": True, "url": full_url}, "timestamp": __import__("time").time() * 1000, "hypothesisId": "H1"}) + "\n")
-                          _f.close()
-                      except Exception:
-                          pass
-                      # #endregion
-                      return full_url
+              full_url = _candidate_from_link_tag(link_tag)
+              if full_url:
+                  self.Logger.debug_log(f"URL passed all checks: {full_url}", True)
                   # #region agent log
                   try:
                       _f = open(_log_path, "a", encoding="utf-8")
-                      _f.write(json.dumps({"location": "table_parser:find_link", "message": "skip", "data": {"reason": "should_ignore" if should_ignore else "in_party_links", "url": full_url}, "timestamp": __import__("time").time() * 1000, "hypothesisId": "H1"}) + "\n")
+                      _f.write(json.dumps({"location": "table_parser:find_link", "message": "returned", "data": {"find_link_returned": True, "url": full_url}, "timestamp": __import__("time").time() * 1000, "hypothesisId": "H1"}) + "\n")
                       _f.close()
                   except Exception:
                       pass
                   # #endregion
+                  return full_url
 
         except ( ValueError , TypeError , IndexError , AttributeError ) as e:
           self.Logger.log( f"found error when finding url for {full_url} in {cells}" , True )
@@ -1086,6 +1085,26 @@ class Offices:
     except Exception:
         pass
     # #endregion
+
+    # Fallback: wrong link column often points at footnote-only cells.
+    # Probe only columns before term_start_column to avoid Lt. Governor links on the right.
+    term_start_col = table_config_to_parse.get("term_start_column")
+    try:
+      term_start_col = int(term_start_col) if term_start_col is not None else -1
+    except (TypeError, ValueError):
+      term_start_col = -1
+    max_probe_col = term_start_col if term_start_col >= 0 else len(cells)
+    max_probe_col = min(max_probe_col, len(cells))
+    for ci in range(max_probe_col):
+      if ci == link_column:
+        continue
+      for link_tag in cells[ci].find_all('a', href=True):
+        full_url = _candidate_from_link_tag(link_tag)
+        if full_url:
+          self.Logger.debug_log(f"find_link fallback matched col {ci}: {full_url}", True)
+          return full_url
+
+    return None
 
 
   def extract_term_dates( self , wiki_link , cells , office_details , table_config_to_parse , parse_row_no , url , district ):

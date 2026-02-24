@@ -224,6 +224,60 @@ def test_parse_rowspan_does_not_carry_previous_holder_on_non_short_rows_without_
     assert rows[0]["Term Start"] == "1900-01-01"
     assert rows[0]["Term End"] == "1904-01-01"
 
+
+def test_find_link_fallback_recovers_holder_when_configured_link_column_is_footnote_cell():
+    logger = _Logger()
+    offices = Offices(logger, biography=None, data_cleanup=DataCleanup(logger))
+    html = """
+    <table>
+      <tr><th>#</th><th>Governor</th><th>Term in office</th><th>Party</th><th>Election</th></tr>
+      <tr>
+        <td>1</td>
+        <td><a href="/wiki/Stevens_T._Mason">Stevens T. Mason</a></td>
+        <td>November 3, 1835 – January 7, 1840</td>
+        <td>Democrat</td>
+        <td><sup><a href="#cite_note-43">[43]</a></sup></td>
+      </tr>
+    </table>
+    """
+    table_config = {
+        "table_no": 1,
+        "table_rows": 4,
+        "link_column": 4,  # misconfigured to Election/footnote column
+        "party_column": 3,
+        "term_start_column": 2,
+        "term_end_column": 2,
+        "district_column": -1,
+        "run_dynamic_parse": False,
+        "read_columns_right_to_left": False,
+        "find_date_in_infobox": False,
+        "years_only": False,
+        "parse_rowspan": False,
+        "consolidate_rowspan_terms": False,
+        "rep_link": False,
+        "party_link": False,
+        "party_ignore": False,
+        "district_ignore": True,
+        "district_at_large": False,
+        "ignore_non_links": False,
+    }
+    office_details = {
+        "office_country": "United States",
+        "office_level": "State",
+        "office_branch": "Executive",
+        "office_department": "Governor",
+        "office_name": "Governor",
+        "office_state": "Michigan",
+        "office_notes": "",
+    }
+
+    rows = offices.process_table(html, table_config, office_details, "https://en.wikipedia.org/wiki/Test", {"United States": []})
+
+    assert len(rows) == 1
+    assert rows[0]["Wiki Link"].endswith("/wiki/Stevens_T._Mason")
+    assert rows[0]["Term Start"] == "1835-11-03"
+    assert rows[0]["Term End"] == "1840-01-07"
+
 def test_process_columns_right_to_left_maps_first_column_to_rightmost():
     logger = _Logger()
     offices = Offices(logger, biography=None, data_cleanup=DataCleanup(logger))
