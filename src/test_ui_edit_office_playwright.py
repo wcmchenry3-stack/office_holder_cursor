@@ -77,6 +77,9 @@ def test_no_district_mode_disables_district_column(page):
     district_mode = form.locator('select[name="district_mode"], select[name="tc_district_mode"]').first
     district_column = form.locator('input[name="district_column"], input[name="tc_district_column"]').first
 
+    # Some saved configs start in no_district/at_large mode, which already disables the field.
+    district_mode.select_option("column")
+    expect(district_column).to_be_enabled()
     district_column.fill("9")
     district_mode.select_option("no_district")
 
@@ -95,6 +98,10 @@ def test_ignore_party_disables_party_column(page):
     party_ignore = form.locator('input[name="party_ignore"], input[name="tc_party_ignore"]').first
     party_column = form.locator('input[name="party_column"], input[name="tc_party_column"]').first
 
+    # Some saved configs already have ignore-party enabled; reset first so we can verify toggle behavior.
+    if party_ignore.is_checked():
+        party_ignore.uncheck()
+    expect(party_column).to_be_enabled()
     party_column.fill("7")
     party_ignore.check()
 
