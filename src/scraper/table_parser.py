@@ -814,6 +814,11 @@ class Offices:
       '''
 
       # figure out party (skip and keep null when party_ignore)
+      # Only treat as rowspan continuation when row is truly short; otherwise avoid carrying stale values across full rows.
+      if found_rowspan and not is_short_continuation:
+        self.Logger.debug_log("row has no link but is not a short continuation; skipping row to avoid stale carry-over", True)
+        return None
+
       if table_config_to_parse.get("party_ignore"):
         party = None
         self.Logger.debug_log( "party_ignore: not extracting party" , True )
@@ -863,32 +868,40 @@ class Offices:
         self.Logger.debug_log("running parse rowspan on term", True)
         term_tuples = []
         best_single = None  # fallback when no range found
-        for col_no in range_total_columns:  # Assuming total_columns is correctly calculated elsewhere
 
-              self.Logger.debug_log(f"running parse iteration {col_no} with term", True)
-              raw = self.extract_term_dates( wiki_link , cells , office_details , table_config_to_parse , col_no , url , district )
-              if isinstance(raw, list):
-                  term_tuples = raw
-                  break
-              term_start, term_end, term_start_year, term_end_year = raw
+        # For true short continuation rows we may need to probe each cell because configured indices no longer align.
+        # For non-short rows, avoid scanning every column (can accidentally parse election-year columns as terms).
+        if is_short_continuation:
+          for col_no in range_total_columns:
 
-              ignore_terms = ( None , "Invalid date" )
-              if table_config_to_parse.get("years_only"):
-                  if term_start_year is not None or term_end_year is not None:
-                      self.Logger.debug_log(f"found years-only term start year {term_start_year} end year {term_end_year}", True)
-                      term_tuples = [(term_start, term_end, term_start_year, term_end_year)]
-                      break
-              elif term_start not in ignore_terms and term_end not in ignore_terms:
-                  self.Logger.debug_log(f"found results for term start {term_start} and term end {term_end}", True)
-                  # Prefer a range (start != end); otherwise keep as fallback and try next column
-                  if term_start != term_end:
-                      term_tuples = [(term_start, term_end, term_start_year, term_end_year)]
-                      break
-                  if best_single is None:
-                      best_single = (term_start, term_end, term_start_year, term_end_year)
+                self.Logger.debug_log(f"running parse iteration {col_no} with term", True)
+                raw = self.extract_term_dates( wiki_link , cells , office_details , table_config_to_parse , col_no , url , district )
+                if isinstance(raw, list):
+                    term_tuples = raw
+                    break
+                term_start, term_end, term_start_year, term_end_year = raw
+
+                ignore_terms = ( None , "Invalid date" )
+                if table_config_to_parse.get("years_only"):
+                    if term_start_year is not None or term_end_year is not None:
+                        self.Logger.debug_log(f"found years-only term start year {term_start_year} end year {term_end_year}", True)
+                        term_tuples = [(term_start, term_end, term_start_year, term_end_year)]
+                        break
+                elif term_start not in ignore_terms and term_end not in ignore_terms:
+                    self.Logger.debug_log(f"found results for term start {term_start} and term end {term_end}", True)
+                    # Prefer a range (start != end); otherwise keep as fallback and try next column
+                    if term_start != term_end:
+                        term_tuples = [(term_start, term_end, term_start_year, term_end_year)]
+                        break
+                    if best_single is None:
+                        best_single = (term_start, term_end, term_start_year, term_end_year)
+        else:
+          raw = self.extract_term_dates(wiki_link, cells, office_details, table_config_to_parse, None, url, district)
+          term_tuples = raw if isinstance(raw, list) else [raw]
+
         # For short rowspan rows: try start from one cell, end from next (e.g. 3-cell row has start col0, end col1)
         n_cells = len(cells)
-        if (not term_tuples or (len(term_tuples) == 1 and term_tuples[0][0] == term_tuples[0][1])) and n_cells >= 2:
+        if is_short_continuation and (not term_tuples or (len(term_tuples) == 1 and term_tuples[0][0] == term_tuples[0][1])) and n_cells >= 2:
           for (sc, ec) in [(0, 1), (1, 2)]:
             if ec >= n_cells:
               continue

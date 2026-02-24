@@ -175,6 +175,55 @@ def test_process_table_accepts_rows_when_cell_count_equals_table_rows_threshold(
     assert rows[0]["Term End"] == "1904-01-01"
 
 
+
+def test_parse_rowspan_does_not_carry_previous_holder_on_non_short_rows_without_link():
+    logger = _Logger()
+    offices = Offices(logger, biography=None, data_cleanup=DataCleanup(logger))
+    html = """
+    <table>
+      <tr><th>#</th><th>Governor</th><th>Term in office</th><th>Party</th><th>Election</th></tr>
+      <tr><td>1</td><td><a href="/wiki/First_Governor">First Governor</a></td><td>January 1, 1900 – January 1, 1904</td><td>Republican</td><td>1900</td></tr>
+      <tr><td>2</td><td>Unknown</td><td>January 1, 1904 – January 1, 1908</td><td>Democratic</td><td>1904</td></tr>
+    </table>
+    """
+    table_config = {
+        "table_no": 1,
+        "table_rows": 3,
+        "link_column": 1,
+        "party_column": 3,
+        "term_start_column": 2,
+        "term_end_column": 2,
+        "district_column": -1,
+        "run_dynamic_parse": False,
+        "read_columns_right_to_left": False,
+        "find_date_in_infobox": False,
+        "years_only": False,
+        "parse_rowspan": True,
+        "consolidate_rowspan_terms": False,
+        "rep_link": False,
+        "party_link": False,
+        "party_ignore": False,
+        "district_ignore": True,
+        "district_at_large": False,
+        "ignore_non_links": False,
+    }
+    office_details = {
+        "office_country": "United States",
+        "office_level": "State",
+        "office_branch": "Executive",
+        "office_department": "Governor",
+        "office_name": "Governor",
+        "office_state": "Michigan",
+        "office_notes": "",
+    }
+
+    rows = offices.process_table(html, table_config, office_details, "https://en.wikipedia.org/wiki/Test", {"United States": []})
+
+    assert len(rows) == 1
+    assert rows[0]["Wiki Link"].endswith("/wiki/First_Governor")
+    assert rows[0]["Term Start"] == "1900-01-01"
+    assert rows[0]["Term End"] == "1904-01-01"
+
 def test_process_columns_right_to_left_maps_first_column_to_rightmost():
     logger = _Logger()
     offices = Offices(logger, biography=None, data_cleanup=DataCleanup(logger))
