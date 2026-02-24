@@ -127,6 +127,54 @@ def test_process_table_ignores_rows_without_valid_wiki_links_when_enabled():
     assert rows[0]["Wiki Link"].endswith("/wiki/Linked_Senator")
 
 
+def test_process_table_accepts_rows_when_cell_count_equals_table_rows_threshold():
+    logger = _Logger()
+    offices = Offices(logger, biography=None, data_cleanup=DataCleanup(logger))
+    html = """
+    <table>
+      <tr><th>#</th><th>Governor</th><th>Term in office</th></tr>
+      <tr><td>1</td><td><a href="/wiki/Example_Governor">Example Governor</a></td><td>January 1, 1900 – January 1, 1904</td></tr>
+    </table>
+    """
+    table_config = {
+        "table_no": 1,
+        "table_rows": 3,
+        "link_column": 1,
+        "party_column": -1,
+        "term_start_column": 2,
+        "term_end_column": 2,
+        "district_column": -1,
+        "run_dynamic_parse": False,
+        "read_columns_right_to_left": False,
+        "find_date_in_infobox": False,
+        "years_only": False,
+        "parse_rowspan": False,
+        "consolidate_rowspan_terms": False,
+        "rep_link": False,
+        "party_link": False,
+        "party_ignore": True,
+        "district_ignore": True,
+        "district_at_large": False,
+        "ignore_non_links": False,
+    }
+    office_details = {
+        "office_country": "United States",
+        "office_level": "State",
+        "office_branch": "Executive",
+        "office_department": "Governor",
+        "office_name": "Governor",
+        "office_state": "Michigan",
+        "office_notes": "",
+    }
+
+    rows = offices.process_table(html, table_config, office_details, "https://en.wikipedia.org/wiki/Test", {"United States": []})
+
+    assert len(rows) == 1
+    assert rows[0]["Wiki Link"].endswith("/wiki/Example_Governor")
+    assert rows[0]["Term Start"] == "1900-01-01"
+    assert rows[0]["Term End"] == "1904-01-01"
+
+
 def test_process_columns_right_to_left_maps_first_column_to_rightmost():
     logger = _Logger()
     offices = Offices(logger, biography=None, data_cleanup=DataCleanup(logger))

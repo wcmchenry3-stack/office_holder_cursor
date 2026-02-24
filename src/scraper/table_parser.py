@@ -767,7 +767,7 @@ class Offices:
         self.Logger.debug_log( "not running run_dynamic_parse" , True )
 
       # Ensure there are enough cells to avoid IndexError - do not use for rowspan, as it often will cause an error
-      if len(cells) <= table_config_to_parse["table_rows"] and table_config_to_parse["parse_rowspan"] == False :  # Adjust this number based on the expected minimum number of cells
+      if len(cells) < table_config_to_parse["table_rows"] and table_config_to_parse["parse_rowspan"] == False :  # Adjust this number based on the expected minimum number of cells
           self.Logger.log( 'issue with table rows' , True )
           return None  # or some default data structure
       # With rowspan, skip only rows that have too few cells to parse any term (need at least 2 to try; continuation rows often have 3)
