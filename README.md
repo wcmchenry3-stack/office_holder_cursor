@@ -91,6 +91,7 @@ flowchart LR
 | `POST /api/table-html` | Fetch URL, return raw HTML of table at `table_no`. |
 | `POST /api/office-debug-export` | Write debug file (config + extracted table + raw HTML) to `debug/`. |
 | `POST /api/preview-offices` | Body: `{ "office_ids": [...] }`. Runs top-10 preview for each using saved config; used by "Preview all" on offices list. |
+| `GET /ui-test-scripts`, `POST /api/ui-test-scripts/run` | Open UI test runner in a new tab/window, auto-run Playwright UI tests, and show per-test results + raw output. |
 | `GET /parties`, `/parties/new`, etc. | Parties CRUD and bulk import. |
 | `GET /run`, `POST /run` | Run page: start job (full/delta/live_person/single/category-select), poll progress. |
 | `GET /api/run/matching-individuals` | For run-page category bio mode: returns matching record + individual counts for selected filters. |

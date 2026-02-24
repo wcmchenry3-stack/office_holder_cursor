@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Run UI Test Scripts – Office Holder{% endblock %}
+{% block content %}
+<h1>Run UI Test Scripts</h1>
+<p>This page automatically runs Playwright UI tests and shows each test result.</p>
+<p><strong>Test file:</strong> <code>{{ test_path }}</code></p>
+<p id="runState">Starting test run…</p>
+<div id="summary"></div>
+<table id="resultsTable" style="width:100%; border-collapse:collapse; margin-top:1rem;">
+  <thead>
+    <tr>
+      <th style="text-align:left; border-bottom:1px solid #555; padding:0.4rem;">Test</th>
+      <th style="text-align:left; border-bottom:1px solid #555; padding:0.4rem;">Status</th>
+      <th style="text-align:left; border-bottom:1px solid #555; padding:0.4rem;">Details</th>
+    </tr>
+  </thead>
+  <tbody id="resultsBody"></tbody>
+</table>
+<details style="margin-top:1rem;">
+  <summary>Raw command output</summary>
+  <pre id="rawOutput" style="white-space:pre-wrap;"></pre>
+</details>
+
+<script>
+(function() {
+  var runState = document.getElementById('runState');
+  var summaryEl = document.getElementById('summary');
+  var body = document.getElementById('resultsBody');
+  var rawOutput = document.getElementById('rawOutput');
+
+  function esc(s) {
+    if (s == null) return '';
+    return String(s).replace(/[&<>"']/g, function(c) {
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+
+  fetch('/api/ui-test-scripts/run', { method: 'POST' })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      var sum = data.summary || {};
+      summaryEl.innerHTML = '<p><strong>Summary:</strong> ' +
+        'passed=' + (sum.passed || 0) + ', failed=' + (sum.failed || 0) +
+        ', skipped=' + (sum.skipped || 0) + ', errors=' + (sum.errors || 0) + '</p>';
+
+      var rows = data.tests || [];
+      if (!rows.length) {
+        body.innerHTML = '<tr><td colspan="3" style="padding:0.4rem;">No individual tests reported.</td></tr>';
+      } else {
+        body.innerHTML = rows.map(function(t) {
+          var color = t.status === 'passed' ? '#69db7c' : (t.status === 'skipped' ? '#ffd43b' : '#ff8787');
+          return '<tr>' +
+            '<td style="padding:0.4rem; border-bottom:1px solid #333;"><code>' + esc(t.nodeid || t.name) + '</code></td>' +
+            '<td style="padding:0.4rem; border-bottom:1px solid #333; color:' + color + ';">' + esc(t.status) + '</td>' +
+            '<td style="padding:0.4rem; border-bottom:1px solid #333;">' + esc(t.detail || '') + '</td>' +
+            '</tr>';
+        }).join('');
+      }
+
+      rawOutput.textContent = 'Command: ' + (data.command || '') + '\n' +
+        'Return code: ' + (data.return_code == null ? '' : data.return_code) + '\n\n' +
+        (data.stdout || '') + '\n' + (data.stderr || '') +
+        (data.parse_error ? ('\nXML parse error: ' + data.parse_error) : '');
+
+      runState.textContent = data.ok ? 'UI tests completed.' : 'UI tests completed with failures/errors.';
+      if (window.playJobCompleteSound) window.playJobCompleteSound();
+    })
+    .catch(function(err) {
+      runState.textContent = 'Failed to run UI tests.';
+      summaryEl.innerHTML = '<div class="alert alert-error">' + esc(err && err.message ? err.message : 'Request failed') + '</div>';
+    });
+})();
+</script>
+{% endblock %}

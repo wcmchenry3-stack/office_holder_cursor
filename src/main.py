@@ -9,6 +9,8 @@ import json
 import sqlite3
 import re
 import tempfile
+import subprocess
+import xml.etree.ElementTree as ET
 from datetime import datetime
 from pathlib import Path
 import sys
@@ -2221,6 +2223,90 @@ async def test_scripts_page(request: Request):
             "infobox_role_key_filters": db_infobox_role_key_filter.list_infobox_role_key_filters(),
         },
     )
+
+
+@app.get("/ui-test-scripts", response_class=HTMLResponse)
+async def ui_test_scripts_page(request: Request):
+    return templates.TemplateResponse(
+        "ui_test_scripts.html",
+        {"request": request, "test_path": "src/test_ui_edit_office_playwright.py"},
+    )
+
+
+@app.post("/api/ui-test-scripts/run")
+async def api_run_ui_test_scripts():
+    """Run Playwright UI tests and return per-test results for UI display."""
+    test_path = ROOT / "src" / "test_ui_edit_office_playwright.py"
+    if not test_path.exists():
+        return JSONResponse(
+            {
+                "ok": False,
+                "error": f"UI test file not found: {test_path}",
+                "tests": [],
+                "summary": {"passed": 0, "failed": 0, "skipped": 0, "errors": 1},
+            },
+            status_code=404,
+        )
+
+    with tempfile.NamedTemporaryFile(suffix=".xml", delete=False) as tf:
+        junit_path = tf.name
+
+    cmd = [
+        sys.executable,
+        "-m",
+        "pytest",
+        "-q",
+        str(test_path),
+        "--junitxml",
+        junit_path,
+    ]
+    proc = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True)
+
+    tests: list[dict] = []
+    summary = {"passed": 0, "failed": 0, "skipped": 0, "errors": 0}
+    parse_error = None
+    try:
+        xml_root = ET.parse(junit_path).getroot()
+        for case in xml_root.findall(".//testcase"):
+            name = case.attrib.get("name") or "(unnamed)"
+            classname = case.attrib.get("classname") or ""
+            nodeid = f"{classname}::{name}" if classname else name
+            status = "passed"
+            detail = ""
+            if case.find("failure") is not None:
+                status = "failed"
+                detail = (case.find("failure").attrib.get("message") or case.find("failure").text or "").strip()
+            elif case.find("error") is not None:
+                status = "error"
+                detail = (case.find("error").attrib.get("message") or case.find("error").text or "").strip()
+            elif case.find("skipped") is not None:
+                status = "skipped"
+                detail = (case.find("skipped").attrib.get("message") or case.find("skipped").text or "").strip()
+            if status in summary:
+                summary[status] += 1
+            else:
+                summary["errors"] += 1
+            tests.append({"name": name, "nodeid": nodeid, "status": status, "detail": detail})
+    except Exception as e:
+        parse_error = str(e)
+        summary["errors"] += 1
+    finally:
+        try:
+            Path(junit_path).unlink(missing_ok=True)
+        except Exception:
+            pass
+
+    ok = proc.returncode == 0 and parse_error is None
+    return {
+        "ok": ok,
+        "command": " ".join(cmd),
+        "return_code": proc.returncode,
+        "summary": summary,
+        "tests": tests,
+        "stdout": proc.stdout,
+        "stderr": proc.stderr,
+        "parse_error": parse_error,
+    }
 
 
 @app.get("/api/test-scripts/office-templates/pages")
