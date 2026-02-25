@@ -2200,7 +2200,8 @@ def _snapshot_member_pages_for_test(
     source_url: str,
     config_json: dict,
     html_content: str,
-    file_prefix: str,
+    fixture_stem: str,
+    canonical_fixture_mode: bool,
 ) -> tuple[dict, list[str], list[str], list[dict]]:
     """Return (config_with_fixtures, fetched_urls, saved_files, actual_rows) for infobox-enabled table tests."""
     cfg = dict(config_json or {})
@@ -2242,8 +2243,12 @@ def _snapshot_member_pages_for_test(
         if resp.status_code != 200:
             continue
         safe_member = re.sub(r"[^a-zA-Z0-9._-]+", "_", (member_url.split("/")[-1] or f"member_{idx+1}"))
-        rel_name = f"{file_prefix}_{safe_member}.html"
+        if canonical_fixture_mode:
+            rel_name = f"fixtures/{fixture_stem}__member_{safe_member}.html"
+        else:
+            rel_name = f"{fixture_stem}_{safe_member}.html"
         dest = db_test_scripts.TEST_SCRIPTS_DIR / rel_name
+        dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text(resp.text, encoding="utf-8")
         fixtures[member_url] = rel_name
         saved_files.append(rel_name)
@@ -2263,6 +2268,18 @@ def _table_config_properties_array(config_json: dict | None) -> list[dict]:
     for key in sorted(config_json.keys()):
         out.append({"property": key, "value": config_json.get(key)})
     return out
+
+
+def _slugify_fixture_name(value: str, *, fallback: str = "fixture") -> str:
+    slug = re.sub(r"[^a-z0-9]+", "_", (value or "").strip().lower()).strip("_")
+    return slug or fallback
+
+
+def _build_primary_fixture_rel_path(*, test_name: str, source_url: str, canonical_fixture_mode: bool) -> str:
+    if canonical_fixture_mode:
+        return f"fixtures/{_slugify_fixture_name(test_name, fallback='test_script')}.html"
+    safe_page = re.sub(r"[^a-zA-Z0-9._-]+", "_", (source_url.split("/")[-1] or "wiki_page"))
+    return f"{uuid.uuid4().hex}_{safe_page}.html"
 
 def _store_test_script_result(payload: dict) -> str:
     rid = uuid.uuid4().hex
@@ -2667,6 +2684,7 @@ async def api_create_test_script(request: Request):
     expected_json = body.get("expected_json")
     overwrite_html = bool(body.get("overwrite_html", False))
     delete_existing_files = bool(body.get("delete_existing_files", False))
+    canonical_fixture_mode = body.get("canonical_fixture_mode") is not False
 
     def _expected_missing(v):
         return v is None or (isinstance(v, list) and len(v) == 0)
@@ -2686,23 +2704,32 @@ async def api_create_test_script(request: Request):
         if overwrite_html:
             if not html_content.strip():
                 raise HTTPException(status_code=400, detail="Preview first to fetch new HTML before overwriting")
-            safe_page = re.sub(r"[^a-zA-Z0-9._-]+", "_", (source_url.split("/")[-1] or "wiki_page"))
-            prefix = f"{uuid.uuid4().hex}_{safe_page}"
-            dest = db_test_scripts.TEST_SCRIPTS_DIR / f"{prefix}.html"
+            rel_html_path = _build_primary_fixture_rel_path(
+                test_name=name,
+                source_url=source_url,
+                canonical_fixture_mode=canonical_fixture_mode,
+            )
+            fixture_stem = Path(rel_html_path).stem
+            dest = db_test_scripts.TEST_SCRIPTS_DIR / rel_html_path
+            dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_text(html_content, encoding="utf-8")
-            html_file = dest.name
+            html_file = rel_html_path
 
             config_json, _member_urls, _member_files, auto_rows = _snapshot_member_pages_for_test(
                 source_url=source_url,
                 config_json=config_json,
                 html_content=html_content,
-                file_prefix=prefix,
+                fixture_stem=fixture_stem,
+                canonical_fixture_mode=canonical_fixture_mode,
             )
             if _expected_missing(expected_json):
                 expected_json = auto_rows
 
             if delete_existing_files and (existing.get("html_file") or "").strip():
-                old_path = (db_test_scripts.TEST_SCRIPTS_DIR / existing["html_file"]).resolve()
+                old_rel = (existing["html_file"] or "").strip().replace("\\", "/")
+                if old_rel.startswith("test_scripts/"):
+                    old_rel = old_rel[len("test_scripts/"):]
+                old_path = (db_test_scripts.TEST_SCRIPTS_DIR / old_rel).resolve()
                 try:
                     if db_test_scripts.TEST_SCRIPTS_DIR in old_path.parents and old_path.exists():
                         old_path.unlink()
@@ -2714,7 +2741,10 @@ async def api_create_test_script(request: Request):
                     for _, rel_name in old_fx.items():
                         if not isinstance(rel_name, str):
                             continue
-                        old_member = (db_test_scripts.TEST_SCRIPTS_DIR / rel_name).resolve()
+                        member_rel = rel_name.strip().replace("\\", "/")
+                        if member_rel.startswith("test_scripts/"):
+                            member_rel = member_rel[len("test_scripts/"):]
+                        old_member = (db_test_scripts.TEST_SCRIPTS_DIR / member_rel).resolve()
                         try:
                             if db_test_scripts.TEST_SCRIPTS_DIR in old_member.parents and old_member.exists():
                                 old_member.unlink()
@@ -2736,16 +2766,22 @@ async def api_create_test_script(request: Request):
     if not html_content.strip():
         raise HTTPException(status_code=400, detail="Preview first to fetch HTML before saving")
 
-    safe_page = re.sub(r"[^a-zA-Z0-9._-]+", "_", (source_url.split("/")[-1] or "wiki_page"))
-    prefix = f"{uuid.uuid4().hex}_{safe_page}"
-    dest = db_test_scripts.TEST_SCRIPTS_DIR / f"{prefix}.html"
+    rel_html_path = _build_primary_fixture_rel_path(
+        test_name=name,
+        source_url=source_url,
+        canonical_fixture_mode=canonical_fixture_mode,
+    )
+    fixture_stem = Path(rel_html_path).stem
+    dest = db_test_scripts.TEST_SCRIPTS_DIR / rel_html_path
+    dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text(html_content, encoding="utf-8")
 
     config_json, _member_urls, _member_files, auto_rows = _snapshot_member_pages_for_test(
         source_url=source_url,
         config_json=config_json,
         html_content=html_content,
-        file_prefix=prefix,
+        fixture_stem=fixture_stem,
+        canonical_fixture_mode=canonical_fixture_mode,
     )
     if _expected_missing(expected_json):
         expected_json = auto_rows
@@ -2755,11 +2791,11 @@ async def api_create_test_script(request: Request):
         "test_type": test_type,
         "enabled": enabled,
         "source_url": source_url,
-        "html_file": dest.name,
+        "html_file": rel_html_path,
         "config_json": config_json,
         "expected_json": expected_json,
     })
-    return JSONResponse({"ok": True, "id": new_test_id, "html_file": dest.name, "updated": False})
+    return JSONResponse({"ok": True, "id": new_test_id, "html_file": rel_html_path, "updated": False})
 
 
 @app.post("/api/test-scripts/{test_id}/enabled")
