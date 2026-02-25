@@ -318,6 +318,80 @@ def _try_auto_update_table_no(
             if best_missing == 0:
                 break
     return (best_table_no, best_rows)
+
+
+def find_best_matching_table_for_existing_terms(
+    office_row: dict[str, Any],
+    existing_terms: list[dict[str, Any]],
+    *,
+    refresh_table_cache: bool = False,
+    key_years_only: bool = False,
+) -> dict[str, Any]:
+    """Find better table_no on the same page by minimizing missing-holder validation failures.
+
+    Returns {
+      "found_table_no": int|None,
+      "missing_before": int,
+      "missing_after": int|None,
+      "missing_labels_after": [str],
+      "rows": list[dict]|None,
+    }.
+    """
+    init_db()
+    log_dir = get_log_dir()
+    logger = Logger("table_search", "Office", log_dir=log_dir)
+    party_list = db_parties.get_party_list_for_scraper()
+    data_cleanup = parse_core.DataCleanup(logger)
+    biography = parse_core.Biography(logger, data_cleanup)
+    offices_parser = parse_core.Offices(logger, biography, data_cleanup)
+    years_only = bool(office_row.get("years_only"))
+    office_id = int(office_row.get("id") or 0)
+
+    url = (office_row.get("url") or "").strip()
+    table_no = int(office_row.get("table_no") or 1)
+    current_html = get_table_html_cached(
+        url,
+        table_no,
+        refresh=refresh_table_cache,
+        use_full_page=bool(office_row.get("use_full_page_for_table")),
+    ).get("html") or ""
+    current_rows = _parse_office_html(
+        {**office_row, "find_date_in_infobox": False},
+        current_html,
+        url,
+        party_list,
+        offices_parser,
+        cached_table_html=current_html if current_html else None,
+        progress_callback=None,
+    )
+    missing_before_set = _missing_holder_keys(existing_terms, current_rows, office_id, years_only, key_years_only=key_years_only)
+    found_table_no, found_rows = _try_auto_update_table_no(
+        office_row,
+        existing_terms,
+        party_list,
+        offices_parser,
+        refresh_table_cache=refresh_table_cache,
+        years_only=years_only,
+        key_years_only=key_years_only,
+        current_missing_count=len(missing_before_set),
+    )
+    if not found_table_no or found_rows is None:
+        return {
+            "found_table_no": None,
+            "missing_before": len(missing_before_set),
+            "missing_after": None,
+            "missing_labels_after": [],
+            "rows": None,
+        }
+    missing_after_set = _missing_holder_keys(existing_terms, found_rows, office_id, years_only, key_years_only=key_years_only)
+    key_fn = _holder_key_from_existing_term_years if key_years_only else _holder_key_from_existing_term
+    return {
+        "found_table_no": int(found_table_no),
+        "missing_before": len(missing_before_set),
+        "missing_after": len(missing_after_set),
+        "missing_labels_after": _missing_holders_display(existing_terms, missing_after_set, key_fn),
+        "rows": found_rows,
+    }
 def run_with_db(
     run_mode: str = "delta",  # full | delta | live_person | single_bio | bios_only
     run_bio: bool = False,
@@ -711,7 +785,7 @@ def run_with_db(
             new_holders_years = _holder_keys_from_parsed_rows(table_data_pre, office_id, years_only_pre, key_years_only=True)
             missing_years = old_holders_years - new_holders_years
             if missing_years:
-                if run_mode == "full":
+                if run_mode in ("full", "delta", "live_person"):
                     found_table_no, found_rows = _try_auto_update_table_no(
                         office_row, existing_terms, party_list, offices_parser,
                         refresh_table_cache=refresh_table_cache,
@@ -764,7 +838,7 @@ def run_with_db(
             new_holders = _holder_keys_from_parsed_rows(table_data, office_id, years_only)
             missing = old_holders - new_holders
             if missing:
-                if run_mode == "full":
+                if run_mode in ("full", "delta", "live_person"):
                     found_table_no, found_rows = _try_auto_update_table_no(
                         office_row, existing_terms, party_list, offices_parser,
                         refresh_table_cache=refresh_table_cache,
@@ -1287,8 +1361,31 @@ def preview_with_config(
     if max_rows is not None:
         preview_rows = preview_rows[:max_rows]
 
+    revalidate_failed = False
+    revalidate_missing_holders = None
+    revalidate_message = None
+    tc_id = office_row.get("office_table_config_id") or office_row.get("id")
+    if tc_id:
+        try:
+            existing_terms = db_office_terms.get_existing_terms_for_office(int(tc_id))
+        except Exception:
+            existing_terms = []
+        if existing_terms and table_data:
+            missing = _missing_holder_keys(existing_terms, table_data, int(tc_id), years_only, key_years_only=False)
+            if missing:
+                revalidate_failed = True
+                revalidate_message = "New list found. Existing office holders are missing from this preview list."
+                revalidate_missing_holders = _missing_holders_display(existing_terms, missing, _holder_key_from_existing_term)
+
     raw_table_preview = None
     if not preview_rows and not table_data:
         raw_max = max_rows if max_rows is not None else 100
         raw_table_preview = get_raw_table_preview(url, int(office_row.get("table_no") or 1), raw_max)
-    return {"preview_rows": preview_rows, "raw_table_preview": raw_table_preview, "error": None}
+    return {
+        "preview_rows": preview_rows,
+        "raw_table_preview": raw_table_preview,
+        "error": None,
+        "revalidate_failed": revalidate_failed,
+        "revalidate_message": revalidate_message,
+        "revalidate_missing_holders": revalidate_missing_holders,
+    }

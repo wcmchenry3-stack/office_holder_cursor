@@ -931,7 +931,13 @@
       remove_duplicates: elChecked('remove_duplicates', 'tc_remove_duplicates'),
       infobox_role_key_filter_id: elVal('infobox_role_key_filter_id', 'tc_infobox_role_key_filter_id', ''),
       district_ignore: distMode() === 'no_district',
-      district_at_large: distMode() === 'at_large'
+      district_at_large: distMode() === 'at_large',
+      office_table_config_id: (function() {
+        var tcIdEl = block.querySelector && block.querySelector('input[name="tc_id"]');
+        var v = tcIdEl ? parseInt(tcIdEl.value, 10) : NaN;
+        return isNaN(v) ? null : v;
+      })(),
+      office_id: parseInt((of.dataset && of.dataset.officeId) || '0', 10) || null
     };
   }
   function syncTableBlockValidation(block) {
@@ -1366,14 +1372,15 @@
                         viewListBtn.textContent = 'View full list';
                         viewListBtn.onclick = function() {
                           var list = r.revalidate_missing_holders;
-                          var html = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Missing office holders</title></head><body><h1>Missing office holders</h1><p>These were in existing data but not in the new list.</p><ul>' + list.map(function(x) { return '<li>' + x.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }).join('') + '</ul></body></html>';
-                          var w = window.open('', '_blank');
-                          w.document.write(html);
-                          w.document.close();
+                          openMissingListWindow(list);
                         };
                         resultEl.appendChild(document.createTextNode(' '));
                         resultEl.appendChild(viewListBtn);
                       }
+                      attachSearchTableButton(resultEl, officeId, (function(){ var el = block && block.querySelector('input[name="tc_id"]'); var n = el ? parseInt(el.value, 10) : NaN; return isNaN(n) ? null : n; })(), function(newTableNo) {
+                        var tInput = block && block.querySelector('input[name="tc_table_no"]');
+                        if (tInput) tInput.value = String(newTableNo || '');
+                      });
                       if (r && r.can_force_override) {
                         var forceBtn = document.createElement('button');
                         forceBtn.type = 'button';
@@ -1556,13 +1563,86 @@
       }
     });
   })();
-  function renderPreviewResult(result, content) {
+  function openMissingListWindow(list) {
+    var html = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Missing office holders</title></head><body><h1>Missing office holders</h1><p>These were in existing data but not in the new list.</p><ul>' + list.map(function(x) { return '<li>' + x.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }).join('') + '</ul></body></html>';
+    var w = window.open('', '_blank');
+    w.document.write(html);
+    w.document.close();
+  }
+
+  function attachSearchTableButton(parentEl, officeId, tableConfigId, onApplied) {
+    var searchBtn = document.createElement('button');
+    searchBtn.type = 'button';
+    searchBtn.className = 'btn btn-secondary btn-sm';
+    searchBtn.style.marginLeft = '0.5rem';
+    searchBtn.textContent = 'Find matching table on page';
+    searchBtn.onclick = function() {
+      searchBtn.disabled = true;
+      fetch('/api/offices/' + officeId + '/find-matching-table', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ office_table_config_id: tableConfigId })
+      })
+      .then(function(r) { return r.json(); })
+      .then(function(res) {
+        if (!res || !res.ok) {
+          alert((res && res.message) || 'No matching table found.');
+          searchBtn.disabled = false;
+          return;
+        }
+        var confirmUse = window.confirm((res.message || ('Use table ' + res.table_no + '?')) + '\n\nCurrent missing: ' + (res.missing_before == null ? '?' : res.missing_before) + '\nMissing after switch: ' + (res.missing_after == null ? '?' : res.missing_after));
+        if (!confirmUse) {
+          searchBtn.disabled = false;
+          return;
+        }
+        fetch('/api/offices/' + officeId + '/find-matching-table', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ office_table_config_id: tableConfigId, confirm: true })
+        })
+        .then(function(r2) { return r2.json(); })
+        .then(function(done) {
+          if (!done || !done.ok || !done.updated) {
+            alert((done && done.message) || 'Failed to update table number.');
+            searchBtn.disabled = false;
+            return;
+          }
+          alert(done.message || ('Updated table number to ' + done.table_no + '.'));
+          if (typeof onApplied === 'function') onApplied(done.table_no);
+        })
+        .catch(function() { alert('Request failed.'); searchBtn.disabled = false; });
+      })
+      .catch(function() { alert('Request failed.'); searchBtn.disabled = false; });
+    };
+    parentEl.appendChild(document.createTextNode(' '));
+    parentEl.appendChild(searchBtn);
+  }
+
+  function renderPreviewResult(result, content, contextDraft) {
     var rows = result.preview_rows || [];
     var raw = result.raw_table_preview;
     var err = result.error;
     if (err && !rows.length && !raw) {
       content.innerHTML = '<div class="alert alert-error">' + esc(err) + '</div>';
       return;
+    }
+    var warn = null;
+    if (result.revalidate_failed && result.revalidate_missing_holders && result.revalidate_missing_holders.length) {
+      warn = document.createElement('div');
+      warn.className = 'alert alert-error';
+      warn.textContent = (result.revalidate_message || 'New list found that differs from existing terms.') + ' ';
+      var viewBtn = document.createElement('button');
+      viewBtn.type = 'button';
+      viewBtn.className = 'btn btn-secondary btn-sm';
+      viewBtn.textContent = 'View full list';
+      viewBtn.onclick = function() { openMissingListWindow(result.revalidate_missing_holders || []); };
+      warn.appendChild(viewBtn);
+      var officeId = parseInt((contextDraft && contextDraft.office_id) || '0', 10) || 0;
+      var tcId = result.office_table_config_id || (contextDraft ? contextDraft.office_table_config_id : null);
+      if (officeId) attachSearchTableButton(warn, officeId, tcId, function(newTableNo) {
+        var input = document.querySelector('input[name="tc_table_no"]');
+        if (input) input.value = String(newTableNo || '');
+      });
     }
     if (rows.length) {
       var caption = '<p><small>Showing all ' + rows.length + ' rows.</small></p>';
@@ -1578,8 +1658,10 @@
       });
       html += '</tbody></table>';
       content.innerHTML = html;
+      if (warn) content.prepend(warn);
       return;
     }
+    if (warn) content.appendChild(warn);
     if (raw && raw.rows && raw.rows.length) {
       var msg = '<p class="alert alert-error">Table could not be parsed with current config. Raw table (first 10 rows) from selected table:</p>';
       var maxCols = Math.max.apply(null, raw.rows.map(function(r) { return r.length; })) || 1;
@@ -1639,7 +1721,7 @@
                 content.innerHTML = '<p>' + msg + '</p>';
                 if (s.status === 'complete') {
                   if (previewStopBtn) previewStopBtn.style.display = 'none';
-                  renderPreviewResult(s.result || {}, content);
+                  renderPreviewResult(s.result || {}, content, draft);
                   if (window.playJobCompleteSound) window.playJobCompleteSound();
                   return;
                 }
@@ -1665,7 +1747,7 @@
           };
           poll();
         } else {
-          renderPreviewResult(data.result || {}, content);
+          renderPreviewResult(data.result || {}, content, draft);
           if (window.playJobCompleteSound) window.playJobCompleteSound();
         }
       })
