@@ -98,3 +98,21 @@ form { max-width: 640px; }
 .storage-note { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--border); color: var(--text-muted); }
 .storage-note code { font-size: 0.875em; }
 .imprecise-hint { color: var(--text-muted); font-size: 0.875em; }
+
+
+.sync-banner {
+  margin: 1rem auto 0;
+  max-width: 960px;
+  padding: 0.75rem 1rem;
+  border: 1px solid #f08c00;
+  background: rgba(240, 140, 0, 0.15);
+  color: #ffd8a8;
+  border-radius: 4px;
+}
+.sync-banner code {
+  color: #ffe8cc;
+}
+.sync-banner .sync-meta {
+  margin-left: 0.75rem;
+  color: var(--text-muted);
+}
