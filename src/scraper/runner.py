@@ -228,11 +228,13 @@ def _canonical_holder_url(url: str) -> str:
             from urllib.parse import urlparse, urlunparse
             p = urlparse(normalized)
             path = (p.path or "").rstrip("/")
-            # Compare Wikipedia pages by canonical /wiki/<Title> path only so
-            # scheme/host/query differences don't create false mismatches.
+            # Compare Wikipedia pages by canonical /wiki/<title> key so
+            # scheme/host/query/encoding/case differences don't create false mismatches.
             parts = [x for x in path.split("/") if x]
             if len(parts) >= 2 and parts[0].lower() == "wiki":
-                return f"/wiki/{parts[1]}"
+                from urllib.parse import unquote
+                title = unquote(parts[1]).replace(" ", "_").strip().lower()
+                return f"/wiki/{title}"
             return urlunparse(("https", (p.netloc or "").lower(), path, "", "", ""))
         except Exception:
             return normalized

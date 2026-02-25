@@ -254,3 +254,11 @@ def test_url_only_matching_ignores_scheme_and_host_differences():
 
     missing = runner._missing_holder_keys(existing, parsed, office_id=1, years_only=True)
     assert missing == set()
+
+
+def test_url_only_matching_ignores_encoding_and_title_case_differences():
+    existing = [{"wiki_url": "https://en.wikipedia.org/wiki/Ra%C3%BAl_Labrador"}]
+    parsed = [{"Wiki Link": "https://en.wikipedia.org/wiki/Raúl_Labrador", "Term Start": "", "Term End": "", "Term Start Year": 2023, "Term End Year": 2027, "Party": "", "District": ""}]
+
+    missing = runner._missing_holder_keys(existing, parsed, office_id=1, years_only=True)
+    assert missing == set()
