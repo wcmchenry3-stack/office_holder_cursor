@@ -47,8 +47,10 @@ def init_db(path: Path | None = None) -> None:
         conn.commit()
         from .seed import seed_reference_data
         from .migrate import migrate_to_fk
+        from . import test_scripts as db_test_scripts
         seed_reference_data(conn=conn)
         migrate_to_fk(conn=conn)
+        db_test_scripts.seed_db_from_manifest_if_empty(conn=conn)
         conn.executescript(OFFICES_PARTIES_INDEX_SQL)
         conn.commit()
     finally:

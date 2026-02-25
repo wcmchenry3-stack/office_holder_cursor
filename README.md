@@ -118,6 +118,19 @@ flowchart LR
 ---
 
 
+
+## Parser test manifest workflow
+
+- Canonical parser test manifest: `test_scripts/manifest/parser_tests.json`.
+- Each manifest row includes: `name`, `test_type`, `html_file`, `source_url`, `config_json`, `expected_json`, `enabled`.
+- `html_file` must point to a committed local fixture path (for example `test_scripts/fixtures/...`) relative to the project root. Import validation rejects missing or absolute paths.
+- On app startup, `init_db()` seeds `parser_test_scripts` from the manifest **only when the DB table is empty**.
+- Conflict behavior is deterministic:
+  - Existing DB rows are not overwritten during startup seeding.
+  - Manifest updates do not auto-merge into non-empty DBs.
+  - To apply manifest updates to an existing DB, run explicit import with `overwrite_existing=True` in `src/db/test_scripts.py`.
+  - To publish DB edits back into source control, run explicit export from DB to the manifest (`export_manifest_from_db`).
+
 ## Windows PowerShell quick commands
 
 Use these command forms in **PowerShell** (not bash syntax):
