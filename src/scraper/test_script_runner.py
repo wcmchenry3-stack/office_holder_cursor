@@ -118,9 +118,16 @@ DEFAULT_TABLE_CONFIG = {
 
 
 def _load_html(html_file: str) -> str:
-    path = _fixture_path(html_file)
+    raw_name = (html_file or "").strip()
+    path = _fixture_path(raw_name)
     if TEST_SCRIPTS_DIR not in path.parents and path != TEST_SCRIPTS_DIR:
         raise ValueError("Invalid html path")
+    # Backward compatibility: older DB rows stored basename-only fixture names.
+    # If a direct lookup fails, also try test_scripts/fixtures/<basename>.
+    if not path.exists() and raw_name and "/" not in raw_name.replace("\\", "/"):
+        fallback = (TEST_SCRIPTS_DIR / "fixtures" / raw_name).resolve()
+        if TEST_SCRIPTS_DIR in fallback.parents and fallback.exists():
+            path = fallback
     if not path.exists():
         raise ValueError(f"HTML file not found: {html_file}")
     return path.read_text(encoding="utf-8")
