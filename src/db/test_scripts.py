@@ -34,10 +34,13 @@ def _manifest_item_from_row(row: dict[str, Any]) -> dict[str, Any]:
 
 
 def _normalize_html_file_path(path_value: str) -> str:
-    rel = (path_value or "").strip()
+    rel = (path_value or "").strip().replace("\\", "/")
     if not rel:
         raise ValueError("Manifest entry html_file is required")
-    rel_path = Path(rel)
+    rel_project = rel
+    if rel_project.startswith("fixtures/"):
+        rel_project = f"test_scripts/{rel_project}"
+    rel_path = Path(rel_project)
     if rel_path.is_absolute():
         raise ValueError(f"html_file must be relative to project root: {rel}")
     target = (PROJECT_ROOT / rel_path).resolve()

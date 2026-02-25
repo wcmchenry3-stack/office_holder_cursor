@@ -26,7 +26,10 @@ TEST_SCRIPTS_DIR = PROJECT_ROOT / "test_scripts"
 
 
 def _fixture_path(name: str) -> Path:
-    return (TEST_SCRIPTS_DIR / (name or "")).resolve()
+    rel = (name or "").strip().replace("\\", "/")
+    if rel.startswith("test_scripts/"):
+        rel = rel[len("test_scripts/"):]
+    return (TEST_SCRIPTS_DIR / rel).resolve()
 
 
 def _load_member_fixture_html(cfg: dict[str, Any]) -> dict[str, str]:
@@ -115,7 +118,7 @@ DEFAULT_TABLE_CONFIG = {
 
 
 def _load_html(html_file: str) -> str:
-    path = (TEST_SCRIPTS_DIR / (html_file or "")).resolve()
+    path = _fixture_path(html_file)
     if TEST_SCRIPTS_DIR not in path.parents and path != TEST_SCRIPTS_DIR:
         raise ValueError("Invalid html path")
     if not path.exists():
