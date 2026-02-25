@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import sys
 import time
+import re
 from pathlib import Path
 from typing import Any, Callable
 
@@ -233,6 +234,12 @@ def _holder_keys_from_parsed_rows(
         if wiki_url in ("", "No link") and row.get("_name_from_table"):
             wiki_url = "No link:" + str(office_id) + ":" + (row.get("_name_from_table") or "Unknown")
         if key_years_only:
+            if term_start_year is None and term_start_val:
+                m = re.search(r"(\d{4})", str(term_start_val))
+                term_start_year = int(m.group(1)) if m else None
+            if term_end_year is None and term_end_val:
+                m = re.search(r"(\d{4})", str(term_end_val))
+                term_end_year = int(m.group(1)) if m else None
             start_key = str(term_start_year) if term_start_year is not None else ""
             end_key = str(term_end_year) if term_end_year is not None else ""
         else:
@@ -296,6 +303,26 @@ def _try_auto_update_table_no(
     best_table_no = None
     best_rows = None
     best_missing = current_missing_count
+    # Secondary score: compare using year-only keys to handle date-precision differences
+    # (e.g., current table has exact dates but candidate table has month/day differences).
+    current_missing_years = current_missing_count
+    try:
+        current_html = get_table_html_cached(url, current_table_no, refresh=refresh_table_cache, use_full_page=bool(office_row.get("use_full_page_for_table"))).get("html") or ""
+        if current_html:
+            current_rows = _parse_office_html(
+                {**office_row, "find_date_in_infobox": False},
+                current_html,
+                url,
+                party_list,
+                offices_parser,
+                cached_table_html=current_html,
+                progress_callback=None,
+            )
+            current_missing_years = len(
+                _missing_holder_keys(existing_terms, current_rows, int(office_row.get("id") or 0), years_only, key_years_only=True)
+            )
+    except Exception:
+        pass
     for candidate_no in range(1, num_tables + 1):
         if candidate_no == current_table_no:
             continue
@@ -311,11 +338,21 @@ def _try_auto_update_table_no(
         if not table_data:
             continue
         missing = _missing_holder_keys(existing_terms, table_data, int(office_row.get("id") or 0), years_only, key_years_only=key_years_only)
-        if len(missing) < best_missing:
-            best_missing = len(missing)
+        missing_exact = len(missing)
+        missing_years = len(
+            _missing_holder_keys(existing_terms, table_data, int(office_row.get("id") or 0), years_only, key_years_only=True)
+        )
+        improved = (
+            (missing_exact < best_missing) or
+            (missing_exact == best_missing and missing_years < current_missing_years) or
+            (missing_exact == best_missing and missing_years == current_missing_years and best_rows is not None and len(table_data) > len(best_rows))
+        )
+        if improved:
+            best_missing = missing_exact
+            current_missing_years = missing_years
             best_table_no = candidate_no
             best_rows = table_data
-            if best_missing == 0:
+            if best_missing == 0 and current_missing_years == 0:
                 break
     return (best_table_no, best_rows)
 

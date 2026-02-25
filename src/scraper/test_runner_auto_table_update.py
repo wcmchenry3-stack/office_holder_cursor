@@ -58,7 +58,7 @@ def test_auto_table_update_chooses_best_matching_table(monkeypatch):
 
     assert table_no == 3
     assert rows is not None and len(rows) == 2
-    assert calls == [2, 3]
+    assert calls == [1, 2, 3]
 
 
 def test_auto_table_update_respects_disable_flag(monkeypatch):
@@ -89,6 +89,58 @@ def test_auto_table_update_respects_disable_flag(monkeypatch):
     assert table_no is None
     assert rows is None
     assert called["cache"] == 0
+
+
+def test_auto_table_update_uses_years_fallback_when_exact_dates_tie(monkeypatch):
+    existing_terms = [
+        {"wiki_url": "https://en.wikipedia.org/wiki/A", "term_start": "2000-01-01", "term_end": "2001-01-01"},
+        {"wiki_url": "https://en.wikipedia.org/wiki/B", "term_start": "2001-01-02", "term_end": "2002-01-01"},
+    ]
+
+    def fake_cache(url, table_no, refresh=False, use_full_page=False):
+        return {"num_tables": 3, "html": f"<table>{table_no}</table>"}
+
+    def fake_parse(office_row, html, url, party_list, offices_parser, **kwargs):
+        tno = int(office_row.get("table_no") or 1)
+        # table 1 (current): exact mismatch for both, and years do NOT align
+        if tno == 1:
+            return [
+                _row("https://en.wikipedia.org/wiki/A", "1999-06-01", "2000-06-01"),
+                _row("https://en.wikipedia.org/wiki/B", "1999-06-02", "2000-06-01"),
+            ]
+        # table 2: same exact-mismatch count, but better years-only alignment (0 missing)
+        if tno == 2:
+            return [
+                _row("https://en.wikipedia.org/wiki/A", "2000-07-01", "2001-07-01"),
+                _row("https://en.wikipedia.org/wiki/B", "2001-07-02", "2002-07-01"),
+            ]
+        # table 3: same exact-mismatch count and poor years-only alignment
+        return [
+            _row("https://en.wikipedia.org/wiki/A", "1999-01-01", "2000-01-01"),
+            _row("https://en.wikipedia.org/wiki/B", "1999-01-02", "2000-01-02"),
+        ]
+
+    monkeypatch.setattr(runner, "get_table_html_cached", fake_cache)
+    monkeypatch.setattr(runner, "_parse_office_html", fake_parse)
+
+    table_no, _rows = runner._try_auto_update_table_no(
+        {
+            "id": 12,
+            "url": "https://en.wikipedia.org/wiki/List",
+            "table_no": 1,
+            "use_full_page_for_table": False,
+            "disable_auto_table_update": False,
+        },
+        existing_terms,
+        party_list=[],
+        offices_parser=object(),
+        refresh_table_cache=False,
+        years_only=False,
+        key_years_only=False,
+        current_missing_count=2,
+    )
+
+    assert table_no == 2
 
 
 def test_find_best_matching_table_reports_before_after(monkeypatch):
