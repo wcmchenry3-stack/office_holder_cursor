@@ -238,3 +238,11 @@ def test_preview_reports_new_list_mismatch(monkeypatch):
     assert result["revalidate_failed"] is True
     assert result["revalidate_missing_holders"]
     assert "New list found" in (result["revalidate_message"] or "")
+
+
+def test_url_only_matching_ignores_wikipedia_query_params():
+    existing = [{"wiki_url": "https://en.wikipedia.org/wiki/Albert_Williams_(Michigan_Attorney_General)?action=edit&redlink=1"}]
+    parsed = [{"Wiki Link": "https://en.wikipedia.org/wiki/Albert_Williams_(Michigan_Attorney_General)", "Term Start": "", "Term End": "", "Term Start Year": 1863, "Term End Year": 1867, "Party": "", "District": ""}]
+
+    missing = runner._missing_holder_keys(existing, parsed, office_id=1, years_only=True)
+    assert missing == set()

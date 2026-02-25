@@ -149,7 +149,7 @@ def _normalize_row_for_import(
 
 def _holder_key_from_existing_term(term: dict[str, Any]) -> tuple[str, str, str]:
     """Build a comparable key from an existing office_term row (URL-only matching)."""
-    url = (term.get("wiki_url") or "").strip()
+    url = _canonical_holder_url((term.get("wiki_url") or "").strip())
     return (url, "", "")
 
 
@@ -207,8 +207,31 @@ def _holder_keys_from_parsed_rows(
         wiki_url = row.get("Wiki Link") or ""
         if wiki_url in ("", "No link") and row.get("_name_from_table"):
             wiki_url = "No link:" + str(office_id) + ":" + (row.get("_name_from_table") or "Unknown")
-        keys.add((wiki_url, "", ""))
+        keys.add((_canonical_holder_url(wiki_url), "", ""))
     return keys
+
+
+def _canonical_holder_url(url: str) -> str:
+    """Canonicalize holder URL for comparisons.
+
+    For Wikipedia links, normalize and strip query/fragment so redlink/edit query params
+    don't break holder matching across table variants.
+    """
+    u = (url or "").strip()
+    if not u:
+        return ""
+    if u.startswith("No link:"):
+        return u
+    normalized = normalize_wiki_url(u)
+    if normalized:
+        try:
+            from urllib.parse import urlparse, urlunparse
+            p = urlparse(normalized)
+            path = (p.path or "").rstrip("/")
+            return urlunparse((p.scheme or "https", p.netloc, path, "", "", ""))
+        except Exception:
+            return normalized
+    return u
 
 
 def _dedupe_parsed_rows(table_data: list[dict], years_only: bool) -> list[dict]:
