@@ -87,6 +87,7 @@ def _flatten_hierarchy_row(
         "infobox_role_key": (tc.get("infobox_role_key") or "").strip(),
         "created_at": tc.get("created_at") or od.get("created_at"),
         "alt_links": list(alt_links) if alt_links else [],
+        "disable_auto_table_update": bool(p.get("disable_auto_table_update") if p.get("disable_auto_table_update") is not None else 0),
     }
 
 
@@ -334,7 +335,7 @@ def list_runnable_units(conn: sqlite3.Connection | None = None) -> list[dict[str
         if not _use_hierarchy(conn):
             return []
         cur = conn.execute(
-            """SELECT p.id AS page_id, p.country_id, p.state_id, p.city_id, p.level_id, p.branch_id, p.url, p.notes AS page_notes, p.enabled AS page_enabled,
+            """SELECT p.id AS page_id, p.country_id, p.state_id, p.city_id, p.level_id, p.branch_id, p.url, p.notes AS page_notes, p.enabled AS page_enabled, p.disable_auto_table_update,
                       od.id AS office_details_id, od.name, od.department, od.notes, od.alt_link_include_main, od.enabled AS od_enabled,
                       tc.id AS office_table_config_id, tc.table_no, tc.table_rows, tc.link_column, tc.party_column,
                       tc.term_start_column, tc.term_end_column, tc.district_column, tc.filter_column, tc.filter_criteria, tc.dynamic_parse, tc.read_right_to_left,
@@ -364,7 +365,7 @@ def list_runnable_units(conn: sqlite3.Connection | None = None) -> list[dict[str
                 rd.get("level_id"),
                 rd.get("branch_id"),
             )
-            p = {"url": rd.get("url"), "country_id": rd.get("country_id"), "state_id": rd.get("state_id"), "city_id": rd.get("city_id"), "level_id": rd.get("level_id"), "branch_id": rd.get("branch_id"), "notes": rd.get("page_notes"), "enabled": rd.get("page_enabled")}
+            p = {"url": rd.get("url"), "country_id": rd.get("country_id"), "state_id": rd.get("state_id"), "city_id": rd.get("city_id"), "level_id": rd.get("level_id"), "branch_id": rd.get("branch_id"), "notes": rd.get("page_notes"), "enabled": rd.get("page_enabled"), "disable_auto_table_update": rd.get("disable_auto_table_update")}
             od = {"id": od_id, "name": rd.get("name"), "department": rd.get("department"), "notes": rd.get("notes"), "alt_link_include_main": rd.get("alt_link_include_main"), "enabled": rd.get("od_enabled")}
             tc = {"table_no": rd.get("table_no"), "table_rows": rd.get("table_rows"), "link_column": rd.get("link_column"), "party_column": rd.get("party_column"), "term_start_column": rd.get("term_start_column"), "term_end_column": rd.get("term_end_column"), "district_column": rd.get("district_column"), "filter_column": rd.get("filter_column"), "filter_criteria": rd.get("filter_criteria"), "dynamic_parse": rd.get("dynamic_parse"), "read_right_to_left": rd.get("read_right_to_left"), "find_date_in_infobox": rd.get("find_date_in_infobox"), "parse_rowspan": rd.get("parse_rowspan"), "rep_link": rd.get("rep_link"), "party_link": rd.get("party_link"), "enabled": rd.get("tc_enabled"), "use_full_page_for_table": rd.get("use_full_page_for_table"), "years_only": rd.get("years_only"), "term_dates_merged": rd.get("term_dates_merged"), "party_ignore": rd.get("party_ignore"), "district_ignore": rd.get("district_ignore"), "district_at_large": rd.get("district_at_large"), "ignore_non_links": rd.get("ignore_non_links"), "remove_duplicates": rd.get("remove_duplicates"), "consolidate_rowspan_terms": rd.get("consolidate_rowspan_terms"), "infobox_role_key_filter_id": rd.get("infobox_role_key_filter_id"), "infobox_role_key": rd.get("infobox_role_key"), "notes": rd.get("tc_notes"), "created_at": rd.get("created_at")}
             flat = _flatten_hierarchy_row(p, od, tc, c, s, lv, b, alt_links)
@@ -372,6 +373,7 @@ def list_runnable_units(conn: sqlite3.Connection | None = None) -> list[dict[str
             flat["office_details_id"] = od_id
             flat["office_table_config_id"] = rd["office_table_config_id"]
             flat["country_id"] = rd.get("country_id")
+            flat["disable_auto_table_update"] = bool(rd.get("disable_auto_table_update"))
             out.append(flat)
         return out
     finally:
@@ -388,7 +390,7 @@ def list_offices(conn: sqlite3.Connection | None = None) -> list[dict[str, Any]]
     try:
         if _use_hierarchy(conn):
             cur = conn.execute(
-                """SELECT p.id AS page_id, p.country_id, p.state_id, p.city_id, p.level_id, p.branch_id, p.url, p.notes AS page_notes, p.enabled AS page_enabled,
+                """SELECT p.id AS page_id, p.country_id, p.state_id, p.city_id, p.level_id, p.branch_id, p.url, p.notes AS page_notes, p.enabled AS page_enabled, p.disable_auto_table_update,
                           od.id AS office_details_id, od.name, od.department, od.notes, od.alt_link_include_main, od.enabled AS od_enabled,
                           tc.id AS tc_id, tc.table_no, tc.table_rows, tc.link_column, tc.party_column,
                           tc.term_start_column, tc.term_end_column, tc.district_column, tc.filter_column, tc.filter_criteria, tc.dynamic_parse, tc.read_right_to_left,
@@ -576,7 +578,7 @@ def get_office(office_id: int, conn: sqlite3.Connection | None = None) -> dict[s
     try:
         if _use_hierarchy(conn):
             cur = conn.execute(
-                """SELECT p.id AS page_id, p.country_id, p.state_id, p.city_id, p.level_id, p.branch_id, p.url, p.notes AS page_notes, p.enabled AS page_enabled,
+                """SELECT p.id AS page_id, p.country_id, p.state_id, p.city_id, p.level_id, p.branch_id, p.url, p.notes AS page_notes, p.enabled AS page_enabled, p.disable_auto_table_update,
                           od.id AS office_details_id, od.name, od.department, od.notes, od.alt_link_include_main, od.enabled AS od_enabled, od.office_category_id,
                           tc.id AS tc_id, tc.table_no, tc.table_rows, tc.link_column, tc.party_column,
                           tc.term_start_column, tc.term_end_column, tc.district_column, tc.filter_column, tc.filter_criteria, tc.dynamic_parse, tc.read_right_to_left,
@@ -636,23 +638,26 @@ def get_office(office_id: int, conn: sqlite3.Connection | None = None) -> dict[s
 
 
 def get_page(source_page_id: int, conn: sqlite3.Connection | None = None) -> dict[str, Any] | None:
-    """Return source_pages row as dict (id, url, country_id, state_id, city_id, level_id, branch_id, notes, enabled, allow_reuse_tables) or None."""
+    """Return source_pages row as dict (id, url, country_id, state_id, city_id, level_id, branch_id, notes, enabled, allow_reuse_tables, disable_auto_table_update) or None."""
     own_conn = conn is None
     if own_conn:
         conn = get_connection()
     try:
-        row = conn.execute(
-            "SELECT id, url, country_id, state_id, city_id, level_id, branch_id, notes, enabled FROM source_pages WHERE id = ?",
-            (source_page_id,),
-        ).fetchone()
+        try:
+            row = conn.execute(
+                "SELECT id, url, country_id, state_id, city_id, level_id, branch_id, notes, enabled, allow_reuse_tables, disable_auto_table_update FROM source_pages WHERE id = ?",
+                (source_page_id,),
+            ).fetchone()
+        except sqlite3.OperationalError:
+            row = conn.execute(
+                "SELECT id, url, country_id, state_id, city_id, level_id, branch_id, notes, enabled, allow_reuse_tables FROM source_pages WHERE id = ?",
+                (source_page_id,),
+            ).fetchone()
         if not row:
             return None
         d = _row_to_dict(row)
-        try:
-            r2 = conn.execute("SELECT allow_reuse_tables FROM source_pages WHERE id = ?", (source_page_id,)).fetchone()
-            d["allow_reuse_tables"] = r2[0] if r2 is not None else 0
-        except (sqlite3.OperationalError, IndexError):
-            d["allow_reuse_tables"] = 0
+        d["allow_reuse_tables"] = d.get("allow_reuse_tables", 0)
+        d["disable_auto_table_update"] = d.get("disable_auto_table_update", 0)
         return d
     finally:
         if own_conn:
@@ -679,7 +684,7 @@ def get_source_page_id_by_url(url: str, conn: sqlite3.Connection | None = None) 
 
 
 def update_page(source_page_id: int, data: dict[str, Any], conn: sqlite3.Connection | None = None) -> bool:
-    """Update only source_pages row. Data: url, country_id, state_id, city_id, level_id, branch_id, notes, enabled, allow_reuse_tables."""
+    """Update only source_pages row. Data: url, country_id, state_id, city_id, level_id, branch_id, notes, enabled, allow_reuse_tables, disable_auto_table_update."""
     own_conn = conn is None
     if own_conn:
         conn = get_connection()
@@ -692,10 +697,11 @@ def update_page(source_page_id: int, data: dict[str, Any], conn: sqlite3.Connect
             raise ValueError("url required")
         enabled = 1 if data.get("enabled") in (True, 1, "TRUE", "true", "1") else 0
         allow_reuse_tables = 1 if data.get("allow_reuse_tables") in (True, 1, "TRUE", "true", "1") else 0
+        disable_auto_table_update = 1 if data.get("disable_auto_table_update") in (True, 1, "TRUE", "true", "1") else 0
         city_id = int(data.get("city_id") or 0) or None
         try:
             conn.execute(
-                """UPDATE source_pages SET country_id=?, state_id=?, city_id=?, level_id=?, branch_id=?, url=?, notes=?, enabled=?, allow_reuse_tables=?, updated_at=datetime('now') WHERE id=?""",
+                """UPDATE source_pages SET country_id=?, state_id=?, city_id=?, level_id=?, branch_id=?, url=?, notes=?, enabled=?, allow_reuse_tables=?, disable_auto_table_update=?, updated_at=datetime('now') WHERE id=?""",
                 (
                     country_id,
                     int(data.get("state_id") or 0) or None,
@@ -706,6 +712,7 @@ def update_page(source_page_id: int, data: dict[str, Any], conn: sqlite3.Connect
                     data.get("notes") or "",
                     enabled,
                     allow_reuse_tables,
+                    disable_auto_table_update,
                     source_page_id,
                 ),
             )
@@ -819,7 +826,7 @@ def list_offices_for_page(source_page_id: int, conn: sqlite3.Connection | None =
         if not _use_hierarchy(conn):
             return []
         cur = conn.execute(
-            """SELECT p.id AS page_id, p.country_id, p.state_id, p.city_id, p.level_id, p.branch_id, p.url, p.notes AS page_notes, p.enabled AS page_enabled,
+            """SELECT p.id AS page_id, p.country_id, p.state_id, p.city_id, p.level_id, p.branch_id, p.url, p.notes AS page_notes, p.enabled AS page_enabled, p.disable_auto_table_update,
                           od.id AS office_details_id, od.name, od.department, od.notes, od.alt_link_include_main, od.enabled AS od_enabled, od.office_category_id,
                           tc.id AS tc_id, tc.table_no, tc.table_rows, tc.link_column, tc.party_column,
                           tc.term_start_column, tc.term_end_column, tc.district_column, tc.filter_column, tc.filter_criteria, tc.dynamic_parse, tc.read_right_to_left,

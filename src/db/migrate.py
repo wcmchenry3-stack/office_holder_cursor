@@ -77,6 +77,7 @@ def migrate_to_fk(conn=None):
         _migrate_infobox_role_key_filter_role_key_format(conn)
         # cities table and source_pages.city_id
         _migrate_city(conn)
+        _migrate_source_pages_disable_auto_table_update(conn)
     finally:
         if own_conn:
             conn.close()
@@ -139,6 +140,14 @@ def _migrate_offices_to_fk(conn):
     conn.execute("CREATE INDEX IF NOT EXISTS idx_offices_state_id ON offices(state_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_offices_level_id ON offices(level_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_offices_branch_id ON offices(branch_id)")
+    conn.commit()
+
+
+def _migrate_source_pages_disable_auto_table_update(conn):
+    cols = _columns(conn, "source_pages")
+    if "disable_auto_table_update" in cols:
+        return
+    conn.execute("ALTER TABLE source_pages ADD COLUMN disable_auto_table_update INTEGER NOT NULL DEFAULT 0")
     conn.commit()
 
 

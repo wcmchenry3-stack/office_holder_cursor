@@ -42,7 +42,7 @@ from src.db import office_terms as db_office_terms
 from src.db import reports as db_reports
 from src.db import test_scripts as db_test_scripts
 from src.db.bulk_import import bulk_import_offices_from_csv, bulk_import_parties_from_csv
-from src.scraper.runner import run_with_db, preview_with_config, parse_full_table_for_export
+from src.scraper.runner import run_with_db, preview_with_config, parse_full_table_for_export, find_best_matching_table_for_existing_terms
 from src.scraper.config_test import test_office_config, get_raw_table_preview, get_all_tables_preview, get_table_html, get_table_header_from_html
 from src.scraper.test_script_runner import run_test_script, run_test_script_from_html
 from src.scraper.wiki_fetch import WIKIPEDIA_REQUEST_HEADERS, wiki_url_to_rest_html_url, normalize_wiki_url
@@ -120,6 +120,7 @@ def _office_draft_from_body(body: dict, *, include_ref_names: bool = False) -> d
         "ignore_non_links": body.get("ignore_non_links") in (True, 1, "1", "true", "TRUE"),
         "remove_duplicates": body.get("remove_duplicates") in (True, 1, "1", "true", "TRUE"),
         "infobox_role_key_filter_id": _validate_infobox_role_key_filter_id(body.get("infobox_role_key_filter_id")),
+        "office_table_config_id": int(body.get("office_table_config_id") or 0) or None,
     }
     draft["infobox_role_key"] = (body.get("infobox_role_key") or "").strip() or _resolve_infobox_role_key_from_filter_id(
         draft.get("infobox_role_key_filter_id")
@@ -623,6 +624,7 @@ async def page_update(request: Request, source_page_id: int):
         "notes": (form.get("notes") or "").strip(),
         "enabled": form.get("enabled") == "1",
         "allow_reuse_tables": form.get("allow_reuse_tables") == "1",
+        "disable_auto_table_update": form.get("disable_auto_table_update") == "1",
     }
     try:
         _validate_level_state_city(page_data.get("level_id"), page_data.get("state_id"), page_data.get("city_id"), page_data.get("branch_id"))
@@ -1373,6 +1375,70 @@ async def api_office_populate_terms_status(office_id: int, job_id: str):
             out["result"] = job.get("result")
             out["error"] = job.get("error")
     return JSONResponse(out)
+
+
+@app.post("/api/offices/{office_id}/find-matching-table")
+async def api_office_find_matching_table(office_id: int, request: Request):
+    """Find a better matching table_no for this office/table by comparing against existing terms.
+    Body (optional): {"office_table_config_id": int, "confirm": bool}
+    """
+    office = db_offices.get_office(office_id)
+    if not office:
+        raise HTTPException(status_code=404, detail="Office not found")
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    requested_tc_id = int(body.get("office_table_config_id") or 0) or None
+    confirm = body.get("confirm") in (True, 1, "true", "1")
+
+    target_tc_id = requested_tc_id
+    if not target_tc_id:
+        unit_ids = db_offices.get_runnable_unit_ids_for_office(office_id) or [office_id]
+        target_tc_id = int(unit_ids[0])
+    office_row = db_offices.get_office_by_table_config_id(int(target_tc_id))
+    if not office_row:
+        raise HTTPException(status_code=404, detail="Table config not found")
+
+    existing_terms = db_office_terms.get_existing_terms_for_office(int(target_tc_id))
+    if not existing_terms:
+        return JSONResponse({"ok": False, "message": "No existing terms to compare."})
+
+    search = find_best_matching_table_for_existing_terms(office_row, existing_terms)
+    found_table_no = search.get("found_table_no")
+    if not found_table_no:
+        return JSONResponse({
+            "ok": False,
+            "message": "No better matching table was found on this page.",
+            "missing_before": search.get("missing_before"),
+        })
+
+    if confirm:
+        with get_connection() as conn:
+            conn.execute(
+                "UPDATE office_table_config SET table_no = ?, updated_at = datetime('now') WHERE id = ?",
+                (int(found_table_no), int(target_tc_id)),
+            )
+            conn.commit()
+        return JSONResponse({
+            "ok": True,
+            "updated": True,
+            "table_no": int(found_table_no),
+            "message": f"Updated table number to {int(found_table_no)}.",
+            "missing_before": search.get("missing_before"),
+            "missing_after": search.get("missing_after"),
+            "missing_after_labels": search.get("missing_labels_after") or [],
+        })
+
+    return JSONResponse({
+        "ok": True,
+        "updated": False,
+        "table_no": int(found_table_no),
+        "message": f"Found a better matching table: {int(found_table_no)}. Confirm to use it?",
+        "missing_before": search.get("missing_before"),
+        "missing_after": search.get("missing_after"),
+        "missing_after_labels": search.get("missing_labels_after") or [],
+    })
 
 
 @app.post("/api/offices/{office_id}/populate-terms/cancel/{job_id}")

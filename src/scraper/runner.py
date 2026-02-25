@@ -148,39 +148,17 @@ def _normalize_row_for_import(
 
 
 def _holder_key_from_existing_term(term: dict[str, Any]) -> tuple[str, str, str]:
-    """Build a comparable key (wiki_url, start_key, end_key) from an existing office_term row."""
-    url = (term.get("wiki_url") or "").strip()
-    start = term.get("term_start")
-    end = term.get("term_end")
-    if start is None:
-        start = term.get("term_start_year")
-    if end is None:
-        end = term.get("term_end_year")
-    start_key = str(start) if start is not None else ""
-    end_key = str(end) if end is not None else ""
-    return (url, start_key, end_key)
+    """Build a comparable key from an existing office_term row (URL-only matching)."""
+    raw = (term.get("wiki_url") or "").strip()
+    if _is_dead_wiki_url(raw):
+        return ("", "", "")
+    url = _canonical_holder_url(raw)
+    return (url, "", "")
 
 
 def _holder_key_from_existing_term_years(term: dict[str, Any]) -> tuple[str, str, str]:
-    """Build a year-only key for table-first validation (no infobox)."""
-    url = (term.get("wiki_url") or "").strip()
-    start = term.get("term_start")
-    end = term.get("term_end")
-    start_year = term.get("term_start_year")
-    end_year = term.get("term_end_year")
-    if start_year is None and start and isinstance(start, str) and len(start) >= 4:
-        try:
-            start_year = int(start[:4])
-        except (ValueError, TypeError):
-            pass
-    if end_year is None and end and isinstance(end, str) and len(end) >= 4:
-        try:
-            end_year = int(end[:4])
-        except (ValueError, TypeError):
-            pass
-    start_key = str(start_year) if start_year is not None else ""
-    end_key = str(end_year) if end_year is not None else ""
-    return (url, start_key, end_key)
+    """Build a URL-only key for table-first validation (no infobox)."""
+    return _holder_key_from_existing_term(term)
 
 
 def _format_missing_holders(labels: list[str], max_show: int = 20) -> str:
@@ -200,7 +178,11 @@ def _missing_holders_display(
     """Return human-readable labels for existing terms whose key is in missing_keys."""
     labels: list[str] = []
     for t in existing_terms:
-        if key_from_term(t) not in missing_keys:
+        k = key_from_term(t)
+        if not k[0]:
+            # Ignore deadlinks/no-link placeholders for revalidation display.
+            continue
+        if k not in missing_keys:
             continue
         url = (t.get("wiki_url") or "").strip()
         name = url.split("/")[-1].replace("_", " ") if url else "(no link)"
@@ -213,16 +195,30 @@ def _missing_holders_display(
     return labels
 
 
+def _filtered_existing_holder_keys(
+    existing_terms: list[dict[str, Any]],
+    key_from_term: Callable[[dict[str, Any]], tuple[str, str, str]],
+) -> set[tuple[str, str, str]]:
+    """Build existing-holder key set while excluding empty/deadlink keys."""
+    return {k for k in (key_from_term(t) for t in existing_terms) if k[0]}
+
+
 def _holder_keys_from_parsed_rows(
     table_data: list[dict],
     office_id: int,
     years_only: bool,
     key_years_only: bool = False,
 ) -> set[tuple[str, str, str]]:
-    """Build set of holder keys from parsed table rows (same normalize as write path).
-    When key_years_only is True, use only term_start_year/term_end_year for the key (for table-only pre-validation)."""
+    """Build set of holder keys from parsed table rows (URL-only matching).
+    key_years_only is accepted for compatibility and ignored."""
     keys: set[tuple[str, str, str]] = set()
     for row in table_data:
+        # For table matching/revalidation we only care about active holder URLs,
+        # not whether date parsing succeeded.
+        raw_link = (row.get("Wiki Link") or "").strip()
+        if raw_link and raw_link != "No link" and not row.get("_dead_link") and not _is_dead_wiki_url(raw_link):
+            keys.add((_canonical_holder_url(raw_link), "", ""))
+            continue
         normalized = _normalize_row_for_import(row, years_only=years_only)
         if normalized is None and (row.get("Wiki Link") or "") in ("", "No link") and row.get("_name_from_table"):
             normalized = _normalize_row_for_import(row, years_only=years_only, include_no_link=True)
@@ -232,14 +228,43 @@ def _holder_keys_from_parsed_rows(
         wiki_url = row.get("Wiki Link") or ""
         if wiki_url in ("", "No link") and row.get("_name_from_table"):
             wiki_url = "No link:" + str(office_id) + ":" + (row.get("_name_from_table") or "Unknown")
-        if key_years_only:
-            start_key = str(term_start_year) if term_start_year is not None else ""
-            end_key = str(term_end_year) if term_end_year is not None else ""
-        else:
-            start_key = (term_start_val if term_start_val is not None else "") or (str(term_start_year) if term_start_year is not None else "")
-            end_key = (term_end_val if term_end_val is not None else "") or (str(term_end_year) if term_end_year is not None else "")
-        keys.add((wiki_url, start_key, end_key))
+        keys.add((_canonical_holder_url(wiki_url), "", ""))
     return keys
+
+
+def _is_dead_wiki_url(url: str) -> bool:
+    u = (url or "").lower()
+    return "redlink=1" in u
+
+
+def _canonical_holder_url(url: str) -> str:
+    """Canonicalize holder URL for comparisons.
+
+    For Wikipedia links, normalize and strip query/fragment so redlink/edit query params
+    don't break holder matching across table variants.
+    """
+    u = (url or "").strip()
+    if not u:
+        return ""
+    if u.startswith("No link:"):
+        return u
+    normalized = normalize_wiki_url(u)
+    if normalized:
+        try:
+            from urllib.parse import urlparse, urlunparse
+            p = urlparse(normalized)
+            path = (p.path or "").rstrip("/")
+            # Compare Wikipedia pages by canonical /wiki/<title> key so
+            # scheme/host/query/encoding/case differences don't create false mismatches.
+            parts = [x for x in path.split("/") if x]
+            if len(parts) >= 2 and parts[0].lower() == "wiki":
+                from urllib.parse import unquote
+                title = unquote(parts[1]).replace(" ", "_").strip().lower()
+                return f"/wiki/{title}"
+            return urlunparse(("https", (p.netloc or "").lower(), path, "", "", ""))
+        except Exception:
+            return normalized
+    return u
 
 
 def _dedupe_parsed_rows(table_data: list[dict], years_only: bool) -> list[dict]:
@@ -266,6 +291,164 @@ def _dedupe_parsed_rows(table_data: list[dict], years_only: bool) -> list[dict]:
     return out
 
 
+
+
+def _missing_holder_keys(existing_terms: list[dict[str, Any]], table_data: list[dict[str, Any]], office_id: int, years_only: bool, *, key_years_only: bool = False) -> set[tuple]:
+    old_holders = {_holder_key_from_existing_term_years(t) for t in existing_terms} if key_years_only else {_holder_key_from_existing_term(t) for t in existing_terms}
+    new_holders = _holder_keys_from_parsed_rows(table_data, office_id, years_only, key_years_only=key_years_only)
+    old_holders = {k for k in old_holders if k[0]}
+    new_holders = {k for k in new_holders if k[0]}
+    return old_holders - new_holders
+
+
+def _try_auto_update_table_no(
+    office_row: dict[str, Any],
+    existing_terms: list[dict[str, Any]],
+    party_list: list,
+    offices_parser: Any,
+    *,
+    refresh_table_cache: bool,
+    years_only: bool,
+    key_years_only: bool,
+    current_missing_count: int,
+) -> tuple[int | None, list[dict[str, Any]] | None]:
+    if bool(office_row.get("disable_auto_table_update")):
+        return (None, None)
+    url = (office_row.get("url") or "").strip()
+    current_table_no = int(office_row.get("table_no") or 1)
+    page_result = get_table_html_cached(url, 1, refresh=refresh_table_cache, use_full_page=bool(office_row.get("use_full_page_for_table")))
+    num_tables = int(page_result.get("num_tables") or 0)
+    if num_tables <= 1:
+        return (None, None)
+    best_table_no = None
+    best_rows = None
+    best_missing = current_missing_count
+    # Secondary score: compare using year-only keys to handle date-precision differences
+    # (e.g., current table has exact dates but candidate table has month/day differences).
+    current_missing_years = current_missing_count
+    try:
+        current_html = get_table_html_cached(url, current_table_no, refresh=refresh_table_cache, use_full_page=bool(office_row.get("use_full_page_for_table"))).get("html") or ""
+        if current_html:
+            current_rows = _parse_office_html(
+                {**office_row, "find_date_in_infobox": False},
+                current_html,
+                url,
+                party_list,
+                offices_parser,
+                cached_table_html=current_html,
+                progress_callback=None,
+            )
+            current_missing_years = len(
+                _missing_holder_keys(existing_terms, current_rows, int(office_row.get("id") or 0), years_only, key_years_only=True)
+            )
+    except Exception:
+        pass
+    for candidate_no in range(1, num_tables + 1):
+        if candidate_no == current_table_no:
+            continue
+        candidate_result = get_table_html_cached(url, candidate_no, refresh=refresh_table_cache, use_full_page=bool(office_row.get("use_full_page_for_table")))
+        html = candidate_result.get("html") or ""
+        if not html:
+            continue
+        candidate_office = {**office_row, "table_no": candidate_no, "find_date_in_infobox": False}
+        table_data = _parse_office_html(
+            candidate_office, html, url, party_list, offices_parser,
+            cached_table_html=html, progress_callback=None,
+        )
+        if not table_data:
+            continue
+        missing = _missing_holder_keys(existing_terms, table_data, int(office_row.get("id") or 0), years_only, key_years_only=key_years_only)
+        missing_exact = len(missing)
+        missing_years = len(
+            _missing_holder_keys(existing_terms, table_data, int(office_row.get("id") or 0), years_only, key_years_only=True)
+        )
+        improved = (
+            (missing_exact < best_missing) or
+            (missing_exact == best_missing and missing_years < current_missing_years) or
+            (missing_exact == best_missing and missing_years == current_missing_years and best_rows is not None and len(table_data) > len(best_rows))
+        )
+        if improved:
+            best_missing = missing_exact
+            current_missing_years = missing_years
+            best_table_no = candidate_no
+            best_rows = table_data
+            if best_missing == 0 and current_missing_years == 0:
+                break
+    return (best_table_no, best_rows)
+
+
+def find_best_matching_table_for_existing_terms(
+    office_row: dict[str, Any],
+    existing_terms: list[dict[str, Any]],
+    *,
+    refresh_table_cache: bool = False,
+    key_years_only: bool = False,
+) -> dict[str, Any]:
+    """Find better table_no on the same page by minimizing missing-holder validation failures.
+
+    Returns {
+      "found_table_no": int|None,
+      "missing_before": int,
+      "missing_after": int|None,
+      "missing_labels_after": [str],
+      "rows": list[dict]|None,
+    }.
+    """
+    init_db()
+    log_dir = get_log_dir()
+    logger = Logger("table_search", "Office", log_dir=log_dir)
+    party_list = db_parties.get_party_list_for_scraper()
+    data_cleanup = parse_core.DataCleanup(logger)
+    biography = parse_core.Biography(logger, data_cleanup)
+    offices_parser = parse_core.Offices(logger, biography, data_cleanup)
+    years_only = bool(office_row.get("years_only"))
+    office_id = int(office_row.get("id") or 0)
+
+    url = (office_row.get("url") or "").strip()
+    table_no = int(office_row.get("table_no") or 1)
+    current_html = get_table_html_cached(
+        url,
+        table_no,
+        refresh=refresh_table_cache,
+        use_full_page=bool(office_row.get("use_full_page_for_table")),
+    ).get("html") or ""
+    current_rows = _parse_office_html(
+        {**office_row, "find_date_in_infobox": False},
+        current_html,
+        url,
+        party_list,
+        offices_parser,
+        cached_table_html=current_html if current_html else None,
+        progress_callback=None,
+    )
+    missing_before_set = _missing_holder_keys(existing_terms, current_rows, office_id, years_only, key_years_only=key_years_only)
+    found_table_no, found_rows = _try_auto_update_table_no(
+        office_row,
+        existing_terms,
+        party_list,
+        offices_parser,
+        refresh_table_cache=refresh_table_cache,
+        years_only=years_only,
+        key_years_only=key_years_only,
+        current_missing_count=len(missing_before_set),
+    )
+    if not found_table_no or found_rows is None:
+        return {
+            "found_table_no": None,
+            "missing_before": len(missing_before_set),
+            "missing_after": None,
+            "missing_labels_after": [],
+            "rows": None,
+        }
+    missing_after_set = _missing_holder_keys(existing_terms, found_rows, office_id, years_only, key_years_only=key_years_only)
+    key_fn = _holder_key_from_existing_term_years if key_years_only else _holder_key_from_existing_term
+    return {
+        "found_table_no": int(found_table_no),
+        "missing_before": len(missing_before_set),
+        "missing_after": len(missing_after_set),
+        "missing_labels_after": _missing_holders_display(existing_terms, missing_after_set, key_fn),
+        "rows": found_rows,
+    }
 def run_with_db(
     run_mode: str = "delta",  # full | delta | live_person | single_bio | bios_only
     run_bio: bool = False,
@@ -654,18 +837,36 @@ def run_with_db(
                 logger.log(f"Repopulate validation failed for {office_name}: table parsed to zero rows (existing had {len(existing_terms)}). Keeping existing terms.", True)
                 revalidate_failed_offices.append((office_id, "Table parsed to zero rows. Kept existing terms."))
                 continue
-            old_holders_years = {_holder_key_from_existing_term_years(t) for t in existing_terms}
+            old_holders_years = _filtered_existing_holder_keys(existing_terms, _holder_key_from_existing_term_years)
             years_only_pre = bool(office_row.get("years_only"))
             new_holders_years = _holder_keys_from_parsed_rows(table_data_pre, office_id, years_only_pre, key_years_only=True)
             missing_years = old_holders_years - new_holders_years
             if missing_years:
+                if run_mode in ("full", "delta", "live_person"):
+                    found_table_no, found_rows = _try_auto_update_table_no(
+                        office_row, existing_terms, party_list, offices_parser,
+                        refresh_table_cache=refresh_table_cache,
+                        years_only=years_only_pre,
+                        key_years_only=True,
+                        current_missing_count=len(missing_years),
+                    )
+                    if found_table_no and found_rows is not None:
+                        logger.log(f"Auto-updated table_no for {office_name}: {table_no} -> {found_table_no} based on validation match.", True)
+                        office_row["table_no"] = int(found_table_no)
+                        table_no = int(found_table_no)
+                        table_data_pre = found_rows
+                        missing_years = _missing_holder_keys(existing_terms, table_data_pre, office_id, years_only_pre, key_years_only=True)
+                        if not (dry_run or test_run):
+                            with get_connection() as conn:
+                                conn.execute("UPDATE office_table_config SET table_no = ?, updated_at=datetime('now') WHERE id = ?", (table_no, office_id))
+                                conn.commit()
                 missing_list = _missing_holders_display(existing_terms, missing_years, _holder_key_from_existing_term_years)
                 missing_str = _format_missing_holders(missing_list)
                 force_replace_early = force_overwrite or (force_replace_office_ids and office_id in force_replace_office_ids)
                 if force_replace_early:
                     logger.log(f"Force overwrite for {office_name}: table-only check found new list missing {len(missing_years)} holder(s); replacing anyway. Missing: {missing_str}", True)
                     replaceable_office_ids.add(office_id)
-                else:
+                elif missing_years:
                     logger.log(f"Repopulate validation failed for {office_name}: table-only check found new list missing {len(missing_years)} office holder(s). Skipping infobox fetch. Keeping existing terms. Missing: {missing_str}", True)
                     revalidate_failed_offices.append((office_id, "New list is missing office holders that were in existing data. Kept existing terms."))
                     revalidate_missing_holders_list.append(missing_list)
@@ -689,21 +890,41 @@ def run_with_db(
 
         if has_existing and table_data:
             force_replace = (force_replace_office_ids and office_id in force_replace_office_ids) or force_overwrite
-            old_holders = {_holder_key_from_existing_term(t) for t in existing_terms}
+            old_holders = _filtered_existing_holder_keys(existing_terms, _holder_key_from_existing_term)
             years_only = bool(office_row.get("years_only"))
             new_holders = _holder_keys_from_parsed_rows(table_data, office_id, years_only)
             missing = old_holders - new_holders
             if missing:
+                if run_mode in ("full", "delta", "live_person"):
+                    found_table_no, found_rows = _try_auto_update_table_no(
+                        office_row, existing_terms, party_list, offices_parser,
+                        refresh_table_cache=refresh_table_cache,
+                        years_only=years_only,
+                        key_years_only=False,
+                        current_missing_count=len(missing),
+                    )
+                    if found_table_no and found_rows is not None:
+                        logger.log(f"Auto-updated table_no for {office_name}: {table_no} -> {found_table_no} based on holder match.", True)
+                        office_row["table_no"] = int(found_table_no)
+                        table_no = int(found_table_no)
+                        table_data = found_rows
+                        missing = _missing_holder_keys(existing_terms, table_data, office_id, years_only)
+                        if not (dry_run or test_run):
+                            with get_connection() as conn:
+                                conn.execute("UPDATE office_table_config SET table_no = ?, updated_at=datetime('now') WHERE id = ?", (table_no, office_id))
+                                conn.commit()
                 missing_list = _missing_holders_display(existing_terms, missing, _holder_key_from_existing_term)
                 missing_str = _format_missing_holders(missing_list)
                 if force_replace:
                     logger.log(f"Force override for {office_name}: replacing despite {len(missing)} holder(s) missing from new list. Missing: {missing_str}", True)
                     replaceable_office_ids.add(office_id)
-                else:
+                elif missing:
                     logger.log(f"Repopulate validation failed for {office_name}: new list is missing {len(missing)} office holder(s) that were in existing data. Keeping existing terms. Missing: {missing_str}", True)
                     revalidate_failed_offices.append((office_id, "New list is missing office holders that were in existing data. Kept existing terms."))
                     revalidate_missing_holders_list.append(missing_list)
                     continue
+                else:
+                    replaceable_office_ids.add(office_id)
             else:
                 replaceable_office_ids.add(office_id)
         if cancel_check and cancel_check():
@@ -1197,8 +1418,31 @@ def preview_with_config(
     if max_rows is not None:
         preview_rows = preview_rows[:max_rows]
 
+    revalidate_failed = False
+    revalidate_missing_holders = None
+    revalidate_message = None
+    tc_id = office_row.get("office_table_config_id") or office_row.get("id")
+    if tc_id:
+        try:
+            existing_terms = db_office_terms.get_existing_terms_for_office(int(tc_id))
+        except Exception:
+            existing_terms = []
+        if existing_terms and table_data:
+            missing = _missing_holder_keys(existing_terms, table_data, int(tc_id), years_only, key_years_only=False)
+            if missing:
+                revalidate_failed = True
+                revalidate_message = "New list found. Existing office holders are missing from this preview list."
+                revalidate_missing_holders = _missing_holders_display(existing_terms, missing, _holder_key_from_existing_term)
+
     raw_table_preview = None
     if not preview_rows and not table_data:
         raw_max = max_rows if max_rows is not None else 100
         raw_table_preview = get_raw_table_preview(url, int(office_row.get("table_no") or 1), raw_max)
-    return {"preview_rows": preview_rows, "raw_table_preview": raw_table_preview, "error": None}
+    return {
+        "preview_rows": preview_rows,
+        "raw_table_preview": raw_table_preview,
+        "error": None,
+        "revalidate_failed": revalidate_failed,
+        "revalidate_message": revalidate_message,
+        "revalidate_missing_holders": revalidate_missing_holders,
+    }

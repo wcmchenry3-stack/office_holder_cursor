@@ -109,6 +109,7 @@ CREATE TABLE IF NOT EXISTS source_pages (
     notes TEXT,
     enabled INTEGER NOT NULL DEFAULT 1,
     allow_reuse_tables INTEGER NOT NULL DEFAULT 0,
+    disable_auto_table_update INTEGER NOT NULL DEFAULT 0,
     last_scraped_at TEXT,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
