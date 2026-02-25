@@ -183,3 +183,9 @@ Notes:
 
 - Repo is safe to refresh: `data/`, `*.db`, `logs/`, and `debug/` are in `.gitignore`. Your DB, logs, and debug exports are not removed on pull.
 - `sample files/` is tracked so the sample script and CSV stay in the repo.
+- UI now shows a **Remote sync warning** banner when local work is not synced (uncommitted changes, local commits ahead of remote, or branch not yet pushed).
+- Recommended workflow when direct pushes to `dev` are blocked:
+  1. Create/switch to a feature branch once (`git checkout -b feature/<name>`).
+  2. Keep committing additional saves to that same branch until ready.
+  3. Push with upstream tracking (`git push -u origin feature/<name>`), then normal `git push` for later commits.
+  4. After merge, create a new feature branch for the next unit of work.
