@@ -1,0 +1,23 @@
+[
+  {
+    "name": "sample_parser_fixture",
+    "test_type": "table_config",
+    "html_file": "test_scripts/fixtures/sample_parser_fixture.html",
+    "source_url": "https://en.wikipedia.org/wiki/Example",
+    "config_json": {
+      "table_no": 1,
+      "table_rows": 1,
+      "link_column": 1,
+      "term_start_column": 2,
+      "term_end_column": 3
+    },
+    "expected_json": [
+      {
+        "name": "Jane Doe",
+        "term_start": "2020",
+        "term_end": "2024"
+      }
+    ],
+    "enabled": false
+  }
+]
