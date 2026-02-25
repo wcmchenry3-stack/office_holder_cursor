@@ -121,6 +121,18 @@ flowchart LR
 
 ## Parser test manifest workflow
 
+### Test scripts
+
+- Validate parser fixtures before commit or deploy:
+  ```bash
+  python scripts/validate_parser_fixtures.py
+  ```
+- Optional: validate a custom manifest path:
+  ```bash
+  python scripts/validate_parser_fixtures.py path/to/parser_tests.json
+  ```
+- The validator checks required manifest keys, verifies `html_file` fixture paths exist, and enforces that `config_json` and `expected_json` are JSON objects/arrays. It exits non-zero with per-entry error messages when any fixture row is broken.
+
 - Canonical parser test manifest: `test_scripts/manifest/parser_tests.json`.
 - Each manifest row includes: `name`, `test_type`, `html_file`, `source_url`, `config_json`, `expected_json`, `enabled`.
 - `html_file` must point to a committed local fixture path (for example `test_scripts/fixtures/...`) relative to the project root. Import validation rejects missing or absolute paths.
