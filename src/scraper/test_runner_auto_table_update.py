@@ -246,3 +246,11 @@ def test_url_only_matching_ignores_wikipedia_query_params():
 
     missing = runner._missing_holder_keys(existing, parsed, office_id=1, years_only=True)
     assert missing == set()
+
+
+def test_url_only_matching_ignores_scheme_and_host_differences():
+    existing = [{"wiki_url": "http://en.wikipedia.org/wiki/Daniel_LeRoy"}]
+    parsed = [{"Wiki Link": "https://en.wikipedia.org/wiki/Daniel_LeRoy", "Term Start": "", "Term End": "", "Term Start Year": 1836, "Term End Year": 1837, "Party": "", "District": ""}]
+
+    missing = runner._missing_holder_keys(existing, parsed, office_id=1, years_only=True)
+    assert missing == set()
