@@ -89,3 +89,100 @@ def test_auto_table_update_respects_disable_flag(monkeypatch):
     assert table_no is None
     assert rows is None
     assert called["cache"] == 0
+
+
+def test_find_best_matching_table_reports_before_after(monkeypatch):
+    class _Dummy:
+        def __init__(self, *args, **kwargs):
+            pass
+
+    monkeypatch.setattr(runner, "init_db", lambda: None)
+    monkeypatch.setattr(runner, "Logger", _Dummy)
+    monkeypatch.setattr(runner.parse_core, "DataCleanup", _Dummy)
+    monkeypatch.setattr(runner.parse_core, "Biography", _Dummy)
+    monkeypatch.setattr(runner.parse_core, "Offices", _Dummy)
+    monkeypatch.setattr(runner.db_parties, "get_party_list_for_scraper", lambda: [])
+
+    def fake_cache(url, table_no, refresh=False, use_full_page=False):
+        if table_no == 1:
+            return {"num_tables": 3, "html": "<table>1</table>"}
+        return {"num_tables": 3, "html": f"<table>{table_no}</table>"}
+
+    def fake_parse(office_row, html, url, party_list, offices_parser, **kwargs):
+        tno = int(office_row.get("table_no") or 1)
+        if tno == 1:
+            return [_row("https://en.wikipedia.org/wiki/A", "2000-01-01", "2001-01-01")]
+        if tno == 2:
+            return [
+                _row("https://en.wikipedia.org/wiki/A", "2000-01-01", "2001-01-01"),
+                _row("https://en.wikipedia.org/wiki/B", "2001-01-02", "2002-01-01"),
+            ]
+        return [_row("https://en.wikipedia.org/wiki/A", "2000-01-01", "2001-01-01")]
+
+    monkeypatch.setattr(runner, "get_table_html_cached", fake_cache)
+    monkeypatch.setattr(runner, "_parse_office_html", fake_parse)
+
+    existing_terms = [
+        {"wiki_url": "https://en.wikipedia.org/wiki/A", "term_start": "2000-01-01", "term_end": "2001-01-01"},
+        {"wiki_url": "https://en.wikipedia.org/wiki/B", "term_start": "2001-01-02", "term_end": "2002-01-01"},
+    ]
+    result = runner.find_best_matching_table_for_existing_terms(
+        {
+            "id": 99,
+            "url": "https://en.wikipedia.org/wiki/List",
+            "table_no": 1,
+            "years_only": False,
+            "use_full_page_for_table": False,
+            "disable_auto_table_update": False,
+        },
+        existing_terms,
+    )
+
+    assert result["found_table_no"] == 2
+    assert result["missing_before"] == 1
+    assert result["missing_after"] == 0
+
+
+def test_preview_reports_new_list_mismatch(monkeypatch):
+    class _Dummy:
+        def __init__(self, *args, **kwargs):
+            pass
+
+    monkeypatch.setattr(runner, "init_db", lambda: None)
+    monkeypatch.setattr(runner, "Logger", _Dummy)
+    monkeypatch.setattr(runner.parse_core, "DataCleanup", _Dummy)
+    monkeypatch.setattr(runner.parse_core, "Biography", _Dummy)
+    monkeypatch.setattr(runner.parse_core, "Offices", _Dummy)
+    monkeypatch.setattr(runner.db_parties, "get_party_list_for_scraper", lambda: [])
+    monkeypatch.setattr(
+        runner,
+        "get_table_html_cached",
+        lambda *args, **kwargs: {"table_no": 1, "num_tables": 1, "html": "<table>1</table>"},
+    )
+    monkeypatch.setattr(
+        runner,
+        "_parse_office_html",
+        lambda *args, **kwargs: [_row("https://en.wikipedia.org/wiki/A", "2000-01-01", "2001-01-01")],
+    )
+    monkeypatch.setattr(
+        runner.db_office_terms,
+        "get_existing_terms_for_office",
+        lambda _id: [
+            {"wiki_url": "https://en.wikipedia.org/wiki/A", "term_start": "2000-01-01", "term_end": "2001-01-01"},
+            {"wiki_url": "https://en.wikipedia.org/wiki/B", "term_start": "2001-01-02", "term_end": "2002-01-01"},
+        ],
+    )
+
+    result = runner.preview_with_config(
+        {
+            "url": "https://en.wikipedia.org/wiki/List",
+            "table_no": 1,
+            "years_only": False,
+            "office_table_config_id": 42,
+        },
+        max_rows=10,
+    )
+
+    assert result["revalidate_failed"] is True
+    assert result["revalidate_missing_holders"]
+    assert "New list found" in (result["revalidate_message"] or "")
