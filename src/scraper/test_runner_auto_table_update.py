@@ -262,3 +262,28 @@ def test_url_only_matching_ignores_encoding_and_title_case_differences():
 
     missing = runner._missing_holder_keys(existing, parsed, office_id=1, years_only=True)
     assert missing == set()
+
+
+def test_matching_uses_active_links_even_when_dates_are_invalid():
+    existing = [{"wiki_url": "https://en.wikipedia.org/wiki/Daniel_LeRoy"}]
+    parsed = [{
+        "Wiki Link": "https://en.wikipedia.org/wiki/Daniel_LeRoy",
+        "Term Start": "Invalid date",
+        "Term End": "Invalid date",
+        "Term Start Year": None,
+        "Term End Year": None,
+        "_dead_link": False,
+        "Party": "",
+        "District": "",
+    }]
+
+    missing = runner._missing_holder_keys(existing, parsed, office_id=1, years_only=False)
+    assert missing == set()
+
+
+def test_matching_ignores_deadlinks_from_existing_terms():
+    existing = [{"wiki_url": "https://en.wikipedia.org/wiki/Albert_Williams_(Michigan_Attorney_General)?action=edit&redlink=1"}]
+    parsed = []
+
+    missing = runner._missing_holder_keys(existing, parsed, office_id=1, years_only=False)
+    assert missing == set()

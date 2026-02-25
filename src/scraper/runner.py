@@ -149,7 +149,10 @@ def _normalize_row_for_import(
 
 def _holder_key_from_existing_term(term: dict[str, Any]) -> tuple[str, str, str]:
     """Build a comparable key from an existing office_term row (URL-only matching)."""
-    url = _canonical_holder_url((term.get("wiki_url") or "").strip())
+    raw = (term.get("wiki_url") or "").strip()
+    if _is_dead_wiki_url(raw):
+        return ("", "", "")
+    url = _canonical_holder_url(raw)
     return (url, "", "")
 
 
@@ -198,6 +201,12 @@ def _holder_keys_from_parsed_rows(
     key_years_only is accepted for compatibility and ignored."""
     keys: set[tuple[str, str, str]] = set()
     for row in table_data:
+        # For table matching/revalidation we only care about active holder URLs,
+        # not whether date parsing succeeded.
+        raw_link = (row.get("Wiki Link") or "").strip()
+        if raw_link and raw_link != "No link" and not row.get("_dead_link") and not _is_dead_wiki_url(raw_link):
+            keys.add((_canonical_holder_url(raw_link), "", ""))
+            continue
         normalized = _normalize_row_for_import(row, years_only=years_only)
         if normalized is None and (row.get("Wiki Link") or "") in ("", "No link") and row.get("_name_from_table"):
             normalized = _normalize_row_for_import(row, years_only=years_only, include_no_link=True)
@@ -209,6 +218,11 @@ def _holder_keys_from_parsed_rows(
             wiki_url = "No link:" + str(office_id) + ":" + (row.get("_name_from_table") or "Unknown")
         keys.add((_canonical_holder_url(wiki_url), "", ""))
     return keys
+
+
+def _is_dead_wiki_url(url: str) -> bool:
+    u = (url or "").lower()
+    return "redlink=1" in u
 
 
 def _canonical_holder_url(url: str) -> str:
@@ -270,6 +284,8 @@ def _dedupe_parsed_rows(table_data: list[dict], years_only: bool) -> list[dict]:
 def _missing_holder_keys(existing_terms: list[dict[str, Any]], table_data: list[dict[str, Any]], office_id: int, years_only: bool, *, key_years_only: bool = False) -> set[tuple]:
     old_holders = {_holder_key_from_existing_term_years(t) for t in existing_terms} if key_years_only else {_holder_key_from_existing_term(t) for t in existing_terms}
     new_holders = _holder_keys_from_parsed_rows(table_data, office_id, years_only, key_years_only=key_years_only)
+    old_holders = {k for k in old_holders if k[0]}
+    new_holders = {k for k in new_holders if k[0]}
     return old_holders - new_holders
 
 
