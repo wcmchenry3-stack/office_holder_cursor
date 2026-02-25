@@ -29,4 +29,5 @@ env/
 config/local.json
 
 # Generated debug/test artifacts
-test_scripts/*.html
+test_scripts/**/*.html
+!test_scripts/fixtures/**/*.html
