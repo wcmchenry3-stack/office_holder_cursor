@@ -178,7 +178,11 @@ def _missing_holders_display(
     """Return human-readable labels for existing terms whose key is in missing_keys."""
     labels: list[str] = []
     for t in existing_terms:
-        if key_from_term(t) not in missing_keys:
+        k = key_from_term(t)
+        if not k[0]:
+            # Ignore deadlinks/no-link placeholders for revalidation display.
+            continue
+        if k not in missing_keys:
             continue
         url = (t.get("wiki_url") or "").strip()
         name = url.split("/")[-1].replace("_", " ") if url else "(no link)"
@@ -189,6 +193,14 @@ def _missing_holders_display(
         else:
             labels.append(name)
     return labels
+
+
+def _filtered_existing_holder_keys(
+    existing_terms: list[dict[str, Any]],
+    key_from_term: Callable[[dict[str, Any]], tuple[str, str, str]],
+) -> set[tuple[str, str, str]]:
+    """Build existing-holder key set while excluding empty/deadlink keys."""
+    return {k for k in (key_from_term(t) for t in existing_terms) if k[0]}
 
 
 def _holder_keys_from_parsed_rows(
@@ -825,7 +837,7 @@ def run_with_db(
                 logger.log(f"Repopulate validation failed for {office_name}: table parsed to zero rows (existing had {len(existing_terms)}). Keeping existing terms.", True)
                 revalidate_failed_offices.append((office_id, "Table parsed to zero rows. Kept existing terms."))
                 continue
-            old_holders_years = {_holder_key_from_existing_term_years(t) for t in existing_terms}
+            old_holders_years = _filtered_existing_holder_keys(existing_terms, _holder_key_from_existing_term_years)
             years_only_pre = bool(office_row.get("years_only"))
             new_holders_years = _holder_keys_from_parsed_rows(table_data_pre, office_id, years_only_pre, key_years_only=True)
             missing_years = old_holders_years - new_holders_years
@@ -878,7 +890,7 @@ def run_with_db(
 
         if has_existing and table_data:
             force_replace = (force_replace_office_ids and office_id in force_replace_office_ids) or force_overwrite
-            old_holders = {_holder_key_from_existing_term(t) for t in existing_terms}
+            old_holders = _filtered_existing_holder_keys(existing_terms, _holder_key_from_existing_term)
             years_only = bool(office_row.get("years_only"))
             new_holders = _holder_keys_from_parsed_rows(table_data, office_id, years_only)
             missing = old_holders - new_holders

@@ -287,3 +287,17 @@ def test_matching_ignores_deadlinks_from_existing_terms():
 
     missing = runner._missing_holder_keys(existing, parsed, office_id=1, years_only=False)
     assert missing == set()
+
+
+def test_filtered_existing_keys_excludes_deadlinks_and_display_hides_them():
+    existing = [
+        {"wiki_url": "https://en.wikipedia.org/wiki/Alive_Person", "term_start_year": 1900, "term_end_year": 1901},
+        {"wiki_url": "https://en.wikipedia.org/wiki/Dead_Link?action=edit&redlink=1", "term_start_year": 1902, "term_end_year": 1903},
+    ]
+    keys = runner._filtered_existing_holder_keys(existing, runner._holder_key_from_existing_term)
+    assert ("/wiki/alive_person", "", "") in keys
+    assert all(k[0] for k in keys)
+
+    missing_keys = {("", "", ""), ("/wiki/alive_person", "", "")}
+    labels = runner._missing_holders_display(existing, missing_keys, runner._holder_key_from_existing_term)
+    assert labels == ["Alive Person (1900–1901)"]
