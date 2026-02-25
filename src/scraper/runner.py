@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import sys
 import time
-import re
 from pathlib import Path
 from typing import Any, Callable
 
@@ -149,39 +148,14 @@ def _normalize_row_for_import(
 
 
 def _holder_key_from_existing_term(term: dict[str, Any]) -> tuple[str, str, str]:
-    """Build a comparable key (wiki_url, start_key, end_key) from an existing office_term row."""
+    """Build a comparable key from an existing office_term row (URL-only matching)."""
     url = (term.get("wiki_url") or "").strip()
-    start = term.get("term_start")
-    end = term.get("term_end")
-    if start is None:
-        start = term.get("term_start_year")
-    if end is None:
-        end = term.get("term_end_year")
-    start_key = str(start) if start is not None else ""
-    end_key = str(end) if end is not None else ""
-    return (url, start_key, end_key)
+    return (url, "", "")
 
 
 def _holder_key_from_existing_term_years(term: dict[str, Any]) -> tuple[str, str, str]:
-    """Build a year-only key for table-first validation (no infobox)."""
-    url = (term.get("wiki_url") or "").strip()
-    start = term.get("term_start")
-    end = term.get("term_end")
-    start_year = term.get("term_start_year")
-    end_year = term.get("term_end_year")
-    if start_year is None and start and isinstance(start, str) and len(start) >= 4:
-        try:
-            start_year = int(start[:4])
-        except (ValueError, TypeError):
-            pass
-    if end_year is None and end and isinstance(end, str) and len(end) >= 4:
-        try:
-            end_year = int(end[:4])
-        except (ValueError, TypeError):
-            pass
-    start_key = str(start_year) if start_year is not None else ""
-    end_key = str(end_year) if end_year is not None else ""
-    return (url, start_key, end_key)
+    """Build a URL-only key for table-first validation (no infobox)."""
+    return _holder_key_from_existing_term(term)
 
 
 def _format_missing_holders(labels: list[str], max_show: int = 20) -> str:
@@ -220,8 +194,8 @@ def _holder_keys_from_parsed_rows(
     years_only: bool,
     key_years_only: bool = False,
 ) -> set[tuple[str, str, str]]:
-    """Build set of holder keys from parsed table rows (same normalize as write path).
-    When key_years_only is True, use only term_start_year/term_end_year for the key (for table-only pre-validation)."""
+    """Build set of holder keys from parsed table rows (URL-only matching).
+    key_years_only is accepted for compatibility and ignored."""
     keys: set[tuple[str, str, str]] = set()
     for row in table_data:
         normalized = _normalize_row_for_import(row, years_only=years_only)
@@ -233,19 +207,7 @@ def _holder_keys_from_parsed_rows(
         wiki_url = row.get("Wiki Link") or ""
         if wiki_url in ("", "No link") and row.get("_name_from_table"):
             wiki_url = "No link:" + str(office_id) + ":" + (row.get("_name_from_table") or "Unknown")
-        if key_years_only:
-            if term_start_year is None and term_start_val:
-                m = re.search(r"(\d{4})", str(term_start_val))
-                term_start_year = int(m.group(1)) if m else None
-            if term_end_year is None and term_end_val:
-                m = re.search(r"(\d{4})", str(term_end_val))
-                term_end_year = int(m.group(1)) if m else None
-            start_key = str(term_start_year) if term_start_year is not None else ""
-            end_key = str(term_end_year) if term_end_year is not None else ""
-        else:
-            start_key = (term_start_val if term_start_val is not None else "") or (str(term_start_year) if term_start_year is not None else "")
-            end_key = (term_end_val if term_end_val is not None else "") or (str(term_end_year) if term_end_year is not None else "")
-        keys.add((wiki_url, start_key, end_key))
+        keys.add((wiki_url, "", ""))
     return keys
 
 
