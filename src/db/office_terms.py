@@ -41,11 +41,12 @@ def insert_office_term(
         ts_imp = 1 if term_start_imprecise else 0
         te_imp = 1 if term_end_imprecise else 0
         if _has_hierarchy_terms(conn) and office_details_id is not None and office_table_config_id is not None:
+            # office_id is NOT NULL; use office_table_config_id so the runnable-unit id is consistent.
             cur = conn.execute(
                 """INSERT OR REPLACE INTO office_terms
-                   (office_details_id, office_table_config_id, individual_id, party_id, district, term_start, term_end, term_start_year, term_end_year, term_start_imprecise, term_end_imprecise, wiki_url)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (office_details_id, office_table_config_id, individual_id, party_id, district or None, term_start, term_end, term_start_year, term_end_year, ts_imp, te_imp, wiki_url),
+                   (office_id, office_details_id, office_table_config_id, individual_id, party_id, district, term_start, term_end, term_start_year, term_end_year, term_start_imprecise, term_end_imprecise, wiki_url)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (office_table_config_id, office_details_id, office_table_config_id, individual_id, party_id, district or None, term_start, term_end, term_start_year, term_end_year, ts_imp, te_imp, wiki_url),
             )
         else:
             cur = conn.execute(

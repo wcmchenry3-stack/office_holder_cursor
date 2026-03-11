@@ -2552,6 +2552,58 @@ async def ui_test_scripts_page(request: Request):
     )
 
 
+@app.get("/run-scenarios-test", response_class=HTMLResponse)
+async def run_scenarios_test_page(request: Request):
+    return templates.TemplateResponse(
+        "run_scenarios_test.html",
+        {"request": request, "script_path": "scripts/run_scenarios_test.py"},
+    )
+
+
+@app.post("/api/run-scenarios-test")
+async def api_run_scenarios_test():
+    """Run the run-scenarios test script in a subprocess (uses test DB only)."""
+    script_path = ROOT / "scripts" / "run_scenarios_test.py"
+    if not script_path.exists():
+        raise HTTPException(status_code=500, detail=f"Test script not found: {script_path}")
+    try:
+        proc = subprocess.run(
+            [sys.executable, str(script_path)],
+            cwd=str(ROOT),
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+    except subprocess.TimeoutExpired:
+        return JSONResponse(
+            {
+                "ok": False,
+                "exit_code": -1,
+                "stdout": "",
+                "stderr": "Test run timed out after 120 seconds.",
+            },
+            status_code=200,
+        )
+    except Exception as e:
+        return JSONResponse(
+            {
+                "ok": False,
+                "exit_code": -1,
+                "stdout": "",
+                "stderr": str(e),
+            },
+            status_code=200,
+        )
+    return JSONResponse(
+        {
+            "ok": proc.returncode == 0,
+            "exit_code": proc.returncode,
+            "stdout": proc.stdout or "",
+            "stderr": proc.stderr or "",
+        },
+    )
+
+
 @app.post("/api/ui-test-scripts/run/start")
 async def api_run_ui_test_scripts_start(request: Request):
     payload = {}

@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Run scenarios test – Office Holder{% endblock %}
+{% block content %}
+<h1>Run scenarios test</h1>
+<p>Runs the run-scenarios test script that validates delta run, populate-terms, and preview against a test database and cached HTML. No production data is modified.</p>
+<p><strong>Script:</strong> <code>{{ script_path }}</code></p>
+<p><button id="runBtn" class="btn" type="button">Run scenarios test</button></p>
+<p id="statusMsg" class="run-scenarios-status" style="margin:0.5rem 0; font-weight:600;" aria-live="polite"></p>
+<pre id="output" style="white-space:pre-wrap;background:#111;color:#eee;padding:12px;min-height:4em;">Not run yet.</pre>
+<script>
+(function() {
+  var runBtn = document.getElementById('runBtn');
+  var statusMsg = document.getElementById('statusMsg');
+  var output = document.getElementById('output');
+  function setStatus(html, isPass) {
+    statusMsg.innerHTML = html;
+    statusMsg.style.color = isPass ? '#2f9e44' : '#e03131';
+  }
+  runBtn.addEventListener('click', function() {
+    runBtn.disabled = true;
+    statusMsg.textContent = '';
+    output.textContent = 'Running…';
+    output.style.borderLeft = '4px solid transparent';
+    fetch('/api/run-scenarios-test', { method: 'POST' })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        var out = (data.stdout || '') + (data.stderr ? '\n' + data.stderr : '');
+        if (!out.trim()) out = '(no output)';
+        output.textContent = out;
+        if (data.ok) {
+          output.style.borderLeft = '4px solid #2f9e44';
+          setStatus('Pass — all scenarios completed successfully.', true);
+        } else {
+          output.style.borderLeft = '4px solid #e03131';
+          var stderrLines = (data.stderr || '').trim().split('\n').filter(function(s) { return s.trim(); });
+          var errLine = stderrLines.length ? stderrLines[stderrLines.length - 1] : ('Exit code ' + (data.exit_code != null ? data.exit_code : '?'));
+          setStatus('Fail — ' + (errLine || 'Unknown error.'), false);
+        }
+      })
+      .catch(function(err) {
+        output.textContent = 'Request failed: ' + err.message;
+        output.style.borderLeft = '4px solid #e03131';
+        setStatus('Fail — ' + err.message, false);
+      })
+      .finally(function() {
+        runBtn.disabled = false;
+      });
+  });
+})();
+</script>
+{% endblock %}
