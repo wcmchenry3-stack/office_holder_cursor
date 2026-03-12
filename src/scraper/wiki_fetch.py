@@ -38,6 +38,32 @@ def normalize_wiki_url(wiki_url: str) -> str | None:
     return urlunparse((p.scheme or "https", netloc, path, p.params, p.query, p.fragment))
 
 
+def canonical_holder_url(url: str) -> str:
+    """
+    Canonicalize holder URL for comparisons (e.g. matching existing terms to table rows).
+    Normalizes via normalize_wiki_url and produces a stable /wiki/<title> key (lowercased)
+    so scheme/host/query/encoding/case differences don't create false mismatches.
+    """
+    u = (url or "").strip()
+    if not u:
+        return ""
+    if u.startswith("No link:"):
+        return u
+    normalized = normalize_wiki_url(u)
+    if normalized:
+        try:
+            p = urlparse(normalized)
+            path = (p.path or "").rstrip("/")
+            parts = [x for x in path.split("/") if x]
+            if len(parts) >= 2 and parts[0].lower() == "wiki":
+                title = unquote(parts[1]).replace(" ", "_").strip().lower()
+                return f"/wiki/{title}"
+            return urlunparse(("https", (p.netloc or "").lower(), path, "", "", ""))
+        except Exception:
+            return normalized
+    return u
+
+
 def wiki_url_to_rest_html_url(wiki_url: str) -> str | None:
     """
     If wiki_url is a Wikipedia page URL, return the REST API HTML URL for the same page.

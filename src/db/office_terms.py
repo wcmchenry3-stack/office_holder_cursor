@@ -40,6 +40,34 @@ def insert_office_term(
     try:
         ts_imp = 1 if term_start_imprecise else 0
         te_imp = 1 if term_end_imprecise else 0
+        # #region agent log
+        try:
+            from pathlib import Path as _P
+            import json as _J, time as _T
+            _log_path = _P(__file__).resolve().parent.parent.parent / ".cursor" / "debug.log"
+            open(_log_path, "a", encoding="utf-8").write(
+                _J.dumps(
+                    {
+                        "id": "log_insert_office_term",
+                        "timestamp": _T.time() * 1000,
+                        "location": "db/office_terms.py:insert_office_term",
+                        "message": "insert_office_term call",
+                        "data": {
+                            "office_id": office_id,
+                            "office_details_id": office_details_id,
+                            "office_table_config_id": office_table_config_id,
+                            "has_hierarchy_terms": _has_hierarchy_terms(conn),
+                            "wiki_url": (wiki_url or "")[:80],
+                        },
+                        "runId": "pre-fix",
+                        "hypothesisId": "H4",
+                    }
+                )
+                + "\n"
+            )
+        except Exception:
+            pass
+        # #endregion
         if _has_hierarchy_terms(conn) and office_details_id is not None and office_table_config_id is not None:
             # office_id is NOT NULL; use office_table_config_id so the runnable-unit id is consistent.
             cur = conn.execute(

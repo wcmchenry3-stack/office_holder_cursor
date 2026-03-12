@@ -6,6 +6,7 @@ Supports: dry_run / test_run (no DB write), row limits, Full / Delta / Live pers
 
 from __future__ import annotations
 
+import sqlite3
 import sys
 import time
 from pathlib import Path
@@ -712,6 +713,7 @@ def run_with_db(
     replaceable_office_ids: set[int] = set()
     revalidate_failed_offices: list[tuple[int, str]] = []
     revalidate_missing_holders_list: list[list[str]] = []  # full list per office when failure is "missing holders"
+    office_errors: list[dict[str, Any]] = []  # offices that raised; run continues for others
     cancelled_early = False
     bio_success_count = 0
     bio_error_count = 0
@@ -776,6 +778,7 @@ def run_with_db(
                 "revalidate_failed": rf,
                 "revalidate_message": rm,
                 "revalidate_missing_holders": r_missing,
+                "office_errors": office_errors,
             }
         office_id = office_row["id"]
         url = office_row.get("url") or ""
@@ -857,9 +860,14 @@ def run_with_db(
                         table_data_pre = found_rows
                         missing_years = _missing_holder_keys(existing_terms, table_data_pre, office_id, years_only_pre, key_years_only=True)
                         if not (dry_run or test_run):
-                            with get_connection() as conn:
-                                conn.execute("UPDATE office_table_config SET table_no = ?, updated_at=datetime('now') WHERE id = ?", (table_no, office_id))
-                                conn.commit()
+                            try:
+                                with get_connection() as conn:
+                                    conn.execute("UPDATE office_table_config SET table_no = ?, updated_at=datetime('now') WHERE id = ?", (table_no, office_id))
+                                    conn.commit()
+                            except sqlite3.IntegrityError as e:
+                                logger.log(f"Could not update table_no for {office_name} (id={office_id}): {e}. Skipping this table.", True)
+                                office_errors.append({"office_id": office_id, "office_name": office_name, "error": str(e)})
+                                continue
                 missing_list = _missing_holders_display(existing_terms, missing_years, _holder_key_from_existing_term_years)
                 missing_str = _format_missing_holders(missing_list)
                 force_replace_early = force_overwrite or (force_replace_office_ids and office_id in force_replace_office_ids)
@@ -910,9 +918,18 @@ def run_with_db(
                         table_data = found_rows
                         missing = _missing_holder_keys(existing_terms, table_data, office_id, years_only)
                         if not (dry_run or test_run):
-                            with get_connection() as conn:
-                                conn.execute("UPDATE office_table_config SET table_no = ?, updated_at=datetime('now') WHERE id = ?", (table_no, office_id))
-                                conn.commit()
+                            try:
+                                with get_connection() as conn:
+                                    conn.execute("UPDATE office_table_config SET table_no = ?, updated_at=datetime('now') WHERE id = ?", (table_no, office_id))
+                                    conn.commit()
+                            except sqlite3.IntegrityError as e:
+                                logger.log(f"Could not update table_no for {office_name} (id={office_id}): {e}. Skipping this table.", True)
+                                office_errors.append({"office_id": office_id, "office_name": office_name, "error": str(e)})
+                                # Remove this office's rows from all_office_data so we don't write them
+                                n_remove = sum(1 for r in all_office_data if r.get("_office_id") == office_id)
+                                all_office_data[:] = [r for r in all_office_data if r.get("_office_id") != office_id]
+                                total_terms -= n_remove
+                                continue
                 missing_list = _missing_holders_display(existing_terms, missing, _holder_key_from_existing_term)
                 missing_str = _format_missing_holders(missing_list)
                 if force_replace:
@@ -970,31 +987,32 @@ def run_with_db(
                     "Dead link": dead_link,
                     "Name (no link)": row.get("_name_from_table") if dead_link and wiki_link in ("", "No link") else None,
                 })
-            preview_rows = preview_rows[:50]
-        logger.close()
-        rf = len(revalidate_failed_offices) > 0
-        rm = revalidate_failed_offices[0][1] if revalidate_failed_offices else None
-        r_missing = revalidate_missing_holders_list[0] if revalidate_missing_holders_list else None
-        return {
-            "office_count": idx,
-            "terms_parsed": total_terms,
-            "unique_wiki_urls": len(unique_wiki_urls),
-            "bio_success_count": 0,
-            "bio_error_count": 0,
-            "bio_errors": [],
-            "bio_skipped_count": 0,
-            "living_success_count": 0,
-            "living_error_count": 0,
-            "living_errors": [],
-            "dry_run": dry_run,
-            "test_run": test_run,
-            "preview_rows": preview_rows,
-            "cancelled": True,
-            "message": f"Stopped after {idx} offices.",
-            "revalidate_failed": rf,
-            "revalidate_message": rm,
-            "revalidate_missing_holders": r_missing,
-        }
+                preview_rows = preview_rows[:50]
+            logger.close()
+            rf = len(revalidate_failed_offices) > 0
+            rm = revalidate_failed_offices[0][1] if revalidate_failed_offices else None
+            r_missing = revalidate_missing_holders_list[0] if revalidate_missing_holders_list else None
+            return {
+                "office_count": idx,
+                "terms_parsed": total_terms,
+                "unique_wiki_urls": len(unique_wiki_urls),
+                "bio_success_count": 0,
+                "bio_error_count": 0,
+                "bio_errors": [],
+                "bio_skipped_count": 0,
+                "living_success_count": 0,
+                "living_error_count": 0,
+                "living_errors": [],
+                "dry_run": dry_run,
+                "test_run": test_run,
+                "preview_rows": preview_rows,
+                "cancelled": True,
+                "message": f"Stopped after {idx} offices.",
+                "revalidate_failed": rf,
+                "revalidate_message": rm,
+                "revalidate_missing_holders": r_missing,
+                "office_errors": office_errors,
+            }
 
     report("office", len(offices), len(offices), "All offices parsed", {"terms_so_far": total_terms})
 
@@ -1277,6 +1295,7 @@ def run_with_db(
             "revalidate_failed": rf,
             "revalidate_message": rm,
             "revalidate_missing_holders": r_missing,
+            "office_errors": office_errors,
         }
 
     logger.close()
@@ -1331,6 +1350,7 @@ def run_with_db(
         "revalidate_failed": revalidate_failed,
         "revalidate_message": revalidate_message,
         "revalidate_missing_holders": revalidate_missing_holders,
+        "office_errors": office_errors,
     }
 
 
