@@ -151,6 +151,32 @@ def main() -> int:
         office_ids=[tc_id],
         run_office_bio=False,
     )
+    # #region agent log
+    try:
+        _log_path = PROJECT_ROOT / ".cursor" / "debug.log"
+        with open(_log_path, "a", encoding="utf-8") as _f:
+            _f.write(
+                json.dumps(
+                    {
+                        "id": "log_run_scenarios_delta_result",
+                        "timestamp": __import__("time").time() * 1000,
+                        "location": "scripts/run_scenarios_test.py:main",
+                        "message": "run_scenarios_test delta result",
+                        "data": {
+                            "office_count": result.get("office_count"),
+                            "terms_parsed": result.get("terms_parsed"),
+                            "dry_run": result.get("dry_run"),
+                            "test_run": result.get("test_run"),
+                        },
+                        "runId": "pre-fix",
+                        "hypothesisId": "H3",
+                    }
+                )
+                + "\n"
+            )
+    except Exception:
+        pass
+    # #endregion
     if result.get("office_count", 0) == 0:
         print("ERROR: Delta run processed no offices.", file=sys.stderr)
         return 1

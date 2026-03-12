@@ -318,6 +318,10 @@ document.getElementById('runForm').addEventListener('submit', async (e) => {
             msg += '. First error: ' + (res.living_errors[0].error || '');
           }
         }
+        if (res.office_errors && res.office_errors.length) {
+          msg += '. ' + res.office_errors.length + ' table(s) could not be processed: ' + (res.office_errors[0].error || res.office_errors[0].office_name || '');
+          if (res.office_errors.length > 1) msg += ' (and ' + (res.office_errors.length - 1) + ' more)';
+        }
         resultEl.textContent = msg;
         const hasErrors = (bioOk && res.bio_error_count > 0) || (livingOk && res.living_error_count > 0);
         resultEl.className = hasErrors ? 'alert alert-error' : 'alert alert-success';

@@ -9,7 +9,7 @@ from urllib.parse import urlparse, quote
 
 import requests
 
-from src.scraper.wiki_fetch import WIKIPEDIA_REQUEST_HEADERS, normalize_wiki_url, wiki_url_to_rest_html_url
+from src.scraper.wiki_fetch import WIKIPEDIA_REQUEST_HEADERS, canonical_holder_url, normalize_wiki_url, wiki_url_to_rest_html_url
 from bs4 import BeautifulSoup
 from dateutil.parser import parse
 
@@ -1184,6 +1184,20 @@ class Offices:
       # Find date in infobox: fetch full dates from person's bio; collect all matching terms from infobox
       if table_config_to_parse["find_date_in_infobox"] == True:
         self.Logger.debug_log( f" parse_table_row found TRUE in find_date_in_infobox \n\n about to process {start_cell}" , True )
+        existing_dates_lookup = table_config_to_parse.get("existing_dates_lookup") or {}
+        if existing_dates_lookup:
+          cell_text_start = start_cell.get_text(separator=' ').strip() if start_cell else ""
+          same_column = (term_start_column == term_end_column)
+          table_start_year, table_end_year = self.DataCleanup.parse_year_range(cell_text_start)
+          if not same_column and end_cell is not None:
+            cell_text_end = end_cell.get_text(separator=' ').strip()
+            _sy_end, _ey_end = self.DataCleanup.parse_year_range(cell_text_end)
+            if _ey_end is not None or _sy_end is not None:
+              table_end_year = _ey_end if _ey_end is not None else _sy_end
+          key = (canonical_holder_url(wiki_link), table_start_year, table_end_year)
+          if key in existing_dates_lookup:
+            existing = existing_dates_lookup[key]
+            return [existing]
         cache = getattr(self, "_infobox_cache", None)
         if cache is not None and wiki_link in cache:
           cached = cache[wiki_link]
