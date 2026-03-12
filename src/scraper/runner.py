@@ -1088,6 +1088,8 @@ def run_with_db(
                         term_end_imprecise=term_end_imp,
                         conn=conn,
                     )
+                if individual_id:
+                    db_individuals._recompute_is_living_for_individual(individual_id, conn)
         finally:
             conn.close()
 

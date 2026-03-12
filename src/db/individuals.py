@@ -1,10 +1,12 @@
 """Individuals (bio) CRUD and helpers for scraper."""
 
 import sqlite3
+from datetime import date
 from typing import Any
 
 from .connection import get_connection
 from .utils import _row_to_dict
+from . import office_terms as db_office_terms
 
 
 def list_individuals(
@@ -92,6 +94,8 @@ def upsert_individual(data: dict[str, Any], conn: sqlite3.Connection | None = No
                     row["id"],
                 ),
             )
+            # Recompute is_living only when currently marked living
+            _recompute_is_living_for_individual(row["id"], conn)
             conn.commit()
             return row["id"]
         cur = conn.execute(
@@ -110,8 +114,11 @@ def upsert_individual(data: dict[str, Any], conn: sqlite3.Connection | None = No
                 is_dead_link,
             ),
         )
+        ind_id = cur.lastrowid
+        # New individuals start as living by default; recompute may downgrade to not living
+        _recompute_is_living_for_individual(ind_id, conn)
         conn.commit()
-        return cur.lastrowid
+        return ind_id
     finally:
         if own_conn:
             conn.close()
@@ -144,14 +151,74 @@ def get_all_individual_wiki_urls(conn: sqlite3.Connection | None = None) -> set[
             conn.close()
 
 
+def _earliest_term_year_for_individual(individual_id: int, conn: sqlite3.Connection) -> int | None:
+    """Return earliest known term year for an individual (from office_terms), or None if none."""
+    # Prefer term_start_year; fall back to year component of term_start (YYYY-MM-DD).
+    cur = conn.execute(
+        """
+        SELECT MIN(
+                 COALESCE(
+                   term_start_year,
+                   CAST(strftime('%Y', term_start) AS INTEGER)
+                 )
+               ) AS y
+        FROM office_terms
+        WHERE individual_id = ?
+        """,
+        (individual_id,),
+    )
+    row = cur.fetchone()
+    if not row:
+        return None
+    y = row[0]
+    try:
+        return int(y) if y is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _recompute_is_living_for_individual(individual_id: int, conn: sqlite3.Connection) -> None:
+    """Recompute is_living for one individual, but only if currently marked living (1).
+
+    Rules:
+    - If death_date is set -> is_living = 0.
+    - Else if earliest known office term is >80 years ago -> is_living = 0.
+    - Else keep is_living = 1.
+    """
+    cur = conn.execute(
+        "SELECT is_living, death_date FROM individuals WHERE id = ?",
+        (individual_id,),
+    )
+    row = cur.fetchone()
+    if not row:
+        return
+    is_living = row["is_living"]
+    death_date = (row["death_date"] or "").strip() if row["death_date"] is not None else ""
+    # Never flip someone back to living
+    if is_living == 0:
+        return
+
+    # Default: stay living unless we have strong evidence otherwise
+    new_flag = 1
+    if death_date:
+        new_flag = 0
+    else:
+        earliest_year = _earliest_term_year_for_individual(individual_id, conn)
+        if earliest_year is not None:
+            current_year = date.today().year
+            if current_year - earliest_year > 80:
+                new_flag = 0
+    if new_flag != is_living:
+        conn.execute("UPDATE individuals SET is_living = ? WHERE id = ?", (new_flag, individual_id))
+
 def get_living_individual_wiki_urls(conn: sqlite3.Connection | None = None) -> set[str]:
-    """Return set of wiki_urls for individuals with no death_date (likely living)."""
+    """Return set of wiki_urls for individuals considered living (is_living = 1, not dead-link, not No link: placeholder)."""
     own_conn = conn is None
     if own_conn:
         conn = get_connection()
     try:
         cur = conn.execute(
-            "SELECT wiki_url FROM individuals WHERE death_date IS NULL OR death_date = '' OR death_date LIKE 'Invalid%'"
+            "SELECT wiki_url FROM individuals WHERE is_living = 1 AND is_dead_link = 0 AND wiki_url NOT LIKE 'No link:%'"
         )
         return {row["wiki_url"] for row in cur.fetchall()}
     finally:
@@ -186,7 +253,7 @@ def list_individuals_for_office_category(
         where = ["od.office_category_id = ?", "i.id IS NOT NULL"]
         params: list[Any] = [office_category_id]
         if living_only:
-            where.append("i.death_date IS NULL")
+            where.append("i.is_living = 1")
         if valid_page_paths_only:
             where.append("i.page_path IS NOT NULL")
             where.append("TRIM(i.page_path) <> ''")
