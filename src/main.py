@@ -315,6 +315,8 @@ async def offices_list(
     enabled: str | None = Query(None),
     limit: str | None = Query(None),
     office_count: str | None = Query("all"),
+    search_url: str | None = Query(None),
+    search_office_id: str | None = Query(None),
 ):
     saved = request.query_params.get("saved") == "1"
     page_saved = request.query_params.get("page_saved") == "1"
@@ -322,6 +324,21 @@ async def offices_list(
     imported_count = request.query_params.get("count")
     imported_errors = request.query_params.get("errors")
     imported = request.query_params.get("imported") == "1"
+
+    # Quick jump by office id or page URL
+    search_url_val = (search_url or "").strip() if search_url else ""
+    search_office_id_val = _parse_optional_int(search_office_id)
+    if search_office_id_val is not None:
+        office = db_offices.get_office(search_office_id_val)
+        if office:
+            return RedirectResponse(f"/offices/{search_office_id_val}", status_code=302)
+    if search_url_val:
+        page_id = db_offices.get_source_page_id_by_url(search_url_val)
+        if page_id is not None:
+            offices_on_page = db_offices.list_offices_for_page(page_id)
+            first_office_id = offices_on_page[0]["id"] if offices_on_page else None
+            if first_office_id:
+                return RedirectResponse(f"/offices/{first_office_id}", status_code=302)
 
     if db_offices.use_hierarchy():
         # Parse limit: "20", "50", "100", "all" or missing -> int or None
@@ -393,6 +410,8 @@ async def offices_list(
                 "imported": imported,
                 "imported_count": imported_count,
                 "imported_errors": imported_errors,
+                "search_url": search_url_val,
+                "search_office_id": search_office_id_val,
             },
         )
 
@@ -402,7 +421,19 @@ async def offices_list(
         o["terms_count"] = counts.get(o["id"], 0)
     return templates.TemplateResponse(
         "offices.html",
-        {"request": request, "page_search_view": False, "offices": offices, "pages": [], "saved": saved, "validation_error": validation_error, "imported": imported, "imported_count": imported_count, "imported_errors": imported_errors},
+        {
+            "request": request,
+            "page_search_view": False,
+            "offices": offices,
+            "pages": [],
+            "saved": saved,
+            "validation_error": validation_error,
+            "imported": imported,
+            "imported_count": imported_count,
+            "imported_errors": imported_errors,
+            "search_url": search_url_val,
+            "search_office_id": search_office_id_val,
+        },
     )
 
 

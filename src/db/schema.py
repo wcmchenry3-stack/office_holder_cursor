@@ -93,6 +93,7 @@ CREATE TABLE IF NOT EXISTS individuals (
     birth_place TEXT,
     death_place TEXT,
     is_dead_link INTEGER NOT NULL DEFAULT 0,
+    is_living INTEGER NOT NULL DEFAULT 1,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
 );

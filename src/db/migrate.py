@@ -60,8 +60,9 @@ def migrate_to_fk(conn=None):
         _migrate_ignore_non_links(conn)
         _migrate_remove_duplicates(conn)
         _migrate_row_filter_columns(conn)
-        # Add is_dead_link to individuals if missing
+        # Add is_dead_link and is_living to individuals if missing
         _migrate_individuals_dead_link(conn)
+        _migrate_individuals_is_living(conn)
         # Alt links: new table, backfill from offices.alt_link, verify, then drop offices.alt_link
         _migrate_alt_links(conn)
         # Page -> office_details -> office_table_config hierarchy: add columns and backfill from offices
@@ -342,6 +343,64 @@ def _migrate_individuals_dead_link(conn):
     if "is_dead_link" not in ind_cols:
         conn.execute("ALTER TABLE individuals ADD COLUMN is_dead_link INTEGER NOT NULL DEFAULT 0")
         conn.commit()
+
+
+def _migrate_individuals_is_living(conn):
+    """Add is_living to individuals if missing and backfill based on death_date and earliest office term year.
+
+    Rule:
+    - If death_date is set -> is_living = 0.
+    - Else if earliest known office term is >80 years ago -> is_living = 0.
+    - Else is_living stays 1 (default).
+    """
+    from datetime import date
+
+    ind_cols = _columns(conn, "individuals")
+    if "is_living" not in ind_cols:
+        conn.execute("ALTER TABLE individuals ADD COLUMN is_living INTEGER NOT NULL DEFAULT 1")
+        conn.commit()
+
+    current_year = date.today().year
+    # Compute earliest term year per individual from office_terms
+    cur = conn.execute(
+        """
+        SELECT i.id AS individual_id,
+               i.death_date AS death_date,
+               MIN(
+                 COALESCE(
+                   ot.term_start_year,
+                   CAST(strftime('%Y', ot.term_start) AS INTEGER)
+                 )
+               ) AS earliest_year
+        FROM individuals i
+        LEFT JOIN office_terms ot ON ot.individual_id = i.id
+        GROUP BY i.id, i.death_date
+        """
+    )
+    rows = cur.fetchall()
+    for row in rows:
+        ind_id = row["individual_id"]
+        death_date = (row["death_date"] or "").strip() if row["death_date"] is not None else ""
+        earliest_year = row["earliest_year"]
+
+        # If already marked not living, skip recompute
+        cur2 = conn.execute("SELECT is_living FROM individuals WHERE id = ?", (ind_id,))
+        existing_flag = cur2.fetchone()[0]
+        if existing_flag == 0:
+            continue
+
+        is_living = 1
+        if death_date:
+            is_living = 0
+        elif earliest_year is not None:
+            try:
+                ey = int(earliest_year)
+                if current_year - ey > 80:
+                    is_living = 0
+            except (TypeError, ValueError):
+                pass
+        conn.execute("UPDATE individuals SET is_living = ? WHERE id = ?", (is_living, ind_id))
+    conn.commit()
 
 
 def _normalize_alt_link_path(raw: str) -> str:
