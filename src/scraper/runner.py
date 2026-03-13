@@ -860,14 +860,15 @@ def run_with_db(
                         table_data_pre = found_rows
                         missing_years = _missing_holder_keys(existing_terms, table_data_pre, office_id, years_only_pre, key_years_only=True)
                         if not (dry_run or test_run):
-                            try:
+                            # Safe renumber for this office_details: move this config to new table_no
+                            od_id_for_tc = office_row.get("office_details_id")
+                            if od_id_for_tc is not None:
                                 with get_connection() as conn:
-                                    conn.execute("UPDATE office_table_config SET table_no = ?, updated_at=datetime('now') WHERE id = ?", (table_no, office_id))
-                                    conn.commit()
-                            except sqlite3.IntegrityError as e:
-                                logger.log(f"Could not update table_no for {office_name} (id={office_id}): {e}. Skipping this table.", True)
-                                office_errors.append({"office_id": office_id, "office_name": office_name, "error": str(e)})
-                                continue
+                                    db_offices._safe_renumber_table_nos(
+                                        int(od_id_for_tc),
+                                        {int(office_id): int(table_no)},
+                                        conn,
+                                    )
                 missing_list = _missing_holders_display(existing_terms, missing_years, _holder_key_from_existing_term_years)
                 missing_str = _format_missing_holders(missing_list)
                 force_replace_early = force_overwrite or (force_replace_office_ids and office_id in force_replace_office_ids)
@@ -918,18 +919,14 @@ def run_with_db(
                         table_data = found_rows
                         missing = _missing_holder_keys(existing_terms, table_data, office_id, years_only)
                         if not (dry_run or test_run):
-                            try:
+                            od_id_for_tc = office_row.get("office_details_id")
+                            if od_id_for_tc is not None:
                                 with get_connection() as conn:
-                                    conn.execute("UPDATE office_table_config SET table_no = ?, updated_at=datetime('now') WHERE id = ?", (table_no, office_id))
-                                    conn.commit()
-                            except sqlite3.IntegrityError as e:
-                                logger.log(f"Could not update table_no for {office_name} (id={office_id}): {e}. Skipping this table.", True)
-                                office_errors.append({"office_id": office_id, "office_name": office_name, "error": str(e)})
-                                # Remove this office's rows from all_office_data so we don't write them
-                                n_remove = sum(1 for r in all_office_data if r.get("_office_id") == office_id)
-                                all_office_data[:] = [r for r in all_office_data if r.get("_office_id") != office_id]
-                                total_terms -= n_remove
-                                continue
+                                    db_offices._safe_renumber_table_nos(
+                                        int(od_id_for_tc),
+                                        {int(office_id): int(table_no)},
+                                        conn,
+                                    )
                 missing_list = _missing_holders_display(existing_terms, missing, _holder_key_from_existing_term)
                 missing_str = _format_missing_holders(missing_list)
                 if force_replace:

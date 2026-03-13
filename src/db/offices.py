@@ -284,6 +284,69 @@ def validate_office_table_config(
         )
 
 
+def _safe_renumber_table_nos(
+    office_details_id: int,
+    new_table_nos: dict[int, int],
+    conn: sqlite3.Connection,
+) -> None:
+    """Safely renumber table_no for all configs on an office_details row.
+
+    new_table_nos maps office_table_config.id -> desired table_no.
+    Any configs not present in new_table_nos keep their current table_no.
+    If the mover's target table_no is already taken by another config, that
+    config is reassigned to the mover's old table_no (swap) so UNIQUE is kept.
+
+    Uses the same temporary-negative renumbering strategy as update_office
+    to avoid transient UNIQUE(office_details_id, table_no) conflicts.
+    """
+    cur = conn.execute(
+        "SELECT id, table_no FROM office_table_config WHERE office_details_id = ? ORDER BY table_no, id",
+        (office_details_id,),
+    )
+    rows = cur.fetchall()
+    if not rows:
+        return
+
+    # Row may be tuple or Row; support both
+    def _id(r): return r["id"] if hasattr(r, "keys") else r[0]
+    def _no(r): return r["table_no"] if hasattr(r, "keys") else r[1]
+
+    desired: dict[int, int] = {}
+    for row in rows:
+        tc_id, current_no = _id(row), _no(row)
+        desired[tc_id] = new_table_nos.get(tc_id, current_no)
+
+    movers = set(new_table_nos.keys())
+    for row in rows:
+        tc_id, current_no = _id(row), _no(row)
+        if tc_id not in movers:
+            continue
+        target_no = new_table_nos[tc_id]
+        if target_no == current_no:
+            continue
+        for row2 in rows:
+            tc_id2 = _id(row2)
+            if tc_id2 == tc_id:
+                continue
+            if desired[tc_id2] == target_no:
+                desired[tc_id2] = current_no
+                break
+
+    prepared = [(_id(row), desired[_id(row)]) for row in rows]
+    update_ids = [tc_id for (tc_id, _) in prepared]
+    for idx, tc_id in enumerate(update_ids):
+        conn.execute(
+            "UPDATE office_table_config SET table_no = ? WHERE id = ?",
+            (-(office_details_id * 1000000 + idx + 1), tc_id),
+        )
+
+    for tc_id, desired_no in prepared:
+        conn.execute(
+            "UPDATE office_table_config SET table_no = ?, updated_at=datetime('now') WHERE id = ?",
+            (desired_no, tc_id),
+        )
+
+
 def _table_nos_on_page(
     conn: sqlite3.Connection, source_page_id: int, *, exclude_office_details_id: int | None = None
 ) -> set[int]:

@@ -97,3 +97,37 @@ def test_update_office_allows_renumbering_without_transient_unique_conflict(tmp_
         assert [r["table_no"] for r in updated] == [3, 4]
     finally:
         conn.close()
+
+
+def test_safe_renumber_resolves_target_collision(tmp_path: Path):
+    """When one config moves to table_no 3 and another already has 3, the latter is reassigned to the mover's old number."""
+    db_path = tmp_path / "test.db"
+    init_db(db_path)
+    conn = get_connection(db_path)
+    try:
+        office_id = offices.create_office(
+            _base_data([_tc(3, name="other"), _tc(5, name="chief")]),
+            conn,
+        )
+        rows = conn.execute(
+            "SELECT id, table_no FROM office_table_config WHERE office_details_id = ? ORDER BY table_no, id",
+            (office_id,),
+        ).fetchall()
+        id_with_3 = next(r["id"] for r in rows if r["table_no"] == 3)
+        id_with_5 = next(r["id"] for r in rows if r["table_no"] == 5)
+
+        offices._safe_renumber_table_nos(
+            office_id,
+            {id_with_5: 3},
+            conn,
+        )
+
+        after = conn.execute(
+            "SELECT id, table_no FROM office_table_config WHERE office_details_id = ? ORDER BY table_no",
+            (office_id,),
+        ).fetchall()
+        by_no = {r["table_no"]: r["id"] for r in after}
+        assert by_no[3] == id_with_5
+        assert by_no[5] == id_with_3
+    finally:
+        conn.close()
