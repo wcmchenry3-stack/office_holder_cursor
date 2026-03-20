@@ -75,6 +75,7 @@ def migrate_to_fk(conn=None):
         _migrate_office_category(conn)
         _migrate_infobox_role_key_filter(conn)
         _migrate_office_table_config_infobox_role_key_filter_id(conn)
+        _migrate_offices_infobox_role_key_filter_id(conn)
         _migrate_infobox_role_key_filter_role_key_format(conn)
         # cities table and source_pages.city_id
         _migrate_city(conn)
@@ -823,6 +824,19 @@ def _migrate_office_table_config_infobox_role_key_filter_id(conn):
             (fid, tc_id),
         )
     conn.commit()
+
+
+def _migrate_offices_infobox_role_key_filter_id(conn):
+    """Add offices.infobox_role_key_filter_id if missing (legacy offices table)."""
+    try:
+        offices_cols = _columns(conn, "offices")
+    except sqlite3.OperationalError:
+        return
+    if "infobox_role_key_filter_id" not in offices_cols:
+        conn.execute(
+            "ALTER TABLE offices ADD COLUMN infobox_role_key_filter_id INTEGER REFERENCES infobox_role_key_filter(id)"
+        )
+        conn.commit()
 
 
 def _migrate_infobox_role_key_filter_role_key_format(conn):
