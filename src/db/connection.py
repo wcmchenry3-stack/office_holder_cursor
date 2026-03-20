@@ -22,14 +22,17 @@ def get_db_path() -> Path:
 
 
 def get_log_dir() -> Path:
-    """Return the path to the logs directory."""
+    """Return the path to the logs directory. When OFFICE_HOLDER_DB_PATH is set, logs live next to the DB."""
+    env_path = os.environ.get("OFFICE_HOLDER_DB_PATH")
+    if env_path:
+        return Path(env_path).parent / "logs"
     return LOG_DIR
 
 
 def ensure_data_dir() -> None:
     """Create data and logs directories if they don't exist."""
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    get_log_dir().mkdir(parents=True, exist_ok=True)
 
 
 def get_connection(path: Path | None = None) -> sqlite3.Connection:

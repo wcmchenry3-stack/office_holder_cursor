@@ -30,6 +30,8 @@ from fastapi import FastAPI, File, Request, Form, HTTPException, Query, UploadFi
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.middleware.sessions import SessionMiddleware
+from authlib.integrations.starlette_client import OAuth
 
 from src.db.connection import init_db, get_connection
 from src.db import offices as db_offices
@@ -48,6 +50,72 @@ from src.scraper.test_script_runner import run_test_script, run_test_script_from
 from src.scraper.wiki_fetch import WIKIPEDIA_REQUEST_HEADERS, wiki_url_to_rest_html_url, normalize_wiki_url
 
 app = FastAPI(title="Office Holder")
+app.add_middleware(SessionMiddleware, secret_key=os.environ.get("SECRET_KEY", "dev-only-insecure-key"))
+
+# Google OAuth setup
+_oauth = OAuth()
+_oauth.register(
+    name="google",
+    client_id=os.environ.get("GOOGLE_CLIENT_ID"),
+    client_secret=os.environ.get("GOOGLE_CLIENT_SECRET"),
+    server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
+    client_kwargs={"scope": "openid email profile"},
+)
+
+_ALLOWED_EMAIL = os.environ.get("ALLOWED_EMAIL", "")
+_APP_BASE_URL = os.environ.get("APP_BASE_URL", "")
+_AUTH_ENABLED = bool(os.environ.get("GOOGLE_CLIENT_ID"))
+
+# Auth middleware — skips public paths and dev mode (no GOOGLE_CLIENT_ID set)
+_PUBLIC_PATHS = {"/login", "/auth/google", "/auth/google/callback"}
+
+
+@app.middleware("http")
+async def require_login(request: Request, call_next):
+    if not _AUTH_ENABLED:
+        return await call_next(request)
+    if request.url.path in _PUBLIC_PATHS or request.url.path.startswith("/static"):
+        return await call_next(request)
+    if not request.session.get("user_email"):
+        return RedirectResponse("/login")
+    return await call_next(request)
+
+
+@app.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request):
+    return templates.TemplateResponse("login.html", {"request": request})
+
+
+@app.get("/auth/google")
+async def auth_google(request: Request):
+    redirect_uri = (_APP_BASE_URL.rstrip("/") + "/auth/google/callback") if _APP_BASE_URL else str(request.url_for("auth_google_callback"))
+    return await _oauth.google.authorize_redirect(request, redirect_uri)
+
+
+@app.get("/auth/google/callback", name="auth_google_callback")
+async def auth_google_callback(request: Request):
+    try:
+        token = await _oauth.google.authorize_access_token(request)
+    except Exception:
+        return HTMLResponse("<h2>Authentication failed. <a href='/login'>Try again</a>.</h2>", status_code=400)
+    user_info = token.get("userinfo") or {}
+    email = user_info.get("email", "")
+    if not email or email.lower() != _ALLOWED_EMAIL.lower():
+        return HTMLResponse(
+            "<h2>Access denied.</h2><p>This app is restricted to a single authorised account.</p>"
+            "<p><a href='/login'>Back to login</a></p>",
+            status_code=403,
+        )
+    request.session["user_email"] = email
+    return RedirectResponse("/")
+
+
+@app.get("/logout")
+async def logout(request: Request):
+    request.session.clear()
+    return RedirectResponse("/login")
+
+
 # Resolve to absolute path so template dir is correct regardless of process cwd
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -3307,11 +3375,14 @@ async def office_preview_page(request: Request, office_id: int):
     if not office:
         raise HTTPException(status_code=404)
     # #region agent log
-    import json
-    from pathlib import Path
-    _log_path = Path(__file__).resolve().parent.parent / ".cursor" / "debug.log"
-    with open(_log_path, "a", encoding="utf-8") as _f:
-        _f.write(json.dumps({"location": "main.py:office_preview_page", "message": "preview page using run_with_db", "data": {"office_id": office_id, "url": (office.get("url") or "")[:80], "table_no": office.get("table_no"), "hypothesisId": "H3"}, "timestamp": __import__("time").time() * 1000}) + "\n")
+    try:
+        import json
+        from pathlib import Path
+        _log_path = Path(__file__).resolve().parent.parent / ".cursor" / "debug.log"
+        with open(_log_path, "a", encoding="utf-8") as _f:
+            _f.write(json.dumps({"location": "main.py:office_preview_page", "message": "preview page using run_with_db", "data": {"office_id": office_id, "url": (office.get("url") or "")[:80], "table_no": office.get("table_no"), "hypothesisId": "H3"}, "timestamp": __import__("time").time() * 1000}) + "\n")
+    except Exception:
+        pass
     # #endregion
     unit_ids = db_offices.get_runnable_unit_ids_for_office(office_id) or [office_id]
     result = run_with_db(
