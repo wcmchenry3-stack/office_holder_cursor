@@ -73,7 +73,13 @@ def get_table_html_cached(url: str, table_no: int = 1, refresh: bool = False, us
     Returns {"table_no", "num_tables", "html": "<table>...</table>"} or {"error": "..."}.
     """
     # #region agent log
-    _debug_log = lambda loc, msg, data: (_open := open(Path(__file__).resolve().parent.parent.parent / ".cursor" / "debug.log", "a", encoding="utf-8"), _open.write(json.dumps({"location": loc, "message": msg, "data": data, "timestamp": __import__("time").time() * 1000}) + "\n"), _open.close())
+    def _debug_log(loc, msg, data):
+        try:
+            _open = open(Path(__file__).resolve().parent.parent.parent / ".cursor" / "debug.log", "a", encoding="utf-8")
+            _open.write(json.dumps({"location": loc, "message": msg, "data": data, "timestamp": __import__("time").time() * 1000}) + "\n")
+            _open.close()
+        except Exception:
+            pass
     # #endregion
     url = (url or "").strip()
     if not url:
