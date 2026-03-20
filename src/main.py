@@ -50,7 +50,6 @@ from src.scraper.test_script_runner import run_test_script, run_test_script_from
 from src.scraper.wiki_fetch import WIKIPEDIA_REQUEST_HEADERS, wiki_url_to_rest_html_url, normalize_wiki_url
 
 app = FastAPI(title="Office Holder")
-app.add_middleware(SessionMiddleware, secret_key=os.environ.get("SECRET_KEY", "dev-only-insecure-key"))
 
 # Google OAuth setup
 _oauth = OAuth()
@@ -79,6 +78,11 @@ async def require_login(request: Request, call_next):
     if not request.session.get("user_email"):
         return RedirectResponse("/login")
     return await call_next(request)
+
+
+# SessionMiddleware must be added AFTER require_login so it is outermost and
+# populates request.session before require_login runs.
+app.add_middleware(SessionMiddleware, secret_key=os.environ.get("SECRET_KEY", "dev-only-insecure-key"))
 
 
 @app.get("/login", response_class=HTMLResponse)
