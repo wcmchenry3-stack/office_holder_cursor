@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: office-holder
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn src.main:app --host 0.0.0.0 --port $PORT
+    plan: free
+    disk:
+      name: app-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: OFFICE_HOLDER_DB_PATH
+        value: /data/office_holder.db
+      - key: SECRET_KEY
+        generateValue: true
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: ALLOWED_EMAIL
+        sync: false
+      - key: APP_BASE_URL
+        sync: false
