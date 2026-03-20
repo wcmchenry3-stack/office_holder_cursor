@@ -288,7 +288,7 @@
 {% else %}
 {# Single office or new: one combined form (page + office + table) #}
 {% if office and terms_count is not none %}<p><small>Office terms: {{ terms_count }}</small></p>{% endif %}
-<form method="post" action="{% if office %}/offices/{{ office.id }}{% else %}/offices/new{% endif %}" id="officeForm" class="office-form">
+<form method="post" action="{% if office and office.id %}/offices/{{ office.id }}{% else %}/offices/new{% endif %}" id="officeForm" class="office-form">
   {% if office and nav_ids %}<input type="hidden" name="nav_ids" value="{{ nav_ids }}">{% endif %}
   {% if office and list_return_query is defined and list_return_query %}<input type="hidden" name="list_return_query" value="{{ list_return_query }}">{% endif %}
 
@@ -312,6 +312,12 @@
         {% for s in states %}
         <option value="{{ s.id }}" {% if office and office.state_id == s.id %}selected{% endif %}>{{ s.name }}</option>
         {% endfor %}
+      </select>
+    </div>
+    <div class="form-group">
+      <label>City (optional)</label>
+      <select name="city_id" id="cityId">
+        <option value="">— None —</option>
       </select>
     </div>
   </div>
@@ -579,6 +585,30 @@
 
   if (countrySelect && countrySelect.value) loadStates(countrySelect.value);
 
+  var citySelect = document.getElementById('cityId');
+  var selectedCityId = {% if office and office.city_id %}{{ office.city_id }}{% else %}null{% endif %};
+  function loadCities(stateId) {
+    if (!citySelect) return;
+    citySelect.innerHTML = '<option value="">— None —</option>';
+    if (!stateId) return;
+    fetch('/api/cities?state_id=' + encodeURIComponent(stateId))
+      .then(function(r) { return r.json(); })
+      .then(function(cities) {
+        cities.forEach(function(c) {
+          var opt = document.createElement('option');
+          opt.value = c.id;
+          opt.textContent = c.name;
+          if (selectedCityId && c.id === selectedCityId) opt.selected = true;
+          citySelect.appendChild(opt);
+        });
+      });
+  }
+  if (stateSelect) stateSelect.addEventListener('change', function() {
+    selectedCityId = null;
+    loadCities(stateSelect.value);
+  });
+  if (stateSelect && stateSelect.value) loadCities(stateSelect.value);
+
   var pageStateSelect = document.getElementById('pageStateId');
   var pageCitySelect = document.getElementById('pageCityId');
   var selectedPageCityId = {% if page_data is defined and page_data.city_id %}{{ page_data.city_id }}{% else %}null{% endif %};
@@ -644,18 +674,25 @@
         pageCity.disabled = false;
       }
     }
+    var singleCity = document.getElementById('cityId');
     if (singleLevel && singleState) {
       var levelName = levelNameFromSelect(singleLevel);
       var branchName = singleBranch ? branchNameFromSelect(singleBranch) : '';
       if (levelName === 'federal') {
         if (branchName === 'legislative') {
           singleState.disabled = false;
+          if (singleCity) { singleCity.disabled = true; singleCity.value = ''; }
         } else {
           singleState.disabled = true;
           singleState.value = '';
+          if (singleCity) { singleCity.disabled = true; singleCity.value = ''; }
         }
+      } else if (levelName === 'state') {
+        singleState.disabled = false;
+        if (singleCity) { singleCity.disabled = true; singleCity.value = ''; }
       } else {
         singleState.disabled = false;
+        if (singleCity) singleCity.disabled = false;
       }
     }
   }
