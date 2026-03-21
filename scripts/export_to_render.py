@@ -49,20 +49,21 @@ TABLES = [
     ("levels",     ["id", "name"],                          "INSERT OR IGNORE"),
     ("branches",   ["id", "name"],                          "INSERT OR IGNORE"),
 
-    # Config tables — target is empty, plain INSERT
+    # Config tables — INSERT OR REPLACE so the script is safe to re-run and
+    # handles any rows that were auto-seeded in the target DB at startup.
     ("parties", [
         "id", "country_id", "party_name", "party_link", "created_at",
-    ], "INSERT"),
+    ], "INSERT OR REPLACE"),
 
-    ("office_category", ["id", "name"], "INSERT"),
-    ("office_category_countries", ["category_id", "country_id"], "INSERT"),
-    ("office_category_levels",    ["category_id", "level_id"],   "INSERT"),
-    ("office_category_branches",  ["category_id", "branch_id"],  "INSERT"),
+    ("office_category", ["id", "name"], "INSERT OR REPLACE"),
+    ("office_category_countries", ["category_id", "country_id"], "INSERT OR REPLACE"),
+    ("office_category_levels",    ["category_id", "level_id"],   "INSERT OR REPLACE"),
+    ("office_category_branches",  ["category_id", "branch_id"],  "INSERT OR REPLACE"),
 
-    ("infobox_role_key_filter", ["id", "name", "role_key"], "INSERT"),
-    ("infobox_role_key_filter_countries", ["filter_id", "country_id"], "INSERT"),
-    ("infobox_role_key_filter_levels",    ["filter_id", "level_id"],   "INSERT"),
-    ("infobox_role_key_filter_branches",  ["filter_id", "branch_id"],  "INSERT"),
+    ("infobox_role_key_filter", ["id", "name", "role_key"], "INSERT OR REPLACE"),
+    ("infobox_role_key_filter_countries", ["filter_id", "country_id"], "INSERT OR REPLACE"),
+    ("infobox_role_key_filter_levels",    ["filter_id", "level_id"],   "INSERT OR REPLACE"),
+    ("infobox_role_key_filter_branches",  ["filter_id", "branch_id"],  "INSERT OR REPLACE"),
 
     # offices: skip alt_link (superseded by alt_links table) and
     #          superseded_by_office_details_id (internal migration column)
@@ -80,9 +81,9 @@ TABLES = [
         "ignore_non_links", "remove_duplicates",
         "infobox_role_key", "created_at",
         # infobox_role_key_filter_id not in source DB (migration ran later) — omitted, defaults to NULL
-    ], "INSERT"),
+    ], "INSERT OR REPLACE"),
 
-    ("alt_links", ["id", "office_id", "office_details_id", "link_path"], "INSERT"),
+    ("alt_links", ["id", "office_id", "office_details_id", "link_path"], "INSERT OR REPLACE"),
 
     # source_pages: source has both table_reuse_across_offices (old) and
     # allow_reuse_tables (new) — we select allow_reuse_tables only
@@ -91,14 +92,14 @@ TABLES = [
         "url", "notes", "enabled",
         "allow_reuse_tables", "disable_auto_table_update",
         "last_scraped_at", "created_at", "updated_at",
-    ], "INSERT"),
+    ], "INSERT OR REPLACE"),
 
     # office_details: skip last_scraped_at (not in target schema)
     ("office_details", [
         "id", "source_page_id", "name", "variant_name", "department",
         "notes", "alt_link_include_main", "enabled",
         "created_at", "updated_at", "office_category_id",
-    ], "INSERT"),
+    ], "INSERT OR REPLACE"),
 
     # office_table_config: skip infobox_role_key (not in target schema)
     ("office_table_config", [
@@ -113,7 +114,7 @@ TABLES = [
         "ignore_non_links", "remove_duplicates", "consolidate_rowspan_terms",
         "infobox_role_key_filter_id", "notes", "name",
         "created_at", "updated_at",
-    ], "INSERT"),
+    ], "INSERT OR REPLACE"),
 
     # parser_test_scripts: INSERT OR REPLACE to overwrite any auto-seeded rows
     ("parser_test_scripts", [
