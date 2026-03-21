@@ -9,9 +9,15 @@ BASE_URL = os.getenv("PLAYWRIGHT_BASE_URL", "http://127.0.0.1:8000")
 
 
 @pytest.fixture(scope="session")
-def playwright_instance() -> Playwright:
-    with sync_playwright() as p:
+def playwright_instance():
+    try:
+        p = sync_playwright().start()
+    except Exception as e:
+        pytest.skip(f"Playwright sync API unavailable (start app + run separately): {e}")
+    try:
         yield p
+    finally:
+        p.stop()
 
 
 @pytest.fixture()
