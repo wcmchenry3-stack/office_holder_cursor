@@ -1,6 +1,6 @@
 import re
 
-from src.main import _build_primary_fixture_rel_path
+from src.routers.run import _build_primary_fixture_rel_path
 
 
 def test_primary_fixture_uses_canonical_slug() -> None:
