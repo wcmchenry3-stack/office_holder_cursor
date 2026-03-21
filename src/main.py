@@ -57,7 +57,9 @@ from src.routers import test_scripts as test_scripts_router
 from src.routers import ui_tests as ui_tests_router
 from src.routers import preview as preview_router
 from src.routers import offices as offices_router
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from src.routers._deps import templates
+from src.scheduled_tasks import run_daily_delta
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -68,7 +70,12 @@ async def lifespan(app: FastAPI):
         traceback.print_exc()
         raise RuntimeError(f"Database startup failed: {e}") from e
     _start_datasette()
+    scheduler = AsyncIOScheduler(timezone="UTC")
+    scheduler.add_job(run_daily_delta, "cron", hour=6, minute=0, id="daily_delta")
+    scheduler.start()
+    print("[scheduler] Daily delta run scheduled at 06:00 UTC")
     yield
+    scheduler.shutdown(wait=False)
     _stop_datasette()
 
 
