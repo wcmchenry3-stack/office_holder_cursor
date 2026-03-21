@@ -73,6 +73,7 @@ def test_security_headers_present(client):
 def test_auth_middleware_redirects_unauthenticated_requests():
     """With auth enabled, protected routes must redirect to /login."""
     import os
+    prior_db = os.environ.get("OFFICE_HOLDER_DB_PATH")
     tmp_db = Path(__file__).parent.parent / "tmp_auth_test.db"
     os.environ["OFFICE_HOLDER_DB_PATH"] = str(tmp_db)
 
@@ -92,7 +93,10 @@ def test_auth_middleware_redirects_unauthenticated_requests():
                 "Redirect must point to /login"
     finally:
         main_mod._AUTH_ENABLED = original
-        os.environ.pop("OFFICE_HOLDER_DB_PATH", None)
+        if prior_db is not None:
+            os.environ["OFFICE_HOLDER_DB_PATH"] = prior_db
+        else:
+            os.environ.pop("OFFICE_HOLDER_DB_PATH", None)
         if tmp_db.exists():
             tmp_db.unlink()
 
@@ -101,6 +105,7 @@ def test_auth_middleware_redirects_unauthenticated_requests():
 def test_auth_middleware_allows_public_paths():
     """Login page must remain accessible without a session even when auth is enabled."""
     import os
+    prior_db = os.environ.get("OFFICE_HOLDER_DB_PATH")
     tmp_db = Path(__file__).parent.parent / "tmp_auth_pub_test.db"
     os.environ["OFFICE_HOLDER_DB_PATH"] = str(tmp_db)
 
@@ -117,7 +122,10 @@ def test_auth_middleware_allows_public_paths():
                 f"/login must be publicly accessible, got {resp.status_code}"
     finally:
         main_mod._AUTH_ENABLED = original
-        os.environ.pop("OFFICE_HOLDER_DB_PATH", None)
+        if prior_db is not None:
+            os.environ["OFFICE_HOLDER_DB_PATH"] = prior_db
+        else:
+            os.environ.pop("OFFICE_HOLDER_DB_PATH", None)
         if tmp_db.exists():
             tmp_db.unlink()
 
