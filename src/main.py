@@ -385,6 +385,13 @@ def shutdown_datasette():
     _stop_datasette()
 
 
+def _apply_datasette_dark_css(content: bytes, content_type: str) -> bytes:
+    """Inject dark mode CSS into Datasette HTML responses. Non-HTML content is returned unchanged."""
+    if "text/html" not in content_type:
+        return content
+    return content.replace(b"</head>", (_DATASETTE_DARK_CSS + "</head>").encode(), 1)
+
+
 @app.get("/db", include_in_schema=False)
 async def db_explorer_redirect():
     return RedirectResponse("/db/")
@@ -414,9 +421,7 @@ async def db_explorer_proxy(request: Request, path: str):
             status_code=503,
         )
     content_type = resp.headers.get("content-type", "")
-    content = resp.content
-    if "text/html" in content_type:
-        content = content.replace(b"</head>", (_DATASETTE_DARK_CSS + "</head>").encode(), 1)
+    content = _apply_datasette_dark_css(resp.content, content_type)
     headers = {k: v for k, v in resp.headers.items() if k.lower() not in _PROXY_SKIP_HEADERS}
     return Response(
         content=content,
