@@ -271,9 +271,8 @@ async def offices_list(
             office_count=office_count_val if office_count_val != "all" else None,
         )
         return templates.TemplateResponse(
-            "offices.html",
+            request, "offices.html",
             {
-                "request": request,
                 "page_search_view": True,
                 "pages": pages,
                 "nav_ids": nav_ids,
@@ -307,9 +306,8 @@ async def offices_list(
     for o in offices:
         o["terms_count"] = counts.get(o["id"], 0)
     return templates.TemplateResponse(
-        "offices.html",
+        request, "offices.html",
         {
-            "request": request,
             "page_search_view": False,
             "offices": offices,
             "pages": [],
@@ -330,8 +328,8 @@ async def office_new(request: Request):
     levels = db_refs.list_levels()
     branches = db_refs.list_branches()
     return templates.TemplateResponse(
-        "page_form.html",
-        {"request": request, "office": None, "countries": countries, "levels": levels, "branches": branches, "states": [], "nav_ids": "", "nav_prev_id": None, "nav_next_id": None, "terms_count": 0, "form_template": "page_form"},
+        request, "page_form.html",
+        {"office": None, "countries": countries, "levels": levels, "branches": branches, "states": [], "nav_ids": "", "nav_prev_id": None, "nav_next_id": None, "terms_count": 0, "form_template": "page_form"},
     )
 
 
@@ -378,9 +376,8 @@ async def office_create(request: Request):
         states = db_refs.list_states(int(data.get("country_id") or 0)) if data.get("country_id") else []
         cities = db_refs.list_cities(data.get("state_id")) if data.get("state_id") else []
         return templates.TemplateResponse(
-            "page_form.html",
+            request, "page_form.html",
             {
-                "request": request,
                 "office": {**data, "alt_links": alt_links},
                 "countries": countries,
                 "levels": levels,
@@ -409,9 +406,8 @@ async def office_create(request: Request):
             edit_link = Markup(f'<a href="/offices/{first_office_id}">Edit the existing page</a>') if first_office_id else Markup.escape("Edit the existing page from the office list.")
             validation_error = Markup("A page with this URL already exists. ") + edit_link + Markup(" instead.")
             return templates.TemplateResponse(
-                "page_form.html",
+                request, "page_form.html",
                 {
-                    "request": request,
                     "office": {**data, "alt_links": alt_links},
                     "countries": countries,
                     "levels": levels,
@@ -435,9 +431,8 @@ async def office_create(request: Request):
         states = db_refs.list_states(int(data.get("country_id") or 0)) if data.get("country_id") else []
         cities = db_refs.list_cities(data.get("state_id")) if data.get("state_id") else []
         return templates.TemplateResponse(
-            "page_form.html",
+            request, "page_form.html",
             {
-                "request": request,
                 "office": {**data, "alt_links": alt_links},
                 "countries": countries,
                 "levels": levels,
@@ -468,23 +463,23 @@ async def offices_import_page(request: Request):
     except Exception:
         pass
     # #endregion
-    return templates.TemplateResponse("import.html", {"request": request})
+    return templates.TemplateResponse(request, "import.html")
 
 
 @router.post("/offices/import")
 async def offices_import(request: Request, csv_path: str = Form("")):
     if not csv_path.strip():
-        return templates.TemplateResponse("import.html", {"request": request, "error": "Path is required"})
+        return templates.TemplateResponse(request, "import.html", {"error": "Path is required"})
     path = Path(csv_path.strip())
     if not path.is_absolute():
         path = ROOT / path
     if not path.exists():
-        return templates.TemplateResponse("import.html", {"request": request, "error": f"File not found: {path}"})
+        return templates.TemplateResponse(request, "import.html", {"error": "File not found. Check the path and try again."})
     try:
         imported, errors = bulk_import_offices_from_csv(path)
         return RedirectResponse(f"/offices?imported=1&count={imported}&errors={errors}", status_code=302)
     except Exception as e:
-        return templates.TemplateResponse("import.html", {"request": request, "error": str(e)})
+        return templates.TemplateResponse(request, "import.html", {"error": str(e)})
 
 
 @router.post("/offices/add-office-to-page")
@@ -686,8 +681,8 @@ async def office_edit_page(request: Request, office_id: int):
         context_obj.get("country_id"), context_obj.get("level_id"), context_obj.get("branch_id")
     )
     return templates.TemplateResponse(
-        "page_form.html",
-        {"request": request, "office": office, "offices_on_page": offices_on_page, "source_page_id": source_page_id, "page_data": page_data, "countries": countries, "levels": levels, "branches": branches, "states": states, "cities": cities, "nav_ids": nav_ids_raw, "nav_prev_id": nav_prev_id, "nav_next_id": nav_next_id, "nav_current": nav_current, "nav_total": nav_total, "list_return_query": list_return_query, "terms_count": terms_count, "saved": saved, "page_saved": page_saved, "validation_error": validation_error, "form_template": "page_form", "office_categories": office_categories, "infobox_role_key_filters": infobox_role_key_filters},
+        request, "page_form.html",
+        {"office": office, "offices_on_page": offices_on_page, "source_page_id": source_page_id, "page_data": page_data, "countries": countries, "levels": levels, "branches": branches, "states": states, "cities": cities, "nav_ids": nav_ids_raw, "nav_prev_id": nav_prev_id, "nav_next_id": nav_next_id, "nav_current": nav_current, "nav_total": nav_total, "list_return_query": list_return_query, "terms_count": terms_count, "saved": saved, "page_saved": page_saved, "validation_error": validation_error, "form_template": "page_form", "office_categories": office_categories, "infobox_role_key_filters": infobox_role_key_filters},
         headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
     )
 
@@ -1108,8 +1103,7 @@ async def api_table_config_set_infobox_role_key_filter(table_config_id: int, req
                 "name": office.get("name") or "",
                 "infobox_role_key_filter_id": office.get("infobox_role_key_filter_id"),
                 "infobox_role_key": (office.get("infobox_role_key") or "").strip(),
-            },
-        }
+            }}
     )
 
 
