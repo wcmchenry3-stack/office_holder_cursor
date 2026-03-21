@@ -1,0 +1,178 @@
+# Run Modes — Detailed Reference
+
+This document describes each scraper run mode in detail, including what DB writes are made, when work is skipped, and edge cases.
+
+All modes are triggered via `run_with_db(run_mode=..., ...)` in `src/scraper/runner.py`.
+
+---
+
+## `delta` (default)
+
+**Trigger:** Default mode; used for routine updates.
+
+**Behavior:**
+1. Load all enabled offices from DB (`db_offices.list_offices()`)
+2. Load party list for the scraper's country scope
+3. For each office:
+   a. Fetch table HTML (via cache or live fetch)
+   b. Parse the table → list of row dicts
+   c. Deduplicate rows if `remove_duplicates=True`
+   d. For each row: normalize dates, skip invalid rows
+   e. Compare parsed rows against existing `office_terms` for that office
+   f. **Insert** new terms not in DB; **update** changed terms; **leave** unchanged terms alone
+   g. If `find_date_in_infobox=True`: fetch infobox bio for each new individual
+4. Biography refresh: only for individuals added this run or with `is_living=1` and no `death_date`
+
+**DB writes:**
+- `office_terms`: INSERT or UPDATE only changed/new rows; existing unchanged rows are untouched
+- `individuals`: INSERT new; UPDATE if bio data changed
+- `source_pages.last_scraped_at`: updated per page
+
+**When work is skipped:**
+- Rows that parse identically to existing terms → no write
+- Individuals with `death_date` set and not newly added → no infobox fetch
+
+**Edge cases:**
+- If a new parse has fewer holders than existing terms → triggers auto-table-update logic (see below)
+
+---
+
+## `full`
+
+**Trigger:** UI "Full Run" button.
+
+**Behavior:**
+1. Delete all `office_terms` for all enabled offices
+2. Optionally delete all `individuals` (if `purge_individuals=True`)
+3. Re-parse all enabled offices (same as delta steps 3a–3g)
+4. Full biography refresh for all individuals
+
+**DB writes:**
+- DELETE all existing `office_terms` for enabled offices before re-inserting
+- INSERT all parsed rows as new terms
+- UPDATE all individual bios
+
+**When to use:** After major config changes, schema changes, or when you suspect data corruption. Not for routine updates.
+
+---
+
+## `live_person`
+
+**Trigger:** UI "Live Person Update" button.
+
+**Behavior:** Identical to `delta` for office table parsing, but additionally:
+- After parsing, refreshes biography for **all** individuals with `is_living=1` and no `death_date`
+- This catches living people whose Wikipedia pages may have been updated since last run
+
+**DB writes:** Same as delta, plus bio updates for all living individuals.
+
+---
+
+## `single_bio`
+
+**Trigger:** UI: individual detail page "Refresh Bio" button.
+
+**Parameters:** `individual_ref` — either an integer ID or a Wikipedia URL string.
+
+**Behavior:**
+1. Look up individual by ID or `wiki_url`
+2. Fetch their Wikipedia infobox page
+3. Extract biography data (birth/death dates, places, full name)
+4. Update `individuals` row
+
+**DB writes:** UPDATE one `individuals` row.
+
+**No office table parsing.** Only bio data is updated.
+
+---
+
+## `selected_bios`
+
+**Trigger:** UI: batch selection action on individuals list.
+
+**Parameters:** `individual_ids` — list of integer IDs.
+
+**Behavior:**
+1. For each individual ID: fetch infobox, extract bio, update DB
+2. Optional: `limit_no_death_date=True` — skip individuals who already have `death_date`
+3. Optional: `filter_valid_page_path=True` — skip individuals with invalid/dead page paths
+4. Optional: `force_update=True` — update even if individual already has `death_date`
+
+**DB writes:** UPDATE `individuals` rows for all specified IDs.
+
+---
+
+## `bios_only`
+
+**Trigger:** UI "Bios Only" button.
+
+**Behavior:**
+1. Skip all office table parsing entirely
+2. For every individual in DB: fetch infobox, update bio
+
+**DB writes:** UPDATE all `individuals` rows.
+
+**When to use:** When you only need to refresh biographical data without re-scraping office holder tables.
+
+---
+
+## `category_bios`
+
+**Trigger:** UI: category page "Run Bios" action.
+
+**Parameters:** `category_id` — integer ID of an `office_category`.
+
+**Behavior:**
+1. Find all individuals linked to offices in the specified category
+2. Run bio refresh for those individuals only
+3. Respects same optional filters as `selected_bios`
+
+**DB writes:** UPDATE `individuals` rows for individuals in the category.
+
+---
+
+## Auto-Table-Update Algorithm
+
+When a delta (or full) run parses a table and finds that some existing `office_terms` holders are **missing** from the new parse, the runner checks whether the table numbering has changed on the Wikipedia page (this happens when Wikipedia editors add or remove tables).
+
+**Trigger condition:** `disable_auto_table_update=0` (default) on `source_pages`, AND new parse is missing at least one existing holder.
+
+**Algorithm (`_try_auto_update_table_no()`):**
+1. Fetch all tables on the same Wikipedia page
+2. For each candidate table (excluding the current `table_no`):
+   a. Parse it with the same office config
+   b. Count how many existing holders are still missing
+3. Pick the candidate table that **minimizes** missing holders
+4. If the best candidate has fewer missing holders than the current table → auto-update `table_no` in DB and use the new table's parse results
+5. If no candidate improves the match → log `missing_holders` but proceed with the current parse (safe default: keeps existing terms)
+
+**Disable per-page:** Set `disable_auto_table_update=1` on `source_pages` to skip this logic for that page.
+
+**Note:** With the per-run HTML cache (Phase 5), all tables on a page are already in memory, so step 1 is a re-parse, not a re-fetch.
+
+---
+
+## Infobox Lookup Conditions
+
+Infobox fetches are the slowest part of a run (one HTTP request per individual). They are triggered when:
+
+1. `find_date_in_infobox=True` is set on the office config, AND
+2. One of:
+   - The individual was newly added in this run
+   - The individual has no `death_date` and `is_living=1`
+   - The run mode is `live_person`, `bios_only`, `selected_bios`, `category_bios`, or `single_bio`
+
+**Infobox role key filtering:** When `infobox_role_key_filter_id` is set, only infobox entries matching the role key query are used. See `docs/config-options.md` for query syntax.
+
+---
+
+## Progress Callback
+
+`run_with_db()` accepts an optional `progress_callback(phase, current, total, message, extra_dict)` callable. The UI polls a job endpoint that reads from the in-memory job store updated by this callback.
+
+Phases reported:
+- `"parse"` — parsing office tables
+- `"infobox"` — fetching individual infoboxes
+- `"bio"` — updating biographies
+- `"complete"` — run finished
+- `"error"` — run failed
