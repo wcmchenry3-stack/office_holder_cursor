@@ -303,6 +303,48 @@ _PROXY_SKIP_HEADERS = {
     "content-encoding",  # httpx decompresses automatically; forwarding this would break content
 }
 
+# Dark mode CSS injected into every Datasette HTML page — matches the app's existing color palette
+_DATASETTE_DARK_CSS = """
+<style>
+/* Office Holder dark mode override for Datasette */
+:root {
+  --bg: #1a1b22; --bg2: #23242d; --bg3: #2c2d38;
+  --text: #e6e6ea; --text-muted: #9a9ba8;
+  --accent: #5c7cfa; --border: #3d3e4a; --input-bg: #23242d;
+}
+*, *::before, *::after { box-sizing: border-box; }
+body, .nav, nav, header, footer, .not-found, .page-header { background: var(--bg) !important; color: var(--text) !important; }
+.nav, nav { border-bottom: 1px solid var(--border) !important; }
+a, a:visited { color: var(--accent) !important; }
+a:hover { color: #748ffc !important; }
+table, .rows-and-columns table { width: 100%; border-collapse: collapse; }
+th, td { border: 1px solid var(--border) !important; padding: 0.4rem 0.6rem; background: var(--bg) !important; color: var(--text) !important; }
+th { background: var(--bg2) !important; color: var(--text-muted) !important; }
+tr:nth-child(even) td { background: var(--bg2) !important; }
+tr:hover td { background: var(--bg3) !important; }
+input, select, textarea, .select2-container .select2-choice, .CodeMirror {
+  background: var(--input-bg) !important; color: var(--text) !important;
+  border-color: var(--border) !important; border-radius: 4px;
+}
+.CodeMirror-gutters { background: var(--bg2) !important; border-right: 1px solid var(--border) !important; }
+.CodeMirror-linenumber { color: var(--text-muted) !important; }
+pre, code, .CodeMirror pre { background: var(--bg2) !important; color: var(--text) !important; }
+.message, .message-info { background: var(--bg3) !important; color: var(--text) !important; border-color: var(--border) !important; }
+.message-error { background: #3b1111 !important; color: #ff8080 !important; border-color: #8b2222 !important; }
+button, .button, input[type=submit] {
+  background: #2a2b38 !important; color: var(--text) !important;
+  border: 1px solid var(--border) !important; cursor: pointer;
+}
+button:hover, .button:hover { background: var(--bg3) !important; }
+.label-green { background: #1a3a1a !important; color: #69db7c !important; }
+.label-orange { background: #3a2a10 !important; color: #ffa94d !important; }
+.label-red { background: #3a1010 !important; color: #ff6b6b !important; }
+.dropdown-menu, .select2-drop, .select2-results { background: var(--bg2) !important; border-color: var(--border) !important; }
+.select2-results li { color: var(--text) !important; }
+.select2-results li.select2-highlighted { background: var(--bg3) !important; }
+</style>
+"""
+
 
 def _start_datasette() -> None:
     """Start Datasette as a read-only subprocess bound to localhost only."""
@@ -364,12 +406,16 @@ async def db_explorer_proxy(request: Request, path: str):
             "or restart the app if this persists.</p>",
             status_code=503,
         )
+    content_type = resp.headers.get("content-type", "")
+    content = resp.content
+    if "text/html" in content_type:
+        content = content.replace(b"</head>", (_DATASETTE_DARK_CSS + "</head>").encode(), 1)
     headers = {k: v for k, v in resp.headers.items() if k.lower() not in _PROXY_SKIP_HEADERS}
     return Response(
-        content=resp.content,
+        content=content,
         status_code=resp.status_code,
         headers=headers,
-        media_type=resp.headers.get("content-type"),
+        media_type=content_type or None,
     )
 
 
