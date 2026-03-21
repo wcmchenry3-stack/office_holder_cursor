@@ -198,9 +198,8 @@ def _execute_ui_test_run(payload: dict, *, job_id: str | None = None) -> dict:
 @router.get("/ui-test-scripts", response_class=HTMLResponse)
 async def ui_test_scripts_page(request: Request):
     return templates.TemplateResponse(
-        "ui_test_scripts.html",
+        request, "ui_test_scripts.html",
         {
-            "request": request,
             "test_path": "src/test_ui_edit_office_playwright.py",
             "defaults": _ui_test_env_defaults(),
         },
@@ -210,8 +209,8 @@ async def ui_test_scripts_page(request: Request):
 @router.get("/run-scenarios-test", response_class=HTMLResponse)
 async def run_scenarios_test_page(request: Request):
     return templates.TemplateResponse(
-        "run_scenarios_test.html",
-        {"request": request, "script_path": "scripts/run_scenarios_test.py"},
+        request, "run_scenarios_test.html",
+        {"script_path": "scripts/run_scenarios_test.py"},
     )
 
 

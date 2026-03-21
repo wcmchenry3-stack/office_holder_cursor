@@ -308,8 +308,8 @@ async def office_preview_page(request: Request, office_id: int):
         raw_table_preview = dict(raw_table_preview)
         raw_table_preview["max_cols"] = max((len(r) for r in raw_table_preview["rows"]), default=0)
     return templates.TemplateResponse(
-        "preview.html",
-        {"request": request, "office": office, "rows": rows, "error": result.get("error"), "raw_table_preview": raw_table_preview},
+        request, "preview.html",
+        {"office": office, "rows": rows, "error": result.get("error"), "raw_table_preview": raw_table_preview},
     )
 
 

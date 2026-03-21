@@ -119,7 +119,7 @@ app.add_middleware(SessionMiddleware, secret_key=os.environ.get("SECRET_KEY", "d
 
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
-    return templates.TemplateResponse("login.html", {"request": request})
+    return templates.TemplateResponse(request, "login.html")
 
 
 @app.get("/auth/google")

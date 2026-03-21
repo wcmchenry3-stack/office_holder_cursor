@@ -22,14 +22,14 @@ async def parties_list(request: Request):
     imported_errors = request.query_params.get("errors")
     imported = request.query_params.get("imported") == "1"
     return templates.TemplateResponse(
-        "parties.html",
-        {"request": request, "parties": parties, "saved": saved, "imported": imported, "imported_count": imported_count, "imported_errors": imported_errors},
+        request, "parties.html",
+        {"parties": parties, "saved": saved, "imported": imported, "imported_count": imported_count, "imported_errors": imported_errors},
     )
 
 
 @router.get("/parties/import", response_class=HTMLResponse)
 async def parties_import_page(request: Request):
-    return templates.TemplateResponse("import_parties.html", {"request": request})
+    return templates.TemplateResponse(request, "import_parties.html")
 
 
 @router.post("/parties/import")
@@ -40,20 +40,20 @@ async def parties_import(
 ):
     if not csv_file or not csv_file.filename:
         return templates.TemplateResponse(
-            "import_parties.html",
-            {"request": request, "error": "Please choose a CSV file to upload.", "mode": mode},
+            request, "import_parties.html",
+            {"error": "Please choose a CSV file to upload.", "mode": mode},
         )
     if not csv_file.filename.lower().endswith(".csv"):
         return templates.TemplateResponse(
-            "import_parties.html",
-            {"request": request, "error": "File must be a .csv file.", "mode": mode},
+            request, "import_parties.html",
+            {"error": "File must be a .csv file.", "mode": mode},
         )
     try:
         content = await csv_file.read()
     except Exception as e:
         return templates.TemplateResponse(
-            "import_parties.html",
-            {"request": request, "error": f"Could not read file: {e}", "mode": mode},
+            request, "import_parties.html",
+            {"error": f"Could not read file: {e}", "mode": mode},
         )
     try:
         with tempfile.NamedTemporaryFile(mode="wb", suffix=".csv", delete=False) as tmp:
@@ -69,15 +69,15 @@ async def parties_import(
             tmp_path.unlink(missing_ok=True)
     except Exception as e:
         return templates.TemplateResponse(
-            "import_parties.html",
-            {"request": request, "error": str(e), "mode": mode},
+            request, "import_parties.html",
+            {"error": str(e), "mode": mode},
         )
 
 
 @router.get("/parties/new", response_class=HTMLResponse)
 async def party_new(request: Request):
     countries = db_refs.list_countries()
-    return templates.TemplateResponse("party_form.html", {"request": request, "party": None, "countries": countries})
+    return templates.TemplateResponse(request, "party_form.html", {"party": None, "countries": countries})
 
 
 @router.post("/parties/new")
@@ -96,7 +96,7 @@ async def party_edit_page(request: Request, party_id: int):
     if not party:
         raise HTTPException(status_code=404)
     countries = db_refs.list_countries()
-    return templates.TemplateResponse("party_form.html", {"request": request, "party": party, "countries": countries})
+    return templates.TemplateResponse(request, "party_form.html", {"party": party, "countries": countries})
 
 
 @router.post("/parties/{party_id}")

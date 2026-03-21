@@ -139,16 +139,15 @@ async def test_script_result_page(request: Request, result_id: str):
         payload = _test_script_result_store.get(result_id)
     if not payload:
         raise HTTPException(status_code=404, detail="Result not found")
-    return templates.TemplateResponse("test_script_result.html", {"request": request, "payload": payload, "result_id": result_id})
+    return templates.TemplateResponse(request, "test_script_result.html", {"payload": payload, "result_id": result_id})
 
 
 @router.get("/test-scripts", response_class=HTMLResponse)
 async def test_scripts_page(request: Request):
     tests = db_test_scripts.list_tests()
     return templates.TemplateResponse(
-        "test_scripts.html",
+        request, "test_scripts.html",
         {
-            "request": request,
             "tests": tests,
             "can_use_office_templates": db_offices.use_hierarchy(),
             "infobox_role_key_filters": db_infobox_role_key_filter.list_infobox_role_key_filters(),

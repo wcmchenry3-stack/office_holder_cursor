@@ -35,8 +35,8 @@ async def run_page(request: Request):
     offices = db_offices.list_offices()
     office_categories = db_office_category.list_office_categories()
     return templates.TemplateResponse(
-        "run.html",
-        {"request": request, "offices": offices, "office_categories": office_categories},
+        request, "run.html",
+        {"offices": offices, "office_categories": office_categories},
     )
 
 
