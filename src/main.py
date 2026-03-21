@@ -359,6 +359,7 @@ def _start_datasette() -> None:
                 "--port", str(_DATASETTE_PORT),
                 "--immutable", str(db_path),
                 "--setting", "base_url", "/db/",
+                "--setting", "sql_time_limit_ms", "600000",  # 10-minute query hard limit
             ],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -397,8 +398,14 @@ async def db_explorer_proxy(request: Request, path: str):
     if query:
         url = f"{url}?{query}"
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=600.0) as client:
             resp = await client.get(url)
+    except httpx.TimeoutException:
+        return HTMLResponse(
+            "<h2>Query timed out</h2>"
+            "<p>The query exceeded the 10-minute limit and was stopped.</p>",
+            status_code=504,
+        )
     except httpx.ConnectError:
         return HTMLResponse(
             "<h2>DB Explorer unavailable</h2>"
