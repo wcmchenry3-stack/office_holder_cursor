@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - dev
 
 jobs:
   validate-parser-fixtures:
@@ -18,5 +19,11 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
       - name: Validate parser fixture manifest
         run: python scripts/validate_parser_fixtures.py
+
+      - name: Run tests
+        run: pytest --tb=short
