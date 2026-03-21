@@ -106,6 +106,9 @@ Auth is bypassed locally when `GOOGLE_CLIENT_ID` is not set. Database is created
 | `GOOGLE_CLIENT_SECRET` | Prod | — | Google OAuth client secret |
 | `ALLOWED_EMAIL` | Prod | — | Single authorized email address |
 | `APP_BASE_URL` | Prod | — | Full base URL for OAuth callback (e.g. `https://myapp.onrender.com`) |
+| `EMAIL_APP_PASSWORD` | For email | — | Gmail App Password for daily run summary email (myaccount.google.com/apppasswords) |
+| `EMAIL_FROM` | No | `wcmchenry3@gmail.com` | Sender address for summary email |
+| `EMAIL_TO` | No | `wcmchenry3@gmail.com` | Recipient address for summary email |
 | `PLAYWRIGHT_BASE_URL` | Testing | `http://127.0.0.1:8000` | Base URL for Playwright tests |
 | `PLAYWRIGHT_EDIT_OFFICE_ID` | Testing | — | Office ID used in Playwright UI tests |
 | `PLAYWRIGHT_OFFICE_A_ID` | Testing | — | Office ID A for comparison tests |
