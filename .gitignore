@@ -29,7 +29,7 @@ env/
 config/local.json
 
 # Migration output (contains all data — not for version control)
-migration_output.sql
+# migration_output.sql  ← temporarily tracked for Render deployment; re-add after apply
 
 # Generated debug/test artifacts
 test_scripts/**/*.html
