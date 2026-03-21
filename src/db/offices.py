@@ -404,7 +404,7 @@ def list_runnable_units(conn: sqlite3.Connection | None = None) -> list[dict[str
                       tc.term_start_column, tc.term_end_column, tc.district_column, tc.filter_column, tc.filter_criteria, tc.dynamic_parse, tc.read_right_to_left,
                       tc.find_date_in_infobox, tc.parse_rowspan, tc.rep_link, tc.party_link, tc.enabled AS tc_enabled,
                       tc.use_full_page_for_table, tc.years_only, tc.term_dates_merged, tc.party_ignore, tc.district_ignore, tc.district_at_large, tc.ignore_non_links, tc.remove_duplicates,
-                      tc.consolidate_rowspan_terms, tc.infobox_role_key_filter_id, COALESCE(rkf.role_key, "") AS infobox_role_key, tc.notes AS tc_notes, tc.created_at
+                      tc.consolidate_rowspan_terms, tc.infobox_role_key_filter_id, COALESCE(rkf.role_key, "") AS infobox_role_key, tc.notes AS tc_notes, tc.created_at, tc.last_html_hash
                FROM source_pages p
                JOIN office_details od ON od.source_page_id = p.id AND od.enabled = 1
                JOIN office_table_config tc ON tc.office_details_id = od.id AND tc.enabled = 1
@@ -430,15 +430,32 @@ def list_runnable_units(conn: sqlite3.Connection | None = None) -> list[dict[str
             )
             p = {"url": rd.get("url"), "country_id": rd.get("country_id"), "state_id": rd.get("state_id"), "city_id": rd.get("city_id"), "level_id": rd.get("level_id"), "branch_id": rd.get("branch_id"), "notes": rd.get("page_notes"), "enabled": rd.get("page_enabled"), "disable_auto_table_update": rd.get("disable_auto_table_update")}
             od = {"id": od_id, "name": rd.get("name"), "department": rd.get("department"), "notes": rd.get("notes"), "alt_link_include_main": rd.get("alt_link_include_main"), "enabled": rd.get("od_enabled")}
-            tc = {"table_no": rd.get("table_no"), "table_rows": rd.get("table_rows"), "link_column": rd.get("link_column"), "party_column": rd.get("party_column"), "term_start_column": rd.get("term_start_column"), "term_end_column": rd.get("term_end_column"), "district_column": rd.get("district_column"), "filter_column": rd.get("filter_column"), "filter_criteria": rd.get("filter_criteria"), "dynamic_parse": rd.get("dynamic_parse"), "read_right_to_left": rd.get("read_right_to_left"), "find_date_in_infobox": rd.get("find_date_in_infobox"), "parse_rowspan": rd.get("parse_rowspan"), "rep_link": rd.get("rep_link"), "party_link": rd.get("party_link"), "enabled": rd.get("tc_enabled"), "use_full_page_for_table": rd.get("use_full_page_for_table"), "years_only": rd.get("years_only"), "term_dates_merged": rd.get("term_dates_merged"), "party_ignore": rd.get("party_ignore"), "district_ignore": rd.get("district_ignore"), "district_at_large": rd.get("district_at_large"), "ignore_non_links": rd.get("ignore_non_links"), "remove_duplicates": rd.get("remove_duplicates"), "consolidate_rowspan_terms": rd.get("consolidate_rowspan_terms"), "infobox_role_key_filter_id": rd.get("infobox_role_key_filter_id"), "infobox_role_key": rd.get("infobox_role_key"), "notes": rd.get("tc_notes"), "created_at": rd.get("created_at")}
+            tc = {"table_no": rd.get("table_no"), "table_rows": rd.get("table_rows"), "link_column": rd.get("link_column"), "party_column": rd.get("party_column"), "term_start_column": rd.get("term_start_column"), "term_end_column": rd.get("term_end_column"), "district_column": rd.get("district_column"), "filter_column": rd.get("filter_column"), "filter_criteria": rd.get("filter_criteria"), "dynamic_parse": rd.get("dynamic_parse"), "read_right_to_left": rd.get("read_right_to_left"), "find_date_in_infobox": rd.get("find_date_in_infobox"), "parse_rowspan": rd.get("parse_rowspan"), "rep_link": rd.get("rep_link"), "party_link": rd.get("party_link"), "enabled": rd.get("tc_enabled"), "use_full_page_for_table": rd.get("use_full_page_for_table"), "years_only": rd.get("years_only"), "term_dates_merged": rd.get("term_dates_merged"), "party_ignore": rd.get("party_ignore"), "district_ignore": rd.get("district_ignore"), "district_at_large": rd.get("district_at_large"), "ignore_non_links": rd.get("ignore_non_links"), "remove_duplicates": rd.get("remove_duplicates"), "consolidate_rowspan_terms": rd.get("consolidate_rowspan_terms"), "infobox_role_key_filter_id": rd.get("infobox_role_key_filter_id"), "infobox_role_key": rd.get("infobox_role_key"), "notes": rd.get("tc_notes"), "created_at": rd.get("created_at"), "last_html_hash": rd.get("last_html_hash")}
             flat = _flatten_hierarchy_row(p, od, tc, c, s, lv, b, alt_links)
             flat["id"] = rd["office_table_config_id"]
             flat["office_details_id"] = od_id
             flat["office_table_config_id"] = rd["office_table_config_id"]
             flat["country_id"] = rd.get("country_id")
             flat["disable_auto_table_update"] = bool(rd.get("disable_auto_table_update"))
+            flat["last_html_hash"] = rd.get("last_html_hash")
             out.append(flat)
         return out
+    finally:
+        if own_conn:
+            conn.close()
+
+
+def update_html_hash(tc_id: int, html_hash: str, conn: sqlite3.Connection | None = None) -> None:
+    """Store the SHA-256 hash of the last-parsed HTML for an office_table_config row."""
+    own_conn = conn is None
+    if own_conn:
+        conn = get_connection()
+    try:
+        conn.execute(
+            "UPDATE office_table_config SET last_html_hash = ? WHERE id = ?",
+            (html_hash, tc_id),
+        )
+        conn.commit()
     finally:
         if own_conn:
             conn.close()
