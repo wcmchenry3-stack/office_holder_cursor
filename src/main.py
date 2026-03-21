@@ -18,6 +18,7 @@ import sys
 import threading
 import uuid
 
+import httpx
 import requests
 
 # Ensure project root is on path
@@ -287,6 +288,89 @@ def startup():
         import traceback
         traceback.print_exc()
         raise RuntimeError(f"Database startup failed: {e}") from e
+
+
+# ---------- Datasette DB explorer (read-only proxy) ----------
+
+_DATASETTE_PORT = 8001
+_datasette_proc: "subprocess.Popen | None" = None
+
+# Headers that must not be forwarded from the upstream proxy response
+_PROXY_SKIP_HEADERS = {
+    "transfer-encoding", "connection", "keep-alive",
+    "proxy-authenticate", "proxy-authorization",
+    "te", "trailers", "upgrade",
+    "content-encoding",  # httpx decompresses automatically; forwarding this would break content
+}
+
+
+def _start_datasette() -> None:
+    """Start Datasette as a read-only subprocess bound to localhost only."""
+    global _datasette_proc
+    from src.db.connection import get_db_path
+    db_path = get_db_path()
+    try:
+        _datasette_proc = subprocess.Popen(
+            [
+                sys.executable, "-m", "datasette", "serve",
+                "--host", "127.0.0.1",
+                "--port", str(_DATASETTE_PORT),
+                "--immutable", str(db_path),
+                "--setting", "base_url", "/db/",
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except Exception as exc:
+        print(f"[datasette] Failed to start: {exc}")
+
+
+def _stop_datasette() -> None:
+    global _datasette_proc
+    if _datasette_proc is not None:
+        _datasette_proc.terminate()
+        _datasette_proc = None
+
+
+@app.on_event("startup")
+def startup_datasette():
+    _start_datasette()
+
+
+@app.on_event("shutdown")
+def shutdown_datasette():
+    _stop_datasette()
+
+
+@app.get("/db", include_in_schema=False)
+async def db_explorer_redirect():
+    return RedirectResponse("/db/")
+
+
+@app.get("/db/{path:path}", include_in_schema=False)
+async def db_explorer_proxy(request: Request, path: str):
+    """Proxy authenticated requests to the internal Datasette instance."""
+    url = f"http://127.0.0.1:{_DATASETTE_PORT}/{path}"
+    query = str(request.url.query)
+    if query:
+        url = f"{url}?{query}"
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(url)
+    except httpx.ConnectError:
+        return HTMLResponse(
+            "<h2>DB Explorer unavailable</h2>"
+            "<p>Datasette is starting up — wait a moment and refresh, "
+            "or restart the app if this persists.</p>",
+            status_code=503,
+        )
+    headers = {k: v for k, v in resp.headers.items() if k.lower() not in _PROXY_SKIP_HEADERS}
+    return Response(
+        content=resp.content,
+        status_code=resp.status_code,
+        headers=headers,
+        media_type=resp.headers.get("content-type"),
+    )
 
 
 # ---------- Favicon (avoid 404 in console) ----------
