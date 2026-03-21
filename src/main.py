@@ -52,7 +52,9 @@ from src.scraper.wiki_fetch import WIKIPEDIA_REQUEST_HEADERS, wiki_url_to_rest_h
 from src.routers import refs as refs_router
 from src.routers import parties as parties_router
 from src.routers import data as data_router
-from src.routers import run as run_router
+from src.routers import run_scraper as run_scraper_router
+from src.routers import test_scripts as test_scripts_router
+from src.routers import ui_tests as ui_tests_router
 from src.routers import preview as preview_router
 from src.routers import offices as offices_router
 
@@ -137,7 +139,9 @@ if STATIC_DIR.exists():
 app.include_router(refs_router.router)
 app.include_router(parties_router.router)
 app.include_router(data_router.router)
-app.include_router(run_router.router)
+app.include_router(run_scraper_router.router)
+app.include_router(test_scripts_router.router)
+app.include_router(ui_tests_router.router)
 app.include_router(preview_router.router)
 app.include_router(offices_router.router)
 
