@@ -5,6 +5,13 @@ from pathlib import Path
 
 import pytest
 
+# Playwright is an optional dev dependency. Skip collection of Playwright tests
+# when the package isn't installed (e.g. in CI) rather than erroring at import time.
+try:
+    import playwright  # noqa: F401
+except ImportError:
+    collect_ignore_glob = ["src/test_ui_edit_office_playwright.py"]
+
 from src.db.connection import get_connection, init_db
 
 
