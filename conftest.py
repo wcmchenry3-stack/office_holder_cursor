@@ -12,6 +12,9 @@ try:
 except ImportError:
     collect_ignore_glob = ["src/test_ui_edit_office_playwright.py"]
 
+# Router files that match test_*.py naming but are not test modules.
+collect_ignore = ["src/routers/test_scripts.py"]
+
 from src.db.connection import get_connection, init_db
 
 
