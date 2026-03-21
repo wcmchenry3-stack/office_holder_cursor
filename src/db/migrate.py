@@ -80,6 +80,7 @@ def migrate_to_fk(conn=None):
         # cities table and source_pages.city_id
         _migrate_city(conn)
         _migrate_source_pages_disable_auto_table_update(conn)
+        _migrate_office_table_config_html_hash(conn)
     finally:
         if own_conn:
             conn.close()
@@ -948,4 +949,15 @@ def _migrate_infobox_role_key(conn):
         conn.execute("ALTER TABLE offices ADD COLUMN infobox_role_key TEXT NOT NULL DEFAULT ''")
         changed = True
     if changed:
+        conn.commit()
+
+
+def _migrate_office_table_config_html_hash(conn):
+    """Add last_html_hash to office_table_config if missing."""
+    try:
+        cols = _columns(conn, "office_table_config")
+    except sqlite3.OperationalError:
+        return
+    if "last_html_hash" not in cols:
+        conn.execute("ALTER TABLE office_table_config ADD COLUMN last_html_hash TEXT")
         conn.commit()

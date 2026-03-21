@@ -6,6 +6,7 @@ Supports: dry_run / test_run (no DB write), row limits, Full / Delta / Live pers
 
 from __future__ import annotations
 
+import hashlib
 import sqlite3
 import sys
 import time
@@ -715,6 +716,8 @@ def run_with_db(
     revalidate_missing_holders_list: list[list[str]] = []  # full list per office when failure is "missing holders"
     office_errors: list[dict[str, Any]] = []  # offices that raised; run continues for others
     cancelled_early = False
+    offices_unchanged = 0
+    html_hashes_to_update: dict[int, str] = {}
     bio_success_count = 0
     bio_error_count = 0
     bio_errors: list[dict[str, str]] = []
@@ -825,6 +828,23 @@ def run_with_db(
             logger.log(f"Cached table: {cache_result['cache_file']}", True)
         html_content = cache_result.get("html") or ""
         cached_table_html = html_content if html_content else None
+
+        # Hash-based skip: if HTML unchanged since last run and office has terms, skip re-parse
+        html_hash = hashlib.sha256(html_content.encode("utf-8")).hexdigest() if html_content else None
+        stored_hash = office_row.get("last_html_hash")
+        if (
+            run_mode == "delta"
+            and not refresh_table_cache
+            and not dry_run
+            and not test_run
+            and html_hash
+            and html_hash == stored_hash
+            and has_existing
+        ):
+            offices_unchanged += 1
+            continue
+        if html_hash:
+            html_hashes_to_update[office_id] = html_hash
 
         # When office has existing terms and find_date_in_infobox is on: validate from table-only parse first
         # so we don't fetch infoboxes only to fail validation later.
@@ -1087,6 +1107,8 @@ def run_with_db(
                     )
                 if individual_id:
                     db_individuals._recompute_is_living_for_individual(individual_id, conn)
+            for tc_id, h in html_hashes_to_update.items():
+                db_offices.update_html_hash(tc_id, h, conn=conn)
         finally:
             conn.close()
 
@@ -1334,6 +1356,7 @@ def run_with_db(
 
     return {
         "office_count": len(offices),
+        "offices_unchanged": offices_unchanged,
         "terms_parsed": total_terms,
         "unique_wiki_urls": len(unique_wiki_urls),
         "bio_success_count": bio_success_count,
