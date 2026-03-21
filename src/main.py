@@ -30,7 +30,6 @@ from markupsafe import Markup
 from fastapi import FastAPI, File, Request, Form, HTTPException, Query, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 from authlib.integrations.starlette_client import OAuth
 
@@ -57,6 +56,7 @@ from src.routers import test_scripts as test_scripts_router
 from src.routers import ui_tests as ui_tests_router
 from src.routers import preview as preview_router
 from src.routers import offices as offices_router
+from src.routers._deps import templates
 
 app = FastAPI(title="Office Holder")
 
@@ -129,10 +129,7 @@ async def logout(request: Request):
     return RedirectResponse("/login")
 
 
-# Resolve to absolute path so template dir is correct regardless of process cwd
-TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 STATIC_DIR = Path(__file__).resolve().parent / "static"
-templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
@@ -151,78 +148,6 @@ app.include_router(offices_router.router)
 # flag + Stop button for client-side) and append to this list.
 PROCESS_TYPES = ["run", "preview_all"]
 
-
-def _run_git_command(args: list[str]) -> str:
-    """Run a git command at repo root and return stripped stdout (empty on error)."""
-    try:
-        result = subprocess.run(
-            ["git", *args],
-            cwd=str(ROOT),
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        return (result.stdout or "").strip()
-    except Exception:
-        return ""
-
-
-def _get_git_sync_status() -> dict:
-    """Return git sync metadata for UI banner display."""
-    inside_repo = _run_git_command(["rev-parse", "--is-inside-work-tree"]) == "true"
-    if not inside_repo:
-        return {"unsynced": False}
-
-    branch = _run_git_command(["symbolic-ref", "--quiet", "--short", "HEAD"]) or "(detached HEAD)"
-    upstream = _run_git_command(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"])
-    dirty = bool(_run_git_command(["status", "--porcelain"]))
-    ahead = 0
-    behind = 0
-
-    if upstream:
-        counts = _run_git_command(["rev-list", "--left-right", "--count", f"HEAD...{upstream}"])
-        parts = counts.split()
-        if len(parts) == 2:
-            try:
-                behind = int(parts[0])
-                ahead = int(parts[1])
-            except ValueError:
-                ahead = 0
-                behind = 0
-
-    unsynced = dirty or ahead > 0 or not upstream
-    if not unsynced:
-        return {"unsynced": False}
-
-    if not upstream:
-        message = (
-            "Local changes are not synced to a remote branch yet. "
-            "Create/push a feature branch (for example: git push -u origin "
-            f"{branch}) because direct pushes to dev are blocked."
-        )
-    elif dirty:
-        message = (
-            "You have local edits not yet committed. Commit to this feature branch, "
-            "then push to sync with remote."
-        )
-    else:
-        message = (
-            f"You are {ahead} commit(s) ahead of {upstream}. "
-            "Push this feature branch to sync remote."
-        )
-
-    return {
-        "unsynced": True,
-        "branch": branch,
-        "upstream": upstream,
-        "ahead": ahead,
-        "behind": behind,
-        "dirty": dirty,
-        "message": message,
-    }
-
-
-templates.env.globals["git_sync_status"] = _get_git_sync_status
 
 
 @app.on_event("startup")

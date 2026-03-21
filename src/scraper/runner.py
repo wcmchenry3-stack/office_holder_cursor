@@ -610,6 +610,18 @@ def _process_single_office(
                     missing_holders=missing_list,
                 )
 
+        # Delta: if holder set is identical (no missing, no new), skip infobox — existing
+        # terms already have accurate dates from the previous infobox run.
+        if cfg.run_mode == "delta" and not missing_years:
+            current_new_holders_years = _holder_keys_from_parsed_rows(
+                table_data_pre, office_id, years_only_pre, key_years_only=True
+            )
+            if current_new_holders_years == old_holders_years:
+                cfg.logger.log(
+                    f"Delta: holder set unchanged for {office_name}, skipping infobox fetch.", True
+                )
+                return _OfficeResult(offices_unchanged_inc=True, html_hash=html_hash)
+
     # Parse table (shared code path); report infobox progress when find_date_in_infobox
     table_data = _parse_office_html(
         office_row, html_content, url, cfg.party_list, cfg.offices_parser,
@@ -1107,6 +1119,8 @@ def run_with_db(
             break
         if result.offices_unchanged_inc:
             offices_unchanged += 1
+            if result.html_hash:
+                html_hashes_to_update[office_id] = result.html_hash
             continue
         if result.revalidate_failure:
             revalidate_failed_offices.append(result.revalidate_failure)
