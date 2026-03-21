@@ -479,7 +479,7 @@ async def offices_import(request: Request, csv_path: str = Form("")):
     if not path.is_absolute():
         path = ROOT / path
     if not path.exists():
-        return templates.TemplateResponse("import.html", {"request": request, "error": f"File not found: {path}"})
+        return templates.TemplateResponse("import.html", {"request": request, "error": "File not found. Check the path and try again."})
     try:
         imported, errors = bulk_import_offices_from_csv(path)
         return RedirectResponse(f"/offices?imported=1&count={imported}&errors={errors}", status_code=302)

@@ -103,6 +103,15 @@ async def require_login(request: Request, call_next):
     return await call_next(request)
 
 
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    return response
+
+
 # SessionMiddleware must be added AFTER require_login so it is outermost and
 # populates request.session before require_login runs.
 app.add_middleware(SessionMiddleware, secret_key=os.environ.get("SECRET_KEY", "dev-only-insecure-key"))
