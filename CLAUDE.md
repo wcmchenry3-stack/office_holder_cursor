@@ -37,7 +37,13 @@ git checkout dev && git pull origin dev
 git checkout -b feature/<name> && git push -u origin feature/<name>
 ```
 
-Finish: push final commits → open PR `feature/<name>` → `dev` on GitHub.
+Finish: run tests → push final commits → open PR `feature/<name>` → `dev` on GitHub.
+
+**Before every push, run the full test suite and confirm it passes:**
+```bash
+python -m pytest
+```
+All non-Playwright tests must pass (Playwright tests skip automatically unless the app is running).
 
 ## Documentation
 

@@ -1182,7 +1182,7 @@ def run_with_db(
     report("office", len(offices), len(offices), "All offices parsed", {"terms_so_far": total_terms})
 
     # Write to DB unless dry_run or test_run (same filter/normalize as preview via _normalize_row_for_import)
-    if not dry_run and not test_run and all_office_data:
+    if not dry_run and not test_run and (all_office_data or html_hashes_to_update):
         report("saving", 0, 1, "Writing to database…", {"terms": total_terms})
         conn = get_connection()
         try:

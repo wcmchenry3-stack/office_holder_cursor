@@ -12,6 +12,7 @@ import re
 import tempfile
 import subprocess
 import xml.etree.ElementTree as ET
+from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 import sys
@@ -58,7 +59,20 @@ from src.routers import preview as preview_router
 from src.routers import offices as offices_router
 from src.routers._deps import templates
 
-app = FastAPI(title="Office Holder")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    try:
+        init_db()
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise RuntimeError(f"Database startup failed: {e}") from e
+    _start_datasette()
+    yield
+    _stop_datasette()
+
+
+app = FastAPI(title="Office Holder", lifespan=lifespan)
 
 # Google OAuth setup
 _oauth = OAuth()
@@ -150,16 +164,6 @@ PROCESS_TYPES = ["run", "preview_all"]
 
 
 
-@app.on_event("startup")
-def startup():
-    try:
-        init_db()
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        raise RuntimeError(f"Database startup failed: {e}") from e
-
-
 # ---------- Datasette DB explorer (read-only proxy) ----------
 
 _DATASETTE_PORT = 8001
@@ -243,16 +247,6 @@ def _stop_datasette() -> None:
     if _datasette_proc is not None:
         _datasette_proc.terminate()
         _datasette_proc = None
-
-
-@app.on_event("startup")
-def startup_datasette():
-    _start_datasette()
-
-
-@app.on_event("shutdown")
-def shutdown_datasette():
-    _stop_datasette()
 
 
 def _apply_datasette_dark_css(content: bytes, content_type: str) -> bytes:
