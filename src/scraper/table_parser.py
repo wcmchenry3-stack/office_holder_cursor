@@ -654,6 +654,7 @@ class Offices:
         party_list,
         progress_callback=None,
         max_rows=None,
+        run_cache=None,
     ):
         self.Logger.log(f"---------------\n\n Processing table with config: {table_config}", True)
 
@@ -729,6 +730,7 @@ class Offices:
                     previous_row_district,
                     previous_row_party,
                     party_list,
+                    run_cache=run_cache,
                 )
                 if row_results and table_config.get("ignore_non_links"):
                     row_results = [
@@ -993,6 +995,7 @@ class Offices:
         previous_row_district,
         previous_row_party,
         party_list,
+        run_cache=None,
     ):
         """
         This function parses out the specific table.
@@ -1258,6 +1261,7 @@ class Offices:
                         col_no,
                         url,
                         district,
+                        run_cache=run_cache,
                     )
                     if isinstance(raw, list):
                         term_tuples = raw
@@ -1286,7 +1290,14 @@ class Offices:
                             best_single = (term_start, term_end, term_start_year, term_end_year)
             else:
                 raw = self.extract_term_dates(
-                    wiki_link, cells, office_details, table_config_to_parse, None, url, district
+                    wiki_link,
+                    cells,
+                    office_details,
+                    table_config_to_parse,
+                    None,
+                    url,
+                    district,
+                    run_cache=run_cache,
                 )
                 term_tuples = raw if isinstance(raw, list) else [raw]
 
@@ -1311,6 +1322,7 @@ class Offices:
                         (sc, ec),
                         url,
                         district,
+                        run_cache=run_cache,
                     )
                     if isinstance(raw, list):
                         continue
@@ -1330,7 +1342,14 @@ class Offices:
                 term_tuples = [(None, None, None, None)]
         else:
             raw_terms = self.extract_term_dates(
-                wiki_link, cells, office_details, table_config_to_parse, None, url, district
+                wiki_link,
+                cells,
+                office_details,
+                table_config_to_parse,
+                None,
+                url,
+                district,
+                run_cache=run_cache,
             )
             term_tuples = raw_terms if isinstance(raw_terms, list) else [raw_terms]
             self.Logger.debug_log(
@@ -1617,7 +1636,15 @@ class Offices:
         return None
 
     def extract_term_dates(
-        self, wiki_link, cells, office_details, table_config_to_parse, parse_row_no, url, district
+        self,
+        wiki_link,
+        cells,
+        office_details,
+        table_config_to_parse,
+        parse_row_no,
+        url,
+        district,
+        run_cache=None,
     ):
 
         self.Logger.debug_log("running extract terms", True)
@@ -1714,7 +1741,12 @@ class Offices:
                     self.Biography._last_bio_details = cached.get("bio_details")
                 else:
                     terms_list, infobox_items = self.Biography.find_term_dates(
-                        wiki_link, url, table_config_to_parse, office_details, district
+                        wiki_link,
+                        url,
+                        table_config_to_parse,
+                        office_details,
+                        district,
+                        run_cache=run_cache,
                     )
                     self._last_infobox_items = infobox_items  # For debug export
                     if cache is not None:
@@ -2312,14 +2344,20 @@ class Biography:
         self.Logger.debug_log(f"first paragraph details {details}", True)
         return details
 
-    def biography_extract(self, wiki_link):
+    def biography_extract(self, wiki_link, run_cache=None):
 
         self.Logger.log("-------- \n\n Running biography extract", True)
 
         normalized_link = normalize_wiki_url(wiki_link) or wiki_link
         fetch_url = wiki_url_to_rest_html_url(normalized_link) or normalized_link
         try:
-            response = requests.get(fetch_url, headers=WIKIPEDIA_REQUEST_HEADERS, timeout=30)
+            _cached_html_be = run_cache.get(fetch_url) if run_cache is not None else None
+            if _cached_html_be is not None:
+                response = type("_R", (), {"status_code": 200, "text": _cached_html_be})()
+            else:
+                response = requests.get(fetch_url, headers=WIKIPEDIA_REQUEST_HEADERS, timeout=30)
+                if response.status_code == 200 and run_cache is not None:
+                    run_cache.set(fetch_url, response.text)
             if response.status_code == 200:
                 html_content = response.text
                 soup = BeautifulSoup(html_content, "html.parser")
@@ -2353,7 +2391,9 @@ class Biography:
             self.Logger.log(f"Request failed: {e}", True)
             return {}
 
-    def find_term_dates(self, wiki_link, url, table_config_to_parse, office_details, district):
+    def find_term_dates(
+        self, wiki_link, url, table_config_to_parse, office_details, district, run_cache=None
+    ):
 
         self.Logger.debug_log(f"running find_term_dates \n url value {url}", True)
 
@@ -2424,7 +2464,13 @@ class Biography:
         self._last_dead_link = False
         fetch_url = wiki_url_to_rest_html_url(wiki_link) or wiki_link
         try:
-            response = requests.get(fetch_url, headers=WIKIPEDIA_REQUEST_HEADERS, timeout=30)
+            _cached_html_ftd = run_cache.get(fetch_url) if run_cache is not None else None
+            if _cached_html_ftd is not None:
+                response = type("_R", (), {"status_code": 200, "text": _cached_html_ftd})()
+            else:
+                response = requests.get(fetch_url, headers=WIKIPEDIA_REQUEST_HEADERS, timeout=30)
+                if response.status_code == 200 and run_cache is not None:
+                    run_cache.set(fetch_url, response.text)
             if response.status_code == 200:
                 html_content = response.text
                 soup = BeautifulSoup(html_content, "html.parser")

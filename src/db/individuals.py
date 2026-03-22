@@ -119,6 +119,7 @@ def upsert_individual(data: dict[str, Any], conn: sqlite3.Connection | None = No
             ),
         )
         ind_id = cur.lastrowid
+        conn.execute("UPDATE individuals SET bio_batch = id % 7 WHERE id = ?", (ind_id,))
         # New individuals start as living by default; recompute may downgrade to not living
         _recompute_is_living_for_individual(ind_id, conn)
         conn.commit()
@@ -226,6 +227,44 @@ def get_living_individual_wiki_urls(conn: sqlite3.Connection | None = None) -> s
             "SELECT wiki_url FROM individuals WHERE is_living = 1 AND is_dead_link = 0 AND wiki_url NOT LIKE 'No link:%'"
         )
         return {row["wiki_url"] for row in cur.fetchall()}
+    finally:
+        if own_conn:
+            conn.close()
+
+
+def get_living_individuals_for_batch(
+    batch: int, conn: sqlite3.Connection | None = None
+) -> list[str]:
+    """Return wiki_urls of living individuals in bio_batch 0–6, ordered so never-refreshed come first."""
+    own_conn = conn is None
+    if own_conn:
+        conn = get_connection()
+    try:
+        cur = conn.execute(
+            """SELECT wiki_url FROM individuals
+               WHERE is_living = 1 AND is_dead_link = 0
+                 AND wiki_url NOT LIKE 'No link:%'
+                 AND bio_batch = ?
+               ORDER BY bio_refreshed_at ASC NULLS FIRST""",
+            (batch,),
+        )
+        return [row["wiki_url"] for row in cur.fetchall()]
+    finally:
+        if own_conn:
+            conn.close()
+
+
+def mark_bio_refreshed(wiki_url: str, conn: sqlite3.Connection | None = None) -> None:
+    """Stamp bio_refreshed_at = now for the given wiki_url."""
+    own_conn = conn is None
+    if own_conn:
+        conn = get_connection()
+    try:
+        conn.execute(
+            "UPDATE individuals SET bio_refreshed_at = datetime('now') WHERE wiki_url = ?",
+            (wiki_url,),
+        )
+        conn.commit()
     finally:
         if own_conn:
             conn.close()
