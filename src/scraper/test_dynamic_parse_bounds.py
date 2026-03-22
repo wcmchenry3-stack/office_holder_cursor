@@ -132,7 +132,9 @@ def test_process_table_ignores_rows_without_valid_wiki_links_when_enabled():
     }
     party_list = {"United States": []}
 
-    rows = offices.process_table(html, table_config, office_details, "https://en.wikipedia.org/wiki/Test", party_list)
+    rows = offices.process_table(
+        html, table_config, office_details, "https://en.wikipedia.org/wiki/Test", party_list
+    )
 
     assert len(rows) == 1
     assert rows[0]["Wiki Link"].endswith("/wiki/Linked_Senator")
@@ -178,13 +180,18 @@ def test_process_table_accepts_rows_when_cell_count_equals_table_rows_threshold(
         "office_notes": "",
     }
 
-    rows = offices.process_table(html, table_config, office_details, "https://en.wikipedia.org/wiki/Test", {"United States": []})
+    rows = offices.process_table(
+        html,
+        table_config,
+        office_details,
+        "https://en.wikipedia.org/wiki/Test",
+        {"United States": []},
+    )
 
     assert len(rows) == 1
     assert rows[0]["Wiki Link"].endswith("/wiki/Example_Governor")
     assert rows[0]["Term Start"] == "1900-01-01"
     assert rows[0]["Term End"] == "1904-01-01"
-
 
 
 def test_parse_rowspan_does_not_carry_previous_holder_on_non_short_rows_without_link():
@@ -228,7 +235,13 @@ def test_parse_rowspan_does_not_carry_previous_holder_on_non_short_rows_without_
         "office_notes": "",
     }
 
-    rows = offices.process_table(html, table_config, office_details, "https://en.wikipedia.org/wiki/Test", {"United States": []})
+    rows = offices.process_table(
+        html,
+        table_config,
+        office_details,
+        "https://en.wikipedia.org/wiki/Test",
+        {"United States": []},
+    )
 
     assert len(rows) == 1
     assert rows[0]["Wiki Link"].endswith("/wiki/First_Governor")
@@ -282,7 +295,13 @@ def test_find_link_fallback_recovers_holder_when_configured_link_column_is_footn
         "office_notes": "",
     }
 
-    rows = offices.process_table(html, table_config, office_details, "https://en.wikipedia.org/wiki/Test", {"United States": []})
+    rows = offices.process_table(
+        html,
+        table_config,
+        office_details,
+        "https://en.wikipedia.org/wiki/Test",
+        {"United States": []},
+    )
 
     assert len(rows) == 1
     assert rows[0]["Wiki Link"].endswith("/wiki/Stevens_T._Mason")
@@ -331,7 +350,13 @@ def test_ignore_non_links_drops_party_organization_links():
         "office_notes": "",
     }
 
-    rows = offices.process_table(html, table_config, office_details, "https://en.wikipedia.org/wiki/Test", {"United States": []})
+    rows = offices.process_table(
+        html,
+        table_config,
+        office_details,
+        "https://en.wikipedia.org/wiki/Test",
+        {"United States": []},
+    )
 
     assert len(rows) == 1
     assert rows[0]["Wiki Link"].endswith("/wiki/Real_Person")
@@ -382,7 +407,13 @@ def test_find_link_fallback_works_with_rtl_by_probing_right_side_columns():
         "office_notes": "",
     }
 
-    rows = offices.process_table(html, table_config, office_details, "https://en.wikipedia.org/wiki/Test", {"United States": []})
+    rows = offices.process_table(
+        html,
+        table_config,
+        office_details,
+        "https://en.wikipedia.org/wiki/Test",
+        {"United States": []},
+    )
 
     assert len(rows) == 1
     assert rows[0]["Wiki Link"].endswith("/wiki/Right_Holder")
@@ -433,7 +464,13 @@ def test_find_link_fallback_rtl_clamps_when_term_start_column_is_out_of_bounds()
         "office_notes": "",
     }
 
-    rows = offices.process_table(html, table_config, office_details, "https://en.wikipedia.org/wiki/Test", {"United States": []})
+    rows = offices.process_table(
+        html,
+        table_config,
+        office_details,
+        "https://en.wikipedia.org/wiki/Test",
+        {"United States": []},
+    )
 
     assert len(rows) == 1
     assert rows[0]["Wiki Link"].endswith("/wiki/Right_Holder")
@@ -484,7 +521,13 @@ def test_find_link_does_not_fallback_when_configured_column_has_no_links():
         "office_notes": "",
     }
 
-    rows = offices.process_table(html, table_config, office_details, "https://en.wikipedia.org/wiki/Test", {"United States": []})
+    rows = offices.process_table(
+        html,
+        table_config,
+        office_details,
+        "https://en.wikipedia.org/wiki/Test",
+        {"United States": []},
+    )
 
     assert rows == []
 
@@ -529,7 +572,13 @@ def test_find_link_keeps_party_links_when_ignore_non_links_is_false():
         "office_notes": "",
     }
 
-    rows = offices.process_table(html, table_config, office_details, "https://en.wikipedia.org/wiki/Test", {"United States": []})
+    rows = offices.process_table(
+        html,
+        table_config,
+        office_details,
+        "https://en.wikipedia.org/wiki/Test",
+        {"United States": []},
+    )
 
     assert len(rows) == 1
     assert rows[0]["Wiki Link"].endswith("/wiki/Michigan_Democratic_Party")
@@ -581,7 +630,13 @@ def test_find_link_ignores_alt_link_targets_and_uses_person_link():
         "office_notes": "",
     }
 
-    rows = offices.process_table(html, table_config, office_details, "https://en.wikipedia.org/wiki/Test", {"United States": []})
+    rows = offices.process_table(
+        html,
+        table_config,
+        office_details,
+        "https://en.wikipedia.org/wiki/Test",
+        {"United States": []},
+    )
 
     assert len(rows) == 1
     assert rows[0]["Wiki Link"].endswith("/wiki/Alfred_Laureta")
@@ -633,7 +688,13 @@ def test_term_range_fallback_recovers_when_term_column_is_misconfigured():
         "office_notes": "",
     }
 
-    rows = offices.process_table(html, table_config, office_details, "https://en.wikipedia.org/wiki/Test", {"United States": []})
+    rows = offices.process_table(
+        html,
+        table_config,
+        office_details,
+        "https://en.wikipedia.org/wiki/Test",
+        {"United States": []},
+    )
 
     assert len(rows) == 1
     assert rows[0]["Term Start"] == "1835-11-03"
@@ -682,13 +743,20 @@ def test_find_date_in_infobox_still_runs_when_term_column_is_out_of_bounds():
         "office_notes": "",
     }
 
-    rows = offices.process_table(html, table_config, office_details, "https://en.wikipedia.org/wiki/Test", {"United States": []})
+    rows = offices.process_table(
+        html,
+        table_config,
+        office_details,
+        "https://en.wikipedia.org/wiki/Test",
+        {"United States": []},
+    )
 
     assert len(rows) == 1
     assert rows[0]["Wiki Link"].endswith("/wiki/Alfred_Laureta")
     assert rows[0]["Term Start"] == "1978-07-14"
     assert rows[0]["Term End"] == "1988-11-18"
     assert "Office row:" in (rows[0].get("Infobox items") or "")
+
 
 def test_process_columns_right_to_left_maps_first_column_to_rightmost():
     logger = _Logger()
@@ -755,7 +823,9 @@ def test_rtl_parse_reads_rightmost_link_when_link_column_is_one_based_1():
     }
     party_list = {"United States": []}
 
-    rows = offices.process_table(html, table_config, office_details, "https://en.wikipedia.org/wiki/Test", party_list)
+    rows = offices.process_table(
+        html, table_config, office_details, "https://en.wikipedia.org/wiki/Test", party_list
+    )
 
     assert len(rows) == 1
     assert rows[0]["Wiki Link"].endswith("/wiki/Rightmost_Senator")
@@ -802,7 +872,13 @@ def test_ignore_non_links_drops_non_person_wiki_links():
         "office_notes": "",
     }
 
-    rows = offices.process_table(html, table_config, office_details, "https://en.wikipedia.org/wiki/Test", {"United States": []})
+    rows = offices.process_table(
+        html,
+        table_config,
+        office_details,
+        "https://en.wikipedia.org/wiki/Test",
+        {"United States": []},
+    )
 
     assert len(rows) == 1
     assert rows[0]["Wiki Link"].endswith("/wiki/Real_Person")
@@ -821,6 +897,7 @@ def test_dynamic_parse_ignores_fragment_links_when_finding_link_column():
     </tr>
     """
     from bs4 import BeautifulSoup
+
     cells = BeautifulSoup(html, "html.parser").find("tr").find_all(["td", "th"])
     config = {
         "link_column": 1,
@@ -882,7 +959,9 @@ def test_process_table_applies_optional_row_filter():
     }
     party_list = {"United States": []}
 
-    rows = offices.process_table(html, table_config, office_details, "https://en.wikipedia.org/wiki/Test", party_list)
+    rows = offices.process_table(
+        html, table_config, office_details, "https://en.wikipedia.org/wiki/Test", party_list
+    )
 
     assert len(rows) == 1
     assert rows[0]["Wiki Link"].endswith("/wiki/A")
@@ -930,6 +1009,8 @@ def test_process_table_without_row_filter_returns_all_rows():
     }
     party_list = {"United States": []}
 
-    rows = offices.process_table(html, table_config, office_details, "https://en.wikipedia.org/wiki/Test", party_list)
+    rows = offices.process_table(
+        html, table_config, office_details, "https://en.wikipedia.org/wiki/Test", party_list
+    )
 
     assert len(rows) == 2

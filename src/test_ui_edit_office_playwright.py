@@ -4,7 +4,6 @@ import re
 import pytest
 from playwright.sync_api import Playwright, expect, sync_playwright
 
-
 BASE_URL = os.getenv("PLAYWRIGHT_BASE_URL", "http://127.0.0.1:8000")
 
 
@@ -28,7 +27,7 @@ def _goto_edit(page, office_id: str) -> None:
 
 def _office_form(page, office_id: str):
     """Return the office form locator for either single-office or multi-office page mode."""
-    multi_form = page.locator(f'#section-office-{office_id} form.office-form')
+    multi_form = page.locator(f"#section-office-{office_id} form.office-form")
     if multi_form.count() > 0:
         expect(multi_form.first).to_be_visible()
         return multi_form.first
@@ -52,9 +51,13 @@ def test_term_dates_merged_disables_term_end_and_matches_start(page):
     _goto_edit(page, office_id)
 
     form = _office_form(page, office_id)
-    term_start = form.locator('input[name="term_start_column"], input[name="tc_term_start_column"]').first
+    term_start = form.locator(
+        'input[name="term_start_column"], input[name="tc_term_start_column"]'
+    ).first
     term_end = form.locator('input[name="term_end_column"], input[name="tc_term_end_column"]').first
-    merged = form.locator('input[name="term_dates_merged"], input[name^="tc_term_dates_merged"]').first
+    merged = form.locator(
+        'input[name="term_dates_merged"], input[name^="tc_term_dates_merged"]'
+    ).first
 
     term_start.fill("6")
     merged.check()
@@ -74,8 +77,12 @@ def test_no_district_mode_disables_district_column(page):
     _goto_edit(page, office_id)
 
     form = _office_form(page, office_id)
-    district_mode = form.locator('select[name="district_mode"], select[name="tc_district_mode"]').first
-    district_column = form.locator('input[name="district_column"], input[name="tc_district_column"]').first
+    district_mode = form.locator(
+        'select[name="district_mode"], select[name="tc_district_mode"]'
+    ).first
+    district_column = form.locator(
+        'input[name="district_column"], input[name="tc_district_column"]'
+    ).first
 
     # Some saved configs start in no_district/at_large mode, which already disables the field.
     district_mode.select_option("column")
@@ -117,8 +124,12 @@ def test_unmerged_equal_term_columns_block_save(page):
     _goto_edit(page, office_id)
 
     form = _office_form(page, office_id)
-    merged = form.locator('input[name="term_dates_merged"], input[name^="tc_term_dates_merged"]').first
-    term_start = form.locator('input[name="term_start_column"], input[name="tc_term_start_column"]').first
+    merged = form.locator(
+        'input[name="term_dates_merged"], input[name^="tc_term_dates_merged"]'
+    ).first
+    term_start = form.locator(
+        'input[name="term_start_column"], input[name="tc_term_start_column"]'
+    ).first
     term_end = form.locator('input[name="term_end_column"], input[name="tc_term_end_column"]').first
 
     merged.uncheck()
@@ -128,7 +139,9 @@ def test_unmerged_equal_term_columns_block_save(page):
     form.locator('button[type="submit"]').first.click()
 
     expect(page).to_have_url(re.compile(r"/offices/\d+\?[^#]*error="))
-    expect(page.get_by_text("Term start column and term end column must be different")).to_be_visible()
+    expect(
+        page.get_by_text("Term start column and term end column must be different")
+    ).to_be_visible()
 
 
 def test_table_no_reuse_rules_across_page_and_same_office(page):
@@ -153,8 +166,8 @@ def test_table_no_reuse_rules_across_page_and_same_office(page):
 
     allow_reuse = page.locator("#allowReuseTablesInput")
 
-    office_a_form = page.locator(f'#section-office-{office_a} form.office-form')
-    office_b_form = page.locator(f'#section-office-{office_b} form.office-form')
+    office_a_form = page.locator(f"#section-office-{office_a} form.office-form")
+    office_b_form = page.locator(f"#section-office-{office_b} form.office-form")
 
     table_a = office_a_form.locator('input[name="tc_table_no"]').first
     table_b = office_b_form.locator('input[name="tc_table_no"]').first
@@ -174,18 +187,20 @@ def test_table_no_reuse_rules_across_page_and_same_office(page):
     page.locator("#pageForm button[type='submit']").first.click()
     expect(page).to_have_url(re.compile(r"/offices/\d+\?[^#]*page_saved=1"))
 
-    office_b_form = page.locator(f'#section-office-{office_b} form.office-form')
+    office_b_form = page.locator(f"#section-office-{office_b} form.office-form")
     table_b = office_b_form.locator('input[name="tc_table_no"]').first
     table_b.fill("3")
     office_b_form.locator('button[type="submit"]').first.click()
     expect(page).to_have_url(re.compile(r"/offices/\d+\?[^#]*saved=1"))
 
-    office_a_form = page.locator(f'#section-office-{office_a} form.office-form')
-    add_table_btn = office_a_form.locator('.add-table-btn').first
+    office_a_form = page.locator(f"#section-office-{office_a} form.office-form")
+    add_table_btn = office_a_form.locator(".add-table-btn").first
     add_table_btn.click()
 
-    office_a_blocks = office_a_form.locator('.table-config-block')
-    last_table_no = office_a_blocks.nth(office_a_blocks.count() - 1).locator('input[name="tc_table_no"]')
+    office_a_blocks = office_a_form.locator(".table-config-block")
+    last_table_no = office_a_blocks.nth(office_a_blocks.count() - 1).locator(
+        'input[name="tc_table_no"]'
+    )
     first_table_no = office_a_blocks.first.locator('input[name="tc_table_no"]')
 
     original = first_table_no.input_value()

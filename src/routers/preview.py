@@ -45,6 +45,7 @@ _export_job_lock = threading.Lock()
 # Exceptions
 # ---------------------------------------------------------------------------
 
+
 class PreviewCancelled(Exception):
     """Raised when the user cancels an async preview job."""
 
@@ -52,6 +53,7 @@ class PreviewCancelled(Exception):
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _sanitize_debug_filename(name: str, max_len: int = 80) -> str:
     """Replace spaces and invalid filename chars with underscore, limit length."""
@@ -74,6 +76,7 @@ def _col_1_to_0_export(v):
 # Async job workers
 # ---------------------------------------------------------------------------
 
+
 def _preview_job_worker(job_id: str, draft: dict, max_rows: "int | None"):
     def cancel_check() -> bool:
         with _preview_job_lock:
@@ -84,13 +87,16 @@ def _preview_job_worker(job_id: str, draft: dict, max_rows: "int | None"):
             raise PreviewCancelled("Stopped.")
         with _preview_job_lock:
             if job_id in _preview_job_store:
-                _preview_job_store[job_id].update({
-                    "phase": phase,
-                    "current": current,
-                    "total": total,
-                    "message": message,
-                    "extra": extra,
-                })
+                _preview_job_store[job_id].update(
+                    {
+                        "phase": phase,
+                        "current": current,
+                        "total": total,
+                        "message": message,
+                        "extra": extra,
+                    }
+                )
+
     try:
         result = preview_with_config(draft, max_rows=max_rows, progress_callback=progress_callback)
         with _preview_job_lock:
@@ -111,12 +117,20 @@ def _preview_job_worker(job_id: str, draft: dict, max_rows: "int | None"):
 
 def _export_job_worker(job_id: str, office_name: str, config: dict):
     """Background worker for debug export when find_date_in_infobox: fetch table, parse with progress, write file."""
+
     def progress_callback(phase: str, current: int, total: int, message: str, extra: dict):
         with _export_job_lock:
             if job_id in _export_job_store:
-                _export_job_store[job_id].update({
-                    "phase": phase, "current": current, "total": total, "message": message, "extra": extra or {},
-                })
+                _export_job_store[job_id].update(
+                    {
+                        "phase": phase,
+                        "current": current,
+                        "total": total,
+                        "message": message,
+                        "extra": extra or {},
+                    }
+                )
+
     try:
         with _export_job_lock:
             if job_id in _export_job_store:
@@ -158,10 +172,14 @@ def _export_job_worker(job_id: str, office_name: str, config: dict):
             "find_date_in_infobox": _config_bool_export(config.get("find_date_in_infobox")),
             "years_only": _config_bool_export(config.get("years_only")),
             "parse_rowspan": _config_bool_export(config.get("parse_rowspan")),
-            "consolidate_rowspan_terms": _config_bool_export(config.get("consolidate_rowspan_terms")),
+            "consolidate_rowspan_terms": _config_bool_export(
+                config.get("consolidate_rowspan_terms")
+            ),
             "rep_link": _config_bool_export(config.get("rep_link")),
             "party_link": _config_bool_export(config.get("party_link")),
-            "alt_links": config.get("alt_links") if isinstance(config.get("alt_links"), list) else [],
+            "alt_links": (
+                config.get("alt_links") if isinstance(config.get("alt_links"), list) else []
+            ),
             "alt_link_include_main": _config_bool_export(config.get("alt_link_include_main")),
             "use_full_page_for_table": use_full_page,
             "term_dates_merged": _config_bool_export(config.get("term_dates_merged")),
@@ -171,12 +189,19 @@ def _export_job_worker(job_id: str, office_name: str, config: dict):
             "ignore_non_links": _config_bool_export(config.get("ignore_non_links")),
             "remove_duplicates": _config_bool_export(config.get("remove_duplicates")),
             "infobox_role_key_filter_id": config.get("infobox_role_key_filter_id"),
-            "country_name": "", "level_name": "", "branch_name": "", "state_name": "",
+            "country_name": "",
+            "level_name": "",
+            "branch_name": "",
+            "state_name": "",
         }
-        office_row["infobox_role_key"] = (config.get("infobox_role_key") or "").strip() or _resolve_infobox_role_key_from_filter_id(
+        office_row["infobox_role_key"] = (
+            config.get("infobox_role_key") or ""
+        ).strip() or _resolve_infobox_role_key_from_filter_id(
             office_row.get("infobox_role_key_filter_id")
         )
-        full_rows = parse_full_table_for_export(office_row, table_html, url, progress_callback=progress_callback)
+        full_rows = parse_full_table_for_export(
+            office_row, table_html, url, progress_callback=progress_callback
+        )
         timestamp = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
         safe_name = _sanitize_debug_filename(office_name)
         filename = f"{safe_name}_{timestamp}.txt"
@@ -201,7 +226,8 @@ def _export_job_worker(job_id: str, office_name: str, config: dict):
             "=== Investigation context ===",
             "Column indices: Form/DB store 1-based column numbers. The parser uses 0-based indices.",
             "Conversion happens in src/db/offices.py in office_row_to_table_config (e.g. form term_start_column 5 -> parser column index 4).",
-            "How to verify: From project root run: python scripts/test_debug_export.py debug/" + filename,
+            "How to verify: From project root run: python scripts/test_debug_export.py debug/"
+            + filename,
             "Code reference:",
             "  - Config to 0-based: src/db/offices.py office_row_to_table_config, _col_1based_to_0based",
             "  - Table parsing: src/scraper/table_parser.py process_table, parse_table_row, extract_term_dates",
@@ -220,9 +246,11 @@ def _export_job_worker(job_id: str, office_name: str, config: dict):
             % (link_0, term_start_0, term_end_0, link_1, term_start_1, term_end_1)
         ]
         if header_cells:
-            h_start = header_cells[term_start_0][1] if 0 <= term_start_0 < len(header_cells) else "?"
+            h_start = (
+                header_cells[term_start_0][1] if 0 <= term_start_0 < len(header_cells) else "?"
+            )
             h_end = header_cells[term_end_0][1] if 0 <= term_end_0 < len(header_cells) else "?"
-            mapping_parts.append('Header at term_start: %r, at term_end: %r.' % (h_start, h_end))
+            mapping_parts.append("Header at term_start: %r, at term_end: %r." % (h_start, h_end))
         lines.append(" ".join(mapping_parts))
         lines.append("")
         lines.append("=== TABLE STRUCTURE (header row, 0-based column index) ===")
@@ -234,10 +262,21 @@ def _export_job_worker(job_id: str, office_name: str, config: dict):
         lines.append("")
         lines.append("=== EXTRACTED TABLE (full parse with above config) ===")
         if full_rows:
-            headers = ["Wiki Link", "Party", "District", "Term Start", "Term End", "Term Start Year", "Term End Year", "Infobox items"]
+            headers = [
+                "Wiki Link",
+                "Party",
+                "District",
+                "Term Start",
+                "Term End",
+                "Term Start Year",
+                "Term End Year",
+                "Infobox items",
+            ]
             lines.append("\t".join(headers))
             for row in full_rows:
-                cells = [str(row.get(h) or "").replace("\t", " ").replace("\n", " ") for h in headers]
+                cells = [
+                    str(row.get(h) or "").replace("\t", " ").replace("\n", " ") for h in headers
+                ]
                 lines.append("\t".join(cells))
         else:
             lines.append("No rows parsed.")
@@ -258,7 +297,10 @@ def _export_job_worker(job_id: str, office_name: str, config: dict):
         with _export_job_lock:
             if job_id in _export_job_store:
                 _export_job_store[job_id]["status"] = "complete"
-                _export_job_store[job_id]["result"] = {"path": f"debug/{filename}", "filename": filename}
+                _export_job_store[job_id]["result"] = {
+                    "path": f"debug/{filename}",
+                    "filename": filename,
+                }
     except Exception as e:
         with _export_job_lock:
             if job_id in _export_job_store:
@@ -272,6 +314,7 @@ def _export_job_worker(job_id: str, office_name: str, config: dict):
 
 # ---------- Preview (single office) ----------
 
+
 @router.get("/offices/{office_id}/preview", response_class=HTMLResponse)
 async def office_preview_page(request: Request, office_id: int):
     office = db_offices.get_office(office_id)
@@ -281,9 +324,25 @@ async def office_preview_page(request: Request, office_id: int):
     try:
         import json
         from pathlib import Path
+
         _log_path = Path(__file__).resolve().parent.parent.parent / ".cursor" / "debug.log"
         with open(_log_path, "a", encoding="utf-8") as _f:
-            _f.write(json.dumps({"location": "main.py:office_preview_page", "message": "preview page using run_with_db", "data": {"office_id": office_id, "url": (office.get("url") or "")[:80], "table_no": office.get("table_no"), "hypothesisId": "H3"}, "timestamp": __import__("time").time() * 1000}) + "\n")
+            _f.write(
+                json.dumps(
+                    {
+                        "location": "main.py:office_preview_page",
+                        "message": "preview page using run_with_db",
+                        "data": {
+                            "office_id": office_id,
+                            "url": (office.get("url") or "")[:80],
+                            "table_no": office.get("table_no"),
+                            "hypothesisId": "H3",
+                        },
+                        "timestamp": __import__("time").time() * 1000,
+                    }
+                )
+                + "\n"
+            )
     except Exception:
         pass
     # #endregion
@@ -308,8 +367,14 @@ async def office_preview_page(request: Request, office_id: int):
         raw_table_preview = dict(raw_table_preview)
         raw_table_preview["max_cols"] = max((len(r) for r in raw_table_preview["rows"]), default=0)
     return templates.TemplateResponse(
-        request, "preview.html",
-        {"office": office, "rows": rows, "error": result.get("error"), "raw_table_preview": raw_table_preview},
+        request,
+        "preview.html",
+        {
+            "office": office,
+            "rows": rows,
+            "error": result.get("error"),
+            "raw_table_preview": raw_table_preview,
+        },
     )
 
 
@@ -348,7 +413,8 @@ async def api_preview(office_id: int):
 async def api_preview_draft(request: Request):
     """Preview using draft office config (unsaved form). Body: same fields as office form (country_id, url, table_no, etc.).
     Optional: max_rows (default 10); use max_rows=0 or show_all=true to return all rows.
-    When find_date_in_infobox is set, returns 202 with job_id; poll GET /api/preview/status/{job_id} for progress (Processing x of y)."""
+    When find_date_in_infobox is set, returns 202 with job_id; poll GET /api/preview/status/{job_id} for progress (Processing x of y).
+    """
     try:
         body = await request.json()
     except Exception:
@@ -438,14 +504,30 @@ async def api_preview_all_tables(request: Request):
     # #region agent log
     try:
         with open("c:\\Users\\wcmch\\cursor\\office_holder\\.cursor\\debug.log", "a") as _f:
-            _f.write(__import__("json").dumps({"location": "main.py:api_preview_all_tables", "message": "request", "data": {"url_len": len(url), "url_preview": url[:80] if url else "", "has_confirm": body.get("confirm") is True}, "timestamp": __import__("time").time() * 1000}) + "\n")
+            _f.write(
+                __import__("json").dumps(
+                    {
+                        "location": "main.py:api_preview_all_tables",
+                        "message": "request",
+                        "data": {
+                            "url_len": len(url),
+                            "url_preview": url[:80] if url else "",
+                            "has_confirm": body.get("confirm") is True,
+                        },
+                        "timestamp": __import__("time").time() * 1000,
+                    }
+                )
+                + "\n"
+            )
     except Exception:
         pass
     # #endregion
     if not url:
         raise HTTPException(status_code=400, detail="url required")
     confirmed = body.get("confirm") is True
-    result = get_all_tables_preview(url, max_rows_per_table=10, confirm_threshold=10, confirmed=confirmed)
+    result = get_all_tables_preview(
+        url, max_rows_per_table=10, confirm_threshold=10, confirmed=confirmed
+    )
     return JSONResponse(result)
 
 
@@ -485,7 +567,8 @@ async def api_table_html(request: Request):
 @router.post("/api/office-debug-export")
 async def api_office_debug_export(request: Request):
     """Write a debug text file with config, preview result, and table HTML. Body: office_name, config, preview_result, table_html_result.
-    When find_date_in_infobox is true, returns 202 with job_id; poll GET /api/office-debug-export-status/{job_id} for progress."""
+    When find_date_in_infobox is true, returns 202 with job_id; poll GET /api/office-debug-export-status/{job_id} for progress.
+    """
     try:
         body = await request.json()
     except Exception:
@@ -511,7 +594,9 @@ async def api_office_debug_export(request: Request):
 
     # Preview mode: no full parse, no infobox; require preview_result and table_html_result from client
     if export_mode == "preview":
-        table_html = (table_html_result.get("html") or "") if not table_html_result.get("error") else ""
+        table_html = (
+            (table_html_result.get("html") or "") if not table_html_result.get("error") else ""
+        )
         header_cells = get_table_header_from_html(table_html) if table_html else []
         timestamp = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
         safe_name = _sanitize_debug_filename(office_name)
@@ -522,9 +607,11 @@ async def api_office_debug_export(request: Request):
         link_1 = int(config.get("link_column") or 0)
         term_start_1 = int(config.get("term_start_column") or 4)
         term_end_1 = int(config.get("term_end_column") or 5)
+
         def _col_1_to_0(v):
             val = int(v) if v is not None and v != "" else 0
             return (val - 1) if val > 0 else -1
+
         link_0 = _col_1_to_0(link_1)
         term_start_0 = _col_1_to_0(term_start_1)
         term_end_0 = _col_1_to_0(term_end_1)
@@ -539,7 +626,8 @@ async def api_office_debug_export(request: Request):
             "=== Investigation context ===",
             "Column indices: Form/DB store 1-based column numbers. The parser uses 0-based indices.",
             "Conversion happens in src/db/offices.py in office_row_to_table_config (e.g. form term_start_column 5 -> parser column index 4).",
-            "How to verify: From project root run: python scripts/test_debug_export.py debug/" + filename,
+            "How to verify: From project root run: python scripts/test_debug_export.py debug/"
+            + filename,
             "Code reference:",
             "  - Config to 0-based: src/db/offices.py office_row_to_table_config, _col_1based_to_0based",
             "  - Table parsing: src/scraper/table_parser.py process_table, parse_table_row, extract_term_dates",
@@ -559,9 +647,11 @@ async def api_office_debug_export(request: Request):
             % (link_0, term_start_0, term_end_0, link_1, term_start_1, term_end_1)
         ]
         if header_cells:
-            h_start = header_cells[term_start_0][1] if 0 <= term_start_0 < len(header_cells) else "?"
+            h_start = (
+                header_cells[term_start_0][1] if 0 <= term_start_0 < len(header_cells) else "?"
+            )
             h_end = header_cells[term_end_0][1] if 0 <= term_end_0 < len(header_cells) else "?"
-            mapping_parts.append('Header at term_start: %r, at term_end: %r.' % (h_start, h_end))
+            mapping_parts.append("Header at term_start: %r, at term_end: %r." % (h_start, h_end))
         lines.append(" ".join(mapping_parts))
         lines.append("")
         lines.append("=== TABLE STRUCTURE (header row, 0-based column index) ===")
@@ -574,10 +664,21 @@ async def api_office_debug_export(request: Request):
         lines.append("=== EXTRACTED TABLE (Preview - offices only) ===")
         preview_rows = preview_result.get("preview_rows") or []
         if preview_rows:
-            headers = ["Wiki Link", "Party", "District", "Term Start", "Term End", "Term Start Year", "Term End Year", "Infobox items"]
+            headers = [
+                "Wiki Link",
+                "Party",
+                "District",
+                "Term Start",
+                "Term End",
+                "Term Start Year",
+                "Term End Year",
+                "Infobox items",
+            ]
             lines.append("\t".join(headers))
             for row in preview_rows:
-                cells = [str(row.get(h) or "").replace("\t", " ").replace("\n", " ") for h in headers]
+                cells = [
+                    str(row.get(h) or "").replace("\t", " ").replace("\n", " ") for h in headers
+                ]
                 lines.append("\t".join(cells))
         else:
             lines.append("No preview rows.")
@@ -644,7 +745,8 @@ async def api_office_debug_export(request: Request):
         "=== Investigation context ===",
         "Column indices: Form/DB store 1-based column numbers. The parser uses 0-based indices.",
         "Conversion happens in src/db/offices.py in office_row_to_table_config (e.g. form term_start_column 5 -> parser column index 4).",
-        "How to verify: From project root run: python scripts/test_debug_export.py debug/" + filename,
+        "How to verify: From project root run: python scripts/test_debug_export.py debug/"
+        + filename,
         "Code reference:",
         "  - Config to 0-based: src/db/offices.py office_row_to_table_config, _col_1based_to_0based",
         "  - Table parsing: src/scraper/table_parser.py process_table, parse_table_row, extract_term_dates",
@@ -667,7 +769,7 @@ async def api_office_debug_export(request: Request):
     if header_cells:
         h_start = header_cells[term_start_0][1] if 0 <= term_start_0 < len(header_cells) else "?"
         h_end = header_cells[term_end_0][1] if 0 <= term_end_0 < len(header_cells) else "?"
-        mapping_parts.append('Header at term_start: %r, at term_end: %r.' % (h_start, h_end))
+        mapping_parts.append("Header at term_start: %r, at term_end: %r." % (h_start, h_end))
     lines.append(" ".join(mapping_parts))
     # TABLE STRUCTURE (header row)
     lines.append("")
@@ -705,7 +807,9 @@ async def api_office_debug_export(request: Request):
                 "consolidate_rowspan_terms": _config_bool(config.get("consolidate_rowspan_terms")),
                 "rep_link": _config_bool(config.get("rep_link")),
                 "party_link": _config_bool(config.get("party_link")),
-                "alt_links": config.get("alt_links") if isinstance(config.get("alt_links"), list) else [],
+                "alt_links": (
+                    config.get("alt_links") if isinstance(config.get("alt_links"), list) else []
+                ),
                 "alt_link_include_main": _config_bool(config.get("alt_link_include_main")),
                 "use_full_page_for_table": _config_bool(config.get("use_full_page_for_table")),
                 "term_dates_merged": _config_bool(config.get("term_dates_merged")),
@@ -714,9 +818,14 @@ async def api_office_debug_export(request: Request):
                 "district_at_large": _config_bool(config.get("district_at_large")),
                 "remove_duplicates": _config_bool(config.get("remove_duplicates")),
                 "infobox_role_key_filter_id": config.get("infobox_role_key_filter_id"),
-                "country_name": "", "level_name": "", "branch_name": "", "state_name": "",
+                "country_name": "",
+                "level_name": "",
+                "branch_name": "",
+                "state_name": "",
             }
-            office_row["infobox_role_key"] = (config.get("infobox_role_key") or "").strip() or _resolve_infobox_role_key_from_filter_id(
+            office_row["infobox_role_key"] = (
+                config.get("infobox_role_key") or ""
+            ).strip() or _resolve_infobox_role_key_from_filter_id(
                 office_row.get("infobox_role_key_filter_id")
             )
             full_rows = parse_full_table_for_export(office_row, table_html, office_row["url"])
@@ -724,7 +833,16 @@ async def api_office_debug_export(request: Request):
             full_rows = []
             lines.append("Parse error: " + str(e))
     if full_rows:
-        headers = ["Wiki Link", "Party", "District", "Term Start", "Term End", "Term Start Year", "Term End Year", "Infobox items"]
+        headers = [
+            "Wiki Link",
+            "Party",
+            "District",
+            "Term Start",
+            "Term End",
+            "Term Start Year",
+            "Term End Year",
+            "Infobox items",
+        ]
         lines.append("\t".join(headers))
         for row in full_rows:
             cells = [str(row.get(h) or "").replace("\t", " ").replace("\n", " ") for h in headers]
@@ -733,10 +851,21 @@ async def api_office_debug_export(request: Request):
         preview_rows = preview_result.get("preview_rows") or []
         if preview_rows:
             lines.append("(Full parse produced no rows; showing preview sample below.)")
-            headers = ["Wiki Link", "Party", "District", "Term Start", "Term End", "Term Start Year", "Term End Year", "Infobox items"]
+            headers = [
+                "Wiki Link",
+                "Party",
+                "District",
+                "Term Start",
+                "Term End",
+                "Term Start Year",
+                "Term End Year",
+                "Infobox items",
+            ]
             lines.append("\t".join(headers))
             for row in preview_rows:
-                cells = [str(row.get(h) or "").replace("\t", " ").replace("\n", " ") for h in headers]
+                cells = [
+                    str(row.get(h) or "").replace("\t", " ").replace("\n", " ") for h in headers
+                ]
                 lines.append("\t".join(cells))
         else:
             err = preview_result.get("error")
@@ -801,21 +930,41 @@ async def api_preview_offices(request: Request):
         try:
             oid = int(oid)
         except (TypeError, ValueError):
-            results.append({"office_id": oid, "name": None, "url": None, "preview_rows": [], "raw_table_preview": None, "error": "Invalid office id"})
+            results.append(
+                {
+                    "office_id": oid,
+                    "name": None,
+                    "url": None,
+                    "preview_rows": [],
+                    "raw_table_preview": None,
+                    "error": "Invalid office id",
+                }
+            )
             continue
         office = db_offices.get_office(oid)
         if not office:
-            results.append({"office_id": oid, "name": None, "url": None, "preview_rows": [], "raw_table_preview": None, "error": "Office not found"})
+            results.append(
+                {
+                    "office_id": oid,
+                    "name": None,
+                    "url": None,
+                    "preview_rows": [],
+                    "raw_table_preview": None,
+                    "error": "Office not found",
+                }
+            )
             continue
         name = office.get("name") or ""
         url = (office.get("url") or "").strip()
         pr = preview_with_config(office, max_rows=10)
-        results.append({
-            "office_id": oid,
-            "name": name,
-            "url": url,
-            "preview_rows": pr.get("preview_rows") or [],
-            "raw_table_preview": pr.get("raw_table_preview"),
-            "error": pr.get("error"),
-        })
+        results.append(
+            {
+                "office_id": oid,
+                "name": name,
+                "url": url,
+                "preview_rows": pr.get("preview_rows") or [],
+                "raw_table_preview": pr.get("raw_table_preview"),
+                "error": pr.get("error"),
+            }
+        )
     return JSONResponse({"results": results})

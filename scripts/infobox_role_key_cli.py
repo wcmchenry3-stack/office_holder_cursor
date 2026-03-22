@@ -38,7 +38,9 @@ def main() -> int:
     try:
         payload = {"infobox_role_key": args.role_key}
         if args.table_config_id is not None:
-            set_url = f"{args.base_url}/api/table-configs/{args.table_config_id}/set-infobox-role-key"
+            set_url = (
+                f"{args.base_url}/api/table-configs/{args.table_config_id}/set-infobox-role-key"
+            )
             detail_url = f"{args.base_url}/api/table-configs/{args.table_config_id}"
             save_res = _http_json(set_url, method="POST", payload=payload)
             detail_res = _http_json(detail_url)

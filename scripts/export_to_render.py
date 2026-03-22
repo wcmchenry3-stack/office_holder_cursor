@@ -43,91 +43,182 @@ OUTPUT = Path(__file__).resolve().parent.parent / "migration_output.sql"
 
 TABLES = [
     # Reference tables — already seeded in target, INSERT OR IGNORE is safe
-    ("countries",  ["id", "name"],                          "INSERT OR IGNORE"),
-    ("states",     ["id", "country_id", "name"],            "INSERT OR IGNORE"),
-    ("cities",     ["id", "state_id", "name"],              "INSERT OR IGNORE"),
-    ("levels",     ["id", "name"],                          "INSERT OR IGNORE"),
-    ("branches",   ["id", "name"],                          "INSERT OR IGNORE"),
-
+    ("countries", ["id", "name"], "INSERT OR IGNORE"),
+    ("states", ["id", "country_id", "name"], "INSERT OR IGNORE"),
+    ("cities", ["id", "state_id", "name"], "INSERT OR IGNORE"),
+    ("levels", ["id", "name"], "INSERT OR IGNORE"),
+    ("branches", ["id", "name"], "INSERT OR IGNORE"),
     # Config tables — INSERT OR REPLACE so the script is safe to re-run and
     # handles any rows that were auto-seeded in the target DB at startup.
-    ("parties", [
-        "id", "country_id", "party_name", "party_link", "created_at",
-    ], "INSERT OR REPLACE"),
-
+    (
+        "parties",
+        [
+            "id",
+            "country_id",
+            "party_name",
+            "party_link",
+            "created_at",
+        ],
+        "INSERT OR REPLACE",
+    ),
     ("office_category", ["id", "name"], "INSERT OR REPLACE"),
     ("office_category_countries", ["category_id", "country_id"], "INSERT OR REPLACE"),
-    ("office_category_levels",    ["category_id", "level_id"],   "INSERT OR REPLACE"),
-    ("office_category_branches",  ["category_id", "branch_id"],  "INSERT OR REPLACE"),
-
+    ("office_category_levels", ["category_id", "level_id"], "INSERT OR REPLACE"),
+    ("office_category_branches", ["category_id", "branch_id"], "INSERT OR REPLACE"),
     ("infobox_role_key_filter", ["id", "name", "role_key"], "INSERT OR REPLACE"),
     ("infobox_role_key_filter_countries", ["filter_id", "country_id"], "INSERT OR REPLACE"),
-    ("infobox_role_key_filter_levels",    ["filter_id", "level_id"],   "INSERT OR REPLACE"),
-    ("infobox_role_key_filter_branches",  ["filter_id", "branch_id"],  "INSERT OR REPLACE"),
-
+    ("infobox_role_key_filter_levels", ["filter_id", "level_id"], "INSERT OR REPLACE"),
+    ("infobox_role_key_filter_branches", ["filter_id", "branch_id"], "INSERT OR REPLACE"),
     # offices: skip alt_link (superseded by alt_links table) and
     #          superseded_by_office_details_id (internal migration column)
-    ("offices", [
-        "id", "country_id", "state_id", "level_id", "branch_id",
-        "department", "name", "enabled", "notes", "url",
-        "table_no", "table_rows", "link_column", "party_column",
-        "term_start_column", "term_end_column", "district_column",
-        "filter_column", "filter_criteria",
-        "dynamic_parse", "read_right_to_left", "find_date_in_infobox",
-        "parse_rowspan", "consolidate_rowspan_terms",
-        "rep_link", "party_link", "alt_link_include_main",
-        "use_full_page_for_table", "years_only", "term_dates_merged",
-        "party_ignore", "district_ignore", "district_at_large",
-        "ignore_non_links", "remove_duplicates",
-        "infobox_role_key", "created_at",
-        # infobox_role_key_filter_id not in source DB (migration ran later) — omitted, defaults to NULL
-    ], "INSERT OR REPLACE"),
-
+    (
+        "offices",
+        [
+            "id",
+            "country_id",
+            "state_id",
+            "level_id",
+            "branch_id",
+            "department",
+            "name",
+            "enabled",
+            "notes",
+            "url",
+            "table_no",
+            "table_rows",
+            "link_column",
+            "party_column",
+            "term_start_column",
+            "term_end_column",
+            "district_column",
+            "filter_column",
+            "filter_criteria",
+            "dynamic_parse",
+            "read_right_to_left",
+            "find_date_in_infobox",
+            "parse_rowspan",
+            "consolidate_rowspan_terms",
+            "rep_link",
+            "party_link",
+            "alt_link_include_main",
+            "use_full_page_for_table",
+            "years_only",
+            "term_dates_merged",
+            "party_ignore",
+            "district_ignore",
+            "district_at_large",
+            "ignore_non_links",
+            "remove_duplicates",
+            "infobox_role_key",
+            "created_at",
+            # infobox_role_key_filter_id not in source DB (migration ran later) — omitted, defaults to NULL
+        ],
+        "INSERT OR REPLACE",
+    ),
     ("alt_links", ["id", "office_id", "office_details_id", "link_path"], "INSERT OR REPLACE"),
-
     # source_pages: source has both table_reuse_across_offices (old) and
     # allow_reuse_tables (new) — we select allow_reuse_tables only
-    ("source_pages", [
-        "id", "country_id", "state_id", "city_id", "level_id", "branch_id",
-        "url", "notes", "enabled",
-        "allow_reuse_tables", "disable_auto_table_update",
-        "last_scraped_at", "created_at", "updated_at",
-    ], "INSERT OR REPLACE"),
-
+    (
+        "source_pages",
+        [
+            "id",
+            "country_id",
+            "state_id",
+            "city_id",
+            "level_id",
+            "branch_id",
+            "url",
+            "notes",
+            "enabled",
+            "allow_reuse_tables",
+            "disable_auto_table_update",
+            "last_scraped_at",
+            "created_at",
+            "updated_at",
+        ],
+        "INSERT OR REPLACE",
+    ),
     # office_details: skip last_scraped_at (not in target schema)
-    ("office_details", [
-        "id", "source_page_id", "name", "variant_name", "department",
-        "notes", "alt_link_include_main", "enabled",
-        "created_at", "updated_at", "office_category_id",
-    ], "INSERT OR REPLACE"),
-
+    (
+        "office_details",
+        [
+            "id",
+            "source_page_id",
+            "name",
+            "variant_name",
+            "department",
+            "notes",
+            "alt_link_include_main",
+            "enabled",
+            "created_at",
+            "updated_at",
+            "office_category_id",
+        ],
+        "INSERT OR REPLACE",
+    ),
     # office_table_config: skip infobox_role_key (not in target schema)
-    ("office_table_config", [
-        "id", "office_details_id",
-        "table_no", "table_rows",
-        "link_column", "party_column", "term_start_column", "term_end_column",
-        "district_column", "filter_column", "filter_criteria",
-        "dynamic_parse", "read_right_to_left", "find_date_in_infobox",
-        "parse_rowspan", "rep_link", "party_link", "enabled",
-        "use_full_page_for_table", "years_only", "term_dates_merged",
-        "party_ignore", "district_ignore", "district_at_large",
-        "ignore_non_links", "remove_duplicates", "consolidate_rowspan_terms",
-        "infobox_role_key_filter_id", "notes", "name",
-        "created_at", "updated_at",
-    ], "INSERT OR REPLACE"),
-
+    (
+        "office_table_config",
+        [
+            "id",
+            "office_details_id",
+            "table_no",
+            "table_rows",
+            "link_column",
+            "party_column",
+            "term_start_column",
+            "term_end_column",
+            "district_column",
+            "filter_column",
+            "filter_criteria",
+            "dynamic_parse",
+            "read_right_to_left",
+            "find_date_in_infobox",
+            "parse_rowspan",
+            "rep_link",
+            "party_link",
+            "enabled",
+            "use_full_page_for_table",
+            "years_only",
+            "term_dates_merged",
+            "party_ignore",
+            "district_ignore",
+            "district_at_large",
+            "ignore_non_links",
+            "remove_duplicates",
+            "consolidate_rowspan_terms",
+            "infobox_role_key_filter_id",
+            "notes",
+            "name",
+            "created_at",
+            "updated_at",
+        ],
+        "INSERT OR REPLACE",
+    ),
     # parser_test_scripts: INSERT OR REPLACE to overwrite any auto-seeded rows
-    ("parser_test_scripts", [
-        "id", "name", "test_type", "enabled",
-        "html_file", "source_url", "config_json", "expected_json",
-        "created_at", "updated_at",
-    ], "INSERT OR REPLACE"),
+    (
+        "parser_test_scripts",
+        [
+            "id",
+            "name",
+            "test_type",
+            "enabled",
+            "html_file",
+            "source_url",
+            "config_json",
+            "expected_json",
+            "created_at",
+            "updated_at",
+        ],
+        "INSERT OR REPLACE",
+    ),
 ]
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def sql_literal(value) -> str:
     """Convert a Python value to a safe SQL literal string."""
@@ -151,6 +242,7 @@ def build_inserts(conn: sqlite3.Connection, table: str, cols: list[str], mode: s
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+
 
 def main():
     source_path = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_SOURCE

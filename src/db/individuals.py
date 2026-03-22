@@ -32,7 +32,9 @@ def list_individuals(
             conn.close()
 
 
-def get_individual_by_wiki_url(wiki_url: str, conn: sqlite3.Connection | None = None) -> dict[str, Any] | None:
+def get_individual_by_wiki_url(
+    wiki_url: str, conn: sqlite3.Connection | None = None
+) -> dict[str, Any] | None:
     """Return one individual by wiki_url."""
     own_conn = conn is None
     if own_conn:
@@ -46,7 +48,9 @@ def get_individual_by_wiki_url(wiki_url: str, conn: sqlite3.Connection | None = 
             conn.close()
 
 
-def get_individual(individual_id: int, conn: sqlite3.Connection | None = None) -> dict[str, Any] | None:
+def get_individual(
+    individual_id: int, conn: sqlite3.Connection | None = None
+) -> dict[str, Any] | None:
     """Return one individual by id."""
     own_conn = conn is None
     if own_conn:
@@ -211,6 +215,7 @@ def _recompute_is_living_for_individual(individual_id: int, conn: sqlite3.Connec
                 new_flag = 0
     if new_flag != is_living:
         conn.execute("UPDATE individuals SET is_living = ? WHERE id = ?", (new_flag, individual_id))
+
 
 def get_living_individual_wiki_urls(conn: sqlite3.Connection | None = None) -> set[str]:
     """Return set of wiki_urls for individuals considered living (is_living = 1, not dead-link, not No link: placeholder)."""

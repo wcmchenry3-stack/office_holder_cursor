@@ -1,0 +1,19 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  ci:
+    uses: wcmchenry3-stack/office_holder_cursor/.github/workflows/ci.yml@main
+    secrets: inherit
+
+  deploy:
+    needs: ci
+    uses: wcmchenry3-stack/.github/.github/workflows/called-deploy-render.yml@main
+    with:
+      service-name: 'office-holder-cursor'
+      service-id: 'srv-d6ubbu24d50c73cpmgkg'
+      zap-target-url: 'https://office-holder-cursor.onrender.com'
+    secrets: inherit

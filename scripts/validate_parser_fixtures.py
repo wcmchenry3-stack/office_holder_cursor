@@ -59,7 +59,9 @@ def validate_manifest(manifest_path: Path) -> list[str]:
         else:
             html_path = Path(html_file.strip())
             if html_path.is_absolute():
-                errors.append(f"{label}: html_file must be a relative path, got absolute path '{html_file}'")
+                errors.append(
+                    f"{label}: html_file must be a relative path, got absolute path '{html_file}'"
+                )
             elif not (PROJECT_ROOT / html_path).is_file():
                 errors.append(f"{label}: html_file does not exist at '{html_file}'")
 
@@ -82,7 +84,9 @@ def main() -> int:
             print(f"- {err}")
         return 1
 
-    print(f"Parser fixture validation passed for {manifest_path} ({len(json.loads(manifest_path.read_text(encoding='utf-8')))} entries)")
+    print(
+        f"Parser fixture validation passed for {manifest_path} ({len(json.loads(manifest_path.read_text(encoding='utf-8')))} entries)"
+    )
     return 0
 
 

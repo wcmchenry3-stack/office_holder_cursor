@@ -14,10 +14,10 @@ import os
 import pytest
 from starlette.testclient import TestClient
 
-
 # ---------------------------------------------------------------------------
 # Shared fixture
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture(scope="module")
 def client(tmp_path_factory):
@@ -28,6 +28,7 @@ def client(tmp_path_factory):
     os.environ["OFFICE_HOLDER_DB_PATH"] = str(db_path)
 
     import src.main as main_mod
+
     original_start = main_mod._start_datasette
     original_stop = main_mod._stop_datasette
     main_mod._start_datasette = lambda: None
@@ -45,6 +46,7 @@ def client(tmp_path_factory):
 # /api/countries
 # ---------------------------------------------------------------------------
 
+
 def test_api_countries_returns_list(client):
     """GET /api/countries returns a JSON list with id and name keys."""
     resp = client.get("/api/countries")
@@ -61,6 +63,7 @@ def test_api_countries_returns_list(client):
 # ---------------------------------------------------------------------------
 # /api/states
 # ---------------------------------------------------------------------------
+
 
 def test_api_states_with_valid_country_id_returns_list(client):
     """GET /api/states?country_id=<us_id> returns US states."""
@@ -86,6 +89,7 @@ def test_api_states_with_zero_country_id_returns_empty(client):
 # ---------------------------------------------------------------------------
 # /api/levels and /api/branches
 # ---------------------------------------------------------------------------
+
 
 def test_api_levels_returns_list(client):
     """GET /api/levels returns seeded levels."""

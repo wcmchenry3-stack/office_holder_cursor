@@ -34,14 +34,19 @@ _test_script_result_lock = threading.Lock()
 # Helper functions (only used in test_scripts routes)
 # ---------------------------------------------------------------------------
 
+
 def _slugify_fixture_name(value: str, *, fallback: str = "fixture") -> str:
     import re
+
     slug = re.sub(r"[^a-z0-9]+", "_", (value or "").strip().lower()).strip("_")
     return slug or fallback
 
 
-def _build_primary_fixture_rel_path(*, test_name: str, source_url: str, canonical_fixture_mode: bool) -> str:
+def _build_primary_fixture_rel_path(
+    *, test_name: str, source_url: str, canonical_fixture_mode: bool
+) -> str:
     import re
+
     if canonical_fixture_mode:
         return f"fixtures/{_slugify_fixture_name(test_name, fallback='test_script')}.html"
     safe_page = re.sub(r"[^a-zA-Z0-9._-]+", "_", (source_url.split("/")[-1] or "wiki_page"))
@@ -58,6 +63,7 @@ def _snapshot_member_pages_for_test(
 ) -> tuple[dict, list[str], list[str], list[dict]]:
     """Return (config_with_fixtures, fetched_urls, saved_files, actual_rows) for infobox-enabled table tests."""
     import re
+
     cfg = dict(config_json or {})
     if not (cfg.get("find_date_in_infobox") and html_content.strip()):
         return cfg, [], [], []
@@ -96,7 +102,9 @@ def _snapshot_member_pages_for_test(
             continue
         if resp.status_code != 200:
             continue
-        safe_member = re.sub(r"[^a-zA-Z0-9._-]+", "_", (member_url.split("/")[-1] or f"member_{idx+1}"))
+        safe_member = re.sub(
+            r"[^a-zA-Z0-9._-]+", "_", (member_url.split("/")[-1] or f"member_{idx+1}")
+        )
         if canonical_fixture_mode:
             rel_name = f"fixtures/{fixture_stem}__member_{safe_member}.html"
         else:
@@ -133,20 +141,24 @@ def _store_test_script_result(payload: dict) -> str:
 # Test script result routes
 # ---------------------------------------------------------------------------
 
+
 @router.get("/test-scripts/results/{result_id}", response_class=HTMLResponse)
 async def test_script_result_page(request: Request, result_id: str):
     with _test_script_result_lock:
         payload = _test_script_result_store.get(result_id)
     if not payload:
         raise HTTPException(status_code=404, detail="Result not found")
-    return templates.TemplateResponse(request, "test_script_result.html", {"payload": payload, "result_id": result_id})
+    return templates.TemplateResponse(
+        request, "test_script_result.html", {"payload": payload, "result_id": result_id}
+    )
 
 
 @router.get("/test-scripts", response_class=HTMLResponse)
 async def test_scripts_page(request: Request):
     tests = db_test_scripts.list_tests()
     return templates.TemplateResponse(
-        request, "test_scripts.html",
+        request,
+        "test_scripts.html",
         {
             "tests": tests,
             "can_use_office_templates": db_offices.use_hierarchy(),
@@ -213,7 +225,13 @@ async def api_test_script_template_page_details(source_page_id: int):
                 "table_configs": table_configs,
             }
         )
-    return JSONResponse({"ok": True, "page": {"id": page.get("id"), "url": page.get("url") or ""}, "offices": office_rows})
+    return JSONResponse(
+        {
+            "ok": True,
+            "page": {"id": page.get("id"), "url": page.get("url") or ""},
+            "offices": office_rows,
+        }
+    )
 
 
 @router.get("/api/test-scripts/{test_id}")
@@ -241,7 +259,9 @@ async def api_preview_test_script(request: Request):
     except requests.RequestException as e:
         raise HTTPException(status_code=502, detail=f"Failed to fetch page: {e}") from e
     if resp.status_code != 200:
-        raise HTTPException(status_code=502, detail=f"Failed to fetch page: HTTP {resp.status_code}")
+        raise HTTPException(
+            status_code=502, detail=f"Failed to fetch page: HTTP {resp.status_code}"
+        )
 
     html_content = resp.text
     try:
@@ -292,7 +312,9 @@ async def api_create_test_script(request: Request):
         html_file = existing.get("html_file") or ""
         if overwrite_html:
             if not html_content.strip():
-                raise HTTPException(status_code=400, detail="Preview first to fetch new HTML before overwriting")
+                raise HTTPException(
+                    status_code=400, detail="Preview first to fetch new HTML before overwriting"
+                )
             rel_html_path = _build_primary_fixture_rel_path(
                 test_name=name,
                 source_url=source_url,
@@ -317,7 +339,7 @@ async def api_create_test_script(request: Request):
             if delete_existing_files and (existing.get("html_file") or "").strip():
                 old_rel = (existing["html_file"] or "").strip().replace("\\", "/")
                 if old_rel.startswith("test_scripts/"):
-                    old_rel = old_rel[len("test_scripts/"):]
+                    old_rel = old_rel[len("test_scripts/") :]
                 old_path = (db_test_scripts.TEST_SCRIPTS_DIR / old_rel).resolve()
                 try:
                     if db_test_scripts.TEST_SCRIPTS_DIR in old_path.parents and old_path.exists():
@@ -332,23 +354,29 @@ async def api_create_test_script(request: Request):
                             continue
                         member_rel = rel_name.strip().replace("\\", "/")
                         if member_rel.startswith("test_scripts/"):
-                            member_rel = member_rel[len("test_scripts/"):]
+                            member_rel = member_rel[len("test_scripts/") :]
                         old_member = (db_test_scripts.TEST_SCRIPTS_DIR / member_rel).resolve()
                         try:
-                            if db_test_scripts.TEST_SCRIPTS_DIR in old_member.parents and old_member.exists():
+                            if (
+                                db_test_scripts.TEST_SCRIPTS_DIR in old_member.parents
+                                and old_member.exists()
+                            ):
                                 old_member.unlink()
                         except Exception:
                             pass
 
-        db_test_scripts.update_test(test_id, {
-            "name": name,
-            "test_type": test_type,
-            "enabled": enabled,
-            "source_url": source_url,
-            "html_file": html_file,
-            "config_json": config_json,
-            "expected_json": expected_json,
-        })
+        db_test_scripts.update_test(
+            test_id,
+            {
+                "name": name,
+                "test_type": test_type,
+                "enabled": enabled,
+                "source_url": source_url,
+                "html_file": html_file,
+                "config_json": config_json,
+                "expected_json": expected_json,
+            },
+        )
         return JSONResponse({"ok": True, "id": test_id, "html_file": html_file, "updated": True})
 
     # Create new test
@@ -375,16 +403,20 @@ async def api_create_test_script(request: Request):
     if _expected_missing(expected_json):
         expected_json = auto_rows
 
-    new_test_id = db_test_scripts.create_test({
-        "name": name,
-        "test_type": test_type,
-        "enabled": enabled,
-        "source_url": source_url,
-        "html_file": rel_html_path,
-        "config_json": config_json,
-        "expected_json": expected_json,
-    })
-    return JSONResponse({"ok": True, "id": new_test_id, "html_file": rel_html_path, "updated": False})
+    new_test_id = db_test_scripts.create_test(
+        {
+            "name": name,
+            "test_type": test_type,
+            "enabled": enabled,
+            "source_url": source_url,
+            "html_file": rel_html_path,
+            "config_json": config_json,
+            "expected_json": expected_json,
+        }
+    )
+    return JSONResponse(
+        {"ok": True, "id": new_test_id, "html_file": rel_html_path, "updated": False}
+    )
 
 
 @router.post("/api/test-scripts/{test_id}/enabled")
@@ -406,13 +438,45 @@ async def api_run_one_test_script(test_id: int):
         raise HTTPException(status_code=404, detail="Test script not found")
     try:
         result = run_test_script(row)
-        payload = {"type": "single", "test_id": test_id, "name": row.get("name"), "result": result, "config_json": row.get("config_json") or {}, "table_config_properties": _table_config_properties_array(row.get("config_json"))}
+        payload = {
+            "type": "single",
+            "test_id": test_id,
+            "name": row.get("name"),
+            "result": result,
+            "config_json": row.get("config_json") or {},
+            "table_config_properties": _table_config_properties_array(row.get("config_json")),
+        }
         rid = _store_test_script_result(payload)
     except Exception as e:
-        payload = {"type": "single", "test_id": test_id, "name": row.get("name"), "result": {"passed": False, "error": str(e)}, "config_json": row.get("config_json") or {}, "table_config_properties": _table_config_properties_array(row.get("config_json"))}
+        payload = {
+            "type": "single",
+            "test_id": test_id,
+            "name": row.get("name"),
+            "result": {"passed": False, "error": str(e)},
+            "config_json": row.get("config_json") or {},
+            "table_config_properties": _table_config_properties_array(row.get("config_json")),
+        }
         rid = _store_test_script_result(payload)
-        return JSONResponse({"ok": False, "name": row.get("name"), "error": str(e), "passed": False, "result_id": rid, "result_url": f"/test-scripts/results/{rid}"}, status_code=200)
-    return JSONResponse({"ok": True, "name": row.get("name"), "passed": bool(result.get("passed")), "result_id": rid, "result_url": f"/test-scripts/results/{rid}"})
+        return JSONResponse(
+            {
+                "ok": False,
+                "name": row.get("name"),
+                "error": str(e),
+                "passed": False,
+                "result_id": rid,
+                "result_url": f"/test-scripts/results/{rid}",
+            },
+            status_code=200,
+        )
+    return JSONResponse(
+        {
+            "ok": True,
+            "name": row.get("name"),
+            "passed": bool(result.get("passed")),
+            "result_id": rid,
+            "result_url": f"/test-scripts/results/{rid}",
+        }
+    )
 
 
 @router.post("/api/test-scripts/run-enabled")
@@ -422,11 +486,44 @@ async def api_run_enabled_test_scripts():
     for row in rows:
         try:
             result = run_test_script(row)
-            payload = {"type": "single", "test_id": row["id"], "name": row.get("name"), "result": result, "config_json": row.get("config_json") or {}, "table_config_properties": _table_config_properties_array(row.get("config_json"))}
+            payload = {
+                "type": "single",
+                "test_id": row["id"],
+                "name": row.get("name"),
+                "result": result,
+                "config_json": row.get("config_json") or {},
+                "table_config_properties": _table_config_properties_array(row.get("config_json")),
+            }
             rid = _store_test_script_result(payload)
-            out.append({"id": row["id"], "name": row.get("name"), "passed": bool(result.get("passed")), "result_id": rid, "result_url": f"/test-scripts/results/{rid}"})
+            out.append(
+                {
+                    "id": row["id"],
+                    "name": row.get("name"),
+                    "passed": bool(result.get("passed")),
+                    "result_id": rid,
+                    "result_url": f"/test-scripts/results/{rid}",
+                }
+            )
         except Exception as e:
-            payload = {"type": "single", "test_id": row["id"], "name": row.get("name"), "result": {"passed": False, "error": str(e)}, "config_json": row.get("config_json") or {}, "table_config_properties": _table_config_properties_array(row.get("config_json"))}
+            payload = {
+                "type": "single",
+                "test_id": row["id"],
+                "name": row.get("name"),
+                "result": {"passed": False, "error": str(e)},
+                "config_json": row.get("config_json") or {},
+                "table_config_properties": _table_config_properties_array(row.get("config_json")),
+            }
             rid = _store_test_script_result(payload)
-            out.append({"id": row["id"], "name": row.get("name"), "passed": False, "error": str(e), "result_id": rid, "result_url": f"/test-scripts/results/{rid}"})
-    return JSONResponse({"count": len(out), "passed": sum(1 for r in out if r.get("passed")), "results": out})
+            out.append(
+                {
+                    "id": row["id"],
+                    "name": row.get("name"),
+                    "passed": False,
+                    "error": str(e),
+                    "result_id": rid,
+                    "result_url": f"/test-scripts/results/{rid}",
+                }
+            )
+    return JSONResponse(
+        {"count": len(out), "passed": sum(1 for r in out if r.get("passed")), "results": out}
+    )

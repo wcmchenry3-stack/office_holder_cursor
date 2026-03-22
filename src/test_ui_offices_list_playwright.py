@@ -37,9 +37,9 @@ def test_offices_list_renders(page):
     pages_table = page.locator("#pagesTable")
     has_offices = offices_table.count() > 0
     has_pages = pages_table.count() > 0
-    assert has_offices or has_pages, (
-        "Expected #officesTable or #pagesTable — neither found on /offices"
-    )
+    assert (
+        has_offices or has_pages
+    ), "Expected #officesTable or #pagesTable — neither found on /offices"
     if has_offices:
         expect(offices_table).to_be_visible()
     else:
@@ -64,9 +64,9 @@ def test_filter_by_enabled_via_query_param(page):
     if has_offices:
         # In flat view, every office row carries data-enabled; verify none are disabled
         disabled_rows = page.locator("#officesTable tr[data-enabled='0']")
-        assert disabled_rows.count() == 0, (
-            "No disabled offices should appear when filtering by enabled=1"
-        )
+        assert (
+            disabled_rows.count() == 0
+        ), "No disabled offices should appear when filtering by enabled=1"
 
 
 def test_enable_toggle_calls_api(page):
@@ -84,12 +84,8 @@ def test_enable_toggle_calls_api(page):
         checkbox.first.click()
 
     resp = response_info.value
-    assert resp.status == 200, (
-        f"Enable/disable toggle API returned {resp.status}, expected 200"
-    )
+    assert resp.status == 200, f"Enable/disable toggle API returned {resp.status}, expected 200"
 
     # Restore original state by clicking again
-    with page.expect_response(
-        lambda r: "/api/offices/" in r.url and "/enabled" in r.url
-    ):
+    with page.expect_response(lambda r: "/api/offices/" in r.url and "/enabled" in r.url):
         checkbox.first.click()

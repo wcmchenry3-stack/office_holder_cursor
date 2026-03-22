@@ -1,0 +1,17 @@
+[tool.black]
+line-length = 100
+force-exclude = "runner_head\\.py|sample.files"
+
+[tool.ruff]
+line-length = 100
+exclude = ["runner_head.py", "sample files"]
+
+[tool.ruff.lint]
+ignore = [
+    "E402",  # module-level import not at top — intentional in scripts that manipulate sys.path
+    "E711",  # comparison to None — pre-existing; needs careful review in SQLite context
+    "E712",  # comparison to True/False — pre-existing; SQLite stores bools as 0/1
+    "E741",  # ambiguous variable name — pre-existing; fix in separate cleanup PR
+    "F401",  # imported but unused — many are re-exports; fix in separate cleanup PR
+    "F841",  # local variable assigned but never used — pre-existing; fix in cleanup PR
+]
