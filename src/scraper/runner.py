@@ -1754,10 +1754,9 @@ def run_with_db(
                         if wiki_url in living_fetched_this_run:
                             continue
                         # Skip sleep when run_cache already has the page (no HTTP needed)
-                        _liv_fetch_url = (
-                            normalize_wiki_url(wiki_url) or wiki_url
-                        )
+                        _liv_fetch_url = normalize_wiki_url(wiki_url) or wiki_url
                         from src.scraper.wiki_fetch import wiki_url_to_rest_html_url as _w2r
+
                         _liv_fetch_url = _w2r(_liv_fetch_url) or _liv_fetch_url
                         _cache_hit = run_cache.get(_liv_fetch_url) is not None
                         if liv_idx > 0 and not _cache_hit:

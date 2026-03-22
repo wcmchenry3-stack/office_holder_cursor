@@ -1290,7 +1290,14 @@ class Offices:
                             best_single = (term_start, term_end, term_start_year, term_end_year)
             else:
                 raw = self.extract_term_dates(
-                    wiki_link, cells, office_details, table_config_to_parse, None, url, district, run_cache=run_cache
+                    wiki_link,
+                    cells,
+                    office_details,
+                    table_config_to_parse,
+                    None,
+                    url,
+                    district,
+                    run_cache=run_cache,
                 )
                 term_tuples = raw if isinstance(raw, list) else [raw]
 
@@ -1335,7 +1342,14 @@ class Offices:
                 term_tuples = [(None, None, None, None)]
         else:
             raw_terms = self.extract_term_dates(
-                wiki_link, cells, office_details, table_config_to_parse, None, url, district, run_cache=run_cache
+                wiki_link,
+                cells,
+                office_details,
+                table_config_to_parse,
+                None,
+                url,
+                district,
+                run_cache=run_cache,
             )
             term_tuples = raw_terms if isinstance(raw_terms, list) else [raw_terms]
             self.Logger.debug_log(
@@ -1727,7 +1741,12 @@ class Offices:
                     self.Biography._last_bio_details = cached.get("bio_details")
                 else:
                     terms_list, infobox_items = self.Biography.find_term_dates(
-                        wiki_link, url, table_config_to_parse, office_details, district, run_cache=run_cache
+                        wiki_link,
+                        url,
+                        table_config_to_parse,
+                        office_details,
+                        district,
+                        run_cache=run_cache,
                     )
                     self._last_infobox_items = infobox_items  # For debug export
                     if cache is not None:
@@ -2372,7 +2391,9 @@ class Biography:
             self.Logger.log(f"Request failed: {e}", True)
             return {}
 
-    def find_term_dates(self, wiki_link, url, table_config_to_parse, office_details, district, run_cache=None):
+    def find_term_dates(
+        self, wiki_link, url, table_config_to_parse, office_details, district, run_cache=None
+    ):
 
         self.Logger.debug_log(f"running find_term_dates \n url value {url}", True)
 

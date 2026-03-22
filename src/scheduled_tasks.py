@@ -29,7 +29,9 @@ def run_daily_delta() -> None:
 
     run_start = datetime.now(timezone.utc)
     today_batch = run_start.weekday()  # 0=Mon … 6=Sun
-    print(f"[scheduler] Daily delta run starting at {run_start.strftime('%Y-%m-%d %H:%M:%S')} UTC (bio_batch={today_batch})")
+    print(
+        f"[scheduler] Daily delta run starting at {run_start.strftime('%Y-%m-%d %H:%M:%S')} UTC (bio_batch={today_batch})"
+    )
 
     try:
         cache_deleted = _cleanup_disk_cache(max_age_days=30)
