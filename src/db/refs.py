@@ -30,7 +30,9 @@ def list_states(country_id: int, conn: sqlite3.Connection | None = None) -> list
     if own:
         conn = get_connection()
     try:
-        cur = conn.execute("SELECT id, name FROM states WHERE country_id = ? ORDER BY name", (country_id,))
+        cur = conn.execute(
+            "SELECT id, name FROM states WHERE country_id = ? ORDER BY name", (country_id,)
+        )
         return [_row_to_dict(r) for r in cur.fetchall()]
     finally:
         if own:
@@ -200,7 +202,9 @@ def create_state(country_id: int, name: str, conn: sqlite3.Connection | None = N
             conn.close()
 
 
-def update_state(state_id: int, country_id: int, name: str, conn: sqlite3.Connection | None = None) -> bool:
+def update_state(
+    state_id: int, country_id: int, name: str, conn: sqlite3.Connection | None = None
+) -> bool:
     """Update state. Returns True if updated."""
     name = (name or "").strip()
     if not name:
@@ -320,7 +324,9 @@ def create_city(state_id: int, name: str, conn: sqlite3.Connection | None = None
             conn.close()
 
 
-def update_city(city_id: int, state_id: int, name: str, conn: sqlite3.Connection | None = None) -> bool:
+def update_city(
+    city_id: int, state_id: int, name: str, conn: sqlite3.Connection | None = None
+) -> bool:
     """Update city. Returns True if updated."""
     name = (name or "").strip()
     if not name:

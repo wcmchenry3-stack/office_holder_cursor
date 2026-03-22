@@ -23,7 +23,11 @@ def test_office_config(office_row: dict) -> tuple[bool, str]:
     if not url:
         return (False, "No URL configured")
 
-    alt_links = office_row.get("alt_links") if "alt_links" in office_row else (db_offices.list_alt_links(office_row["id"]) if office_row.get("id") else [])
+    alt_links = (
+        office_row.get("alt_links")
+        if "alt_links" in office_row
+        else (db_offices.list_alt_links(office_row["id"]) if office_row.get("id") else [])
+    )
     table_config = db_offices.office_row_to_table_config(office_row, alt_links=alt_links)
     table_no = int(table_config.get("table_no", 1))
 
@@ -138,7 +142,9 @@ def get_all_tables_preview(
     return {"num_tables": num_tables, "tables": result_tables}
 
 
-def get_table_html(url: str, table_no: int = 1, refresh: bool = False, use_full_page: bool = False) -> dict:
+def get_table_html(
+    url: str, table_no: int = 1, refresh: bool = False, use_full_page: bool = False
+) -> dict:
     """
     Return the outer HTML of the table at 1-based table_no. Uses local cache unless refresh=True.
     use_full_page: if True, fetch full page URL (table indices match full Wikipedia page); default False uses REST API.

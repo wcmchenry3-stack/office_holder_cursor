@@ -13,10 +13,10 @@ covered in Phase 4 when the full test infrastructure is set up.
 
 from src.main import _apply_datasette_dark_css, _DATASETTE_DARK_CSS
 
-
 # ---------------------------------------------------------------------------
 # HTML responses: dark mode CSS is injected
 # ---------------------------------------------------------------------------
+
 
 def test_injects_css_before_closing_head():
     html = b"<html><head><title>Test</title></head><body>hi</body></html>"
@@ -55,6 +55,7 @@ def test_original_content_preserved_after_injection():
 # Non-HTML responses: content is returned unchanged
 # ---------------------------------------------------------------------------
 
+
 def test_css_passthrough_unchanged():
     content = b"body { color: red; }"
     result = _apply_datasette_dark_css(content, "text/css")
@@ -82,6 +83,7 @@ def test_empty_content_type_passthrough_unchanged():
 # ---------------------------------------------------------------------------
 # Edge cases
 # ---------------------------------------------------------------------------
+
 
 def test_html_with_no_head_tag_returns_content_unmodified():
     # No </head> means replace() finds nothing — content returned as-is

@@ -13,10 +13,10 @@ from src.scraper.table_parser import parse_infobox_role_key_query
 from src.db.bulk_import import _bool_from_cell, _int_from_cell
 from src.scheduled_tasks import _format_duration
 
-
 # ---------------------------------------------------------------------------
 # parse_infobox_role_key_query
 # ---------------------------------------------------------------------------
+
 
 def test_parse_infobox_role_key_query_empty_string():
     """Empty input returns empty includes and excludes."""
@@ -37,6 +37,7 @@ def test_parse_infobox_role_key_query_includes_and_excludes():
 # _bool_from_cell
 # ---------------------------------------------------------------------------
 
+
 def test_bool_from_cell_variants():
     """_bool_from_cell converts CSV TRUE/FALSE/yes/1 values correctly."""
     assert _bool_from_cell("TRUE") == 1
@@ -55,6 +56,7 @@ def test_bool_from_cell_variants():
 # _int_from_cell
 # ---------------------------------------------------------------------------
 
+
 def test_int_from_cell_with_bad_values():
     """_int_from_cell returns default on non-integer input."""
     assert _int_from_cell("abc", default=99) == 99
@@ -67,6 +69,7 @@ def test_int_from_cell_with_bad_values():
 # ---------------------------------------------------------------------------
 # _format_duration
 # ---------------------------------------------------------------------------
+
 
 def test_format_duration_minutes_and_seconds():
     """_format_duration formats seconds into human-readable duration."""

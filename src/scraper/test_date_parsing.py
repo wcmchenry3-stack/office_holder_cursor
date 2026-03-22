@@ -7,8 +7,10 @@ from src.scraper.table_parser import DataCleanup, _parse_date
 
 class _NullLogger:
     """Minimal Logger stand-in: absorbs all calls without writing files."""
+
     def log(self, *a, **kw):
         pass
+
     def debug_log(self, *a, **kw):
         pass
 
@@ -16,6 +18,7 @@ class _NullLogger:
 # ---------------------------------------------------------------------------
 # _parse_date (standalone function)
 # ---------------------------------------------------------------------------
+
 
 def test_parse_date_iso_format():
     assert _parse_date("2020-01-15") == date(2020, 1, 15)
@@ -45,6 +48,7 @@ def test_parse_date_date_object_passthrough():
 # ---------------------------------------------------------------------------
 # DataCleanup.format_date
 # ---------------------------------------------------------------------------
+
 
 def test_format_date_iso_passthrough():
     dc = DataCleanup(_NullLogger())

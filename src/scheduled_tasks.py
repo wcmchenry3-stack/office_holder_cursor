@@ -107,9 +107,15 @@ CRASH OUTPUT
         cancelled = result.get("cancelled", False)
         status = "✗ CANCELLED" if cancelled else "✓ Complete"
 
-        all_errors = bio_errors + living_errors + [
-            {"url": e, "error": "office-level error"} for e in office_errors if isinstance(e, str)
-        ]
+        all_errors = (
+            bio_errors
+            + living_errors
+            + [
+                {"url": e, "error": "office-level error"}
+                for e in office_errors
+                if isinstance(e, str)
+            ]
+        )
 
         body = f"""\
 Run date  : {date_str}

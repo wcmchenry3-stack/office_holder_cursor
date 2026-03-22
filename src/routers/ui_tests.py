@@ -35,6 +35,7 @@ _ui_test_job_lock = threading.Lock()
 # Helper functions
 # ---------------------------------------------------------------------------
 
+
 def _ui_test_env_defaults() -> dict[str, str]:
     defaults: dict[str, str] = {"base_url": "http://127.0.0.1:8000"}
 
@@ -48,12 +49,17 @@ def _ui_test_env_defaults() -> dict[str, str]:
         # Fallback for older schema variants where list_offices may fail.
         try:
             conn = get_connection()
-            has_hierarchy = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='office_details'").fetchone()
+            has_hierarchy = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='office_details'"
+            ).fetchone()
             if has_hierarchy:
                 rows = conn.execute(
                     "SELECT od.id AS id, od.source_page_id AS source_page_id FROM office_details od ORDER BY od.id"
                 ).fetchall()
-                offices = [{"id": int(r[0]), "source_page_id": int(r[1]) if r[1] is not None else None} for r in rows]
+                offices = [
+                    {"id": int(r[0]), "source_page_id": int(r[1]) if r[1] is not None else None}
+                    for r in rows
+                ]
             else:
                 rows = conn.execute("SELECT id FROM offices ORDER BY id").fetchall()
                 offices = [{"id": int(r[0]), "source_page_id": None} for r in rows]
@@ -111,16 +117,24 @@ def _execute_ui_test_run(payload: dict, *, job_id: str | None = None) -> dict:
         }
 
     defaults = _ui_test_env_defaults()
-    base_url = str(payload.get("base_url") or defaults.get("base_url") or "http://127.0.0.1:8000").strip()
+    base_url = str(
+        payload.get("base_url") or defaults.get("base_url") or "http://127.0.0.1:8000"
+    ).strip()
     page_edit_url = str(payload.get("page_edit_url") or defaults.get("page_edit_url") or "").strip()
     if page_edit_url and page_edit_url.startswith("/"):
         page_edit_url = base_url.rstrip("/") + page_edit_url
     env_map = {
         "PLAYWRIGHT_BASE_URL": base_url,
-        "PLAYWRIGHT_EDIT_OFFICE_ID": str(payload.get("edit_office_id") or defaults.get("edit_office_id") or "").strip(),
+        "PLAYWRIGHT_EDIT_OFFICE_ID": str(
+            payload.get("edit_office_id") or defaults.get("edit_office_id") or ""
+        ).strip(),
         "PLAYWRIGHT_PAGE_EDIT_URL": page_edit_url,
-        "PLAYWRIGHT_OFFICE_A_ID": str(payload.get("office_a_id") or defaults.get("office_a_id") or "").strip(),
-        "PLAYWRIGHT_OFFICE_B_ID": str(payload.get("office_b_id") or defaults.get("office_b_id") or "").strip(),
+        "PLAYWRIGHT_OFFICE_A_ID": str(
+            payload.get("office_a_id") or defaults.get("office_a_id") or ""
+        ).strip(),
+        "PLAYWRIGHT_OFFICE_B_ID": str(
+            payload.get("office_b_id") or defaults.get("office_b_id") or ""
+        ).strip(),
     }
 
     if job_id:
@@ -138,7 +152,9 @@ def _execute_ui_test_run(payload: dict, *, job_id: str | None = None) -> dict:
         "--junitxml",
         junit_path,
     ]
-    proc = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True, env={**os.environ, **env_map})
+    proc = subprocess.run(
+        cmd, cwd=str(ROOT), capture_output=True, text=True, env={**os.environ, **env_map}
+    )
 
     tests: list[dict] = []
     summary = {"passed": 0, "failed": 0, "skipped": 0, "errors": 0}
@@ -155,13 +171,19 @@ def _execute_ui_test_run(payload: dict, *, job_id: str | None = None) -> dict:
             detail = ""
             if case.find("failure") is not None:
                 status = "failed"
-                detail = (case.find("failure").attrib.get("message") or case.find("failure").text or "").strip()
+                detail = (
+                    case.find("failure").attrib.get("message") or case.find("failure").text or ""
+                ).strip()
             elif case.find("error") is not None:
                 status = "error"
-                detail = (case.find("error").attrib.get("message") or case.find("error").text or "").strip()
+                detail = (
+                    case.find("error").attrib.get("message") or case.find("error").text or ""
+                ).strip()
             elif case.find("skipped") is not None:
                 status = "skipped"
-                detail = (case.find("skipped").attrib.get("message") or case.find("skipped").text or "").strip()
+                detail = (
+                    case.find("skipped").attrib.get("message") or case.find("skipped").text or ""
+                ).strip()
             if status in summary:
                 summary[status] += 1
             else:
@@ -195,10 +217,12 @@ def _execute_ui_test_run(payload: dict, *, job_id: str | None = None) -> dict:
 # UI test routes
 # ---------------------------------------------------------------------------
 
+
 @router.get("/ui-test-scripts", response_class=HTMLResponse)
 async def ui_test_scripts_page(request: Request):
     return templates.TemplateResponse(
-        request, "ui_test_scripts.html",
+        request,
+        "ui_test_scripts.html",
         {
             "test_path": "src/test_ui_edit_office_playwright.py",
             "defaults": _ui_test_env_defaults(),
@@ -209,7 +233,8 @@ async def ui_test_scripts_page(request: Request):
 @router.get("/run-scenarios-test", response_class=HTMLResponse)
 async def run_scenarios_test_page(request: Request):
     return templates.TemplateResponse(
-        request, "run_scenarios_test.html",
+        request,
+        "run_scenarios_test.html",
         {"script_path": "scripts/run_scenarios_test.py"},
     )
 

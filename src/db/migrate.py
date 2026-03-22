@@ -22,6 +22,7 @@ def migrate_to_fk(conn=None):
     try:
         # Ensure ref tables exist (schema already created them)
         from .seed import seed_reference_data
+
         seed_reference_data(conn=conn)
 
         offices_cols = _columns(conn, "offices")
@@ -150,7 +151,9 @@ def _migrate_source_pages_disable_auto_table_update(conn):
     cols = _columns(conn, "source_pages")
     if "disable_auto_table_update" in cols:
         return
-    conn.execute("ALTER TABLE source_pages ADD COLUMN disable_auto_table_update INTEGER NOT NULL DEFAULT 0")
+    conn.execute(
+        "ALTER TABLE source_pages ADD COLUMN disable_auto_table_update INTEGER NOT NULL DEFAULT 0"
+    )
     conn.commit()
 
 
@@ -227,7 +230,9 @@ def _migrate_office_terms_drop_party(conn):
     conn.execute("DROP TABLE office_terms")
     conn.execute("ALTER TABLE office_terms_new RENAME TO office_terms")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_office_terms_office_id ON office_terms(office_id)")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_office_terms_individual_id ON office_terms(individual_id)")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_office_terms_individual_id ON office_terms(individual_id)"
+    )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_office_terms_party_id ON office_terms(party_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_office_terms_wiki_url ON office_terms(wiki_url)")
     conn.commit()
@@ -245,7 +250,9 @@ def _migrate_offices_use_full_page_for_table(conn):
     """Add use_full_page_for_table to offices if missing (0 = REST default, 1 = full page fetch)."""
     offices_cols = _columns(conn, "offices")
     if "use_full_page_for_table" not in offices_cols:
-        conn.execute("ALTER TABLE offices ADD COLUMN use_full_page_for_table INTEGER NOT NULL DEFAULT 0")
+        conn.execute(
+            "ALTER TABLE offices ADD COLUMN use_full_page_for_table INTEGER NOT NULL DEFAULT 0"
+        )
         conn.commit()
 
 
@@ -303,7 +310,9 @@ def _migrate_office_terms_year_columns(conn):
     conn.execute("DROP TABLE office_terms")
     conn.execute("ALTER TABLE office_terms_new RENAME TO office_terms")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_office_terms_office_id ON office_terms(office_id)")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_office_terms_individual_id ON office_terms(individual_id)")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_office_terms_individual_id ON office_terms(individual_id)"
+    )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_office_terms_party_id ON office_terms(party_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_office_terms_wiki_url ON office_terms(wiki_url)")
     conn.commit()
@@ -312,30 +321,51 @@ def _migrate_office_terms_year_columns(conn):
 def _migrate_imprecise_date_columns(conn):
     """Add birth_date_imprecise, death_date_imprecise to individuals; term_start_imprecise, term_end_imprecise to office_terms. Backfill: set date to null and flag to 1 where date is not YYYY-MM-DD."""
     import re
+
     valid_date = re.compile(r"^\d{4}-\d{2}-\d{2}$")
     ind_cols = _columns(conn, "individuals")
     if "birth_date_imprecise" not in ind_cols:
-        conn.execute("ALTER TABLE individuals ADD COLUMN birth_date_imprecise INTEGER NOT NULL DEFAULT 0")
+        conn.execute(
+            "ALTER TABLE individuals ADD COLUMN birth_date_imprecise INTEGER NOT NULL DEFAULT 0"
+        )
     if "death_date_imprecise" not in ind_cols:
-        conn.execute("ALTER TABLE individuals ADD COLUMN death_date_imprecise INTEGER NOT NULL DEFAULT 0")
+        conn.execute(
+            "ALTER TABLE individuals ADD COLUMN death_date_imprecise INTEGER NOT NULL DEFAULT 0"
+        )
     # Backfill individuals: invalid date -> null + imprecise 1
     for row in conn.execute("SELECT id, birth_date, death_date FROM individuals").fetchall():
         rid, bd, dd = row["id"], row["birth_date"], row["death_date"]
         if bd is not None and not valid_date.match(str(bd).strip()):
-            conn.execute("UPDATE individuals SET birth_date = NULL, birth_date_imprecise = 1 WHERE id = ?", (rid,))
+            conn.execute(
+                "UPDATE individuals SET birth_date = NULL, birth_date_imprecise = 1 WHERE id = ?",
+                (rid,),
+            )
         if dd is not None and not valid_date.match(str(dd).strip()):
-            conn.execute("UPDATE individuals SET death_date = NULL, death_date_imprecise = 1 WHERE id = ?", (rid,))
+            conn.execute(
+                "UPDATE individuals SET death_date = NULL, death_date_imprecise = 1 WHERE id = ?",
+                (rid,),
+            )
     ot_cols = _columns(conn, "office_terms")
     if "term_start_imprecise" not in ot_cols:
-        conn.execute("ALTER TABLE office_terms ADD COLUMN term_start_imprecise INTEGER NOT NULL DEFAULT 0")
+        conn.execute(
+            "ALTER TABLE office_terms ADD COLUMN term_start_imprecise INTEGER NOT NULL DEFAULT 0"
+        )
     if "term_end_imprecise" not in ot_cols:
-        conn.execute("ALTER TABLE office_terms ADD COLUMN term_end_imprecise INTEGER NOT NULL DEFAULT 0")
+        conn.execute(
+            "ALTER TABLE office_terms ADD COLUMN term_end_imprecise INTEGER NOT NULL DEFAULT 0"
+        )
     for row in conn.execute("SELECT id, term_start, term_end FROM office_terms").fetchall():
         oid, ts, te = row["id"], row["term_start"], row["term_end"]
         if ts is not None and not valid_date.match(str(ts).strip()):
-            conn.execute("UPDATE office_terms SET term_start = NULL, term_start_imprecise = 1 WHERE id = ?", (oid,))
+            conn.execute(
+                "UPDATE office_terms SET term_start = NULL, term_start_imprecise = 1 WHERE id = ?",
+                (oid,),
+            )
         if te is not None and not valid_date.match(str(te).strip()):
-            conn.execute("UPDATE office_terms SET term_end = NULL, term_end_imprecise = 1 WHERE id = ?", (oid,))
+            conn.execute(
+                "UPDATE office_terms SET term_end = NULL, term_end_imprecise = 1 WHERE id = ?",
+                (oid,),
+            )
     conn.commit()
 
 
@@ -364,8 +394,7 @@ def _migrate_individuals_is_living(conn):
 
     current_year = date.today().year
     # Compute earliest term year per individual from office_terms
-    cur = conn.execute(
-        """
+    cur = conn.execute("""
         SELECT i.id AS individual_id,
                i.death_date AS death_date,
                MIN(
@@ -377,8 +406,7 @@ def _migrate_individuals_is_living(conn):
         FROM individuals i
         LEFT JOIN office_terms ot ON ot.individual_id = i.id
         GROUP BY i.id, i.death_date
-        """
-    )
+        """)
     rows = cur.fetchall()
     for row in rows:
         ind_id = row["individual_id"]
@@ -414,6 +442,7 @@ def _normalize_alt_link_path(raw: str) -> str:
         return ""
     if s.startswith("http"):
         from urllib.parse import urlparse
+
         return urlparse(s).path or ""
     if not s.startswith("/"):
         return "/wiki/" + s.lstrip("/")
@@ -427,6 +456,7 @@ def _migrate_alt_links(conn):
     3) If offices has alt_link: backfill into alt_links (split comma/newline), verify, then drop alt_link column.
     """
     import re
+
     offices_cols = _columns(conn, "offices")
 
     # Ensure alt_links table exists (schema may have created it; CREATE IF NOT EXISTS for old DBs)
@@ -442,7 +472,9 @@ def _migrate_alt_links(conn):
 
     # Add alt_link_include_main to offices if missing
     if "alt_link_include_main" not in offices_cols:
-        conn.execute("ALTER TABLE offices ADD COLUMN alt_link_include_main INTEGER NOT NULL DEFAULT 0")
+        conn.execute(
+            "ALTER TABLE offices ADD COLUMN alt_link_include_main INTEGER NOT NULL DEFAULT 0"
+        )
         conn.commit()
 
     if "alt_link" not in offices_cols:
@@ -450,7 +482,9 @@ def _migrate_alt_links(conn):
         return
 
     # Backfill: copy offices.alt_link into alt_links (split on comma and newline)
-    for row in conn.execute("SELECT id, alt_link FROM offices WHERE alt_link IS NOT NULL AND trim(alt_link) != ''").fetchall():
+    for row in conn.execute(
+        "SELECT id, alt_link FROM offices WHERE alt_link IS NOT NULL AND trim(alt_link) != ''"
+    ).fetchall():
         office_id = row["id"]
         raw = (row["alt_link"] or "").strip()
         if not raw:
@@ -460,7 +494,10 @@ def _migrate_alt_links(conn):
             path = _normalize_alt_link_path(part)
             if path:
                 try:
-                    conn.execute("INSERT OR IGNORE INTO alt_links (office_id, link_path) VALUES (?, ?)", (office_id, path))
+                    conn.execute(
+                        "INSERT OR IGNORE INTO alt_links (office_id, link_path) VALUES (?, ?)",
+                        (office_id, path),
+                    )
                 except Exception:
                     pass
     conn.commit()
@@ -535,36 +572,48 @@ def _migrate_to_page_office_table_hierarchy(conn):
     """
     alt_cols = _columns(conn, "alt_links")
     if "office_details_id" not in alt_cols:
-        conn.execute("ALTER TABLE alt_links ADD COLUMN office_details_id INTEGER REFERENCES office_details(id)")
+        conn.execute(
+            "ALTER TABLE alt_links ADD COLUMN office_details_id INTEGER REFERENCES office_details(id)"
+        )
         conn.commit()
         # Recreate alt_links so office_id is nullable (hierarchy uses office_details_id only)
-        conn.execute(
-            """CREATE TABLE alt_links_new (
+        conn.execute("""CREATE TABLE alt_links_new (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 office_id INTEGER REFERENCES offices(id),
                 office_details_id INTEGER REFERENCES office_details(id),
                 link_path TEXT NOT NULL
-            )"""
-        )
+            )""")
         conn.execute(
             "INSERT INTO alt_links_new (id, office_id, office_details_id, link_path) SELECT id, office_id, office_details_id, link_path FROM alt_links"
         )
         conn.execute("DROP TABLE alt_links")
         conn.execute("ALTER TABLE alt_links_new RENAME TO alt_links")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_alt_links_office_id ON alt_links(office_id)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_alt_links_office_details_id ON alt_links(office_details_id)")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_alt_links_office_details_id ON alt_links(office_details_id)"
+        )
         conn.commit()
     ot_cols = _columns(conn, "office_terms")
     if "office_details_id" not in ot_cols:
-        conn.execute("ALTER TABLE office_terms ADD COLUMN office_details_id INTEGER REFERENCES office_details(id)")
+        conn.execute(
+            "ALTER TABLE office_terms ADD COLUMN office_details_id INTEGER REFERENCES office_details(id)"
+        )
         conn.commit()
     if "office_table_config_id" not in ot_cols:
-        conn.execute("ALTER TABLE office_terms ADD COLUMN office_table_config_id INTEGER REFERENCES office_table_config(id)")
+        conn.execute(
+            "ALTER TABLE office_terms ADD COLUMN office_table_config_id INTEGER REFERENCES office_table_config(id)"
+        )
         conn.commit()
 
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_alt_links_office_details_id ON alt_links(office_details_id)")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_office_terms_office_details_id ON office_terms(office_details_id)")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_office_terms_office_table_config_id ON office_terms(office_table_config_id)")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_alt_links_office_details_id ON alt_links(office_details_id)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_office_terms_office_details_id ON office_terms(office_details_id)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_office_terms_office_table_config_id ON office_terms(office_table_config_id)"
+    )
 
     # Ensure office_details has variant_name and department (schema may have been created without them)
     od_cols = _columns(conn, "office_details")
@@ -670,7 +719,9 @@ def _migrate_allow_reuse_tables_and_table_no_unique(conn):
     except sqlite3.OperationalError:
         return
     if "allow_reuse_tables" not in sp_cols:
-        conn.execute("ALTER TABLE source_pages ADD COLUMN allow_reuse_tables INTEGER NOT NULL DEFAULT 0")
+        conn.execute(
+            "ALTER TABLE source_pages ADD COLUMN allow_reuse_tables INTEGER NOT NULL DEFAULT 0"
+        )
         conn.commit()
     conn.execute(
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_office_table_config_office_table_no ON office_table_config(office_details_id, table_no)"
@@ -724,8 +775,6 @@ def _migrate_office_category(conn):
         conn.commit()
 
 
-
-
 def _migrate_infobox_role_key_filter(conn):
     """Create infobox_role_key_filter and junction tables if missing."""
     conn.executescript("""
@@ -773,16 +822,16 @@ def _migrate_office_table_config_infobox_role_key_filter_id(conn):
     if "infobox_role_key" not in otc_cols:
         return
 
-    rows = conn.execute(
-        """SELECT tc.id, tc.infobox_role_key, p.country_id, p.level_id, p.branch_id
+    rows = conn.execute("""SELECT tc.id, tc.infobox_role_key, p.country_id, p.level_id, p.branch_id
                FROM office_table_config tc
                JOIN office_details od ON od.id = tc.office_details_id
                JOIN source_pages p ON p.id = od.source_page_id
               WHERE tc.infobox_role_key_filter_id IS NULL
-                AND TRIM(COALESCE(tc.infobox_role_key, '')) != ''"""
-    ).fetchall()
+                AND TRIM(COALESCE(tc.infobox_role_key, '')) != ''""").fetchall()
 
-    def _ensure_filter(role_key: str, country_id: int | None, level_id: int | None, branch_id: int | None) -> int:
+    def _ensure_filter(
+        role_key: str, country_id: int | None, level_id: int | None, branch_id: int | None
+    ) -> int:
         normalized = _normalize_role_key(role_key)
         candidate_ids = [
             r[0]
@@ -792,17 +841,41 @@ def _migrate_office_table_config_infobox_role_key_filter_id(conn):
             ).fetchall()
         ]
         for fid in candidate_ids:
-            c = {r[0] for r in conn.execute("SELECT country_id FROM infobox_role_key_filter_countries WHERE filter_id = ?", (fid,)).fetchall()}
-            l = {r[0] for r in conn.execute("SELECT level_id FROM infobox_role_key_filter_levels WHERE filter_id = ?", (fid,)).fetchall()}
-            b = {r[0] for r in conn.execute("SELECT branch_id FROM infobox_role_key_filter_branches WHERE filter_id = ?", (fid,)).fetchall()}
-            if c == ({country_id} if country_id else set()) and l == ({level_id} if level_id else set()) and b == ({branch_id} if branch_id else set()):
+            c = {
+                r[0]
+                for r in conn.execute(
+                    "SELECT country_id FROM infobox_role_key_filter_countries WHERE filter_id = ?",
+                    (fid,),
+                ).fetchall()
+            }
+            l = {
+                r[0]
+                for r in conn.execute(
+                    "SELECT level_id FROM infobox_role_key_filter_levels WHERE filter_id = ?",
+                    (fid,),
+                ).fetchall()
+            }
+            b = {
+                r[0]
+                for r in conn.execute(
+                    "SELECT branch_id FROM infobox_role_key_filter_branches WHERE filter_id = ?",
+                    (fid,),
+                ).fetchall()
+            }
+            if (
+                c == ({country_id} if country_id else set())
+                and l == ({level_id} if level_id else set())
+                and b == ({branch_id} if branch_id else set())
+            ):
                 return int(fid)
 
         scope = f"c{country_id or 0}_l{level_id or 0}_b{branch_id or 0}"
         base_name = f"{normalized}__{scope}"
         name = base_name
         suffix = 2
-        while conn.execute("SELECT 1 FROM infobox_role_key_filter WHERE name = ?", (name,)).fetchone():
+        while conn.execute(
+            "SELECT 1 FROM infobox_role_key_filter WHERE name = ?", (name,)
+        ).fetchone():
             name = f"{base_name}_{suffix}"
             suffix += 1
         conn.execute(
@@ -811,11 +884,20 @@ def _migrate_office_table_config_infobox_role_key_filter_id(conn):
         )
         fid = int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
         if country_id:
-            conn.execute("INSERT OR IGNORE INTO infobox_role_key_filter_countries (filter_id, country_id) VALUES (?, ?)", (fid, country_id))
+            conn.execute(
+                "INSERT OR IGNORE INTO infobox_role_key_filter_countries (filter_id, country_id) VALUES (?, ?)",
+                (fid, country_id),
+            )
         if level_id:
-            conn.execute("INSERT OR IGNORE INTO infobox_role_key_filter_levels (filter_id, level_id) VALUES (?, ?)", (fid, level_id))
+            conn.execute(
+                "INSERT OR IGNORE INTO infobox_role_key_filter_levels (filter_id, level_id) VALUES (?, ?)",
+                (fid, level_id),
+            )
         if branch_id:
-            conn.execute("INSERT OR IGNORE INTO infobox_role_key_filter_branches (filter_id, branch_id) VALUES (?, ?)", (fid, branch_id))
+            conn.execute(
+                "INSERT OR IGNORE INTO infobox_role_key_filter_branches (filter_id, branch_id) VALUES (?, ?)",
+                (fid, branch_id),
+            )
         return fid
 
     for tc_id, role_key, country_id, level_id, branch_id in rows:
@@ -863,10 +945,13 @@ def _migrate_infobox_role_key_filter_role_key_format(conn):
             continue
         fixed = re.sub(r"\s+", " ", original.replace("_", " ")).strip()
         if fixed and fixed != original:
-            conn.execute("UPDATE infobox_role_key_filter SET role_key = ? WHERE id = ?", (fixed, int(fid)))
+            conn.execute(
+                "UPDATE infobox_role_key_filter SET role_key = ? WHERE id = ?", (fixed, int(fid))
+            )
             changed = True
     if changed:
         conn.commit()
+
 
 def _migrate_city(conn):
     """Create cities table if missing; add city_id to source_pages if missing."""
@@ -885,9 +970,7 @@ def _migrate_city(conn):
     except sqlite3.OperationalError:
         return
     if "city_id" not in sp_cols:
-        conn.execute(
-            "ALTER TABLE source_pages ADD COLUMN city_id INTEGER REFERENCES cities(id)"
-        )
+        conn.execute("ALTER TABLE source_pages ADD COLUMN city_id INTEGER REFERENCES cities(id)")
         conn.commit()
     try:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_source_pages_city_id ON source_pages(city_id)")
@@ -903,7 +986,9 @@ def _migrate_ignore_non_links(conn):
         conn.execute("ALTER TABLE offices ADD COLUMN ignore_non_links INTEGER NOT NULL DEFAULT 0")
     otc_cols = _columns(conn, "office_table_config")
     if "ignore_non_links" not in otc_cols:
-        conn.execute("ALTER TABLE office_table_config ADD COLUMN ignore_non_links INTEGER NOT NULL DEFAULT 0")
+        conn.execute(
+            "ALTER TABLE office_table_config ADD COLUMN ignore_non_links INTEGER NOT NULL DEFAULT 0"
+        )
     conn.commit()
 
 
@@ -914,7 +999,9 @@ def _migrate_remove_duplicates(conn):
         conn.execute("ALTER TABLE offices ADD COLUMN remove_duplicates INTEGER NOT NULL DEFAULT 0")
     otc_cols = _columns(conn, "office_table_config")
     if "remove_duplicates" not in otc_cols:
-        conn.execute("ALTER TABLE office_table_config ADD COLUMN remove_duplicates INTEGER NOT NULL DEFAULT 0")
+        conn.execute(
+            "ALTER TABLE office_table_config ADD COLUMN remove_duplicates INTEGER NOT NULL DEFAULT 0"
+        )
     conn.commit()
 
 
@@ -928,9 +1015,13 @@ def _migrate_row_filter_columns(conn):
 
     otc_cols = _columns(conn, "office_table_config")
     if "filter_column" not in otc_cols:
-        conn.execute("ALTER TABLE office_table_config ADD COLUMN filter_column INTEGER NOT NULL DEFAULT 0")
+        conn.execute(
+            "ALTER TABLE office_table_config ADD COLUMN filter_column INTEGER NOT NULL DEFAULT 0"
+        )
     if "filter_criteria" not in otc_cols:
-        conn.execute("ALTER TABLE office_table_config ADD COLUMN filter_criteria TEXT NOT NULL DEFAULT ''")
+        conn.execute(
+            "ALTER TABLE office_table_config ADD COLUMN filter_criteria TEXT NOT NULL DEFAULT ''"
+        )
     conn.commit()
 
 
@@ -942,7 +1033,9 @@ def _migrate_infobox_role_key(conn):
         return
     changed = False
     if "infobox_role_key" not in otc_cols:
-        conn.execute("ALTER TABLE office_table_config ADD COLUMN infobox_role_key TEXT NOT NULL DEFAULT ''")
+        conn.execute(
+            "ALTER TABLE office_table_config ADD COLUMN infobox_role_key TEXT NOT NULL DEFAULT ''"
+        )
         changed = True
     offices_cols = _columns(conn, "offices")
     if "infobox_role_key" not in offices_cols:

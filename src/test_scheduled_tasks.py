@@ -10,13 +10,14 @@ from __future__ import annotations
 import smtplib
 from datetime import datetime, timezone
 
-
 # ---------------------------------------------------------------------------
 # SMTP spy
 # ---------------------------------------------------------------------------
 
+
 class _FakeSMTP:
     """Context-manager SMTP stub that records sendmail calls."""
+
     instances: list["_FakeSMTP"] = []
 
     def __init__(self, *args, **kwargs):
@@ -44,6 +45,7 @@ def _now() -> datetime:
 # Tests
 # ---------------------------------------------------------------------------
 
+
 def test_send_summary_email_skips_when_no_password(monkeypatch):
     """_send_summary_email does nothing when EMAIL_APP_PASSWORD is not set."""
     monkeypatch.delenv("EMAIL_APP_PASSWORD", raising=False)
@@ -52,6 +54,7 @@ def test_send_summary_email_skips_when_no_password(monkeypatch):
     monkeypatch.setattr(smtplib, "SMTP_SSL", _FakeSMTP)
 
     from src.scheduled_tasks import _send_summary_email
+
     _send_summary_email({}, 10.0, _now())
 
     assert _FakeSMTP.instances == [], "SMTP_SSL should not be instantiated when no password"
@@ -67,6 +70,7 @@ def test_send_summary_email_sends_when_password_set(monkeypatch):
     monkeypatch.setattr(smtplib, "SMTP_SSL", _FakeSMTP)
 
     from src.scheduled_tasks import _send_summary_email
+
     result = {
         "office_count": 10,
         "offices_unchanged": 3,
@@ -83,6 +87,7 @@ def test_send_summary_email_sends_when_password_set(monkeypatch):
 
     # Body may be base64-encoded; parse with email stdlib to get plain text.
     import email as _email
+
     parsed = _email.message_from_string(raw_msg)
     body = parsed.get_payload(decode=True)
     if body is not None:
@@ -108,6 +113,7 @@ def test_run_daily_delta_sends_crash_email_on_exception(monkeypatch):
     monkeypatch.setattr("src.scraper.runner.run_with_db", _explode)
 
     from src.scheduled_tasks import run_daily_delta
+
     run_daily_delta()  # must not raise
 
     assert len(_FakeSMTP.instances) == 1

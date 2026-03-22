@@ -20,20 +20,25 @@ def list_office_categories(conn: sqlite3.Connection | None = None) -> list[dict[
             conn.close()
 
 
-def get_office_category(category_id: int, conn: sqlite3.Connection | None = None) -> dict[str, Any] | None:
+def get_office_category(
+    category_id: int, conn: sqlite3.Connection | None = None
+) -> dict[str, Any] | None:
     """Return category dict with id, name, country_ids, level_ids, branch_ids. None if not found."""
     own = conn is None
     if own:
         conn = get_connection()
     try:
-        row = conn.execute("SELECT id, name FROM office_category WHERE id = ?", (category_id,)).fetchone()
+        row = conn.execute(
+            "SELECT id, name FROM office_category WHERE id = ?", (category_id,)
+        ).fetchone()
         if not row:
             return None
         d = _row_to_dict(row)
         d["country_ids"] = [
             r[0]
             for r in conn.execute(
-                "SELECT country_id FROM office_category_countries WHERE category_id = ?", (category_id,)
+                "SELECT country_id FROM office_category_countries WHERE category_id = ?",
+                (category_id,),
             ).fetchall()
         ]
         d["level_ids"] = [
@@ -45,7 +50,8 @@ def get_office_category(category_id: int, conn: sqlite3.Connection | None = None
         d["branch_ids"] = [
             r[0]
             for r in conn.execute(
-                "SELECT branch_id FROM office_category_branches WHERE category_id = ?", (category_id,)
+                "SELECT branch_id FROM office_category_branches WHERE category_id = ?",
+                (category_id,),
             ).fetchall()
         ]
         return d
@@ -192,9 +198,12 @@ def list_categories_for_office(
          OR (? IS NOT NULL AND EXISTS (SELECT 1 FROM office_category_branches b WHERE b.category_id = oc.id AND b.branch_id = ?)))
         """
         params: list[Any] = [
-            country_id, country_id,
-            level_id, level_id,
-            branch_id, branch_id,
+            country_id,
+            country_id,
+            level_id,
+            level_id,
+            branch_id,
+            branch_id,
         ]
         sql = f"SELECT oc.id, oc.name FROM office_category oc WHERE {where} ORDER BY oc.name"
         cur = conn.execute(sql, params)

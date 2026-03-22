@@ -20,7 +20,9 @@ def list_infobox_role_key_filters(conn: sqlite3.Connection | None = None) -> lis
             conn.close()
 
 
-def get_infobox_role_key_filter(filter_id: int, conn: sqlite3.Connection | None = None) -> dict[str, Any] | None:
+def get_infobox_role_key_filter(
+    filter_id: int, conn: sqlite3.Connection | None = None
+) -> dict[str, Any] | None:
     """Return filter dict with scope ids. None if not found."""
     own = conn is None
     if own:
@@ -35,19 +37,22 @@ def get_infobox_role_key_filter(filter_id: int, conn: sqlite3.Connection | None 
         d["country_ids"] = [
             r[0]
             for r in conn.execute(
-                "SELECT country_id FROM infobox_role_key_filter_countries WHERE filter_id = ?", (filter_id,)
+                "SELECT country_id FROM infobox_role_key_filter_countries WHERE filter_id = ?",
+                (filter_id,),
             ).fetchall()
         ]
         d["level_ids"] = [
             r[0]
             for r in conn.execute(
-                "SELECT level_id FROM infobox_role_key_filter_levels WHERE filter_id = ?", (filter_id,)
+                "SELECT level_id FROM infobox_role_key_filter_levels WHERE filter_id = ?",
+                (filter_id,),
             ).fetchall()
         ]
         d["branch_ids"] = [
             r[0]
             for r in conn.execute(
-                "SELECT branch_id FROM infobox_role_key_filter_branches WHERE filter_id = ?", (filter_id,)
+                "SELECT branch_id FROM infobox_role_key_filter_branches WHERE filter_id = ?",
+                (filter_id,),
             ).fetchall()
         ]
         return d
@@ -75,7 +80,9 @@ def create_infobox_role_key_filter(
     if own:
         conn = get_connection()
     try:
-        conn.execute("INSERT INTO infobox_role_key_filter (name, role_key) VALUES (?, ?)", (name, role_key))
+        conn.execute(
+            "INSERT INTO infobox_role_key_filter (name, role_key) VALUES (?, ?)", (name, role_key)
+        )
         filter_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
         for cid in country_ids:
             if cid:
@@ -132,9 +139,13 @@ def update_infobox_role_key_filter(
         )
         if cur.rowcount == 0:
             return False
-        conn.execute("DELETE FROM infobox_role_key_filter_countries WHERE filter_id = ?", (filter_id,))
+        conn.execute(
+            "DELETE FROM infobox_role_key_filter_countries WHERE filter_id = ?", (filter_id,)
+        )
         conn.execute("DELETE FROM infobox_role_key_filter_levels WHERE filter_id = ?", (filter_id,))
-        conn.execute("DELETE FROM infobox_role_key_filter_branches WHERE filter_id = ?", (filter_id,))
+        conn.execute(
+            "DELETE FROM infobox_role_key_filter_branches WHERE filter_id = ?", (filter_id,)
+        )
         for cid in country_ids:
             if cid:
                 conn.execute(
@@ -170,9 +181,13 @@ def delete_infobox_role_key_filter(filter_id: int, conn: sqlite3.Connection | No
     if own:
         conn = get_connection()
     try:
-        conn.execute("DELETE FROM infobox_role_key_filter_countries WHERE filter_id = ?", (filter_id,))
+        conn.execute(
+            "DELETE FROM infobox_role_key_filter_countries WHERE filter_id = ?", (filter_id,)
+        )
         conn.execute("DELETE FROM infobox_role_key_filter_levels WHERE filter_id = ?", (filter_id,))
-        conn.execute("DELETE FROM infobox_role_key_filter_branches WHERE filter_id = ?", (filter_id,))
+        conn.execute(
+            "DELETE FROM infobox_role_key_filter_branches WHERE filter_id = ?", (filter_id,)
+        )
         conn.execute("DELETE FROM infobox_role_key_filter WHERE id = ?", (filter_id,))
         conn.commit()
     finally:

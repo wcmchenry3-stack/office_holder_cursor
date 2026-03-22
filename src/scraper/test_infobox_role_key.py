@@ -70,7 +70,7 @@ def test_find_term_dates_filters_by_infobox_role_key(monkeypatch):
             "rep_link": False,
             "alt_links": ["/wiki/District_Court_for_the_Northern_Mariana_Islands"],
             "alt_link_include_main": False,
-            "infobox_role_key": "\"senior judge\"",
+            "infobox_role_key": '"senior judge"',
         },
         {"office_state": ""},
         "",
@@ -121,7 +121,7 @@ def test_find_term_dates_role_key_matches_when_first_link_is_not_office(monkeypa
             "rep_link": False,
             "alt_links": ["/wiki/District_Court_for_the_Northern_Mariana_Islands"],
             "alt_link_include_main": False,
-            "infobox_role_key": "\"senior judge\"",
+            "infobox_role_key": '"senior judge"',
         },
         {"office_state": ""},
         "",
@@ -165,7 +165,7 @@ def test_infobox_role_key_allows_legacy_unquoted_include_with_quoted_excludes():
 
 def test_infobox_role_key_requires_quoted_excludes_even_with_legacy_include():
     with pytest.raises(ValueError):
-        parse_infobox_role_key_query('judge -chief')
+        parse_infobox_role_key_query("judge -chief")
 
 
 def test_infobox_role_key_rejects_unclosed_quotes():
@@ -180,7 +180,10 @@ def test_run_test_script_resolves_infobox_role_key_from_filter_id(monkeypatch):
         captured["role_key"] = office_row.get("infobox_role_key")
         return []
 
-    monkeypatch.setattr("src.scraper.test_script_runner.get_infobox_role_key_filter", lambda fid: {"id": fid, "role_key": '"senior judge"'})
+    monkeypatch.setattr(
+        "src.scraper.test_script_runner.get_infobox_role_key_filter",
+        lambda fid: {"id": fid, "role_key": '"senior judge"'},
+    )
     monkeypatch.setattr("src.scraper.test_script_runner.parse_full_table_for_export", fake_parse)
 
     html = "<table><tr><th>Name</th></tr><tr><td>A</td></tr></table>"
@@ -205,7 +208,9 @@ def test_run_test_script_keeps_legacy_infobox_role_key_when_filter_missing(monke
         captured["role_key"] = office_row.get("infobox_role_key")
         return []
 
-    monkeypatch.setattr("src.scraper.test_script_runner.get_infobox_role_key_filter", lambda _fid: None)
+    monkeypatch.setattr(
+        "src.scraper.test_script_runner.get_infobox_role_key_filter", lambda _fid: None
+    )
     monkeypatch.setattr("src.scraper.test_script_runner.parse_full_table_for_export", fake_parse)
 
     html = "<table><tr><th>Name</th></tr><tr><td>A</td></tr></table>"

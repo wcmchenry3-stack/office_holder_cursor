@@ -10,7 +10,6 @@ from typing import Any
 from .connection import get_connection
 from .utils import _row_to_dict
 
-
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 TEST_SCRIPTS_DIR = PROJECT_ROOT / "test_scripts"
 MANIFEST_PATH = TEST_SCRIPTS_DIR / "manifest" / "parser_tests.json"
@@ -65,7 +64,9 @@ def load_manifest(manifest_path: Path = MANIFEST_PATH) -> list[dict[str, Any]]:
                 "test_type": (item.get("test_type") or "table_config").strip(),
                 "html_file": _normalize_html_file_path(item.get("html_file") or ""),
                 "source_url": (item.get("source_url") or "").strip(),
-                "config_json": item.get("config_json") if isinstance(item.get("config_json"), dict) else {},
+                "config_json": (
+                    item.get("config_json") if isinstance(item.get("config_json"), dict) else {}
+                ),
                 "expected_json": item.get("expected_json"),
                 "enabled": bool(item.get("enabled", True)),
             }
@@ -73,15 +74,21 @@ def load_manifest(manifest_path: Path = MANIFEST_PATH) -> list[dict[str, Any]]:
     return normalized
 
 
-def export_manifest_from_db(manifest_path: Path = MANIFEST_PATH, conn: sqlite3.Connection | None = None) -> int:
+def export_manifest_from_db(
+    manifest_path: Path = MANIFEST_PATH, conn: sqlite3.Connection | None = None
+) -> int:
     own = conn is None
     if own:
         conn = get_connection()
     try:
         rows = list_tests(conn=conn)
-        payload = [_manifest_item_from_row(r) for r in sorted(rows, key=lambda x: x.get("name") or "")]
+        payload = [
+            _manifest_item_from_row(r) for r in sorted(rows, key=lambda x: x.get("name") or "")
+        ]
         manifest_path.parent.mkdir(parents=True, exist_ok=True)
-        manifest_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        manifest_path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        )
         return len(payload)
     finally:
         if own:
@@ -106,7 +113,9 @@ def import_manifest_to_db(
             name = (item.get("name") or "").strip()
             if not name:
                 raise ValueError("Manifest entry name is required")
-            existing = conn.execute("SELECT id FROM parser_test_scripts WHERE name = ?", (name,)).fetchone()
+            existing = conn.execute(
+                "SELECT id FROM parser_test_scripts WHERE name = ?", (name,)
+            ).fetchone()
             if existing:
                 if overwrite_existing:
                     update_test(int(existing["id"]), item, conn=conn)
@@ -122,7 +131,9 @@ def import_manifest_to_db(
             conn.close()
 
 
-def seed_db_from_manifest_if_empty(manifest_path: Path = MANIFEST_PATH, conn: sqlite3.Connection | None = None) -> int:
+def seed_db_from_manifest_if_empty(
+    manifest_path: Path = MANIFEST_PATH, conn: sqlite3.Connection | None = None
+) -> int:
     own = conn is None
     if own:
         conn = get_connection()
@@ -131,7 +142,9 @@ def seed_db_from_manifest_if_empty(manifest_path: Path = MANIFEST_PATH, conn: sq
         count = int(conn.execute("SELECT COUNT(*) FROM parser_test_scripts").fetchone()[0])
         if count > 0:
             return 0
-        result = import_manifest_to_db(manifest_path=manifest_path, conn=conn, overwrite_existing=False)
+        result = import_manifest_to_db(
+            manifest_path=manifest_path, conn=conn, overwrite_existing=False
+        )
         return int(result.get("imported", 0))
     finally:
         if own:
@@ -139,8 +152,7 @@ def seed_db_from_manifest_if_empty(manifest_path: Path = MANIFEST_PATH, conn: sq
 
 
 def _ensure_table(conn: sqlite3.Connection) -> None:
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS parser_test_scripts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL UNIQUE,
@@ -153,9 +165,10 @@ def _ensure_table(conn: sqlite3.Connection) -> None:
             created_at TEXT DEFAULT (datetime('now')),
             updated_at TEXT DEFAULT (datetime('now'))
         )
-        """
+        """)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_parser_test_scripts_enabled ON parser_test_scripts(enabled)"
     )
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_parser_test_scripts_enabled ON parser_test_scripts(enabled)")
     conn.commit()
 
 
@@ -214,7 +227,11 @@ def create_test(data: dict[str, Any], conn: sqlite3.Connection | None = None) ->
                 (data.get("html_file") or "").strip(),
                 (data.get("source_url") or "").strip() or None,
                 json.dumps(data.get("config_json") or {}, ensure_ascii=False),
-                json.dumps(data.get("expected_json"), ensure_ascii=False) if data.get("expected_json") is not None else None,
+                (
+                    json.dumps(data.get("expected_json"), ensure_ascii=False)
+                    if data.get("expected_json") is not None
+                    else None
+                ),
             ),
         )
         conn.commit()
@@ -224,13 +241,18 @@ def create_test(data: dict[str, Any], conn: sqlite3.Connection | None = None) ->
             conn.close()
 
 
-def update_test_enabled(test_id: int, enabled: bool, conn: sqlite3.Connection | None = None) -> None:
+def update_test_enabled(
+    test_id: int, enabled: bool, conn: sqlite3.Connection | None = None
+) -> None:
     own = conn is None
     if own:
         conn = get_connection()
     try:
         _ensure_table(conn)
-        conn.execute("UPDATE parser_test_scripts SET enabled = ?, updated_at = datetime('now') WHERE id = ?", (1 if enabled else 0, test_id))
+        conn.execute(
+            "UPDATE parser_test_scripts SET enabled = ?, updated_at = datetime('now') WHERE id = ?",
+            (1 if enabled else 0, test_id),
+        )
         conn.commit()
     finally:
         if own:
@@ -248,7 +270,6 @@ def delete_test(test_id: int, conn: sqlite3.Connection | None = None) -> None:
     finally:
         if own:
             conn.close()
-
 
 
 def update_test(test_id: int, data: dict[str, Any], conn: sqlite3.Connection | None = None) -> None:
@@ -277,7 +298,11 @@ def update_test(test_id: int, data: dict[str, Any], conn: sqlite3.Connection | N
                 (data.get("html_file") or "").strip(),
                 (data.get("source_url") or "").strip() or None,
                 json.dumps(data.get("config_json") or {}, ensure_ascii=False),
-                json.dumps(data.get("expected_json"), ensure_ascii=False) if data.get("expected_json") is not None else None,
+                (
+                    json.dumps(data.get("expected_json"), ensure_ascii=False)
+                    if data.get("expected_json") is not None
+                    else None
+                ),
                 test_id,
             ),
         )

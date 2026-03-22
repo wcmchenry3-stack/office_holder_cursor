@@ -13,8 +13,16 @@ def _row(url: str, start: str, end: str) -> dict:
 
 def test_auto_table_update_chooses_best_matching_table(monkeypatch):
     existing_terms = [
-        {"wiki_url": "https://en.wikipedia.org/wiki/A", "term_start": "2000-01-01", "term_end": "2001-01-01"},
-        {"wiki_url": "https://en.wikipedia.org/wiki/B", "term_start": "2001-01-02", "term_end": "2002-01-01"},
+        {
+            "wiki_url": "https://en.wikipedia.org/wiki/A",
+            "term_start": "2000-01-01",
+            "term_end": "2001-01-01",
+        },
+        {
+            "wiki_url": "https://en.wikipedia.org/wiki/B",
+            "term_start": "2001-01-02",
+            "term_end": "2002-01-01",
+        },
     ]
 
     calls: list[int] = []
@@ -93,8 +101,16 @@ def test_auto_table_update_respects_disable_flag(monkeypatch):
 
 def test_auto_table_update_uses_years_fallback_when_exact_dates_tie(monkeypatch):
     existing_terms = [
-        {"wiki_url": "https://en.wikipedia.org/wiki/A", "term_start": "2000-01-01", "term_end": "2001-01-01"},
-        {"wiki_url": "https://en.wikipedia.org/wiki/B", "term_start": "2001-01-02", "term_end": "2002-01-01"},
+        {
+            "wiki_url": "https://en.wikipedia.org/wiki/A",
+            "term_start": "2000-01-01",
+            "term_end": "2001-01-01",
+        },
+        {
+            "wiki_url": "https://en.wikipedia.org/wiki/B",
+            "term_start": "2001-01-02",
+            "term_end": "2002-01-01",
+        },
     ]
 
     def fake_cache(url, table_no, refresh=False, use_full_page=False):
@@ -175,8 +191,16 @@ def test_find_best_matching_table_reports_before_after(monkeypatch):
     monkeypatch.setattr(runner, "_parse_office_html", fake_parse)
 
     existing_terms = [
-        {"wiki_url": "https://en.wikipedia.org/wiki/A", "term_start": "2000-01-01", "term_end": "2001-01-01"},
-        {"wiki_url": "https://en.wikipedia.org/wiki/B", "term_start": "2001-01-02", "term_end": "2002-01-01"},
+        {
+            "wiki_url": "https://en.wikipedia.org/wiki/A",
+            "term_start": "2000-01-01",
+            "term_end": "2001-01-01",
+        },
+        {
+            "wiki_url": "https://en.wikipedia.org/wiki/B",
+            "term_start": "2001-01-02",
+            "term_end": "2002-01-01",
+        },
     ]
     result = runner.find_best_matching_table_for_existing_terms(
         {
@@ -214,14 +238,24 @@ def test_preview_reports_new_list_mismatch(monkeypatch):
     monkeypatch.setattr(
         runner,
         "_parse_office_html",
-        lambda *args, **kwargs: [_row("https://en.wikipedia.org/wiki/A", "2000-01-01", "2001-01-01")],
+        lambda *args, **kwargs: [
+            _row("https://en.wikipedia.org/wiki/A", "2000-01-01", "2001-01-01")
+        ],
     )
     monkeypatch.setattr(
         runner.db_office_terms,
         "get_existing_terms_for_office",
         lambda _id: [
-            {"wiki_url": "https://en.wikipedia.org/wiki/A", "term_start": "2000-01-01", "term_end": "2001-01-01"},
-            {"wiki_url": "https://en.wikipedia.org/wiki/B", "term_start": "2001-01-02", "term_end": "2002-01-01"},
+            {
+                "wiki_url": "https://en.wikipedia.org/wiki/A",
+                "term_start": "2000-01-01",
+                "term_end": "2001-01-01",
+            },
+            {
+                "wiki_url": "https://en.wikipedia.org/wiki/B",
+                "term_start": "2001-01-02",
+                "term_end": "2002-01-01",
+            },
         ],
     )
 
@@ -241,8 +275,22 @@ def test_preview_reports_new_list_mismatch(monkeypatch):
 
 
 def test_url_only_matching_ignores_wikipedia_query_params():
-    existing = [{"wiki_url": "https://en.wikipedia.org/wiki/Albert_Williams_(Michigan_Attorney_General)?action=edit&redlink=1"}]
-    parsed = [{"Wiki Link": "https://en.wikipedia.org/wiki/Albert_Williams_(Michigan_Attorney_General)", "Term Start": "", "Term End": "", "Term Start Year": 1863, "Term End Year": 1867, "Party": "", "District": ""}]
+    existing = [
+        {
+            "wiki_url": "https://en.wikipedia.org/wiki/Albert_Williams_(Michigan_Attorney_General)?action=edit&redlink=1"
+        }
+    ]
+    parsed = [
+        {
+            "Wiki Link": "https://en.wikipedia.org/wiki/Albert_Williams_(Michigan_Attorney_General)",
+            "Term Start": "",
+            "Term End": "",
+            "Term Start Year": 1863,
+            "Term End Year": 1867,
+            "Party": "",
+            "District": "",
+        }
+    ]
 
     missing = runner._missing_holder_keys(existing, parsed, office_id=1, years_only=True)
     assert missing == set()
@@ -250,7 +298,17 @@ def test_url_only_matching_ignores_wikipedia_query_params():
 
 def test_url_only_matching_ignores_scheme_and_host_differences():
     existing = [{"wiki_url": "http://en.wikipedia.org/wiki/Daniel_LeRoy"}]
-    parsed = [{"Wiki Link": "https://en.wikipedia.org/wiki/Daniel_LeRoy", "Term Start": "", "Term End": "", "Term Start Year": 1836, "Term End Year": 1837, "Party": "", "District": ""}]
+    parsed = [
+        {
+            "Wiki Link": "https://en.wikipedia.org/wiki/Daniel_LeRoy",
+            "Term Start": "",
+            "Term End": "",
+            "Term Start Year": 1836,
+            "Term End Year": 1837,
+            "Party": "",
+            "District": "",
+        }
+    ]
 
     missing = runner._missing_holder_keys(existing, parsed, office_id=1, years_only=True)
     assert missing == set()
@@ -258,7 +316,17 @@ def test_url_only_matching_ignores_scheme_and_host_differences():
 
 def test_url_only_matching_ignores_encoding_and_title_case_differences():
     existing = [{"wiki_url": "https://en.wikipedia.org/wiki/Ra%C3%BAl_Labrador"}]
-    parsed = [{"Wiki Link": "https://en.wikipedia.org/wiki/Raúl_Labrador", "Term Start": "", "Term End": "", "Term Start Year": 2023, "Term End Year": 2027, "Party": "", "District": ""}]
+    parsed = [
+        {
+            "Wiki Link": "https://en.wikipedia.org/wiki/Raúl_Labrador",
+            "Term Start": "",
+            "Term End": "",
+            "Term Start Year": 2023,
+            "Term End Year": 2027,
+            "Party": "",
+            "District": "",
+        }
+    ]
 
     missing = runner._missing_holder_keys(existing, parsed, office_id=1, years_only=True)
     assert missing == set()
@@ -266,23 +334,29 @@ def test_url_only_matching_ignores_encoding_and_title_case_differences():
 
 def test_matching_uses_active_links_even_when_dates_are_invalid():
     existing = [{"wiki_url": "https://en.wikipedia.org/wiki/Daniel_LeRoy"}]
-    parsed = [{
-        "Wiki Link": "https://en.wikipedia.org/wiki/Daniel_LeRoy",
-        "Term Start": "Invalid date",
-        "Term End": "Invalid date",
-        "Term Start Year": None,
-        "Term End Year": None,
-        "_dead_link": False,
-        "Party": "",
-        "District": "",
-    }]
+    parsed = [
+        {
+            "Wiki Link": "https://en.wikipedia.org/wiki/Daniel_LeRoy",
+            "Term Start": "Invalid date",
+            "Term End": "Invalid date",
+            "Term Start Year": None,
+            "Term End Year": None,
+            "_dead_link": False,
+            "Party": "",
+            "District": "",
+        }
+    ]
 
     missing = runner._missing_holder_keys(existing, parsed, office_id=1, years_only=False)
     assert missing == set()
 
 
 def test_matching_ignores_deadlinks_from_existing_terms():
-    existing = [{"wiki_url": "https://en.wikipedia.org/wiki/Albert_Williams_(Michigan_Attorney_General)?action=edit&redlink=1"}]
+    existing = [
+        {
+            "wiki_url": "https://en.wikipedia.org/wiki/Albert_Williams_(Michigan_Attorney_General)?action=edit&redlink=1"
+        }
+    ]
     parsed = []
 
     missing = runner._missing_holder_keys(existing, parsed, office_id=1, years_only=False)
@@ -291,13 +365,23 @@ def test_matching_ignores_deadlinks_from_existing_terms():
 
 def test_filtered_existing_keys_excludes_deadlinks_and_display_hides_them():
     existing = [
-        {"wiki_url": "https://en.wikipedia.org/wiki/Alive_Person", "term_start_year": 1900, "term_end_year": 1901},
-        {"wiki_url": "https://en.wikipedia.org/wiki/Dead_Link?action=edit&redlink=1", "term_start_year": 1902, "term_end_year": 1903},
+        {
+            "wiki_url": "https://en.wikipedia.org/wiki/Alive_Person",
+            "term_start_year": 1900,
+            "term_end_year": 1901,
+        },
+        {
+            "wiki_url": "https://en.wikipedia.org/wiki/Dead_Link?action=edit&redlink=1",
+            "term_start_year": 1902,
+            "term_end_year": 1903,
+        },
     ]
     keys = runner._filtered_existing_holder_keys(existing, runner._holder_key_from_existing_term)
     assert ("/wiki/alive_person", "", "") in keys
     assert all(k[0] for k in keys)
 
     missing_keys = {("", "", ""), ("/wiki/alive_person", "", "")}
-    labels = runner._missing_holders_display(existing, missing_keys, runner._holder_key_from_existing_term)
+    labels = runner._missing_holders_display(
+        existing, missing_keys, runner._holder_key_from_existing_term
+    )
     assert labels == ["Alive Person (1900–1901)"]
