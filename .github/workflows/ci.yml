@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  secret-scan:
+    uses: wcmchenry3-stack/.github/.github/workflows/called-secret-scan.yml@main
+    secrets: inherit
+
+  lint-python:
+    uses: wcmchenry3-stack/.github/.github/workflows/called-lint-python.yml@main
+    with:
+      python-version: '3.11'
+    secrets: inherit
+
+  test-python:
+    uses: wcmchenry3-stack/.github/.github/workflows/called-test-python.yml@main
+    with:
+      coverage-threshold: 80
+    secrets: inherit
+
+  cve-python:
+    uses: wcmchenry3-stack/.github/.github/workflows/called-cve-python.yml@main
+    secrets: inherit
+
+  validate-fixtures:
+    name: Validate parser fixtures
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Validate parser fixture manifest
+        run: python scripts/validate_parser_fixtures.py
+
+      - name: Run tests
+        run: pytest --tb=short
