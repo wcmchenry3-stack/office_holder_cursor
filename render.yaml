@@ -22,3 +22,9 @@ services:
         sync: false
       - key: APP_BASE_URL
         sync: false
+      - key: EMAIL_APP_PASSWORD
+        sync: false
+      - key: EMAIL_FROM
+        value: wcmchenry3@gmail.com
+      - key: EMAIL_TO
+        value: wcmchenry3@gmail.com

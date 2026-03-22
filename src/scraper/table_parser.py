@@ -1605,7 +1605,7 @@ class Biography:
       else:
           details['full_name'] = details.get('name', None)
 
-      for tr in infobox.findAll('tr'):
+      for tr in infobox.find_all('tr'):
           th = tr.find('th')
           td = tr.find('td')
 
