@@ -40,6 +40,8 @@
 
 ## Testing Infrastructure
 
+See [~/.claude/standards/testing.md](~/.claude/standards/testing.md) for universal testing conventions (coverage thresholds, what not to test, patterns).
+
 **Parser test manifest:** `test_scripts/manifest/parser_tests.json`
 - Format: `{ name, test_type, html_file, source_url, config_json, expected_json, enabled }`
 - `html_file` → committed fixture in `test_scripts/fixtures/`
@@ -49,15 +51,10 @@
 **Scenario runner:** `scripts/run_scenarios_test.py`
 - Sets `OFFICE_HOLDER_DB_PATH=data/test_run.db` — never touches production DB
 - Pre-fills `data/wiki_cache/` with fixture HTML — no live Wikipedia requests
-- Runs scraper against test configs; checks output vs. expected
 
 **Unit tests:** Scattered across `src/scraper/test_*.py` and `src/db/test_*.py`. No shared `conftest.py` yet.
 
-**pytest:** Not in `requirements.txt`. Run `pip install pytest` before executing tests.
-
 **Playwright tests:** `src/test_ui_edit_office_playwright.py`. Require manual `PLAYWRIGHT_*` env var setup. Not currently wired into CI.
-
-**CI:** `.github/workflows/validate-parser-fixtures.yml` — validates `parser_tests.json` manifest integrity and fixture file existence only.
 
 ---
 
