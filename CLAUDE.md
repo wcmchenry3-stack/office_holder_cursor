@@ -1,4 +1,5 @@
 # CLAUDE.md — Office Holder
+<!-- Global standards: ~/.claude/CLAUDE.md and ~/.claude/standards/ -->
 <!-- Keep this file ≤ 50 lines. Move detail to docs/ rather than expanding here. -->
 
 Single-user FastAPI/SQLite app that scrapes Wikipedia tables to build a political office holders database. Deployed on Render.com (persistent disk). See `docs/` for full references.

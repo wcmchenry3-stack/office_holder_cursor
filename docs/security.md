@@ -1,6 +1,8 @@
 # Security Policy — Office Holder
 
-## Overview
+See [~/.claude/standards/security.md](~/.claude/standards/security.md) for the universal OWASP Top 10 framework and secret hygiene rules.
+
+## Project-Specific Implementation
 
 All code changes must be tested against this policy before merging. The automated suite lives in
 `src/test_security.py` and runs as part of the normal pytest suite:
