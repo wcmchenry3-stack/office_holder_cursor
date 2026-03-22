@@ -28,7 +28,6 @@ from src.scraper import parse_core
 from src.scraper.logger import Logger
 from src.scraper.runner import _parse_office_html, _canonical_holder_url
 
-
 DEFAULT_URL = "https://en.wikipedia.org/wiki/Michigan_Attorney_General"
 
 
@@ -46,7 +45,7 @@ def _parsed_urls_for_table(office_row: dict, table_no: int) -> set[str]:
     url = (office_row.get("url") or "").strip()
     use_full_page = bool(office_row.get("use_full_page_for_table"))
     cached = get_table_html_cached(url, table_no, refresh=False, use_full_page=use_full_page)
-    html = (cached.get("html") or "")
+    html = cached.get("html") or ""
     if not html:
         return set()
 
@@ -76,9 +75,16 @@ def _parsed_urls_for_table(office_row: dict, table_no: int) -> set[str]:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--office-table-config-id", type=int, default=0, help="office_table_config.id to debug")
+    ap.add_argument(
+        "--office-table-config-id", type=int, default=0, help="office_table_config.id to debug"
+    )
     ap.add_argument("--url", default=DEFAULT_URL, help="Wikipedia page URL")
-    ap.add_argument("--current-table-no", type=int, default=0, help="current table_no (if not using office-table-config-id)")
+    ap.add_argument(
+        "--current-table-no",
+        type=int,
+        default=0,
+        help="current table_no (if not using office-table-config-id)",
+    )
     args = ap.parse_args()
 
     init_db()
@@ -91,7 +97,11 @@ def main() -> int:
         tc_id = int(args.office_table_config_id)
     else:
         # best-effort row for page URL
-        units = [u for u in db_offices.list_runnable_units() if (u.get("url") or "").strip() == args.url.strip()]
+        units = [
+            u
+            for u in db_offices.list_runnable_units()
+            if (u.get("url") or "").strip() == args.url.strip()
+        ]
         if not units:
             print("No runnable unit found for URL; pass --office-table-config-id")
             return 2
@@ -106,7 +116,9 @@ def main() -> int:
         print("No existing office_terms URLs found; run populate first.")
         return 2
 
-    first = get_table_html_cached(page_url, 1, refresh=False, use_full_page=bool(office_row.get("use_full_page_for_table")))
+    first = get_table_html_cached(
+        page_url, 1, refresh=False, use_full_page=bool(office_row.get("use_full_page_for_table"))
+    )
     n_tables = int(first.get("num_tables") or 0)
     if n_tables <= 0:
         print(f"Could not load tables for {page_url}")
@@ -129,7 +141,9 @@ def main() -> int:
         if best is None or score < best[0]:
             best = (score, tno, overlap, missing, extra, parsed_urls)
         mark = "*" if tno == current_tno else " "
-        print(f"{mark} table {tno:>2}: overlap={overlap:>3}  missing={missing:>3}  extra={extra:>3}  parsed={len(parsed_urls):>3}")
+        print(
+            f"{mark} table {tno:>2}: overlap={overlap:>3}  missing={missing:>3}  extra={extra:>3}  parsed={len(parsed_urls):>3}"
+        )
 
     print("-" * 72)
     if best:

@@ -8,10 +8,10 @@ from src.scraper.wiki_fetch import (
     wiki_url_to_rest_html_url,
 )
 
-
 # ---------------------------------------------------------------------------
 # normalize_wiki_url
 # ---------------------------------------------------------------------------
+
 
 def test_normalize_none_returns_none():
     assert normalize_wiki_url(None) is None
@@ -54,6 +54,7 @@ def test_normalize_non_wikipedia_plain_url_returns_none():
 # canonical_holder_url
 # ---------------------------------------------------------------------------
 
+
 def test_canonical_empty_returns_empty():
     assert canonical_holder_url("") == ""
 
@@ -86,6 +87,7 @@ def test_canonical_underscores_preserved():
 # ---------------------------------------------------------------------------
 # wiki_url_to_rest_html_url
 # ---------------------------------------------------------------------------
+
 
 def test_rest_html_url_basic():
     result = wiki_url_to_rest_html_url("https://en.wikipedia.org/wiki/Barack_Obama")

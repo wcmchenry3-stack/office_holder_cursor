@@ -43,7 +43,9 @@ def insert_office_term(
         # #region agent log
         try:
             from pathlib import Path as _P
-            import json as _J, time as _T
+            import json as _J
+            import time as _T
+
             _log_path = _P(__file__).resolve().parent.parent.parent / ".cursor" / "debug.log"
             open(_log_path, "a", encoding="utf-8").write(
                 _J.dumps(
@@ -68,20 +70,50 @@ def insert_office_term(
         except Exception:
             pass
         # #endregion
-        if _has_hierarchy_terms(conn) and office_details_id is not None and office_table_config_id is not None:
+        if (
+            _has_hierarchy_terms(conn)
+            and office_details_id is not None
+            and office_table_config_id is not None
+        ):
             # office_id is NOT NULL; use office_table_config_id so the runnable-unit id is consistent.
             cur = conn.execute(
                 """INSERT OR REPLACE INTO office_terms
                    (office_id, office_details_id, office_table_config_id, individual_id, party_id, district, term_start, term_end, term_start_year, term_end_year, term_start_imprecise, term_end_imprecise, wiki_url)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (office_table_config_id, office_details_id, office_table_config_id, individual_id, party_id, district or None, term_start, term_end, term_start_year, term_end_year, ts_imp, te_imp, wiki_url),
+                (
+                    office_table_config_id,
+                    office_details_id,
+                    office_table_config_id,
+                    individual_id,
+                    party_id,
+                    district or None,
+                    term_start,
+                    term_end,
+                    term_start_year,
+                    term_end_year,
+                    ts_imp,
+                    te_imp,
+                    wiki_url,
+                ),
             )
         else:
             cur = conn.execute(
                 """INSERT OR REPLACE INTO office_terms
                    (office_id, individual_id, party_id, district, term_start, term_end, term_start_year, term_end_year, term_start_imprecise, term_end_imprecise, wiki_url)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (office_id, individual_id, party_id, district or None, term_start, term_end, term_start_year, term_end_year, ts_imp, te_imp, wiki_url),
+                (
+                    office_id,
+                    individual_id,
+                    party_id,
+                    district or None,
+                    term_start,
+                    term_end,
+                    term_start_year,
+                    term_end_year,
+                    ts_imp,
+                    te_imp,
+                    wiki_url,
+                ),
             )
         conn.commit()
         return cur.lastrowid
@@ -97,9 +129,13 @@ def count_terms_for_office(office_id: int, conn: sqlite3.Connection | None = Non
         conn = get_connection()
     try:
         if _has_hierarchy_terms(conn):
-            cur = conn.execute("SELECT COUNT(*) FROM office_terms WHERE office_details_id = ?", (office_id,))
+            cur = conn.execute(
+                "SELECT COUNT(*) FROM office_terms WHERE office_details_id = ?", (office_id,)
+            )
         else:
-            cur = conn.execute("SELECT COUNT(*) FROM office_terms WHERE office_id = ?", (office_id,))
+            cur = conn.execute(
+                "SELECT COUNT(*) FROM office_terms WHERE office_id = ?", (office_id,)
+            )
         return cur.fetchone()[0]
     finally:
         if own_conn:
@@ -117,16 +153,16 @@ def get_terms_counts_by_office(conn: sqlite3.Connection | None = None) -> dict[i
                 "SELECT office_details_id, COUNT(*) FROM office_terms WHERE office_details_id IS NOT NULL GROUP BY office_details_id"
             )
             return {row[0]: row[1] for row in cur.fetchall()}
-        cur = conn.execute(
-            "SELECT office_id, COUNT(*) FROM office_terms GROUP BY office_id"
-        )
+        cur = conn.execute("SELECT office_id, COUNT(*) FROM office_terms GROUP BY office_id")
         return {row[0]: row[1] for row in cur.fetchall()}
     finally:
         if own_conn:
             conn.close()
 
 
-def get_existing_terms_for_office(office_id: int, conn: sqlite3.Connection | None = None) -> list[dict[str, Any]]:
+def get_existing_terms_for_office(
+    office_id: int, conn: sqlite3.Connection | None = None
+) -> list[dict[str, Any]]:
     """Return existing office_terms for a unit (office_id is office_table_config_id in hierarchy, for delta compare)."""
     own_conn = conn is None
     if own_conn:
@@ -157,7 +193,9 @@ def delete_office_terms_for_office(office_id: int, conn: sqlite3.Connection | No
         conn = get_connection()
     try:
         if _has_hierarchy_terms(conn):
-            cur = conn.execute("DELETE FROM office_terms WHERE office_table_config_id = ?", (office_id,))
+            cur = conn.execute(
+                "DELETE FROM office_terms WHERE office_table_config_id = ?", (office_id,)
+            )
         else:
             cur = conn.execute("DELETE FROM office_terms WHERE office_id = ?", (office_id,))
         conn.commit()

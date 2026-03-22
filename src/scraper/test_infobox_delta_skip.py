@@ -26,15 +26,17 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 # Helpers (mirror of test_html_hash_skip.py)
 # ---------------------------------------------------------------------------
 
+
 def _cache_key(url: str, table_no: int, use_full_page: bool = False) -> str:
-    normalized = (
-        url.strip() + "|" + str(table_no) + "|" + ("1" if use_full_page else "0")
-    ).encode("utf-8")
+    normalized = (url.strip() + "|" + str(table_no) + "|" + ("1" if use_full_page else "0")).encode(
+        "utf-8"
+    )
     return hashlib.sha256(normalized).hexdigest()[:32]
 
 
 def _extract_table(html: str, table_no: int) -> tuple[str, int]:
     from bs4 import BeautifulSoup
+
     soup = BeautifulSoup(html, "html.parser")
     tables = soup.find_all("table")
     num_tables = len(tables)
@@ -136,6 +138,7 @@ def _setup_db_and_office(tmp_path, monkeypatch):
 # Tests
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.integration
 def test_infobox_skipped_when_holder_set_unchanged_in_delta(tmp_path, monkeypatch):
     """Delta run: HTML changes but parsed holder set is identical to existing → infobox not called."""
@@ -193,12 +196,12 @@ def test_infobox_skipped_when_holder_set_unchanged_in_delta(tmp_path, monkeypatc
         run_office_bio=False,
         office_ids=[tc_id],
     )
-    assert result2.get("offices_unchanged", 0) == 1, (
-        "Holder set unchanged should count as offices_unchanged"
-    )
-    assert len(infobox_calls) == 0, (
-        "find_term_dates must not be called when holder set is identical to existing"
-    )
+    assert (
+        result2.get("offices_unchanged", 0) == 1
+    ), "Holder set unchanged should count as offices_unchanged"
+    assert (
+        len(infobox_calls) == 0
+    ), "find_term_dates must not be called when holder set is identical to existing"
 
 
 @pytest.mark.integration
@@ -271,9 +274,9 @@ def test_infobox_runs_when_existing_terms_are_subset_of_table(tmp_path, monkeypa
         run_office_bio=False,
         office_ids=[tc_id],
     )
-    assert result2.get("offices_unchanged", 0) == 0, (
-        "Should not be marked unchanged — holder set expanded so skip must not fire"
-    )
+    assert (
+        result2.get("offices_unchanged", 0) == 0
+    ), "Should not be marked unchanged — holder set expanded so skip must not fire"
     # Note: find_term_dates may not be called for dead/historical holders even with
     # find_date_in_infobox=True (infobox is only fetched for living individuals or
     # newly-added ones). The key assertion is that offices_unchanged == 0, proving
@@ -303,26 +306,33 @@ def test_holder_set_skip_stores_hash_enabling_coarser_skip_next_run(tmp_path, mo
     conn.commit()
     conn.close()
 
-    monkeypatch.setattr(
-        tp_mod.Biography, "find_term_dates", lambda self, *a, **kw: ([], [])
-    )
+    monkeypatch.setattr(tp_mod.Biography, "find_term_dates", lambda self, *a, **kw: ([], []))
 
     # First run: writes terms; stores hash of original table_html
     run_with_db(
-        run_mode="delta", dry_run=False, test_run=False,
-        run_office_bio=False, office_ids=[tc_id],
+        run_mode="delta",
+        dry_run=False,
+        test_run=False,
+        run_office_bio=False,
+        office_ids=[tc_id],
     )
 
     # Swap cache: different hash, same holder content → holder-set skip fires
     modified_html = table_html + "<!-- v2 -->"
     _write_cache(
-        cache_dir, source_url, table_no, modified_html,
+        cache_dir,
+        source_url,
+        table_no,
+        modified_html,
         use_full_page=bool(config.get("use_full_page_for_table", False)),
     )
 
     result2 = run_with_db(
-        run_mode="delta", dry_run=False, test_run=False,
-        run_office_bio=False, office_ids=[tc_id],
+        run_mode="delta",
+        dry_run=False,
+        test_run=False,
+        run_office_bio=False,
+        office_ids=[tc_id],
     )
     assert result2.get("offices_unchanged", 0) == 1, "Holder-set skip should fire"
 
@@ -334,13 +344,16 @@ def test_holder_set_skip_stores_hash_enabling_coarser_skip_next_run(tmp_path, mo
     conn.close()
 
     expected = hashlib.sha256(modified_html.encode("utf-8")).hexdigest()
-    assert stored == expected, (
-        "html_hash must be stored after holder-set skip so the next run can use hash-match"
-    )
+    assert (
+        stored == expected
+    ), "html_hash must be stored after holder-set skip so the next run can use hash-match"
 
     # Third run: HTML unchanged → hash-match fires (even coarser short-circuit)
     result3 = run_with_db(
-        run_mode="delta", dry_run=False, test_run=False,
-        run_office_bio=False, office_ids=[tc_id],
+        run_mode="delta",
+        dry_run=False,
+        test_run=False,
+        run_office_bio=False,
+        office_ids=[tc_id],
     )
     assert result3.get("offices_unchanged", 0) == 1

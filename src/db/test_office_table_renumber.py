@@ -42,13 +42,15 @@ def test_create_office_with_row_filter_columns_persists_values(tmp_path: Path):
     init_db(db_path)
     conn = get_connection(db_path)
     try:
-        data = _base_data([
-            {
-                **_tc(1, name="filtered"),
-                "filter_column": 5,
-                "filter_criteria": "Associate Justice",
-            }
-        ])
+        data = _base_data(
+            [
+                {
+                    **_tc(1, name="filtered"),
+                    "filter_column": 5,
+                    "filter_criteria": "Associate Justice",
+                }
+            ]
+        )
 
         office_id = offices.create_office(data, conn)
 

@@ -13,16 +13,25 @@ router = APIRouter()
 
 
 @router.get("/data/individuals", response_class=HTMLResponse)
-async def data_individuals(request: Request, limit: int = Query(100, le=500), offset: int = Query(0)):
+async def data_individuals(
+    request: Request, limit: int = Query(100, le=500), offset: int = Query(0)
+):
     individuals = db_individuals.list_individuals(limit=limit, offset=offset)
     return templates.TemplateResponse(request, "individuals.html", {"individuals": individuals})
 
 
 @router.get("/data/office-terms", response_class=HTMLResponse)
-async def data_office_terms(request: Request, limit: int = Query(100, le=500), offset: int = Query(0), office_id: int = Query(None)):
+async def data_office_terms(
+    request: Request,
+    limit: int = Query(100, le=500),
+    offset: int = Query(0),
+    office_id: int = Query(None),
+):
     terms = db_office_terms.list_office_terms(limit=limit, offset=offset, office_id=office_id)
     offices = db_offices.list_offices()
-    return templates.TemplateResponse(request, "office_terms.html", {"terms": terms, "offices": offices})
+    return templates.TemplateResponse(
+        request, "office_terms.html", {"terms": terms, "offices": offices}
+    )
 
 
 @router.get("/report/milestones", response_class=HTMLResponse)
@@ -31,7 +40,8 @@ async def report_milestones(request: Request):
     recent_term_ends = db_reports.get_recent_term_ends()
     recent_term_starts = db_reports.get_recent_term_starts()
     return templates.TemplateResponse(
-        request, "milestone_report.html",
+        request,
+        "milestone_report.html",
         {
             "recent_deaths": recent_deaths,
             "recent_term_ends": recent_term_ends,

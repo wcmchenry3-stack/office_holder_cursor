@@ -7,15 +7,16 @@ from src.scraper.runner import (
     _is_dead_wiki_url,
 )
 
-
 # ---------------------------------------------------------------------------
 # _is_dead_wiki_url
 # ---------------------------------------------------------------------------
 
+
 def test_is_dead_url_redlink_param():
-    assert _is_dead_wiki_url(
-        "https://en.wikipedia.org/w/index.php?title=Foo&action=edit&redlink=1"
-    ) is True
+    assert (
+        _is_dead_wiki_url("https://en.wikipedia.org/w/index.php?title=Foo&action=edit&redlink=1")
+        is True
+    )
 
 
 def test_is_dead_url_normal_wiki_url():
@@ -34,6 +35,7 @@ def test_is_dead_url_none():
 # _canonical_holder_url
 # ---------------------------------------------------------------------------
 
+
 def test_canonical_url_lowercased():
     result = _canonical_holder_url("https://en.wikipedia.org/wiki/Barack_Obama")
     assert result == "/wiki/barack_obama"
@@ -49,9 +51,7 @@ def test_canonical_url_empty_returns_empty():
 
 
 def test_canonical_url_strips_query_params():
-    result = _canonical_holder_url(
-        "https://en.wikipedia.org/wiki/Barack_Obama?oldid=123"
-    )
+    result = _canonical_holder_url("https://en.wikipedia.org/wiki/Barack_Obama?oldid=123")
     assert result == "/wiki/barack_obama"
 
 
@@ -59,15 +59,14 @@ def test_canonical_url_strips_query_params():
 # _holder_key_from_existing_term
 # ---------------------------------------------------------------------------
 
+
 def test_holder_key_with_valid_url():
     term = {"wiki_url": "https://en.wikipedia.org/wiki/Barack_Obama"}
     assert _holder_key_from_existing_term(term) == ("/wiki/barack_obama", "", "")
 
 
 def test_holder_key_dead_link_returns_empty_tuple():
-    term = {
-        "wiki_url": "https://en.wikipedia.org/w/index.php?title=Foo&redlink=1"
-    }
+    term = {"wiki_url": "https://en.wikipedia.org/w/index.php?title=Foo&redlink=1"}
     assert _holder_key_from_existing_term(term) == ("", "", "")
 
 
@@ -82,6 +81,7 @@ def test_holder_key_empty_url_returns_empty_tuple():
 # ---------------------------------------------------------------------------
 # _dedupe_parsed_rows
 # ---------------------------------------------------------------------------
+
 
 def test_dedupe_empty_list():
     assert _dedupe_parsed_rows([], years_only=False) == []
@@ -99,8 +99,20 @@ def test_dedupe_preserves_rows_without_wiki_link():
 
 def test_dedupe_distinct_urls_all_kept():
     rows = [
-        {"Wiki Link": "https://en.wikipedia.org/wiki/Alice", "Term Start": "2020-01-01", "Term End": None, "Party": "", "District": ""},
-        {"Wiki Link": "https://en.wikipedia.org/wiki/Bob", "Term Start": "2020-01-01", "Term End": None, "Party": "", "District": ""},
+        {
+            "Wiki Link": "https://en.wikipedia.org/wiki/Alice",
+            "Term Start": "2020-01-01",
+            "Term End": None,
+            "Party": "",
+            "District": "",
+        },
+        {
+            "Wiki Link": "https://en.wikipedia.org/wiki/Bob",
+            "Term Start": "2020-01-01",
+            "Term End": None,
+            "Party": "",
+            "District": "",
+        },
     ]
     result = _dedupe_parsed_rows(rows, years_only=False)
     assert len(result) == 2

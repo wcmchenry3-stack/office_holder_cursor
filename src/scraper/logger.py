@@ -10,6 +10,7 @@ from pathlib import Path
 
 def get_default_log_dir() -> Path:
     from ..db.connection import get_log_dir
+
     return get_log_dir()
 
 

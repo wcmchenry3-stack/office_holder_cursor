@@ -9,15 +9,22 @@ from .offices import create_office
 from .parties import create_party
 
 
-def _resolve_refs(conn, country_name: str, state_name: str, level_name: str, branch_name: str) -> tuple[int | None, int | None, int | None, int | None]:
+def _resolve_refs(
+    conn, country_name: str, state_name: str, level_name: str, branch_name: str
+) -> tuple[int | None, int | None, int | None, int | None]:
     """Return (country_id, state_id, level_id, branch_id). None if not found."""
     country_id = state_id = level_id = branch_id = None
     if country_name:
-        cur = conn.execute("SELECT id FROM countries WHERE name = ? LIMIT 1", (country_name.strip(),))
+        cur = conn.execute(
+            "SELECT id FROM countries WHERE name = ? LIMIT 1", (country_name.strip(),)
+        )
         row = cur.fetchone()
         country_id = row["id"] if row else None
     if state_name and country_id:
-        cur = conn.execute("SELECT id FROM states WHERE country_id = ? AND name = ? LIMIT 1", (country_id, state_name.strip()))
+        cur = conn.execute(
+            "SELECT id FROM states WHERE country_id = ? AND name = ? LIMIT 1",
+            (country_id, state_name.strip()),
+        )
         row = cur.fetchone()
         state_id = row["id"] if row else None
     if level_name:
@@ -73,7 +80,9 @@ def bulk_import_offices_from_csv(
                     state_name = (row.get("State") or "").strip()
                     level_name = (row.get("Level") or "").strip()
                     branch_name = (row.get("Branch") or "").strip()
-                    country_id, state_id, level_id, branch_id = _resolve_refs(conn, country_name, state_name, level_name, branch_name)
+                    country_id, state_id, level_id, branch_id = _resolve_refs(
+                        conn, country_name, state_name, level_name, branch_name
+                    )
                     if not country_id:
                         errors += 1  # require valid country
                         continue
@@ -94,14 +103,20 @@ def bulk_import_offices_from_csv(
                         "term_end_column": _int_from_cell(row.get("Term End Column"), 5),
                         "district_column": _int_from_cell(row.get("District"), 0),
                         "dynamic_parse": _bool_from_cell(row.get("Dynamic Parse")),
-                        "read_right_to_left": _bool_from_cell(row.get("Read columns right to left")),
+                        "read_right_to_left": _bool_from_cell(
+                            row.get("Read columns right to left")
+                        ),
                         "find_date_in_infobox": _bool_from_cell(row.get("Find Date")),
                         "years_only": _bool_from_cell(row.get("Years Only")),
                         "parse_rowspan": _bool_from_cell(row.get("Parse Rowspan")),
-                        "consolidate_rowspan_terms": _bool_from_cell(row.get("Consolidate Rowspan Terms")),
+                        "consolidate_rowspan_terms": _bool_from_cell(
+                            row.get("Consolidate Rowspan Terms")
+                        ),
                         "rep_link": _bool_from_cell(row.get("Rep Link")),
                         "party_link": _bool_from_cell(row.get("Party Link")),
-                        "alt_links": [x.strip() for x in (row.get("Alt Link") or "").split(",") if x.strip()],
+                        "alt_links": [
+                            x.strip() for x in (row.get("Alt Link") or "").split(",") if x.strip()
+                        ],
                         "alt_link_include_main": _bool_from_cell(row.get("Alt Link Include Main")),
                     }
                     if not data["url"] or not data["name"]:
@@ -153,7 +168,11 @@ def bulk_import_parties_from_csv(
                         errors += 1
                         continue
                     create_party(
-                        {"country_id": country_id, "party_name": party_name, "party_link": party_link},
+                        {
+                            "country_id": country_id,
+                            "party_name": party_name,
+                            "party_link": party_link,
+                        },
                         conn=conn,
                     )
                     imported += 1

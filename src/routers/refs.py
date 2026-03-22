@@ -30,6 +30,7 @@ def _form_ids(form, key: str) -> list[int]:
 
 # ---------- Index ----------
 
+
 @router.get("/refs", response_class=HTMLResponse)
 async def refs_index(request: Request):
     return templates.TemplateResponse(request, "refs.html")
@@ -37,13 +38,15 @@ async def refs_index(request: Request):
 
 # ---------- Countries ----------
 
+
 @router.get("/refs/countries", response_class=HTMLResponse)
 async def refs_countries_list(request: Request):
     saved = request.query_params.get("saved") == "1"
     error = request.query_params.get("error") or None
     countries = db_refs.list_countries()
     return templates.TemplateResponse(
-        request, "refs_countries.html",
+        request,
+        "refs_countries.html",
         {"countries": countries, "saved": saved, "error": error},
     )
 
@@ -60,7 +63,8 @@ async def refs_country_create(request: Request, name: str = Form("")):
         return RedirectResponse("/refs/countries?saved=1", status_code=302)
     except ValueError as e:
         return templates.TemplateResponse(
-            request, "refs_country_form.html",
+            request,
+            "refs_country_form.html",
             {"country": {"name": name}, "validation_error": str(e)},
         )
 
@@ -83,7 +87,8 @@ async def refs_country_update(request: Request, country_id: int, name: str = For
         if not country:
             raise HTTPException(status_code=404)
         return templates.TemplateResponse(
-            request, "refs_country_form.html",
+            request,
+            "refs_country_form.html",
             {"country": {**country, "name": name}, "validation_error": str(e)},
         )
 
@@ -99,13 +104,15 @@ async def refs_country_delete(country_id: int):
 
 # ---------- States ----------
 
+
 @router.get("/refs/states", response_class=HTMLResponse)
 async def refs_states_list(request: Request):
     saved = request.query_params.get("saved") == "1"
     error = request.query_params.get("error") or None
     states = db_refs.list_states_with_country()
     return templates.TemplateResponse(
-        request, "refs_states.html",
+        request,
+        "refs_states.html",
         {"states": states, "saved": saved, "error": error},
     )
 
@@ -126,8 +133,15 @@ async def refs_state_create(request: Request, country_id: int = Form(0), name: s
     except ValueError as e:
         countries = db_refs.list_countries()
         return templates.TemplateResponse(
-            request, "refs_state_form.html",
-            {"state": None, "countries": countries, "validation_error": str(e), "form_country_id": country_id, "form_name": name},
+            request,
+            "refs_state_form.html",
+            {
+                "state": None,
+                "countries": countries,
+                "validation_error": str(e),
+                "form_country_id": country_id,
+                "form_name": name,
+            },
         )
 
 
@@ -143,7 +157,9 @@ async def refs_state_edit(request: Request, state_id: int):
 
 
 @router.post("/refs/states/{state_id}")
-async def refs_state_update(request: Request, state_id: int, country_id: int = Form(0), name: str = Form("")):
+async def refs_state_update(
+    request: Request, state_id: int, country_id: int = Form(0), name: str = Form("")
+):
     try:
         db_refs.update_state(state_id, country_id, name)
         return RedirectResponse("/refs/states?saved=1", status_code=302)
@@ -153,8 +169,13 @@ async def refs_state_update(request: Request, state_id: int, country_id: int = F
             raise HTTPException(status_code=404)
         countries = db_refs.list_countries()
         return templates.TemplateResponse(
-            request, "refs_state_form.html",
-            {"state": {**state, "country_id": country_id, "name": name}, "countries": countries, "validation_error": str(e)},
+            request,
+            "refs_state_form.html",
+            {
+                "state": {**state, "country_id": country_id, "name": name},
+                "countries": countries,
+                "validation_error": str(e),
+            },
         )
 
 
@@ -169,13 +190,15 @@ async def refs_state_delete(state_id: int):
 
 # ---------- Levels ----------
 
+
 @router.get("/refs/levels", response_class=HTMLResponse)
 async def refs_levels_list(request: Request):
     saved = request.query_params.get("saved") == "1"
     error = request.query_params.get("error") or None
     levels = db_refs.list_levels()
     return templates.TemplateResponse(
-        request, "refs_levels.html",
+        request,
+        "refs_levels.html",
         {"levels": levels, "saved": saved, "error": error},
     )
 
@@ -192,7 +215,8 @@ async def refs_level_create(request: Request, name: str = Form("")):
         return RedirectResponse("/refs/levels?saved=1", status_code=302)
     except ValueError as e:
         return templates.TemplateResponse(
-            request, "refs_level_form.html",
+            request,
+            "refs_level_form.html",
             {"level": {"name": name}, "validation_error": str(e)},
         )
 
@@ -215,7 +239,8 @@ async def refs_level_update(request: Request, level_id: int, name: str = Form(""
         if not level:
             raise HTTPException(status_code=404)
         return templates.TemplateResponse(
-            request, "refs_level_form.html",
+            request,
+            "refs_level_form.html",
             {"level": {**level, "name": name}, "validation_error": str(e)},
         )
 
@@ -231,13 +256,15 @@ async def refs_level_delete(level_id: int):
 
 # ---------- Branches ----------
 
+
 @router.get("/refs/branches", response_class=HTMLResponse)
 async def refs_branches_list(request: Request):
     saved = request.query_params.get("saved") == "1"
     error = request.query_params.get("error") or None
     branches = db_refs.list_branches()
     return templates.TemplateResponse(
-        request, "refs_branches.html",
+        request,
+        "refs_branches.html",
         {"branches": branches, "saved": saved, "error": error},
     )
 
@@ -254,7 +281,8 @@ async def refs_branch_create(request: Request, name: str = Form("")):
         return RedirectResponse("/refs/branches?saved=1", status_code=302)
     except ValueError as e:
         return templates.TemplateResponse(
-            request, "refs_branch_form.html",
+            request,
+            "refs_branch_form.html",
             {"branch": {"name": name}, "validation_error": str(e)},
         )
 
@@ -277,7 +305,8 @@ async def refs_branch_update(request: Request, branch_id: int, name: str = Form(
         if not branch:
             raise HTTPException(status_code=404)
         return templates.TemplateResponse(
-            request, "refs_branch_form.html",
+            request,
+            "refs_branch_form.html",
             {"branch": {**branch, "name": name}, "validation_error": str(e)},
         )
 
@@ -293,13 +322,15 @@ async def refs_branch_delete(branch_id: int):
 
 # ---------- Cities ----------
 
+
 @router.get("/refs/cities", response_class=HTMLResponse)
 async def refs_cities_list(request: Request):
     saved = request.query_params.get("saved") == "1"
     error = request.query_params.get("error") or None
     cities = db_refs.list_cities_with_country_state()
     return templates.TemplateResponse(
-        request, "refs_cities.html",
+        request,
+        "refs_cities.html",
         {"cities": cities, "saved": saved, "error": error},
     )
 
@@ -323,8 +354,17 @@ async def refs_city_create(request: Request, state_id: int = Form(0), name: str 
         form_country_id = state_row.get("country_id") if state_row else None
         states = db_refs.list_states(form_country_id) if form_country_id else []
         return templates.TemplateResponse(
-            request, "refs_city_form.html",
-            {"city": None, "states": states, "countries": countries, "validation_error": str(e), "form_state_id": state_id, "form_name": name, "form_country_id": form_country_id},
+            request,
+            "refs_city_form.html",
+            {
+                "city": None,
+                "states": states,
+                "countries": countries,
+                "validation_error": str(e),
+                "form_state_id": state_id,
+                "form_name": name,
+                "form_country_id": form_country_id,
+            },
         )
 
 
@@ -338,12 +378,21 @@ async def refs_city_edit(request: Request, city_id: int):
     states = db_refs.list_states(form_country_id) if form_country_id else []
     countries = db_refs.list_countries()
     return templates.TemplateResponse(
-        request, "refs_city_form.html", {"city": city, "states": states, "countries": countries, "form_country_id": form_country_id}
+        request,
+        "refs_city_form.html",
+        {
+            "city": city,
+            "states": states,
+            "countries": countries,
+            "form_country_id": form_country_id,
+        },
     )
 
 
 @router.post("/refs/cities/{city_id}")
-async def refs_city_update(request: Request, city_id: int, state_id: int = Form(0), name: str = Form("")):
+async def refs_city_update(
+    request: Request, city_id: int, state_id: int = Form(0), name: str = Form("")
+):
     try:
         db_refs.update_city(city_id, state_id, name)
         return RedirectResponse("/refs/cities?saved=1", status_code=302)
@@ -356,8 +405,15 @@ async def refs_city_update(request: Request, city_id: int, state_id: int = Form(
         states = db_refs.list_states(form_country_id) if form_country_id else []
         countries = db_refs.list_countries()
         return templates.TemplateResponse(
-            request, "refs_city_form.html",
-            {"city": {**city, "state_id": state_id, "name": name}, "states": states, "countries": countries, "form_country_id": form_country_id, "validation_error": str(e)},
+            request,
+            "refs_city_form.html",
+            {
+                "city": {**city, "state_id": state_id, "name": name},
+                "states": states,
+                "countries": countries,
+                "form_country_id": form_country_id,
+                "validation_error": str(e),
+            },
         )
 
 
@@ -372,13 +428,15 @@ async def refs_city_delete(city_id: int):
 
 # ---------- Office categories ----------
 
+
 @router.get("/refs/office-categories", response_class=HTMLResponse)
 async def refs_office_categories_list(request: Request):
     saved = request.query_params.get("saved") == "1"
     error = request.query_params.get("error") or None
     categories = db_office_category.list_office_categories()
     return templates.TemplateResponse(
-        request, "refs_office_categories.html",
+        request,
+        "refs_office_categories.html",
         {"categories": categories, "saved": saved, "error": error},
     )
 
@@ -389,7 +447,8 @@ async def refs_office_category_new(request: Request):
     levels = db_refs.list_levels()
     branches = db_refs.list_branches()
     return templates.TemplateResponse(
-        request, "refs_office_category_form.html",
+        request,
+        "refs_office_category_form.html",
         {"category": None, "countries": countries, "levels": levels, "branches": branches},
     )
 
@@ -409,7 +468,8 @@ async def refs_office_category_create(request: Request):
         levels = db_refs.list_levels()
         branches = db_refs.list_branches()
         return templates.TemplateResponse(
-            request, "refs_office_category_form.html",
+            request,
+            "refs_office_category_form.html",
             {
                 "category": None,
                 "countries": countries,
@@ -433,7 +493,8 @@ async def refs_office_category_edit(request: Request, category_id: int):
     levels = db_refs.list_levels()
     branches = db_refs.list_branches()
     return templates.TemplateResponse(
-        request, "refs_office_category_form.html",
+        request,
+        "refs_office_category_form.html",
         {"category": category, "countries": countries, "levels": levels, "branches": branches},
     )
 
@@ -446,7 +507,9 @@ async def refs_office_category_update(request: Request, category_id: int):
     level_ids = _form_ids(form, "level_ids")
     branch_ids = _form_ids(form, "branch_ids")
     try:
-        updated = db_office_category.update_office_category(category_id, name, country_ids, level_ids, branch_ids)
+        updated = db_office_category.update_office_category(
+            category_id, name, country_ids, level_ids, branch_ids
+        )
         if not updated:
             raise HTTPException(status_code=404)
         return RedirectResponse("/refs/office-categories?saved=1", status_code=302)
@@ -454,12 +517,19 @@ async def refs_office_category_update(request: Request, category_id: int):
         category = db_office_category.get_office_category(category_id)
         if not category:
             raise HTTPException(status_code=404)
-        category = {**category, "name": name, "country_ids": country_ids, "level_ids": level_ids, "branch_ids": branch_ids}
+        category = {
+            **category,
+            "name": name,
+            "country_ids": country_ids,
+            "level_ids": level_ids,
+            "branch_ids": branch_ids,
+        }
         countries = db_refs.list_countries()
         levels = db_refs.list_levels()
         branches = db_refs.list_branches()
         return templates.TemplateResponse(
-            request, "refs_office_category_form.html",
+            request,
+            "refs_office_category_form.html",
             {
                 "category": category,
                 "countries": countries,
@@ -481,13 +551,15 @@ async def refs_office_category_delete(category_id: int):
 
 # ---------- Infobox role key filters ----------
 
+
 @router.get("/refs/infobox-role-key-filters", response_class=HTMLResponse)
 async def refs_infobox_role_key_filters_list(request: Request):
     saved = request.query_params.get("saved") == "1"
     error = request.query_params.get("error") or None
     filters = db_infobox_role_key_filter.list_infobox_role_key_filters()
     return templates.TemplateResponse(
-        request, "refs_infobox_role_key_filters.html",
+        request,
+        "refs_infobox_role_key_filters.html",
         {"filters": filters, "saved": saved, "error": error},
     )
 
@@ -498,7 +570,8 @@ async def refs_infobox_role_key_filter_new(request: Request):
     levels = db_refs.list_levels()
     branches = db_refs.list_branches()
     return templates.TemplateResponse(
-        request, "refs_infobox_role_key_filter_form.html",
+        request,
+        "refs_infobox_role_key_filter_form.html",
         {"filter_obj": None, "countries": countries, "levels": levels, "branches": branches},
     )
 
@@ -512,14 +585,17 @@ async def refs_infobox_role_key_filter_create(request: Request):
     level_ids = _form_ids(form, "level_ids")
     branch_ids = _form_ids(form, "branch_ids")
     try:
-        db_infobox_role_key_filter.create_infobox_role_key_filter(name, role_key, country_ids, level_ids, branch_ids)
+        db_infobox_role_key_filter.create_infobox_role_key_filter(
+            name, role_key, country_ids, level_ids, branch_ids
+        )
         return RedirectResponse("/refs/infobox-role-key-filters?saved=1", status_code=302)
     except ValueError as e:
         countries = db_refs.list_countries()
         levels = db_refs.list_levels()
         branches = db_refs.list_branches()
         return templates.TemplateResponse(
-            request, "refs_infobox_role_key_filter_form.html",
+            request,
+            "refs_infobox_role_key_filter_form.html",
             {
                 "filter_obj": None,
                 "countries": countries,
@@ -544,7 +620,8 @@ async def refs_infobox_role_key_filter_edit(request: Request, filter_id: int):
     levels = db_refs.list_levels()
     branches = db_refs.list_branches()
     return templates.TemplateResponse(
-        request, "refs_infobox_role_key_filter_form.html",
+        request,
+        "refs_infobox_role_key_filter_form.html",
         {"filter_obj": filter_obj, "countries": countries, "levels": levels, "branches": branches},
     )
 
@@ -580,7 +657,8 @@ async def refs_infobox_role_key_filter_update(request: Request, filter_id: int):
         levels = db_refs.list_levels()
         branches = db_refs.list_branches()
         return templates.TemplateResponse(
-            request, "refs_infobox_role_key_filter_form.html",
+            request,
+            "refs_infobox_role_key_filter_form.html",
             {
                 "filter_obj": filter_obj,
                 "countries": countries,
@@ -598,6 +676,7 @@ async def refs_infobox_role_key_filter_delete(filter_id: int):
 
 
 # ---------- Reference data dropdown API endpoints ----------
+
 
 @router.get("/api/countries")
 async def api_countries():

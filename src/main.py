@@ -45,10 +45,25 @@ from src.db import office_terms as db_office_terms
 from src.db import reports as db_reports
 from src.db import test_scripts as db_test_scripts
 from src.db.bulk_import import bulk_import_offices_from_csv, bulk_import_parties_from_csv
-from src.scraper.runner import run_with_db, preview_with_config, parse_full_table_for_export, find_best_matching_table_for_existing_terms
-from src.scraper.config_test import test_office_config, get_raw_table_preview, get_all_tables_preview, get_table_html, get_table_header_from_html
+from src.scraper.runner import (
+    run_with_db,
+    preview_with_config,
+    parse_full_table_for_export,
+    find_best_matching_table_for_existing_terms,
+)
+from src.scraper.config_test import (
+    test_office_config,
+    get_raw_table_preview,
+    get_all_tables_preview,
+    get_table_html,
+    get_table_header_from_html,
+)
 from src.scraper.test_script_runner import run_test_script, run_test_script_from_html
-from src.scraper.wiki_fetch import WIKIPEDIA_REQUEST_HEADERS, wiki_url_to_rest_html_url, normalize_wiki_url
+from src.scraper.wiki_fetch import (
+    WIKIPEDIA_REQUEST_HEADERS,
+    wiki_url_to_rest_html_url,
+    normalize_wiki_url,
+)
 from src.routers import refs as refs_router
 from src.routers import parties as parties_router
 from src.routers import data as data_router
@@ -61,12 +76,14 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from src.routers._deps import templates
 from src.scheduled_tasks import run_daily_delta
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     try:
         init_db()
     except Exception as e:
         import traceback
+
         traceback.print_exc()
         raise RuntimeError(f"Database startup failed: {e}") from e
     _start_datasette()
@@ -121,7 +138,9 @@ async def add_security_headers(request: Request, call_next):
 
 # SessionMiddleware must be added AFTER require_login so it is outermost and
 # populates request.session before require_login runs.
-app.add_middleware(SessionMiddleware, secret_key=os.environ.get("SECRET_KEY", "dev-only-insecure-key"))
+app.add_middleware(
+    SessionMiddleware, secret_key=os.environ.get("SECRET_KEY", "dev-only-insecure-key")
+)
 
 
 @app.get("/login", response_class=HTMLResponse)
@@ -131,7 +150,11 @@ async def login_page(request: Request):
 
 @app.get("/auth/google")
 async def auth_google(request: Request):
-    redirect_uri = (_APP_BASE_URL.rstrip("/") + "/auth/google/callback") if _APP_BASE_URL else str(request.url_for("auth_google_callback"))
+    redirect_uri = (
+        (_APP_BASE_URL.rstrip("/") + "/auth/google/callback")
+        if _APP_BASE_URL
+        else str(request.url_for("auth_google_callback"))
+    )
     return await _oauth.google.authorize_redirect(request, redirect_uri)
 
 
@@ -140,7 +163,9 @@ async def auth_google_callback(request: Request):
     try:
         token = await _oauth.google.authorize_access_token(request)
     except Exception:
-        return HTMLResponse("<h2>Authentication failed. <a href='/login'>Try again</a>.</h2>", status_code=400)
+        return HTMLResponse(
+            "<h2>Authentication failed. <a href='/login'>Try again</a>.</h2>", status_code=400
+        )
     user_info = token.get("userinfo") or {}
     email = user_info.get("email", "")
     if not email or email.lower() != _ALLOWED_EMAIL.lower():
@@ -179,7 +204,6 @@ app.include_router(offices_router.router)
 PROCESS_TYPES = ["run", "preview_all"]
 
 
-
 # ---------- Datasette DB explorer (read-only proxy) ----------
 
 _DATASETTE_PORT = 8001
@@ -187,9 +211,14 @@ _datasette_proc: "subprocess.Popen | None" = None
 
 # Headers that must not be forwarded from the upstream proxy response
 _PROXY_SKIP_HEADERS = {
-    "transfer-encoding", "connection", "keep-alive",
-    "proxy-authenticate", "proxy-authorization",
-    "te", "trailers", "upgrade",
+    "transfer-encoding",
+    "connection",
+    "keep-alive",
+    "proxy-authenticate",
+    "proxy-authorization",
+    "te",
+    "trailers",
+    "upgrade",
     "content-encoding",  # httpx decompresses automatically; forwarding this would break content
 }
 
@@ -240,16 +269,27 @@ def _start_datasette() -> None:
     """Start Datasette as a read-only subprocess bound to localhost only."""
     global _datasette_proc
     from src.db.connection import get_db_path
+
     db_path = get_db_path()
     try:
         _datasette_proc = subprocess.Popen(
             [
-                sys.executable, "-m", "datasette", "serve",
-                "--host", "127.0.0.1",
-                "--port", str(_DATASETTE_PORT),
-                "--immutable", str(db_path),
-                "--setting", "base_url", "/db/",
-                "--setting", "sql_time_limit_ms", "600000",  # 10-minute query hard limit
+                sys.executable,
+                "-m",
+                "datasette",
+                "serve",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                str(_DATASETTE_PORT),
+                "--immutable",
+                str(db_path),
+                "--setting",
+                "base_url",
+                "/db/",
+                "--setting",
+                "sql_time_limit_ms",
+                "600000",  # 10-minute query hard limit
             ],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
