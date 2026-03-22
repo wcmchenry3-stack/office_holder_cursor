@@ -29,6 +29,7 @@ from src.db.date_utils import normalize_date
 from src.scraper.logger import HTTP_USER_AGENT, Logger
 from src.scraper.config_test import get_raw_table_preview
 from src.scraper.table_cache import get_table_html_cached
+from src.scraper.run_cache import RunPageCache
 from src.scraper.wiki_fetch import normalize_wiki_url
 
 from src.scraper import parse_core
@@ -97,6 +98,7 @@ def _parse_office_html(
     progress_callback: Callable[[str, int, int, str, dict], None] | None = None,
     progress_extra: dict[str, Any] | None = None,
     max_rows: int | None = None,
+    run_cache: Any = None,
 ) -> list[dict[str, Any]]:
     """Single code path: build config from office_row and run parser. Returns list of row dicts (parser output).
     When cached_table_html is provided, use it as the page content and table_no=1 (single table).
@@ -128,6 +130,7 @@ def _parse_office_html(
         party_list,
         progress_callback=infobox_progress if progress_callback else None,
         max_rows=max_rows,
+        run_cache=run_cache,
     )
 
 
@@ -587,6 +590,8 @@ class _RunConfig:
     cancel_check: Callable[[], bool] | None
     logger: Any
     report: Callable
+    run_cache: Any = None
+    bio_batch: int | None = None
 
 
 @dataclass
@@ -660,7 +665,11 @@ def _process_single_office(
 
     use_full_page = bool(office_row.get("use_full_page_for_table"))
     cache_result = get_table_html_cached(
-        url.strip(), table_no, refresh=cfg.refresh_table_cache, use_full_page=use_full_page
+        url.strip(),
+        table_no,
+        refresh=cfg.refresh_table_cache,
+        use_full_page=use_full_page,
+        run_cache=cfg.run_cache,
     )
     if "error" in cache_result:
         cfg.logger.log(f"Failed to get table for {url}: {cache_result['error']}", True)
@@ -711,6 +720,7 @@ def _process_single_office(
             cached_table_html=cached_table_html,
             progress_callback=None,
             max_rows=cfg.max_rows_per_table,
+            run_cache=cfg.run_cache,
         )
         if len(table_data_pre) == 0:
             cfg.logger.log(
@@ -813,6 +823,7 @@ def _process_single_office(
         cached_table_html=cached_table_html,
         progress_callback=cfg.report,
         progress_extra=table_progress_extra,
+        run_cache=cfg.run_cache,
     )
     if cfg.max_rows_per_table is not None and cfg.max_rows_per_table >= 0:
         table_data = table_data[: cfg.max_rows_per_table]
@@ -1011,6 +1022,23 @@ def _build_result_dict(
     return result
 
 
+def _cleanup_disk_cache(max_age_days: int = 30) -> int:
+    """Delete wiki_cache/*.json.gz files not modified in max_age_days days. Returns count deleted."""
+    import time as _time
+    from src.scraper.table_cache import _cache_dir
+
+    cutoff = _time.time() - max_age_days * 86400
+    deleted = 0
+    for f in _cache_dir().glob("*.json.gz"):
+        try:
+            if f.stat().st_mtime < cutoff:
+                f.unlink()
+                deleted += 1
+        except OSError:
+            pass
+    return deleted
+
+
 def run_with_db(
     run_mode: str = "delta",  # full | delta | live_person | single_bio | bios_only
     run_bio: bool = False,
@@ -1026,6 +1054,7 @@ def run_with_db(
     cancel_check: Callable[[], bool] | None = None,
     force_replace_office_ids: list[int] | None = None,
     force_overwrite: bool = False,
+    bio_batch: int | None = None,
 ) -> dict[str, Any]:
     """
     Main entry: load offices and party list from DB, run scraper, write to DB (unless dry_run/test_run).
@@ -1326,6 +1355,7 @@ def run_with_db(
     living_errors: list[dict[str, str]] = []
     bio_cancelled = False
 
+    run_cache = RunPageCache()
     run_cfg = _RunConfig(
         run_mode=run_mode,
         refresh_table_cache=refresh_table_cache,
@@ -1339,6 +1369,8 @@ def run_with_db(
         cancel_check=cancel_check,
         logger=logger,
         report=report,
+        run_cache=run_cache,
+        bio_batch=bio_batch,
     )
 
     for idx, office_row in enumerate(offices):
@@ -1689,7 +1721,10 @@ def run_with_db(
 
             # Optional second pass: update living individuals (death_date null). Full refresh of bio fields.
             if run_bio:
-                to_fetch_living = list(db_individuals.get_living_individual_wiki_urls())
+                if bio_batch is not None:
+                    to_fetch_living = db_individuals.get_living_individuals_for_batch(bio_batch)
+                else:
+                    to_fetch_living = []
                 total_living = len(to_fetch_living)
                 if total_living > 0:
                     logger.log(
@@ -1718,10 +1753,16 @@ def run_with_db(
                         )
                         if wiki_url in living_fetched_this_run:
                             continue
-                        if liv_idx > 0:
+                        # Skip sleep when run_cache already has the page (no HTTP needed)
+                        _liv_fetch_url = normalize_wiki_url(wiki_url) or wiki_url
+                        from src.scraper.wiki_fetch import wiki_url_to_rest_html_url as _w2r
+
+                        _liv_fetch_url = _w2r(_liv_fetch_url) or _liv_fetch_url
+                        _cache_hit = run_cache.get(_liv_fetch_url) is not None
+                        if liv_idx > 0 and not _cache_hit:
                             time.sleep(1.5)
                         try:
-                            bio_info = biography.biography_extract(wiki_url)
+                            bio_info = biography.biography_extract(wiki_url, run_cache=run_cache)
                             living_fetched_this_run.add(wiki_url)
                             if bio_info:
                                 bio_info["wiki_url"] = wiki_url
@@ -1732,6 +1773,7 @@ def run_with_db(
                                 bio_info["birth_date_imprecise"] = bd_imp
                                 bio_info["death_date_imprecise"] = dd_imp
                                 db_individuals.upsert_individual(bio_info)
+                                db_individuals.mark_bio_refreshed(wiki_url)
                                 living_success_count += 1
                             else:
                                 living_error_count += 1

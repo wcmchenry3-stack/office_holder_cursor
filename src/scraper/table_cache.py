@@ -44,19 +44,40 @@ def _key_lock(key: str) -> threading.Lock:
         return _key_locks[key]
 
 
-def _fetch_table_from_url(url: str, table_no: int, use_full_page: bool = False) -> dict:
+def _fetch_table_from_url(
+    url: str, table_no: int, use_full_page: bool = False, run_cache=None
+) -> dict:
     """Fetch page, extract table at table_no. Returns dict with table_no, num_tables, html or error.
     Default: use Wikipedia REST API (content-only). If use_full_page=True, use the original page URL
-    so table indices match the full Wikipedia page (nav/sidebar included)."""
+    so table indices match the full Wikipedia page (nav/sidebar included).
+    run_cache: optional RunPageCache for within-run dedup."""
     if use_full_page:
         fetch_url = url
     else:
         fetch_url = wiki_url_to_rest_html_url(url) or url
+
+    # Check run-level in-memory cache before HTTP
+    if run_cache is not None:
+        cached_html = run_cache.get(fetch_url)
+        if cached_html is not None:
+            soup = BeautifulSoup(cached_html, "html.parser")
+            tables = soup.find_all("table")
+            num_tables = len(tables)
+            if not (1 <= table_no <= num_tables):
+                return {"error": f"Table {table_no} not found (page has {num_tables} tables)"}
+            return {
+                "table_no": table_no,
+                "num_tables": num_tables,
+                "html": str(tables[table_no - 1]),
+            }
+
     try:
         resp = requests.get(fetch_url, headers=WIKIPEDIA_REQUEST_HEADERS, timeout=TIMEOUT)
         if resp.status_code != 200:
             return {"error": f"HTTP {resp.status_code}"}
         html_content = resp.text
+        if run_cache is not None:
+            run_cache.set(fetch_url, html_content)
     except requests.RequestException as e:
         return {"error": str(e)}
     soup = BeautifulSoup(html_content, "html.parser")
@@ -69,7 +90,11 @@ def _fetch_table_from_url(url: str, table_no: int, use_full_page: bool = False) 
 
 
 def get_table_html_cached(
-    url: str, table_no: int = 1, refresh: bool = False, use_full_page: bool = False
+    url: str,
+    table_no: int = 1,
+    refresh: bool = False,
+    use_full_page: bool = False,
+    run_cache=None,
 ) -> dict:
     """
     Return table HTML for (url, table_no). Uses local cache unless refresh=True or cache miss.
@@ -159,7 +184,7 @@ def get_table_html_cached(
                     {"key": key, "hypothesisId": "H2"},
                 )
                 # #endregion
-        result = _fetch_table_from_url(url, table_no, use_full_page)
+        result = _fetch_table_from_url(url, table_no, use_full_page, run_cache=run_cache)
         # #region agent log
         _debug_log(
             "table_cache.py:get_table_html_cached:after_fetch",
