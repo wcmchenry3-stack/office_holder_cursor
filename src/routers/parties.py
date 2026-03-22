@@ -22,8 +22,15 @@ async def parties_list(request: Request):
     imported_errors = request.query_params.get("errors")
     imported = request.query_params.get("imported") == "1"
     return templates.TemplateResponse(
-        request, "parties.html",
-        {"parties": parties, "saved": saved, "imported": imported, "imported_count": imported_count, "imported_errors": imported_errors},
+        request,
+        "parties.html",
+        {
+            "parties": parties,
+            "saved": saved,
+            "imported": imported,
+            "imported_count": imported_count,
+            "imported_errors": imported_errors,
+        },
     )
 
 
@@ -40,19 +47,22 @@ async def parties_import(
 ):
     if not csv_file or not csv_file.filename:
         return templates.TemplateResponse(
-            request, "import_parties.html",
+            request,
+            "import_parties.html",
             {"error": "Please choose a CSV file to upload.", "mode": mode},
         )
     if not csv_file.filename.lower().endswith(".csv"):
         return templates.TemplateResponse(
-            request, "import_parties.html",
+            request,
+            "import_parties.html",
             {"error": "File must be a .csv file.", "mode": mode},
         )
     try:
         content = await csv_file.read()
     except Exception as e:
         return templates.TemplateResponse(
-            request, "import_parties.html",
+            request,
+            "import_parties.html",
             {"error": f"Could not read file: {e}", "mode": mode},
         )
     try:
@@ -69,7 +79,8 @@ async def parties_import(
             tmp_path.unlink(missing_ok=True)
     except Exception as e:
         return templates.TemplateResponse(
-            request, "import_parties.html",
+            request,
+            "import_parties.html",
             {"error": str(e), "mode": mode},
         )
 
@@ -77,7 +88,9 @@ async def parties_import(
 @router.get("/parties/new", response_class=HTMLResponse)
 async def party_new(request: Request):
     countries = db_refs.list_countries()
-    return templates.TemplateResponse(request, "party_form.html", {"party": None, "countries": countries})
+    return templates.TemplateResponse(
+        request, "party_form.html", {"party": None, "countries": countries}
+    )
 
 
 @router.post("/parties/new")
@@ -86,7 +99,9 @@ async def party_create(
     party_name: str = Form(""),
     party_link: str = Form(""),
 ):
-    db_parties.create_party({"country_id": country_id, "party_name": party_name, "party_link": party_link})
+    db_parties.create_party(
+        {"country_id": country_id, "party_name": party_name, "party_link": party_link}
+    )
     return RedirectResponse("/parties?saved=1", status_code=302)
 
 
@@ -96,7 +111,9 @@ async def party_edit_page(request: Request, party_id: int):
     if not party:
         raise HTTPException(status_code=404)
     countries = db_refs.list_countries()
-    return templates.TemplateResponse(request, "party_form.html", {"party": party, "countries": countries})
+    return templates.TemplateResponse(
+        request, "party_form.html", {"party": party, "countries": countries}
+    )
 
 
 @router.post("/parties/{party_id}")
@@ -106,7 +123,9 @@ async def party_update(
     party_name: str = Form(""),
     party_link: str = Form(""),
 ):
-    db_parties.update_party(party_id, {"country_id": country_id, "party_name": party_name, "party_link": party_link})
+    db_parties.update_party(
+        party_id, {"country_id": country_id, "party_name": party_name, "party_link": party_link}
+    )
     return RedirectResponse("/parties?saved=1", status_code=302)
 
 

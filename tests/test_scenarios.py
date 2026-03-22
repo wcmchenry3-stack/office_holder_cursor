@@ -22,11 +22,12 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 # Helpers (ported from run_scenarios_test.py)
 # ---------------------------------------------------------------------------
 
+
 def _cache_key(url: str, table_no: int, use_full_page: bool = False) -> str:
     """Match table_cache._cache_key so we write the same key the runner will read."""
-    normalized = (
-        url.strip() + "|" + str(table_no) + "|" + ("1" if use_full_page else "0")
-    ).encode("utf-8")
+    normalized = (url.strip() + "|" + str(table_no) + "|" + ("1" if use_full_page else "0")).encode(
+        "utf-8"
+    )
     return hashlib.sha256(normalized).hexdigest()[:32]
 
 
@@ -65,6 +66,7 @@ def _write_fixture_to_cache(
 # ---------------------------------------------------------------------------
 # Test
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.integration
 def test_full_scraper_scenario(tmp_path, monkeypatch):
@@ -187,9 +189,9 @@ def test_full_scraper_scenario(tmp_path, monkeypatch):
         terms2 = db_office_terms.get_existing_terms_for_office(tc_id)
     finally:
         conn3.close()
-    assert len(terms2) == term_count_after_first_run, (
-        f"Re-run changed term count: {term_count_after_first_run} → {len(terms2)}"
-    )
+    assert (
+        len(terms2) == term_count_after_first_run
+    ), f"Re-run changed term count: {term_count_after_first_run} → {len(terms2)}"
 
     # 9. Scenario 3 — dry-run preview returns expected shape
     result3 = run_with_db(
@@ -202,6 +204,5 @@ def test_full_scraper_scenario(tmp_path, monkeypatch):
     preview = result3.get("preview_rows") or []
     assert preview, "Dry run returned no preview_rows"
     assert any(
-        p.get("Wiki Link") and (p.get("Term Start") or p.get("Term End"))
-        for p in preview[:5]
+        p.get("Wiki Link") and (p.get("Term Start") or p.get("Term End")) for p in preview[:5]
     ), "Preview rows missing expected shape (Wiki Link + Term Start/End)"

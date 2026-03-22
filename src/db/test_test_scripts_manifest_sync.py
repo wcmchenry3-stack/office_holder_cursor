@@ -4,7 +4,6 @@ from pathlib import Path
 
 from src.db import test_scripts as db_test_scripts
 
-
 FIXTURE_REL_PATH = "test_scripts/fixtures/sample_parser_fixture.html"
 
 
@@ -67,7 +66,9 @@ def test_seed_db_from_manifest_if_empty_only_seeds_once(tmp_path: Path):
     try:
         seeded = db_test_scripts.seed_db_from_manifest_if_empty(manifest_path=manifest, conn=conn)
         assert seeded == 1
-        seeded_again = db_test_scripts.seed_db_from_manifest_if_empty(manifest_path=manifest, conn=conn)
+        seeded_again = db_test_scripts.seed_db_from_manifest_if_empty(
+            manifest_path=manifest, conn=conn
+        )
         assert seeded_again == 0
         assert len(db_test_scripts.list_tests(conn=conn)) == 1
     finally:

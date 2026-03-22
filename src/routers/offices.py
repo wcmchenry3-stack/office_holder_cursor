@@ -31,8 +31,19 @@ from src.db import infobox_role_key_filter as db_infobox_role_key_filter
 from src.db import individuals as db_individuals
 from src.db import office_terms as db_office_terms
 from src.db.bulk_import import bulk_import_offices_from_csv
-from src.scraper.runner import run_with_db, preview_with_config, parse_full_table_for_export, find_best_matching_table_for_existing_terms
-from src.scraper.config_test import test_office_config, get_raw_table_preview, get_all_tables_preview, get_table_html, get_table_header_from_html
+from src.scraper.runner import (
+    run_with_db,
+    preview_with_config,
+    parse_full_table_for_export,
+    find_best_matching_table_for_existing_terms,
+)
+from src.scraper.config_test import (
+    test_office_config,
+    get_raw_table_preview,
+    get_all_tables_preview,
+    get_table_html,
+    get_table_header_from_html,
+)
 from src.scraper.test_script_runner import run_test_script, run_test_script_from_html
 from src.scraper.wiki_fetch import normalize_wiki_url
 
@@ -44,7 +55,9 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 _populate_job_store: dict = {}
 _populate_job_lock = threading.Lock()
 
-REVALIDATE_MSG_MISSING_HOLDERS = "New list is missing office holders that were in existing data. Kept existing terms."
+REVALIDATE_MSG_MISSING_HOLDERS = (
+    "New list is missing office holders that were in existing data. Kept existing terms."
+)
 
 
 def _list_return_query(
@@ -73,7 +86,11 @@ def _list_return_query(
         parts.append("enabled=" + str(enabled).strip())
     if limit is not None and str(limit).strip():
         parts.append("limit=" + str(limit).strip())
-    if office_count is not None and str(office_count).strip() and str(office_count).strip() != "all":
+    if (
+        office_count is not None
+        and str(office_count).strip()
+        and str(office_count).strip() != "all"
+    ):
         parts.append("office_count=" + str(office_count).strip())
     return "&".join(parts)
 
@@ -92,13 +109,17 @@ def _validate_level_state_city(level_id, state_id, city_id, branch_id=None) -> N
     if not level_id:
         return
     level_name = (db_refs.get_level_name(int(level_id) if level_id else 0) or "").strip().lower()
-    branch_name = (db_refs.get_branch_name(int(branch_id) if branch_id else 0) or "").strip().lower()
+    branch_name = (
+        (db_refs.get_branch_name(int(branch_id) if branch_id else 0) or "").strip().lower()
+    )
     state_set = state_id is not None and state_id != 0
     city_set = city_id is not None and city_id != 0
     if level_name == "federal":
         if branch_name == "legislative":
             if city_set:
-                raise ValueError("For Federal Legislative level, City must be empty (State is allowed).")
+                raise ValueError(
+                    "For Federal Legislative level, City must be empty (State is allowed)."
+                )
         else:
             if state_set or city_set:
                 raise ValueError("For Federal level, State and City must be empty.")
@@ -116,11 +137,13 @@ def _validate_level_state_city(level_id, state_id, city_id, branch_id=None) -> N
 
 def _form_to_table_config(form, i: int) -> dict:
     """Build one table config dict from form using index i for tc_* getlist."""
+
     def _get(key_flat: str, key_tc: str):
         lst = form.getlist(key_tc)
         if lst and i < len(lst) and lst[i] is not None and str(lst[i]).strip() != "":
             return lst[i]
         return form.get(key_flat) if i == 0 else None
+
     def _int(key_flat: str, key_tc: str, default: int) -> int:
         v = _get(key_flat, key_tc)
         if v is None or v == "":
@@ -129,15 +152,18 @@ def _form_to_table_config(form, i: int) -> dict:
             return int(v)
         except (TypeError, ValueError):
             return default
+
     def _bool(key_flat: str, key_tc: str) -> bool:
         v = _get(key_flat, key_tc)
         return v in (True, "1", 1, "true", "TRUE")
+
     def _term_dates_merged_for_index(f, idx: int, get_fn, bool_fn) -> bool:
         # Per-index name so each table config gets its own value (unchecked checkboxes omit the key).
         v = f.get("tc_term_dates_merged_" + str(idx))
         if v is not None and str(v).strip() != "":
             return str(v).strip().lower() in ("true", "1", "yes")
         return bool_fn("term_dates_merged", "tc_term_dates_merged")
+
     tc_id = _get("tc_id", "tc_id")
     if tc_id is not None and str(tc_id).strip() != "":
         try:
@@ -148,7 +174,11 @@ def _form_to_table_config(form, i: int) -> dict:
         tc_id = None
     enabled_key = "tc_enabled_" + str(tc_id) if tc_id is not None else "tc_enabled_new_" + str(i)
     enabled_val = form.get(enabled_key)
-    enabled = enabled_val == "1" if enabled_val is not None else (_bool("enabled", "tc_enabled") if i == 0 else False)
+    enabled = (
+        enabled_val == "1"
+        if enabled_val is not None
+        else (_bool("enabled", "tc_enabled") if i == 0 else False)
+    )
     date_src = _get("date_source", "tc_date_source") or ""
     dist_mode = _get("district_mode", "tc_district_mode") or "column"
     return {
@@ -167,7 +197,9 @@ def _form_to_table_config(form, i: int) -> dict:
         "find_date_in_infobox": date_src == "find_date_in_infobox",
         "years_only": date_src == "years_only",
         "parse_rowspan": _bool("parse_rowspan", "tc_parse_rowspan"),
-        "consolidate_rowspan_terms": _bool("consolidate_rowspan_terms", "tc_consolidate_rowspan_terms"),
+        "consolidate_rowspan_terms": _bool(
+            "consolidate_rowspan_terms", "tc_consolidate_rowspan_terms"
+        ),
         "rep_link": _bool("rep_link", "tc_rep_link"),
         "party_link": _bool("party_link", "tc_party_link"),
         "enabled": enabled,
@@ -180,11 +212,14 @@ def _form_to_table_config(form, i: int) -> dict:
         "remove_duplicates": _bool("remove_duplicates", "tc_remove_duplicates"),
         "notes": _get("notes", "tc_notes") or "",
         "name": _get("name", "tc_name") or "",
-        "infobox_role_key_filter_id": _validate_infobox_role_key_filter_id(_get("infobox_role_key_filter_id", "tc_infobox_role_key_filter_id")),
+        "infobox_role_key_filter_id": _validate_infobox_role_key_filter_id(
+            _get("infobox_role_key_filter_id", "tc_infobox_role_key_filter_id")
+        ),
     }
 
 
 # ---------- Office config CRUD ----------
+
 
 @router.get("/", response_class=HTMLResponse)
 async def index(request: Request):
@@ -264,14 +299,18 @@ async def offices_list(
         states = db_refs.list_states(filter_country_id) if filter_country_id else []
         nav_ids = ",".join(str(p["first_office_id"]) for p in pages if p.get("first_office_id"))
         list_return_query = _list_return_query(
-            country_id=cid, state_id=sid, level_id=lid, branch_id=bid,
+            country_id=cid,
+            state_id=sid,
+            level_id=lid,
+            branch_id=bid,
             office_category_id=ocid,
             enabled=enabled.strip() if enabled else None,
             limit=limit.strip() if limit else None,
             office_count=office_count_val if office_count_val != "all" else None,
         )
         return templates.TemplateResponse(
-            request, "offices.html",
+            request,
+            "offices.html",
             {
                 "page_search_view": True,
                 "pages": pages,
@@ -306,7 +345,8 @@ async def offices_list(
     for o in offices:
         o["terms_count"] = counts.get(o["id"], 0)
     return templates.TemplateResponse(
-        request, "offices.html",
+        request,
+        "offices.html",
         {
             "page_search_view": False,
             "offices": offices,
@@ -328,8 +368,20 @@ async def office_new(request: Request):
     levels = db_refs.list_levels()
     branches = db_refs.list_branches()
     return templates.TemplateResponse(
-        request, "page_form.html",
-        {"office": None, "countries": countries, "levels": levels, "branches": branches, "states": [], "nav_ids": "", "nav_prev_id": None, "nav_next_id": None, "terms_count": 0, "form_template": "page_form"},
+        request,
+        "page_form.html",
+        {
+            "office": None,
+            "countries": countries,
+            "levels": levels,
+            "branches": branches,
+            "states": [],
+            "nav_ids": "",
+            "nav_prev_id": None,
+            "nav_next_id": None,
+            "terms_count": 0,
+            "form_template": "page_form",
+        },
     )
 
 
@@ -337,14 +389,27 @@ async def office_new(request: Request):
 async def office_create(request: Request):
     form = await request.form()
     action = form.get("action", "save_and_close")
-    alt_links = [v.strip() for v in form.getlist("alt_links") if v and isinstance(v, str) and v.strip()]
+    alt_links = [
+        v.strip() for v in form.getlist("alt_links") if v and isinstance(v, str) and v.strip()
+    ]
     alt_link_include_main = form.get("alt_link_include_main") == "1"
     data = {
-        "country_id": int(form.get("country_id") or 0), "state_id": int(form.get("state_id") or 0) or None, "city_id": int(form.get("city_id") or 0) or None, "level_id": int(form.get("level_id") or 0) or None, "branch_id": int(form.get("branch_id") or 0) or None,
-        "department": (form.get("department") or "").strip(), "name": (form.get("name") or "").strip(), "enabled": form.get("enabled") == "1", "notes": (form.get("notes") or "").strip(), "url": (form.get("url") or "").strip(),
-        "table_no": int(form.get("table_no") or 1), "table_rows": int(form.get("table_rows") or 4),
-        "link_column": int(form.get("link_column") or 1), "party_column": int(form.get("party_column") or 0),
-        "term_start_column": int(form.get("term_start_column") or 4), "term_end_column": int(form.get("term_end_column") or 5),
+        "country_id": int(form.get("country_id") or 0),
+        "state_id": int(form.get("state_id") or 0) or None,
+        "city_id": int(form.get("city_id") or 0) or None,
+        "level_id": int(form.get("level_id") or 0) or None,
+        "branch_id": int(form.get("branch_id") or 0) or None,
+        "department": (form.get("department") or "").strip(),
+        "name": (form.get("name") or "").strip(),
+        "enabled": form.get("enabled") == "1",
+        "notes": (form.get("notes") or "").strip(),
+        "url": (form.get("url") or "").strip(),
+        "table_no": int(form.get("table_no") or 1),
+        "table_rows": int(form.get("table_rows") or 4),
+        "link_column": int(form.get("link_column") or 1),
+        "party_column": int(form.get("party_column") or 0),
+        "term_start_column": int(form.get("term_start_column") or 4),
+        "term_end_column": int(form.get("term_end_column") or 5),
         "district_column": int(form.get("district_column") or 0),
         "filter_column": int(form.get("filter_column") or 0),
         "filter_criteria": (form.get("filter_criteria") or "").strip(),
@@ -368,15 +433,20 @@ async def office_create(request: Request):
         "infobox_role_key": (form.get("infobox_role_key") or "").strip(),
     }
     try:
-        _validate_level_state_city(data.get("level_id"), data.get("state_id"), data.get("city_id"), data.get("branch_id"))
+        _validate_level_state_city(
+            data.get("level_id"), data.get("state_id"), data.get("city_id"), data.get("branch_id")
+        )
     except ValueError as e:
         countries = db_refs.list_countries()
         levels = db_refs.list_levels()
         branches = db_refs.list_branches()
-        states = db_refs.list_states(int(data.get("country_id") or 0)) if data.get("country_id") else []
+        states = (
+            db_refs.list_states(int(data.get("country_id") or 0)) if data.get("country_id") else []
+        )
         cities = db_refs.list_cities(data.get("state_id")) if data.get("state_id") else []
         return templates.TemplateResponse(
-            request, "page_form.html",
+            request,
+            "page_form.html",
             {
                 "office": {**data, "alt_links": alt_links},
                 "countries": countries,
@@ -401,12 +471,23 @@ async def office_create(request: Request):
             countries = db_refs.list_countries()
             levels = db_refs.list_levels()
             branches = db_refs.list_branches()
-            states = db_refs.list_states(int(data.get("country_id") or 0)) if data.get("country_id") else []
+            states = (
+                db_refs.list_states(int(data.get("country_id") or 0))
+                if data.get("country_id")
+                else []
+            )
             cities = db_refs.list_cities(data.get("state_id")) if data.get("state_id") else []
-            edit_link = Markup(f'<a href="/offices/{first_office_id}">Edit the existing page</a>') if first_office_id else Markup.escape("Edit the existing page from the office list.")
-            validation_error = Markup("A page with this URL already exists. ") + edit_link + Markup(" instead.")
+            edit_link = (
+                Markup(f'<a href="/offices/{first_office_id}">Edit the existing page</a>')
+                if first_office_id
+                else Markup.escape("Edit the existing page from the office list.")
+            )
+            validation_error = (
+                Markup("A page with this URL already exists. ") + edit_link + Markup(" instead.")
+            )
             return templates.TemplateResponse(
-                request, "page_form.html",
+                request,
+                "page_form.html",
                 {
                     "office": {**data, "alt_links": alt_links},
                     "countries": countries,
@@ -428,10 +509,13 @@ async def office_create(request: Request):
         countries = db_refs.list_countries()
         levels = db_refs.list_levels()
         branches = db_refs.list_branches()
-        states = db_refs.list_states(int(data.get("country_id") or 0)) if data.get("country_id") else []
+        states = (
+            db_refs.list_states(int(data.get("country_id") or 0)) if data.get("country_id") else []
+        )
         cities = db_refs.list_cities(data.get("state_id")) if data.get("state_id") else []
         return templates.TemplateResponse(
-            request, "page_form.html",
+            request,
+            "page_form.html",
             {
                 "office": {**data, "alt_links": alt_links},
                 "countries": countries,
@@ -454,12 +538,17 @@ async def office_create(request: Request):
 
 # ---------- Bulk import (must be before /offices/{office_id} so "import" is not matched as office_id) ----------
 
+
 @router.get("/offices/import", response_class=HTMLResponse)
 async def offices_import_page(request: Request):
     # #region agent log
     try:
         with open(ROOT / ".cursor" / "debug.log", "a", encoding="utf-8") as _f:
-            _f.write('{"id":"import_page","timestamp":' + str(int(__import__("time").time() * 1000)) + ',"location":"main.py:offices_import_page","message":"GET /offices/import handler entered","data":{"path":"/offices/import"},"hypothesisId":"A"}\n')
+            _f.write(
+                '{"id":"import_page","timestamp":'
+                + str(int(__import__("time").time() * 1000))
+                + ',"location":"main.py:offices_import_page","message":"GET /offices/import handler entered","data":{"path":"/offices/import"},"hypothesisId":"A"}\n'
+            )
     except Exception:
         pass
     # #endregion
@@ -474,10 +563,14 @@ async def offices_import(request: Request, csv_path: str = Form("")):
     if not path.is_absolute():
         path = ROOT / path
     if not path.exists():
-        return templates.TemplateResponse(request, "import.html", {"error": "File not found. Check the path and try again."})
+        return templates.TemplateResponse(
+            request, "import.html", {"error": "File not found. Check the path and try again."}
+        )
     try:
         imported, errors = bulk_import_offices_from_csv(path)
-        return RedirectResponse(f"/offices?imported=1&count={imported}&errors={errors}", status_code=302)
+        return RedirectResponse(
+            f"/offices?imported=1&count={imported}&errors={errors}", status_code=302
+        )
     except Exception as e:
         return templates.TemplateResponse(request, "import.html", {"error": str(e)})
 
@@ -578,7 +671,12 @@ async def page_update(request: Request, source_page_id: int):
         "disable_auto_table_update": form.get("disable_auto_table_update") == "1",
     }
     try:
-        _validate_level_state_city(page_data.get("level_id"), page_data.get("state_id"), page_data.get("city_id"), page_data.get("branch_id"))
+        _validate_level_state_city(
+            page_data.get("level_id"),
+            page_data.get("state_id"),
+            page_data.get("city_id"),
+            page_data.get("branch_id"),
+        )
         db_offices.update_page(source_page_id, page_data)
     except ValueError as e:
         offices_on_page = db_offices.list_offices_for_page(source_page_id)
@@ -620,7 +718,9 @@ async def api_page_export_config(source_page_id: int):
     return Response(
         content=json.dumps(data, indent=2),
         media_type="application/json",
-        headers={"Content-Disposition": f'attachment; filename="page-{source_page_id}-config.json"'},
+        headers={
+            "Content-Disposition": f'attachment; filename="page-{source_page_id}-config.json"'
+        },
     )
 
 
@@ -681,8 +781,32 @@ async def office_edit_page(request: Request, office_id: int):
         context_obj.get("country_id"), context_obj.get("level_id"), context_obj.get("branch_id")
     )
     return templates.TemplateResponse(
-        request, "page_form.html",
-        {"office": office, "offices_on_page": offices_on_page, "source_page_id": source_page_id, "page_data": page_data, "countries": countries, "levels": levels, "branches": branches, "states": states, "cities": cities, "nav_ids": nav_ids_raw, "nav_prev_id": nav_prev_id, "nav_next_id": nav_next_id, "nav_current": nav_current, "nav_total": nav_total, "list_return_query": list_return_query, "terms_count": terms_count, "saved": saved, "page_saved": page_saved, "validation_error": validation_error, "form_template": "page_form", "office_categories": office_categories, "infobox_role_key_filters": infobox_role_key_filters},
+        request,
+        "page_form.html",
+        {
+            "office": office,
+            "offices_on_page": offices_on_page,
+            "source_page_id": source_page_id,
+            "page_data": page_data,
+            "countries": countries,
+            "levels": levels,
+            "branches": branches,
+            "states": states,
+            "cities": cities,
+            "nav_ids": nav_ids_raw,
+            "nav_prev_id": nav_prev_id,
+            "nav_next_id": nav_next_id,
+            "nav_current": nav_current,
+            "nav_total": nav_total,
+            "list_return_query": list_return_query,
+            "terms_count": terms_count,
+            "saved": saved,
+            "page_saved": page_saved,
+            "validation_error": validation_error,
+            "form_template": "page_form",
+            "office_categories": office_categories,
+            "infobox_role_key_filters": infobox_role_key_filters,
+        },
         headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
     )
 
@@ -694,15 +818,28 @@ async def office_update(request: Request, office_id: int):
     office_only = form.get("office_only") == "1"
     nav_ids = (form.get("nav_ids") or "").strip()
     list_return_query = (form.get("list_return_query") or "").strip()
-    alt_links = [v.strip() for v in form.getlist("alt_links") if v and isinstance(v, str) and v.strip()]
+    alt_links = [
+        v.strip() for v in form.getlist("alt_links") if v and isinstance(v, str) and v.strip()
+    ]
     alt_link_include_main = form.get("alt_link_include_main") == "1"
     data = {
-        "country_id": int(form.get("country_id") or 0), "state_id": int(form.get("state_id") or 0) or None, "city_id": int(form.get("city_id") or 0) or None, "level_id": int(form.get("level_id") or 0) or None, "branch_id": int(form.get("branch_id") or 0) or None,
-        "department": (form.get("department") or "").strip(), "name": (form.get("name") or "").strip(), "enabled": form.get("enabled") == "1", "notes": (form.get("notes") or "").strip(), "url": (form.get("url") or "").strip(),
+        "country_id": int(form.get("country_id") or 0),
+        "state_id": int(form.get("state_id") or 0) or None,
+        "city_id": int(form.get("city_id") or 0) or None,
+        "level_id": int(form.get("level_id") or 0) or None,
+        "branch_id": int(form.get("branch_id") or 0) or None,
+        "department": (form.get("department") or "").strip(),
+        "name": (form.get("name") or "").strip(),
+        "enabled": form.get("enabled") == "1",
+        "notes": (form.get("notes") or "").strip(),
+        "url": (form.get("url") or "").strip(),
         "office_category_id": form.get("office_category_id") or None,
-        "table_no": int(form.get("table_no") or 1), "table_rows": int(form.get("table_rows") or 4),
-        "link_column": int(form.get("link_column") or 1), "party_column": int(form.get("party_column") or 0),
-        "term_start_column": int(form.get("term_start_column") or 4), "term_end_column": int(form.get("term_end_column") or 5),
+        "table_no": int(form.get("table_no") or 1),
+        "table_rows": int(form.get("table_rows") or 4),
+        "link_column": int(form.get("link_column") or 1),
+        "party_column": int(form.get("party_column") or 0),
+        "term_start_column": int(form.get("term_start_column") or 4),
+        "term_end_column": int(form.get("term_end_column") or 5),
         "district_column": int(form.get("district_column") or 0),
         "filter_column": int(form.get("filter_column") or 0),
         "filter_criteria": (form.get("filter_criteria") or "").strip(),
@@ -723,7 +860,9 @@ async def office_update(request: Request, office_id: int):
         "district_at_large": (form.get("district_mode") or "column") == "at_large",
         "ignore_non_links": form.get("ignore_non_links") == "1",
         "remove_duplicates": form.get("remove_duplicates") == "1",
-        "infobox_role_key_filter_id": _validate_infobox_role_key_filter_id(form.get("infobox_role_key_filter_id")),
+        "infobox_role_key_filter_id": _validate_infobox_role_key_filter_id(
+            form.get("infobox_role_key_filter_id")
+        ),
     }
     tc_ids = form.getlist("tc_id")
     tc_table_nos = form.getlist("tc_table_no")
@@ -732,7 +871,9 @@ async def office_update(request: Request, office_id: int):
         data["table_configs"] = [_form_to_table_config(form, i) for i in range(n)]
     save_all = request.headers.get("X-Save-All") == "1"
     try:
-        _validate_level_state_city(data.get("level_id"), data.get("state_id"), data.get("city_id"), data.get("branch_id"))
+        _validate_level_state_city(
+            data.get("level_id"), data.get("state_id"), data.get("city_id"), data.get("branch_id")
+        )
         updated = db_offices.update_office(office_id, data, office_only=office_only)
         if not updated:
             raise ValueError("Save failed: office was not updated")
@@ -778,7 +919,9 @@ async def office_update(request: Request, office_id: int):
             if expected_val != actual_val:
                 mismatches.append(f"table {tno}: expected {expected_val!r}, got {actual_val!r}")
         if mismatches:
-            raise ValueError("Save verification failed for infobox_role_key_filter_id: " + "; ".join(mismatches))
+            raise ValueError(
+                "Save verification failed for infobox_role_key_filter_id: " + "; ".join(mismatches)
+            )
     except ValueError as e:
         q = "?error=" + quote(str(e))
         if nav_ids:
@@ -936,7 +1079,9 @@ async def office_duplicate(office_id: int):
     try:
         new_id = db_offices.create_office(data)
     except ValueError as e:
-        return RedirectResponse("/offices/" + str(office_id) + "?error=" + quote(str(e)), status_code=302)
+        return RedirectResponse(
+            "/offices/" + str(office_id) + "?error=" + quote(str(e)), status_code=302
+        )
     return RedirectResponse(f"/offices/{new_id}?saved=1", status_code=302)
 
 
@@ -958,27 +1103,35 @@ async def api_office_table_configs(office_id: int, table_no: "int | None" = None
     office = db_offices.get_office(office_id)
     if not office:
         raise HTTPException(status_code=404, detail="Office not found")
-    tcs = office.get("table_configs") if isinstance(office.get("table_configs"), list) and office.get("table_configs") else []
+    tcs = (
+        office.get("table_configs")
+        if isinstance(office.get("table_configs"), list) and office.get("table_configs")
+        else []
+    )
     if not tcs:
-        tcs = [{
-            "id": office.get("id"),
-            "table_no": office.get("table_no"),
-            "infobox_role_key_filter_id": office.get("infobox_role_key_filter_id"),
-            "infobox_role_key": (office.get("infobox_role_key") or "").strip(),
-        }]
+        tcs = [
+            {
+                "id": office.get("id"),
+                "table_no": office.get("table_no"),
+                "infobox_role_key_filter_id": office.get("infobox_role_key_filter_id"),
+                "infobox_role_key": (office.get("infobox_role_key") or "").strip(),
+            }
+        ]
     if table_no is not None:
         tcs = [tc for tc in tcs if int(tc.get("table_no") or 1) == int(table_no)]
     out = []
     for tc in tcs:
-        out.append({
-            "id": tc.get("id"),
-            "table_no": int(tc.get("table_no") or 1),
-            "name": tc.get("name") or "",
-            "enabled": bool(tc.get("enabled")),
-            "find_date_in_infobox": bool(tc.get("find_date_in_infobox")),
-            "infobox_role_key_filter_id": tc.get("infobox_role_key_filter_id"),
-            "infobox_role_key": (tc.get("infobox_role_key") or "").strip(),
-        })
+        out.append(
+            {
+                "id": tc.get("id"),
+                "table_no": int(tc.get("table_no") or 1),
+                "name": tc.get("name") or "",
+                "enabled": bool(tc.get("enabled")),
+                "find_date_in_infobox": bool(tc.get("find_date_in_infobox")),
+                "infobox_role_key_filter_id": tc.get("infobox_role_key_filter_id"),
+                "infobox_role_key": (tc.get("infobox_role_key") or "").strip(),
+            }
+        )
     return JSONResponse({"ok": True, "office_id": office_id, "table_configs": out})
 
 
@@ -1015,33 +1168,48 @@ async def api_office_set_infobox_role_key_filter(office_id: int, request: Reques
         table_config_id = int(table_config_id_raw)
     except (TypeError, ValueError):
         raise HTTPException(status_code=400, detail="table_config_id must be an integer")
-    tcs = office.get("table_configs") if isinstance(office.get("table_configs"), list) and office.get("table_configs") else []
+    tcs = (
+        office.get("table_configs")
+        if isinstance(office.get("table_configs"), list) and office.get("table_configs")
+        else []
+    )
     match_tc = next((tc for tc in tcs if int(tc.get("id") or 0) == table_config_id), None)
     if not match_tc:
-        raise HTTPException(status_code=404, detail=f"No table config {table_config_id} found for office {office_id}")
+        raise HTTPException(
+            status_code=404,
+            detail=f"No table config {table_config_id} found for office {office_id}",
+        )
     try:
-        filter_id = _validate_infobox_role_key_filter_id((body or {}).get("infobox_role_key_filter_id"))
+        filter_id = _validate_infobox_role_key_filter_id(
+            (body or {}).get("infobox_role_key_filter_id")
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
-    updated = db_offices.set_infobox_role_key_by_table_config_id(table_config_id, str(filter_id or ""))
+    updated = db_offices.set_infobox_role_key_by_table_config_id(
+        table_config_id, str(filter_id or "")
+    )
     if not updated:
         raise HTTPException(status_code=404, detail=f"Table config {table_config_id} not found")
     office_after = db_offices.get_office_by_table_config_id(table_config_id)
     if not office_after:
-        raise HTTPException(status_code=404, detail=f"Table config {table_config_id} not found after save")
-    return JSONResponse({
-        "ok": True,
-        "message": "Saved",
-        "office_id": office_id,
-        "table_config": {
-            "id": int(office_after.get("id") or table_config_id),
-            "table_no": int(office_after.get("table_no") or 1),
-            "infobox_role_key_filter_id": office_after.get("infobox_role_key_filter_id"),
-            "infobox_role_key": (office_after.get("infobox_role_key") or "").strip(),
-            "enabled": bool(office_after.get("enabled")),
-            "find_date_in_infobox": bool(office_after.get("find_date_in_infobox")),
-        },
-    })
+        raise HTTPException(
+            status_code=404, detail=f"Table config {table_config_id} not found after save"
+        )
+    return JSONResponse(
+        {
+            "ok": True,
+            "message": "Saved",
+            "office_id": office_id,
+            "table_config": {
+                "id": int(office_after.get("id") or table_config_id),
+                "table_no": int(office_after.get("table_no") or 1),
+                "infobox_role_key_filter_id": office_after.get("infobox_role_key_filter_id"),
+                "infobox_role_key": (office_after.get("infobox_role_key") or "").strip(),
+                "enabled": bool(office_after.get("enabled")),
+                "find_date_in_infobox": bool(office_after.get("find_date_in_infobox")),
+            },
+        }
+    )
 
 
 @router.get("/api/table-configs/{table_config_id}")
@@ -1050,17 +1218,19 @@ async def api_table_config_get(table_config_id: int):
     office = db_offices.get_office_by_table_config_id(table_config_id)
     if not office:
         raise HTTPException(status_code=404, detail=f"Table config {table_config_id} not found")
-    return JSONResponse({
-        "ok": True,
-        "table_config": {
-            "id": int(office.get("id") or table_config_id),
-            "office_details_id": int(office.get("office_details_id") or 0) or None,
-            "table_no": int(office.get("table_no") or 1),
-            "name": office.get("name") or "",
-            "infobox_role_key_filter_id": office.get("infobox_role_key_filter_id"),
-            "infobox_role_key": (office.get("infobox_role_key") or "").strip(),
-        },
-    })
+    return JSONResponse(
+        {
+            "ok": True,
+            "table_config": {
+                "id": int(office.get("id") or table_config_id),
+                "office_details_id": int(office.get("office_details_id") or 0) or None,
+                "table_no": int(office.get("table_no") or 1),
+                "name": office.get("name") or "",
+                "infobox_role_key_filter_id": office.get("infobox_role_key_filter_id"),
+                "infobox_role_key": (office.get("infobox_role_key") or "").strip(),
+            },
+        }
+    )
 
 
 @router.post("/api/table-configs/{table_config_id}/set-infobox-role-key")
@@ -1083,15 +1253,21 @@ async def api_table_config_set_infobox_role_key_filter(table_config_id: int, req
     except Exception:
         body = {}
     try:
-        filter_id = _validate_infobox_role_key_filter_id((body or {}).get("infobox_role_key_filter_id"))
+        filter_id = _validate_infobox_role_key_filter_id(
+            (body or {}).get("infobox_role_key_filter_id")
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
-    updated = db_offices.set_infobox_role_key_by_table_config_id(table_config_id, str(filter_id or ""))
+    updated = db_offices.set_infobox_role_key_by_table_config_id(
+        table_config_id, str(filter_id or "")
+    )
     if not updated:
         raise HTTPException(status_code=404, detail=f"Table config {table_config_id} not found")
     office = db_offices.get_office_by_table_config_id(table_config_id)
     if not office:
-        raise HTTPException(status_code=404, detail=f"Table config {table_config_id} not found after save")
+        raise HTTPException(
+            status_code=404, detail=f"Table config {table_config_id} not found after save"
+        )
     return JSONResponse(
         {
             "ok": True,
@@ -1103,7 +1279,8 @@ async def api_table_config_set_infobox_role_key_filter(table_config_id: int, req
                 "name": office.get("name") or "",
                 "infobox_role_key_filter_id": office.get("infobox_role_key_filter_id"),
                 "infobox_role_key": (office.get("infobox_role_key") or "").strip(),
-            }}
+            },
+        }
     )
 
 
@@ -1120,13 +1297,15 @@ def _populate_job_worker(job_id: str, office_id: int, force_override: bool = Fal
     def progress_callback(phase: str, current: int, total: int, message: str, extra: dict):
         with _populate_job_lock:
             if job_id in _populate_job_store:
-                _populate_job_store[job_id].update({
-                    "phase": phase,
-                    "current": current,
-                    "total": total,
-                    "message": message,
-                    "extra": extra,
-                })
+                _populate_job_store[job_id].update(
+                    {
+                        "phase": phase,
+                        "current": current,
+                        "total": total,
+                        "message": message,
+                        "extra": extra,
+                    }
+                )
 
     def cancel_check() -> bool:
         with _populate_job_lock:
@@ -1166,24 +1345,43 @@ def _populate_job_worker(job_id: str, office_id: int, force_override: bool = Fal
                     "cancelled": True,
                 }
                 return
-        err = result.get("message") or (result.get("error") if not result.get("office_count") else None)
+        err = result.get("message") or (
+            result.get("error") if not result.get("office_count") else None
+        )
         revalidate_failed = result.get("revalidate_failed") and terms_parsed == 0
         revalidate_msg = result.get("revalidate_message")
-        can_force_override = revalidate_failed and REVALIDATE_MSG_MISSING_HOLDERS in (revalidate_msg or "")
-        revalidate_missing_holders = result.get("revalidate_missing_holders")  # full list for "View full list" in new window
+        can_force_override = revalidate_failed and REVALIDATE_MSG_MISSING_HOLDERS in (
+            revalidate_msg or ""
+        )
+        revalidate_missing_holders = result.get(
+            "revalidate_missing_holders"
+        )  # full list for "View full list" in new window
         with _populate_job_lock:
             if job_id in _populate_job_store:
                 _populate_job_store[job_id]["status"] = "complete"
                 if revalidate_failed and revalidate_msg:
-                    res = {"ok": False, "message": revalidate_msg, "can_force_override": can_force_override}
+                    res = {
+                        "ok": False,
+                        "message": revalidate_msg,
+                        "can_force_override": can_force_override,
+                    }
                     if revalidate_missing_holders:
                         res["revalidate_missing_holders"] = revalidate_missing_holders
                     _populate_job_store[job_id]["result"] = res
                 elif err and terms_parsed == 0:
                     _populate_job_store[job_id]["result"] = {"ok": False, "message": err}
                 else:
-                    msg = "Terms reprocessed (%s terms)." % terms_parsed if reprocessed else "Terms populated (%s terms)." % terms_parsed
-                    _populate_job_store[job_id]["result"] = {"ok": True, "message": msg, "terms_parsed": terms_parsed, "reprocessed": reprocessed}
+                    msg = (
+                        "Terms reprocessed (%s terms)." % terms_parsed
+                        if reprocessed
+                        else "Terms populated (%s terms)." % terms_parsed
+                    )
+                    _populate_job_store[job_id]["result"] = {
+                        "ok": True,
+                        "message": msg,
+                        "terms_parsed": terms_parsed,
+                        "reprocessed": reprocessed,
+                    }
     except Exception as e:
         with _populate_job_lock:
             if job_id in _populate_job_store:
@@ -1194,7 +1392,8 @@ def _populate_job_worker(job_id: str, office_id: int, force_override: bool = Fal
 @router.post("/api/offices/{office_id}/populate-terms")
 async def api_office_populate_terms(office_id: int, request: Request):
     """Start populate-terms job. Returns 202 with job_id; poll status endpoint for progress.
-    Optional JSON body: {\"force_override\": true} to replace even when new list is missing existing holders."""
+    Optional JSON body: {\"force_override\": true} to replace even when new list is missing existing holders.
+    """
     office = db_offices.get_office(office_id)
     if not office:
         raise HTTPException(status_code=404, detail="Office not found")
@@ -1277,11 +1476,13 @@ async def api_office_find_matching_table(office_id: int, request: Request):
     search = find_best_matching_table_for_existing_terms(office_row, existing_terms)
     found_table_no = search.get("found_table_no")
     if not found_table_no:
-        return JSONResponse({
-            "ok": False,
-            "message": "No better matching table was found on this page.",
-            "missing_before": search.get("missing_before"),
-        })
+        return JSONResponse(
+            {
+                "ok": False,
+                "message": "No better matching table was found on this page.",
+                "missing_before": search.get("missing_before"),
+            }
+        )
 
     if confirm:
         with get_connection() as conn:
@@ -1290,25 +1491,29 @@ async def api_office_find_matching_table(office_id: int, request: Request):
                 (int(found_table_no), int(target_tc_id)),
             )
             conn.commit()
-        return JSONResponse({
+        return JSONResponse(
+            {
+                "ok": True,
+                "updated": True,
+                "table_no": int(found_table_no),
+                "message": f"Updated table number to {int(found_table_no)}.",
+                "missing_before": search.get("missing_before"),
+                "missing_after": search.get("missing_after"),
+                "missing_after_labels": search.get("missing_labels_after") or [],
+            }
+        )
+
+    return JSONResponse(
+        {
             "ok": True,
-            "updated": True,
+            "updated": False,
             "table_no": int(found_table_no),
-            "message": f"Updated table number to {int(found_table_no)}.",
+            "message": f"Found a better matching table: {int(found_table_no)}. Confirm to use it?",
             "missing_before": search.get("missing_before"),
             "missing_after": search.get("missing_after"),
             "missing_after_labels": search.get("missing_labels_after") or [],
-        })
-
-    return JSONResponse({
-        "ok": True,
-        "updated": False,
-        "table_no": int(found_table_no),
-        "message": f"Found a better matching table: {int(found_table_no)}. Confirm to use it?",
-        "missing_before": search.get("missing_before"),
-        "missing_after": search.get("missing_after"),
-        "missing_after_labels": search.get("missing_labels_after") or [],
-    })
+        }
+    )
 
 
 @router.post("/api/offices/{office_id}/populate-terms/cancel/{job_id}")

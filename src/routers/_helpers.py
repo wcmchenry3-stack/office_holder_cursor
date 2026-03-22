@@ -77,7 +77,15 @@ def _office_draft_from_body(body: dict, *, include_ref_names: bool = False) -> d
         "consolidate_rowspan_terms": body.get("consolidate_rowspan_terms", False),
         "rep_link": body.get("rep_link", False),
         "party_link": body.get("party_link", False),
-        "alt_links": body.get("alt_links") if isinstance(body.get("alt_links"), list) else ([(body.get("alt_link") or "").strip()] if (body.get("alt_link") or "").strip() else []),
+        "alt_links": (
+            body.get("alt_links")
+            if isinstance(body.get("alt_links"), list)
+            else (
+                [(body.get("alt_link") or "").strip()]
+                if (body.get("alt_link") or "").strip()
+                else []
+            )
+        ),
         "alt_link_include_main": body.get("alt_link_include_main", False),
         "use_full_page_for_table": body.get("use_full_page_for_table", False),
         "term_dates_merged": term_dates_merged,
@@ -86,12 +94,14 @@ def _office_draft_from_body(body: dict, *, include_ref_names: bool = False) -> d
         "district_at_large": district_at_large,
         "ignore_non_links": body.get("ignore_non_links") in (True, 1, "1", "true", "TRUE"),
         "remove_duplicates": body.get("remove_duplicates") in (True, 1, "1", "true", "TRUE"),
-        "infobox_role_key_filter_id": _validate_infobox_role_key_filter_id(body.get("infobox_role_key_filter_id")),
+        "infobox_role_key_filter_id": _validate_infobox_role_key_filter_id(
+            body.get("infobox_role_key_filter_id")
+        ),
         "office_table_config_id": int(body.get("office_table_config_id") or 0) or None,
     }
-    draft["infobox_role_key"] = (body.get("infobox_role_key") or "").strip() or _resolve_infobox_role_key_from_filter_id(
-        draft.get("infobox_role_key_filter_id")
-    )
+    draft["infobox_role_key"] = (
+        body.get("infobox_role_key") or ""
+    ).strip() or _resolve_infobox_role_key_from_filter_id(draft.get("infobox_role_key_filter_id"))
     if include_ref_names:
         country_id = int(body.get("country_id") or 0)
         draft["country_name"] = db_refs.get_country_name(country_id)

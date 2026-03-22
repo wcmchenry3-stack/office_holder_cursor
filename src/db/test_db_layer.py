@@ -19,10 +19,10 @@ from src.db import offices as db_offices
 from src.db import office_terms as db_terms
 from src.db.bulk_import import bulk_import_offices_from_csv
 
-
 # ---------------------------------------------------------------------------
 # Country ref tests
 # ---------------------------------------------------------------------------
+
 
 def test_create_country_raises_on_duplicate_name(tmp_db):
     """Creating a country with a duplicate name raises ValueError."""
@@ -46,16 +46,24 @@ def test_delete_country_raises_when_in_use_by_party(tmp_db):
 # Party resolution tests
 # ---------------------------------------------------------------------------
 
+
 def test_resolve_party_id_by_country_matches_name_and_link(tmp_db):
     """resolve_party_id_by_country matches by name and by link."""
     country_id = db_refs.create_country("Resolveland", conn=tmp_db)
     party_id = db_parties.create_party(
-        {"country_id": country_id, "party_name": "Republican", "party_link": "/wiki/Republican_Party"},
+        {
+            "country_id": country_id,
+            "party_name": "Republican",
+            "party_link": "/wiki/Republican_Party",
+        },
         conn=tmp_db,
     )
 
     assert db_parties.resolve_party_id_by_country(country_id, "Republican", conn=tmp_db) == party_id
-    assert db_parties.resolve_party_id_by_country(country_id, "/wiki/Republican_Party", conn=tmp_db) == party_id
+    assert (
+        db_parties.resolve_party_id_by_country(country_id, "/wiki/Republican_Party", conn=tmp_db)
+        == party_id
+    )
     assert db_parties.resolve_party_id_by_country(country_id, "Unknown Party", conn=tmp_db) is None
 
 
@@ -69,6 +77,7 @@ def test_resolve_party_id_by_country_returns_none_for_empty_input(tmp_db):
 # ---------------------------------------------------------------------------
 # Office terms insert / count / delete
 # ---------------------------------------------------------------------------
+
 
 def _make_office(conn) -> tuple[int, int]:
     """Create a minimal office, return (office_details_id, office_table_config_id)."""
@@ -98,7 +107,9 @@ def _make_office(conn) -> tuple[int, int]:
         ],
     }
     od_id = db_offices.create_office(data, conn=conn)
-    cur = conn.execute("SELECT id FROM office_table_config WHERE office_details_id = ? LIMIT 1", (od_id,))
+    cur = conn.execute(
+        "SELECT id FROM office_table_config WHERE office_details_id = ? LIMIT 1", (od_id,)
+    )
     tc_id = cur.fetchone()["id"]
     return od_id, tc_id
 
@@ -124,6 +135,7 @@ def test_insert_office_term_and_count_and_delete(tmp_db):
 # ---------------------------------------------------------------------------
 # Bulk import CSV
 # ---------------------------------------------------------------------------
+
 
 def test_bulk_import_offices_from_csv_valid_and_invalid_rows(tmp_db, tmp_path):
     """CSV bulk import: 1 valid row + 2 invalid rows → (imported=1, errors=2)."""

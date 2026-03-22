@@ -18,17 +18,14 @@ from src.scraper.wiki_fetch import wiki_url_to_rest_html_url, normalize_wiki_url
 from src.db.infobox_role_key_filter import get_infobox_role_key_filter
 from src.db.connection import ensure_data_dir, get_log_dir
 
-
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 TEST_SCRIPTS_DIR = PROJECT_ROOT / "test_scripts"
-
-
 
 
 def _fixture_path(name: str) -> Path:
     rel = (name or "").strip().replace("\\", "/")
     if rel.startswith("test_scripts/"):
-        rel = rel[len("test_scripts/"):]
+        rel = rel[len("test_scripts/") :]
     return (TEST_SCRIPTS_DIR / rel).resolve()
 
 
@@ -199,7 +196,9 @@ def run_test_script_from_html(
     else:
         raise ValueError(f"Unknown test type: {parsed_type}")
     expected = expected_json
-    passed = expected is not None and json.dumps(actual, sort_keys=True, ensure_ascii=False) == json.dumps(expected, sort_keys=True, ensure_ascii=False)
+    passed = expected is not None and json.dumps(
+        actual, sort_keys=True, ensure_ascii=False
+    ) == json.dumps(expected, sort_keys=True, ensure_ascii=False)
     return {"passed": passed, "actual": actual, "expected": expected}
 
 

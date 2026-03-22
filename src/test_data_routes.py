@@ -13,10 +13,10 @@ import os
 import pytest
 from starlette.testclient import TestClient
 
-
 # ---------------------------------------------------------------------------
 # Shared fixture
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture(scope="module")
 def client(tmp_path_factory):
@@ -27,6 +27,7 @@ def client(tmp_path_factory):
     os.environ["OFFICE_HOLDER_DB_PATH"] = str(db_path)
 
     import src.main as main_mod
+
     original_start = main_mod._start_datasette
     original_stop = main_mod._stop_datasette
     main_mod._start_datasette = lambda: None
@@ -43,6 +44,7 @@ def client(tmp_path_factory):
 # ---------------------------------------------------------------------------
 # Data view tests
 # ---------------------------------------------------------------------------
+
 
 def test_data_individuals_renders_200(client):
     """GET /data/individuals returns 200 on an empty DB."""

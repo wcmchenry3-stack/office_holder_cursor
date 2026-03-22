@@ -17,15 +17,17 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 # Helpers (same as tests/test_scenarios.py)
 # ---------------------------------------------------------------------------
 
+
 def _cache_key(url: str, table_no: int, use_full_page: bool = False) -> str:
-    normalized = (
-        url.strip() + "|" + str(table_no) + "|" + ("1" if use_full_page else "0")
-    ).encode("utf-8")
+    normalized = (url.strip() + "|" + str(table_no) + "|" + ("1" if use_full_page else "0")).encode(
+        "utf-8"
+    )
     return hashlib.sha256(normalized).hexdigest()[:32]
 
 
 def _extract_table(html: str, table_no: int) -> tuple[str, int]:
     from bs4 import BeautifulSoup
+
     soup = BeautifulSoup(html, "html.parser")
     tables = soup.find_all("table")
     num_tables = len(tables)
@@ -124,6 +126,7 @@ def _setup_db_and_office(tmp_path, monkeypatch):
 # Tests
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.integration
 def test_hash_skip_activates_on_second_run(tmp_path, monkeypatch):
     """Second delta run with unchanged HTML reports offices_unchanged == 1, term count stable."""
@@ -157,6 +160,7 @@ def test_hash_skip_activates_on_second_run(tmp_path, monkeypatch):
 
     # Verify DB term count is unchanged
     from src.db.connection import get_connection
+
     conn = get_connection(db_path)
     try:
         count = conn.execute("SELECT COUNT(*) FROM office_terms").fetchone()[0]

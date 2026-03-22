@@ -25,7 +25,9 @@ def list_parties(conn: sqlite3.Connection | None = None) -> list[dict[str, Any]]
             conn.close()
 
 
-def get_party_list_for_scraper(conn: sqlite3.Connection | None = None) -> dict[str, list[dict[str, str]]]:
+def get_party_list_for_scraper(
+    conn: sqlite3.Connection | None = None,
+) -> dict[str, list[dict[str, str]]]:
     """Return party list in scraper format: { country_name: [ {name, link}, ... ] }."""
     rows = list_parties(conn)
     out: dict[str, list[dict[str, str]]] = {}
@@ -74,7 +76,9 @@ def create_party(data: dict[str, Any], conn: sqlite3.Connection | None = None) -
             conn.close()
 
 
-def update_party(party_id: int, data: dict[str, Any], conn: sqlite3.Connection | None = None) -> bool:
+def update_party(
+    party_id: int, data: dict[str, Any], conn: sqlite3.Connection | None = None
+) -> bool:
     """Update party by id. Uses country_id (FK)."""
     own_conn = conn is None
     if own_conn:
