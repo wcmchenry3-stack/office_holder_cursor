@@ -81,6 +81,7 @@ def migrate_to_fk(conn=None):
         _migrate_city(conn)
         _migrate_source_pages_disable_auto_table_update(conn)
         _migrate_office_table_config_html_hash(conn)
+        _migrate_individuals_bio_batch(conn)
     finally:
         if own_conn:
             conn.close()
@@ -960,4 +961,19 @@ def _migrate_office_table_config_html_hash(conn):
         return
     if "last_html_hash" not in cols:
         conn.execute("ALTER TABLE office_table_config ADD COLUMN last_html_hash TEXT")
+        conn.commit()
+
+
+def _migrate_individuals_bio_batch(conn):
+    """Add bio_batch (0-6) and bio_refreshed_at to individuals if missing."""
+    try:
+        cols = _columns(conn, "individuals")
+    except sqlite3.OperationalError:
+        return
+    if "bio_batch" not in cols:
+        conn.execute("ALTER TABLE individuals ADD COLUMN bio_batch INTEGER NOT NULL DEFAULT 0")
+        conn.execute("UPDATE individuals SET bio_batch = id % 7")
+        conn.commit()
+    if "bio_refreshed_at" not in cols:
+        conn.execute("ALTER TABLE individuals ADD COLUMN bio_refreshed_at TEXT")
         conn.commit()

@@ -25,21 +25,30 @@ _DEFAULT_EMAIL = "wcmchenry3@gmail.com"
 
 def run_daily_delta() -> None:
     """Entry point called by APScheduler at 06:00 UTC each day."""
-    from src.scraper.runner import run_with_db
+    from src.scraper.runner import run_with_db, _cleanup_disk_cache
 
     run_start = datetime.now(timezone.utc)
-    print(f"[scheduler] Daily delta run starting at {run_start.strftime('%Y-%m-%d %H:%M:%S')} UTC")
+    today_batch = run_start.weekday()  # 0=Mon … 6=Sun
+    print(f"[scheduler] Daily delta run starting at {run_start.strftime('%Y-%m-%d %H:%M:%S')} UTC (bio_batch={today_batch})")
+
+    try:
+        cache_deleted = _cleanup_disk_cache(max_age_days=30)
+    except Exception as e:
+        cache_deleted = 0
+        print(f"[scheduler] Cache cleanup error (non-fatal): {e}")
 
     try:
         result = run_with_db(
             run_mode="delta",
             run_bio=True,
             run_office_bio=True,
+            bio_batch=today_batch,
         )
+        result["cache_deleted"] = cache_deleted
     except Exception:
         tb = traceback.format_exc()
         print(f"[scheduler] Daily run crashed:\n{tb}")
-        _send_summary_email(None, 0.0, run_start, error=tb)
+        _send_summary_email(None, 0.0, run_start, error=tb, cache_deleted=cache_deleted)
         return
 
     duration_s = (datetime.now(timezone.utc) - run_start).total_seconds()
@@ -70,6 +79,7 @@ def _send_summary_email(
     duration_s: float,
     run_start: datetime,
     error: str | None = None,
+    cache_deleted: int = 0,
 ) -> None:
     """Format and send the daily run summary email via Gmail SMTP."""
     app_password = os.environ.get("EMAIL_APP_PASSWORD", "")
@@ -100,11 +110,13 @@ CRASH OUTPUT
         terms = result.get("terms_parsed", 0)
         bio_ok = result.get("bio_success_count", 0)
         bio_fail = result.get("bio_error_count", 0)
+        living_ok = result.get("living_success_count", 0)
         living_fail = result.get("living_error_count", 0)
         bio_errors = result.get("bio_errors") or []
         living_errors = result.get("living_errors") or []
         office_errors = result.get("office_errors") or []
         cancelled = result.get("cancelled", False)
+        bio_batch_val = result.get("cache_deleted", cache_deleted)
         status = "✗ CANCELLED" if cancelled else "✓ Complete"
 
         all_errors = bio_errors + living_errors + [
@@ -119,12 +131,15 @@ Status    : {status}
 
 SUMMARY
 -------
-Offices total     : {office_count}
-Offices processed : {processed}
-Offices unchanged : {unchanged}
-Terms parsed      : {terms}
-Bio updates OK    : {bio_ok}
-Bio errors        : {bio_fail + living_fail}
+Offices total        : {office_count}
+Offices processed    : {processed}
+Offices unchanged    : {unchanged}
+Terms parsed         : {terms}
+Bio updates OK       : {bio_ok}
+Bio errors           : {bio_fail}
+Living bio refreshed : {living_ok}
+Living bio errors    : {living_fail}
+Cache files deleted  : {bio_batch_val}
 
 ERRORS
 ------

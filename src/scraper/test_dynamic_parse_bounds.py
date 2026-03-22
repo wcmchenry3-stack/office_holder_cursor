@@ -16,7 +16,7 @@ class _BioInfoboxStub:
         self._last_dead_link = False
         self._last_bio_details = None
 
-    def find_term_dates(self, _wiki_link, _url, _table_config, _office_details, _district):
+    def find_term_dates(self, _wiki_link, _url, _table_config, _office_details, _district, run_cache=None):
         return [("1978-07-14", "1988-11-18")], [
             "Office row: 'Judge ...' -> date row: 'In office July 14, 1978 – November 18, 1988' -> parsed: 1978-07-14, 1988-11-18"
         ]
