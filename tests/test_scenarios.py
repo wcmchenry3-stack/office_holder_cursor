@@ -7,61 +7,13 @@ Covers delta run → idempotent re-run → dry-run preview, all without network 
 
 from __future__ import annotations
 
-import gzip
-import hashlib
 import json
 import os
 from pathlib import Path
 
 import pytest
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-
-
-# ---------------------------------------------------------------------------
-# Helpers (ported from run_scenarios_test.py)
-# ---------------------------------------------------------------------------
-
-
-def _cache_key(url: str, table_no: int, use_full_page: bool = False) -> str:
-    """Match table_cache._cache_key so we write the same key the runner will read."""
-    normalized = (url.strip() + "|" + str(table_no) + "|" + ("1" if use_full_page else "0")).encode(
-        "utf-8"
-    )
-    return hashlib.sha256(normalized).hexdigest()[:32]
-
-
-def _extract_table(html: str, table_no: int) -> tuple[str, int]:
-    """Extract the N-th <table> from full page HTML (1-based). Returns (table_html, num_tables)."""
-    from bs4 import BeautifulSoup
-
-    soup = BeautifulSoup(html, "html.parser")
-    tables = soup.find_all("table")
-    num_tables = len(tables)
-    if not (1 <= table_no <= num_tables):
-        raise ValueError(f"Table {table_no} not found (page has {num_tables} tables)")
-    return str(tables[table_no - 1]), num_tables
-
-
-def _write_fixture_to_cache(
-    cache_dir: Path,
-    url: str,
-    table_no: int,
-    table_html: str,
-    use_full_page: bool = False,
-    num_tables: int = 1,
-) -> None:
-    """Write fixture HTML to wiki_cache so get_table_html_cached hits cache."""
-    key = _cache_key(url, table_no, use_full_page)
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    cache_path = cache_dir / f"{key}.json.gz"
-    with gzip.open(cache_path, "wt", encoding="utf-8") as f:
-        json.dump(
-            {"table_no": table_no, "num_tables": num_tables, "html": table_html},
-            f,
-            ensure_ascii=False,
-        )
-
+from tests.conftest import PROJECT_ROOT, _extract_table, _write_fixture_to_cache
 
 # ---------------------------------------------------------------------------
 # Test
@@ -69,35 +21,23 @@ def _write_fixture_to_cache(
 
 
 @pytest.mark.integration
-def test_full_scraper_scenario(tmp_path, monkeypatch):
+def test_full_scraper_scenario(db_with_cache, monkeypatch):
     """
     Delta run populates terms from fixture HTML.
     Re-run is idempotent (no duplicate terms).
     Dry-run preview returns expected row shape.
     All without network calls — wiki cache is pre-filled with fixture HTML.
     """
-    # 1. Point DB and wiki cache at tmp dirs before importing app modules
-    db_path = tmp_path / "test_run.db"
-    cache_dir = tmp_path / "wiki_cache"
-    monkeypatch.setenv("OFFICE_HOLDER_DB_PATH", str(db_path))
+    db_path, cache_dir = db_with_cache
 
-    from src.db.connection import DB_PATH, init_db, get_connection
+    from src.db.connection import get_connection
     from src.db import offices as db_offices
     from src.db import office_terms as db_office_terms
     from src.scraper.runner import run_with_db
-    import src.scraper.table_cache as table_cache_mod
 
-    # Safety guard
-    assert str(db_path) != str(DB_PATH), "test DB must not point at production DB"
-
-    # Redirect wiki cache to a temp dir so tests never read from or write to data/wiki_cache
-    monkeypatch.setattr(table_cache_mod, "_cache_dir", lambda: cache_dir)
-
-    # 2. Init DB
-    init_db(path=db_path)
     conn = get_connection(db_path)
     try:
-        # 3. Get country_id from seed data
+        # 1. Get country_id from seed data
         row = conn.execute(
             "SELECT id FROM countries WHERE name = ? LIMIT 1",
             ("United States of America",),
@@ -105,7 +45,7 @@ def test_full_scraper_scenario(tmp_path, monkeypatch):
         assert row, "Seed data missing: no United States country"
         country_id = row[0]
 
-        # 4. Load first manifest entry
+        # 2. Load first manifest entry
         manifest_path = PROJECT_ROOT / "test_scripts" / "manifest" / "parser_tests.json"
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         assert manifest, "Manifest is empty"
@@ -121,7 +61,7 @@ def test_full_scraper_scenario(tmp_path, monkeypatch):
         table_no = int(config.get("table_no", 1))
         table_html, num_tables = _extract_table(full_html, table_no)
 
-        # 5. Seed one test office
+        # 3. Seed one test office
         office_data = {
             "country_id": country_id,
             "url": source_url,
@@ -141,7 +81,7 @@ def test_full_scraper_scenario(tmp_path, monkeypatch):
     finally:
         conn.close()
 
-    # 6. Pre-fill wiki cache so runner never hits the network
+    # 4. Pre-fill wiki cache so runner never hits the network
     _write_fixture_to_cache(
         cache_dir,
         source_url,
@@ -151,7 +91,7 @@ def test_full_scraper_scenario(tmp_path, monkeypatch):
         num_tables=num_tables,
     )
 
-    # 7. Scenario 1 — delta run writes terms
+    # 5. Scenario 1 — delta run writes terms
     result = run_with_db(
         run_mode="delta",
         dry_run=False,
@@ -176,7 +116,7 @@ def test_full_scraper_scenario(tmp_path, monkeypatch):
 
     term_count_after_first_run = len(terms)
 
-    # 8. Scenario 2 — re-run is idempotent
+    # 6. Scenario 2 — re-run is idempotent
     run_with_db(
         run_mode="delta",
         dry_run=False,
@@ -193,7 +133,7 @@ def test_full_scraper_scenario(tmp_path, monkeypatch):
         len(terms2) == term_count_after_first_run
     ), f"Re-run changed term count: {term_count_after_first_run} → {len(terms2)}"
 
-    # 9. Scenario 3 — dry-run preview returns expected shape
+    # 7. Scenario 3 — dry-run preview returns expected shape
     result3 = run_with_db(
         run_mode="delta",
         dry_run=True,
