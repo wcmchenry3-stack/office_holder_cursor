@@ -15,7 +15,10 @@ Optional env vars:
 from __future__ import annotations
 
 import os
+import json
 import smtplib
+import subprocess
+import sys
 import traceback
 from datetime import datetime, timezone
 from email.mime.text import MIMEText
@@ -23,9 +26,47 @@ from email.mime.text import MIMEText
 _DEFAULT_EMAIL = "wcmchenry3@gmail.com"
 
 
+def _run_daily_delta_in_subprocess(today_batch: int) -> dict:
+    """Run scraper in a child process so memory is fully released when job ends."""
+    payload = f"""
+import json
+from src.scraper.runner import run_with_db
+
+result = run_with_db(
+    run_mode="delta",
+    run_bio=True,
+    run_office_bio=True,
+    bio_batch={today_batch},
+)
+print(json.dumps(result))
+"""
+    completed = subprocess.run(
+        [sys.executable, "-c", payload],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        stderr = (completed.stderr or "").strip()
+        stdout = (completed.stdout or "").strip()
+        details = stderr or stdout or "subprocess exited with non-zero status"
+        raise RuntimeError(details)
+    stdout = (completed.stdout or "").strip()
+    if not stdout:
+        raise RuntimeError("subprocess returned no output")
+    last_line = stdout.splitlines()[-1]
+    try:
+        parsed = json.loads(last_line)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"invalid subprocess JSON output: {last_line[:300]}") from exc
+    if not isinstance(parsed, dict):
+        raise RuntimeError("subprocess result was not a dict")
+    return parsed
+
+
 def run_daily_delta() -> None:
     """Entry point called by APScheduler at 06:00 UTC each day."""
-    from src.scraper.runner import run_with_db, _cleanup_disk_cache
+    from src.scraper.runner import _cleanup_disk_cache
 
     run_start = datetime.now(timezone.utc)
     today_batch = run_start.weekday()  # 0=Mon … 6=Sun
@@ -40,12 +81,7 @@ def run_daily_delta() -> None:
         print(f"[scheduler] Cache cleanup error (non-fatal): {e}")
 
     try:
-        result = run_with_db(
-            run_mode="delta",
-            run_bio=True,
-            run_office_bio=True,
-            bio_batch=today_batch,
-        )
+        result = _run_daily_delta_in_subprocess(today_batch=today_batch)
         result["cache_deleted"] = cache_deleted
     except Exception:
         tb = traceback.format_exc()
