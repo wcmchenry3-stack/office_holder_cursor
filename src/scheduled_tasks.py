@@ -10,6 +10,7 @@ Required env var (for email):
 Optional env vars:
     EMAIL_FROM          — sender address (default: wcmchenry3@gmail.com)
     EMAIL_TO            — recipient address (default: wcmchenry3@gmail.com)
+    DAILY_DELTA_ENABLED — set to 0/false/no/off to pause daily job (default: enabled)
 """
 
 from __future__ import annotations
@@ -24,6 +25,12 @@ from datetime import datetime, timezone
 from email.mime.text import MIMEText
 
 _DEFAULT_EMAIL = "wcmchenry3@gmail.com"
+
+
+def is_daily_delta_enabled() -> bool:
+    """Return True unless DAILY_DELTA_ENABLED is set to a false-like value."""
+    raw = os.environ.get("DAILY_DELTA_ENABLED", "1").strip().lower()
+    return raw not in {"0", "false", "no", "off"}
 
 
 def _run_daily_delta_in_subprocess(today_batch: int) -> dict:
@@ -66,6 +73,10 @@ print(json.dumps(result))
 
 def run_daily_delta() -> None:
     """Entry point called by APScheduler at 06:00 UTC each day."""
+    if not is_daily_delta_enabled():
+        print("[scheduler] Daily delta run skipped because DAILY_DELTA_ENABLED is disabled")
+        return
+
     from src.scraper.runner import _cleanup_disk_cache
 
     run_start = datetime.now(timezone.utc)
