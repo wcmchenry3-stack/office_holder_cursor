@@ -164,6 +164,7 @@ CREATE TABLE IF NOT EXISTS office_table_config (
     remove_duplicates INTEGER NOT NULL DEFAULT 0,
     consolidate_rowspan_terms INTEGER NOT NULL DEFAULT 0,
     infobox_role_key_filter_id INTEGER REFERENCES infobox_role_key_filter(id),
+    infobox_role_key TEXT NOT NULL DEFAULT '',
     notes TEXT,
     name TEXT,
     created_at TEXT DEFAULT (datetime('now')),
