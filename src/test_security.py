@@ -244,3 +244,60 @@ def test_integer_path_param_type_safety(client):
         404,
         422,
     ), f"Expected 404 or 422 for non-integer office ID, got {resp.status_code}"
+
+
+# ---------------------------------------------------------------------------
+# H8 — XSS: stored values returned as literal text
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.security
+def test_xss_payload_in_country_name_is_not_executed(client):
+    """An XSS payload stored via the refs form must appear escaped in the response,
+    not as executable HTML."""
+    payload = "<script>alert('xss')</script>"
+    client.post("/refs/countries/new", data={"name": payload})
+    resp = client.get("/refs/countries")
+    assert resp.status_code == 200
+    # The raw <script> tag must NOT appear unescaped in the page
+    assert "<script>alert" not in resp.text, "XSS payload was reflected unescaped"
+
+
+# ---------------------------------------------------------------------------
+# H9 — Open redirect prevention
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.security
+def test_no_open_redirect_on_saved_param(client):
+    """The ?saved=1 param on refs list pages must not redirect to an external URL."""
+    resp = client.get("/refs/countries?saved=https://evil.example.com", follow_redirects=False)
+    # Must render the page (200), not redirect externally
+    assert resp.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# H10 — Sensitive data not in error responses
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.security
+def test_404_response_does_not_leak_stack_trace(client):
+    """A 404 for an unknown route must not expose a Python stack trace."""
+    resp = client.get("/this/route/does/not/exist")
+    assert resp.status_code == 404
+    assert "Traceback" not in resp.text
+    assert 'File "' not in resp.text
+
+
+@pytest.mark.security
+def test_malformed_body_does_not_leak_internals(client):
+    """Sending garbage bytes to a form endpoint must not expose a Python stack trace."""
+    resp = client.post(
+        "/refs/countries/new",
+        content=b"\xff\xfe<invalid encoding>",
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    assert resp.status_code != 500, f"Malformed body caused unhandled 500: {resp.text[:200]}"
+    assert "Traceback" not in resp.text
+    assert 'File "' not in resp.text

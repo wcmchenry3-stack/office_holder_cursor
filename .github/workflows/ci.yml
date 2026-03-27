@@ -24,8 +24,8 @@ jobs:
   test-python:
     uses: wcmchenry3-stack/.github/.github/workflows/called-test-python.yml@main
     with:
-      # Baseline coverage for existing codebase — increase as tests are added
-      coverage-threshold: 50
+      # Raised from 50 → 58 after adding connection, individuals, reports, refs CRUD, and security tests
+      coverage-threshold: 58
     secrets: inherit
 
   cve-python:
