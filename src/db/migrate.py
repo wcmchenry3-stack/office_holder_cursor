@@ -74,6 +74,7 @@ def migrate_to_fk(conn=None):
         _migrate_office_table_config_name(conn)
         # office_category tables and office_details.office_category_id
         _migrate_office_category(conn)
+        _migrate_infobox_role_key(conn)
         _migrate_infobox_role_key_filter(conn)
         _migrate_office_table_config_infobox_role_key_filter_id(conn)
         _migrate_offices_infobox_role_key_filter_id(conn)
