@@ -19,7 +19,6 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-
 # ---------------------------------------------------------------------------
 # Table migration order — respects FK dependencies
 # ---------------------------------------------------------------------------
@@ -117,10 +116,7 @@ def _migrate_table(
 
     col_list = ", ".join(columns)
     placeholders = ", ".join(["%s"] * len(columns))
-    sql = (
-        f"INSERT INTO {table} ({col_list}) VALUES ({placeholders})"
-        " ON CONFLICT DO NOTHING"
-    )
+    sql = f"INSERT INTO {table} ({col_list}) VALUES ({placeholders})" " ON CONFLICT DO NOTHING"
 
     col_indices = {col: i for i, col in enumerate(columns)}
 

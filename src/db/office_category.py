@@ -19,9 +19,7 @@ def list_office_categories(conn=None) -> list[dict[str, Any]]:
             conn.close()
 
 
-def get_office_category(
-    category_id: int, conn=None
-) -> dict[str, Any] | None:
+def get_office_category(category_id: int, conn=None) -> dict[str, Any] | None:
     """Return category dict with id, name, country_ids, level_ids, branch_ids. None if not found."""
     own = conn is None
     if own:
@@ -74,9 +72,7 @@ def create_office_category(
     if own:
         conn = get_connection()
     try:
-        cur = conn.execute(
-            "INSERT INTO office_category (name) VALUES (%s) RETURNING id", (name,)
-        )
+        cur = conn.execute("INSERT INTO office_category (name) VALUES (%s) RETURNING id", (name,))
         category_id = cur.fetchone()["id"]
         for cid in country_ids:
             if cid:
@@ -123,7 +119,9 @@ def update_office_category(
     if own:
         conn = get_connection()
     try:
-        cur = conn.execute("UPDATE office_category SET name = %s WHERE id = %s", (name, category_id))
+        cur = conn.execute(
+            "UPDATE office_category SET name = %s WHERE id = %s", (name, category_id)
+        )
         if cur.rowcount == 0:
             return False
         conn.execute("DELETE FROM office_category_countries WHERE category_id = %s", (category_id,))

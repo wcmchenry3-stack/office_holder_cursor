@@ -34,7 +34,9 @@ def seed_reference_data(conn=None):
         conn.commit()
 
         # States / provinces / territories per country
-        cur = conn.execute("SELECT id FROM countries WHERE name = %s", ("United States of America",))
+        cur = conn.execute(
+            "SELECT id FROM countries WHERE name = %s", ("United States of America",)
+        )
         us_id = cur.fetchone()[0]
         us_states = [
             "Alabama",

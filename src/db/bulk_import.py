@@ -32,7 +32,9 @@ def _resolve_refs(
         row = cur.fetchone()
         level_id = row["id"] if row else None
     if branch_name:
-        cur = conn.execute("SELECT id FROM branches WHERE name = %s LIMIT 1", (branch_name.strip(),))
+        cur = conn.execute(
+            "SELECT id FROM branches WHERE name = %s LIMIT 1", (branch_name.strip(),)
+        )
         row = cur.fetchone()
         branch_id = row["id"] if row else None
     return (country_id, state_id, level_id, branch_id)

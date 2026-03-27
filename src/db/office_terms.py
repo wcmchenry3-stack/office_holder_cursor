@@ -179,9 +179,7 @@ def get_terms_counts_by_office(conn=None) -> dict[int, int]:
             conn.close()
 
 
-def get_existing_terms_for_office(
-    office_id: int, conn=None
-) -> list[dict[str, Any]]:
+def get_existing_terms_for_office(office_id: int, conn=None) -> list[dict[str, Any]]:
     """Return existing office_terms for a unit (office_id is office_table_config_id in hierarchy, for delta compare)."""
     own_conn = conn is None
     if own_conn:

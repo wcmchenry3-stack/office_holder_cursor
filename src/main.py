@@ -203,7 +203,9 @@ PROCESS_TYPES = ["run", "preview_all"]
 @app.get("/db/{path:path}", include_in_schema=False)
 async def db_explorer_removed(path: str = ""):
     return JSONResponse(
-        {"message": "DB explorer removed. Use psql or TablePlus with the Render connection string."},
+        {
+            "message": "DB explorer removed. Use psql or TablePlus with the Render connection string."
+        },
         status_code=410,
     )
 

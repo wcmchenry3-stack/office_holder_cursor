@@ -204,9 +204,7 @@ def create_state(country_id: int, name: str, conn=None) -> int:
             conn.close()
 
 
-def update_state(
-    state_id: int, country_id: int, name: str, conn=None
-) -> bool:
+def update_state(state_id: int, country_id: int, name: str, conn=None) -> bool:
     """Update state. Returns True if updated."""
     name = (name or "").strip()
     if not name:
@@ -218,7 +216,8 @@ def update_state(
         conn = get_connection()
     try:
         cur = conn.execute(
-            "UPDATE states SET country_id = %s, name = %s WHERE id = %s", (country_id, name, state_id)
+            "UPDATE states SET country_id = %s, name = %s WHERE id = %s",
+            (country_id, name, state_id),
         )
         conn.commit()
         return cur.rowcount > 0
@@ -329,9 +328,7 @@ def create_city(state_id: int, name: str, conn=None) -> int:
             conn.close()
 
 
-def update_city(
-    city_id: int, state_id: int, name: str, conn=None
-) -> bool:
+def update_city(city_id: int, state_id: int, name: str, conn=None) -> bool:
     """Update city. Returns True if updated."""
     name = (name or "").strip()
     if not name:

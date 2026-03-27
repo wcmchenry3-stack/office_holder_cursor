@@ -31,9 +31,7 @@ def list_individuals(
             conn.close()
 
 
-def get_individual_by_wiki_url(
-    wiki_url: str, conn=None
-) -> dict[str, Any] | None:
+def get_individual_by_wiki_url(wiki_url: str, conn=None) -> dict[str, Any] | None:
     """Return one individual by wiki_url."""
     own_conn = conn is None
     if own_conn:
@@ -47,9 +45,7 @@ def get_individual_by_wiki_url(
             conn.close()
 
 
-def get_individual(
-    individual_id: int, conn=None
-) -> dict[str, Any] | None:
+def get_individual(individual_id: int, conn=None) -> dict[str, Any] | None:
     """Return one individual by id."""
     own_conn = conn is None
     if own_conn:
@@ -214,7 +210,9 @@ def _recompute_is_living_for_individual(individual_id: int, conn) -> None:
             if current_year - earliest_year > 80:
                 new_flag = 0
     if new_flag != is_living:
-        conn.execute("UPDATE individuals SET is_living = %s WHERE id = %s", (new_flag, individual_id))
+        conn.execute(
+            "UPDATE individuals SET is_living = %s WHERE id = %s", (new_flag, individual_id)
+        )
 
 
 def get_living_individual_wiki_urls(conn=None) -> set[str]:
@@ -232,9 +230,7 @@ def get_living_individual_wiki_urls(conn=None) -> set[str]:
             conn.close()
 
 
-def get_living_individuals_for_batch(
-    batch: int, conn=None
-) -> list[str]:
+def get_living_individuals_for_batch(batch: int, conn=None) -> list[str]:
     """Return wiki_urls of living individuals in bio_batch 0–6, ordered so never-refreshed come first."""
     own_conn = conn is None
     if own_conn:

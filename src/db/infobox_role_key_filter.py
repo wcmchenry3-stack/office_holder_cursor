@@ -19,9 +19,7 @@ def list_infobox_role_key_filters(conn=None) -> list[dict[str, Any]]:
             conn.close()
 
 
-def get_infobox_role_key_filter(
-    filter_id: int, conn=None
-) -> dict[str, Any] | None:
+def get_infobox_role_key_filter(filter_id: int, conn=None) -> dict[str, Any] | None:
     """Return filter dict with scope ids. None if not found."""
     own = conn is None
     if own:
@@ -142,7 +140,9 @@ def update_infobox_role_key_filter(
         conn.execute(
             "DELETE FROM infobox_role_key_filter_countries WHERE filter_id = %s", (filter_id,)
         )
-        conn.execute("DELETE FROM infobox_role_key_filter_levels WHERE filter_id = %s", (filter_id,))
+        conn.execute(
+            "DELETE FROM infobox_role_key_filter_levels WHERE filter_id = %s", (filter_id,)
+        )
         conn.execute(
             "DELETE FROM infobox_role_key_filter_branches WHERE filter_id = %s", (filter_id,)
         )
@@ -184,7 +184,9 @@ def delete_infobox_role_key_filter(filter_id: int, conn=None) -> None:
         conn.execute(
             "DELETE FROM infobox_role_key_filter_countries WHERE filter_id = %s", (filter_id,)
         )
-        conn.execute("DELETE FROM infobox_role_key_filter_levels WHERE filter_id = %s", (filter_id,))
+        conn.execute(
+            "DELETE FROM infobox_role_key_filter_levels WHERE filter_id = %s", (filter_id,)
+        )
         conn.execute(
             "DELETE FROM infobox_role_key_filter_branches WHERE filter_id = %s", (filter_id,)
         )

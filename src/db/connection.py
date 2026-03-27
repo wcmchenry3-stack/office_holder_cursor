@@ -12,6 +12,7 @@ _DB_OPERATIONAL_ERRORS: tuple = (sqlite3.OperationalError,)
 try:
     import psycopg2
     import psycopg2.errors
+
     _DB_UNIQUE_ERRORS = _DB_UNIQUE_ERRORS + (psycopg2.errors.UniqueViolation,)
     _DB_OPERATIONAL_ERRORS = _DB_OPERATIONAL_ERRORS + (psycopg2.OperationalError,)
 except ImportError:
@@ -130,7 +131,7 @@ class _PrefetchedCursor:
         return row
 
     def fetchall(self):
-        rows = self._rows[self._idx:]
+        rows = self._rows[self._idx :]
         self._idx = len(self._rows)
         return rows
 
@@ -160,6 +161,7 @@ class _SQLiteConnWrapper:
           ::date  → (removed)          (same)
         """
         import re
+
         return (
             sql.replace("NOW()", "CURRENT_TIMESTAMP")
             .replace("%s", "?")
@@ -174,7 +176,11 @@ class _SQLiteConnWrapper:
 
     def execute(self, sql, params=None):
         adapted = self._adapt(sql)
-        cur = self._conn.execute(adapted, params) if params is not None else self._conn.execute(adapted)
+        cur = (
+            self._conn.execute(adapted, params)
+            if params is not None
+            else self._conn.execute(adapted)
+        )
         # Pre-fetch RETURNING results so callers can do commit() before fetchone()
         if "RETURNING" in sql.upper():
             return _PrefetchedCursor(cur.fetchall(), cur.rowcount, cur.description)
@@ -229,6 +235,7 @@ def get_connection(path: Path | None = None):
     if is_postgres() and path is None:
         import psycopg2
         import psycopg2.extras
+
         conn = psycopg2.connect(
             os.environ["DATABASE_URL"],
             cursor_factory=psycopg2.extras.DictCursor,

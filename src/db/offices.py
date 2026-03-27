@@ -4,7 +4,13 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from .connection import get_connection, get_db_path, _DB_UNIQUE_ERRORS, _DB_OPERATIONAL_ERRORS, is_postgres
+from .connection import (
+    get_connection,
+    get_db_path,
+    _DB_UNIQUE_ERRORS,
+    _DB_OPERATIONAL_ERRORS,
+    is_postgres,
+)
 from .utils import _row_to_dict
 
 
@@ -255,7 +261,8 @@ def _resolve_infobox_role_key_filter_id(
         name = f"{base_name}_{i}"
         i += 1
     cur = conn.execute(
-        "INSERT INTO infobox_role_key_filter (name, role_key) VALUES (%s, %s) RETURNING id", (name, role_key)
+        "INSERT INTO infobox_role_key_filter (name, role_key) VALUES (%s, %s) RETURNING id",
+        (name, role_key),
     )
     fid = int(cur.fetchone()["id"])
     if country_id:
@@ -434,9 +441,7 @@ def _table_nos_on_page(
     return {int(row[0]) for row in cur.fetchall() if row[0] is not None}
 
 
-def get_runnable_unit_ids_for_office(
-    office_id: int, conn: Any | None = None
-) -> list[int]:
+def get_runnable_unit_ids_for_office(office_id: int, conn: Any | None = None) -> list[int]:
     """Return list of runnable unit ids (office_table_config_id in hierarchy) for this office (office_details_id). For legacy, returns [office_id]."""
     own_conn = conn is None
     if own_conn:
@@ -996,9 +1001,7 @@ def get_source_page_id_by_url(url: str, conn: Any | None = None) -> int | None:
             conn.close()
 
 
-def update_page(
-    source_page_id: int, data: dict[str, Any], conn: Any | None = None
-) -> bool:
+def update_page(source_page_id: int, data: dict[str, Any], conn: Any | None = None) -> bool:
     """Update only source_pages row. Data: url, country_id, state_id, city_id, level_id, branch_id, notes, enabled, allow_reuse_tables, disable_auto_table_update."""
     own_conn = conn is None
     if own_conn:
@@ -1057,9 +1060,7 @@ def update_page(
             conn.close()
 
 
-def get_page_export(
-    source_page_id: int, conn: Any | None = None
-) -> dict[str, Any] | None:
+def get_page_export(source_page_id: int, conn: Any | None = None) -> dict[str, Any] | None:
     """Return full hierarchy for export: page (all source_pages cols), offices (each with office_details, alt_links, tables).
     Uses SELECT * so any new columns are included. Returns None if not hierarchy or page not found.
     """
@@ -1146,9 +1147,7 @@ def get_full_export(conn: Any | None = None) -> dict[str, Any]:
             conn.close()
 
 
-def list_offices_for_page(
-    source_page_id: int, conn: Any | None = None
-) -> list[dict[str, Any]]:
+def list_offices_for_page(source_page_id: int, conn: Any | None = None) -> list[dict[str, Any]]:
     """Return all offices (flat) for a given source_page_id. Empty if not using hierarchy or page not found."""
     own_conn = conn is None
     if own_conn:
@@ -1307,9 +1306,7 @@ def search_pages_for_test_script_templates(
             conn.close()
 
 
-def _insert_one_table_config(
-    conn: Any, od_id: int, tc: dict[str, Any], enabled: int
-) -> None:
+def _insert_one_table_config(conn: Any, od_id: int, tc: dict[str, Any], enabled: int) -> None:
     """Insert one office_table_config row from tc dict."""
     t_merged = _bool(tc, "term_dates_merged")
     conn.execute(
@@ -1960,9 +1957,7 @@ def update_office(
             conn.close()
 
 
-def set_office_enabled(
-    office_id: int, enabled: bool, conn: Any | None = None
-) -> bool:
+def set_office_enabled(office_id: int, enabled: bool, conn: Any | None = None) -> bool:
     """Set enabled flag for one office (office_details_id in hierarchy). Returns True if a row was updated."""
     own_conn = conn is None
     if own_conn:
@@ -2421,9 +2416,7 @@ def list_alt_links(office_id: int, conn: Any | None = None) -> list[str]:
             conn.close()
 
 
-def set_alt_links_for_office(
-    office_id: int, paths: list[str], conn: Any | None = None
-) -> None:
+def set_alt_links_for_office(office_id: int, paths: list[str], conn: Any | None = None) -> None:
     """Replace all alt links for the office (office_details_id in hierarchy)."""
     own_conn = conn is None
     if own_conn:

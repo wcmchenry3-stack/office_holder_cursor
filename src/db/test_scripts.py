@@ -73,9 +73,7 @@ def load_manifest(manifest_path: Path = MANIFEST_PATH) -> list[dict[str, Any]]:
     return normalized
 
 
-def export_manifest_from_db(
-    manifest_path: Path = MANIFEST_PATH, conn=None
-) -> int:
+def export_manifest_from_db(manifest_path: Path = MANIFEST_PATH, conn=None) -> int:
     own = conn is None
     if own:
         conn = get_connection()
@@ -130,9 +128,7 @@ def import_manifest_to_db(
             conn.close()
 
 
-def seed_db_from_manifest_if_empty(
-    manifest_path: Path = MANIFEST_PATH, conn=None
-) -> int:
+def seed_db_from_manifest_if_empty(manifest_path: Path = MANIFEST_PATH, conn=None) -> int:
     own = conn is None
     if own:
         conn = get_connection()
@@ -152,6 +148,7 @@ def seed_db_from_manifest_if_empty(
 
 def _ensure_table(conn) -> None:
     from .connection import is_postgres
+
     if is_postgres():
         # Table is created by SCHEMA_PG_SQL in _init_postgres(); nothing to do here.
         return
@@ -245,9 +242,7 @@ def create_test(data: dict[str, Any], conn=None) -> int:
             conn.close()
 
 
-def update_test_enabled(
-    test_id: int, enabled: bool, conn=None
-) -> None:
+def update_test_enabled(test_id: int, enabled: bool, conn=None) -> None:
     own = conn is None
     if own:
         conn = get_connection()

@@ -75,9 +75,7 @@ def create_party(data: dict[str, Any], conn=None) -> int:
             conn.close()
 
 
-def update_party(
-    party_id: int, data: dict[str, Any], conn=None
-) -> bool:
+def update_party(party_id: int, data: dict[str, Any], conn=None) -> bool:
     """Update party by id. Uses country_id (FK)."""
     own_conn = conn is None
     if own_conn:
