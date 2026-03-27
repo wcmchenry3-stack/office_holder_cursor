@@ -24,8 +24,8 @@ jobs:
   test-python:
     uses: wcmchenry3-stack/.github/.github/workflows/called-test-python.yml@main
     with:
-      # Raised from 50 → 58 → 65 after expanding scraper coverage (runner.py 59%→78%, table_parser.py 78%→82%)
-      coverage-threshold: 65
+      # Raised from 50 → 58 → 65 → 72 after adding DB filter/category tests + offices/preview router coverage
+      coverage-threshold: 72
     secrets: inherit
 
   cve-python:
