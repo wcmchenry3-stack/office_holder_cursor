@@ -24,8 +24,8 @@ jobs:
   test-python:
     uses: wcmchenry3-stack/.github/.github/workflows/called-test-python.yml@main
     with:
-      # Raised from 50 → 58 → 65 → 72 after adding DB filter/category tests + offices/preview router coverage
-      coverage-threshold: 72
+      # Raised from 50 → 58 → 65 → 72 → 75 after fixing router_offices_coverage2 test ordering
+      coverage-threshold: 75
     secrets: inherit
 
   cve-python:
