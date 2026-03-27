@@ -6,6 +6,7 @@ mocks with a module-scoped TestClient.
 
 Run: pytest src/test_router_preview_coverage.py -v
 """
+
 from __future__ import annotations
 
 import importlib
@@ -55,9 +56,7 @@ def office_id(db_path):
     try:
         oid = db_offices.create_office(
             {
-                "country_id": conn.execute(
-                    "SELECT id FROM countries LIMIT 1"
-                ).fetchone()[0],
+                "country_id": conn.execute("SELECT id FROM countries LIMIT 1").fetchone()[0],
                 "name": "Preview Test Office",
                 "url": "https://en.wikipedia.org/wiki/Preview_Test_Office_Cov",
                 "enabled": True,

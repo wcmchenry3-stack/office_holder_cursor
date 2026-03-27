@@ -6,12 +6,12 @@ no cross-test state.
 
 Run: pytest src/db/test_infobox_role_key_filter.py -v
 """
+
 from __future__ import annotations
 
 import pytest
 
 from src.db import infobox_role_key_filter as db_filter
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -141,9 +141,7 @@ def test_update_persists_new_values(tmp_db):
 
 
 def test_update_unknown_id_returns_false(tmp_db):
-    result = db_filter.update_infobox_role_key_filter(
-        999999, "X", "y", [], [], [], conn=tmp_db
-    )
+    result = db_filter.update_infobox_role_key_filter(999999, "X", "y", [], [], [], conn=tmp_db)
     assert result is False
 
 
@@ -161,9 +159,7 @@ def test_update_empty_role_key_raises(tmp_db):
 
 def test_update_replaces_scope_rows(tmp_db):
     cid = _country_id(tmp_db)
-    fid = db_filter.create_infobox_role_key_filter(
-        "ScopeReplace", "r", [cid], [], [], conn=tmp_db
-    )
+    fid = db_filter.create_infobox_role_key_filter("ScopeReplace", "r", [cid], [], [], conn=tmp_db)
     # Update with empty scopes — country scope should be cleared
     db_filter.update_infobox_role_key_filter(fid, "ScopeReplace", "r", [], [], [], conn=tmp_db)
     fetched = db_filter.get_infobox_role_key_filter(fid, conn=tmp_db)
@@ -191,9 +187,7 @@ def test_delete_removes_filter(tmp_db):
 
 def test_delete_removes_scope_rows(tmp_db):
     cid = _country_id(tmp_db)
-    fid = db_filter.create_infobox_role_key_filter(
-        "ScopedDelete", "r", [cid], [], [], conn=tmp_db
-    )
+    fid = db_filter.create_infobox_role_key_filter("ScopedDelete", "r", [cid], [], [], conn=tmp_db)
     db_filter.delete_infobox_role_key_filter(fid, conn=tmp_db)
     rows = tmp_db.execute(
         "SELECT COUNT(*) FROM infobox_role_key_filter_countries WHERE filter_id = ?", (fid,)
@@ -216,9 +210,7 @@ def test_list_for_context_no_scope_matches_null_context(tmp_db):
 
 def test_list_for_context_country_scoped_matches_correct_country(tmp_db):
     cid = _country_id(tmp_db)
-    db_filter.create_infobox_role_key_filter(
-        "CtryScoped", "c_role", [cid], [], [], conn=tmp_db
-    )
+    db_filter.create_infobox_role_key_filter("CtryScoped", "c_role", [cid], [], [], conn=tmp_db)
     result = db_filter.list_filters_for_context(cid, None, None, conn=tmp_db)
     names = [r["name"] for r in result]
     assert "CtryScoped" in names
@@ -226,9 +218,7 @@ def test_list_for_context_country_scoped_matches_correct_country(tmp_db):
 
 def test_list_for_context_country_scoped_excluded_when_country_null(tmp_db):
     cid = _country_id(tmp_db)
-    db_filter.create_infobox_role_key_filter(
-        "ExcludedCtry", "ex_role", [cid], [], [], conn=tmp_db
-    )
+    db_filter.create_infobox_role_key_filter("ExcludedCtry", "ex_role", [cid], [], [], conn=tmp_db)
     result = db_filter.list_filters_for_context(None, None, None, conn=tmp_db)
     names = [r["name"] for r in result]
     assert "ExcludedCtry" not in names

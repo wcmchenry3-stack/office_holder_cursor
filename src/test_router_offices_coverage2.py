@@ -6,6 +6,7 @@ find-matching-table routes.
 
 Run: pytest src/test_router_offices_coverage2.py -v
 """
+
 from __future__ import annotations
 
 import importlib
@@ -435,7 +436,9 @@ def test_office_update_action_save_with_list_return(client, office_with_tc):
 def test_api_office_populate_terms_with_force_override(client, office_with_tc):
     """JSON body with force_override=true is parsed (lines 1400-1405)."""
     oid, _ = office_with_tc
-    with patch("src.routers.offices.run_with_db", return_value={"terms_parsed": 0, "office_count": 0}):
+    with patch(
+        "src.routers.offices.run_with_db", return_value={"terms_parsed": 0, "office_count": 0}
+    ):
         resp = client.post(
             f"/api/offices/{oid}/populate-terms",
             json={"force_override": True},
@@ -457,7 +460,9 @@ def test_api_office_populate_terms_not_found(client):
 
 def test_api_populate_terms_status_office_id_mismatch(client, office_with_tc):
     oid, _ = office_with_tc
-    with patch("src.routers.offices.run_with_db", return_value={"terms_parsed": 0, "office_count": 0}):
+    with patch(
+        "src.routers.offices.run_with_db", return_value={"terms_parsed": 0, "office_count": 0}
+    ):
         start = client.post(f"/api/offices/{oid}/populate-terms")
     job_id = start.json()["job_id"]
     # Poll with wrong office_id → 404 (line 1433)
@@ -478,7 +483,9 @@ def test_api_populate_terms_cancel_not_found(client, office_with_tc):
 
 def test_api_populate_terms_cancel_running(client, office_with_tc):
     oid, _ = office_with_tc
-    with patch("src.routers.offices.run_with_db", return_value={"terms_parsed": 0, "office_count": 0}):
+    with patch(
+        "src.routers.offices.run_with_db", return_value={"terms_parsed": 0, "office_count": 0}
+    ):
         start = client.post(f"/api/offices/{oid}/populate-terms")
     job_id = start.json()["job_id"]
     resp = client.post(f"/api/offices/{oid}/populate-terms/cancel/{job_id}")

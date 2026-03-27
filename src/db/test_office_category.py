@@ -5,13 +5,13 @@ Each test gets an isolated DB.
 
 Run: pytest src/db/test_office_category.py -v
 """
+
 from __future__ import annotations
 
 import pytest
 
 from src.db import office_category as db_cat
 from src.db import offices as db_offices
-
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -856,8 +856,13 @@ def test_run_with_db_selected_bios_individual_no_wiki_url(tmp_path, monkeypatch)
 
     monkeypatch.setattr(
         "src.scraper.table_parser.Biography.biography_extract",
-        lambda self, url, **kw: {"full_name": "Page Only", "birth_date": None, "death_date": None,
-                                  "page_path": "PageOnly_Person", "wiki_url": url},
+        lambda self, url, **kw: {
+            "full_name": "Page Only",
+            "birth_date": None,
+            "death_date": None,
+            "page_path": "PageOnly_Person",
+            "wiki_url": url,
+        },
     )
     monkeypatch.setattr("src.scraper.runner.time.sleep", lambda s: None)
 
@@ -982,8 +987,13 @@ def test_run_with_db_bios_only_two_individuals_triggers_sleep(tmp_path, monkeypa
     monkeypatch.setattr("src.scraper.runner.time.sleep", lambda s: sleep_calls.append(s))
     monkeypatch.setattr(
         "src.scraper.table_parser.Biography.biography_extract",
-        lambda self, url, **kw: {"full_name": "Person", "birth_date": None,
-                                  "death_date": None, "page_path": "P", "wiki_url": url},
+        lambda self, url, **kw: {
+            "full_name": "Person",
+            "birth_date": None,
+            "death_date": None,
+            "page_path": "P",
+            "wiki_url": url,
+        },
     )
 
     from src.scraper.runner import run_with_db
@@ -1110,7 +1120,10 @@ def test_run_with_db_selected_bios_two_individuals_triggers_sleep(tmp_path, monk
         conn.commit()
         rows = conn.execute(
             "SELECT id FROM individuals WHERE wiki_url IN (?, ?)",
-            ("https://en.wikipedia.org/wiki/SelPerson1", "https://en.wikipedia.org/wiki/SelPerson2"),
+            (
+                "https://en.wikipedia.org/wiki/SelPerson1",
+                "https://en.wikipedia.org/wiki/SelPerson2",
+            ),
         ).fetchall()
         individual_ids = [r[0] for r in rows]
     finally:
@@ -1120,8 +1133,13 @@ def test_run_with_db_selected_bios_two_individuals_triggers_sleep(tmp_path, monk
     monkeypatch.setattr("src.scraper.runner.time.sleep", lambda s: sleep_calls.append(s))
     monkeypatch.setattr(
         "src.scraper.table_parser.Biography.biography_extract",
-        lambda self, url, **kw: {"full_name": "Sel", "birth_date": None,
-                                  "death_date": None, "page_path": "Sel", "wiki_url": url},
+        lambda self, url, **kw: {
+            "full_name": "Sel",
+            "birth_date": None,
+            "death_date": None,
+            "page_path": "Sel",
+            "wiki_url": url,
+        },
     )
 
     from src.scraper.runner import run_with_db

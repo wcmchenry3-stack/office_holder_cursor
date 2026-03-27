@@ -5,6 +5,7 @@ hierarchy list, import, page CRUD, office update, and add-office-to-page.
 
 Run: pytest src/test_router_offices_coverage.py -v
 """
+
 from __future__ import annotations
 
 import importlib
@@ -50,14 +51,28 @@ def client(db_path):
 
 
 @pytest.fixture(scope="module")
-def seeded_ids(db_path):
-    """Return seeded country_id, level_ids dict, branch_ids dict for use in tests."""
+def seeded_ids(db_path, client):
+    """Return seeded country_id, level_ids dict, branch_ids dict for use in tests.
+    Depends on client to ensure OFFICE_HOLDER_DB_PATH is set before any test that
+    calls _validate_level_state_city (which opens its own connection via get_connection())."""
     conn = get_connection(db_path)
     try:
-        countries = {r["name"]: r["id"] for r in conn.execute("SELECT id, name FROM countries").fetchall()}
-        levels = {r["name"]: r["id"] for r in conn.execute("SELECT id, name FROM levels").fetchall()}
-        branches = {r["name"]: r["id"] for r in conn.execute("SELECT id, name FROM branches").fetchall()}
-        states = {r["name"]: r["id"] for r in conn.execute("SELECT id, name FROM states WHERE country_id = ?", (countries.get("United States of America", 1),)).fetchall()}
+        countries = {
+            r["name"]: r["id"] for r in conn.execute("SELECT id, name FROM countries").fetchall()
+        }
+        levels = {
+            r["name"]: r["id"] for r in conn.execute("SELECT id, name FROM levels").fetchall()
+        }
+        branches = {
+            r["name"]: r["id"] for r in conn.execute("SELECT id, name FROM branches").fetchall()
+        }
+        states = {
+            r["name"]: r["id"]
+            for r in conn.execute(
+                "SELECT id, name FROM states WHERE country_id = ?",
+                (countries.get("United States of America", 1),),
+            ).fetchall()
+        }
     finally:
         conn.close()
     return {"countries": countries, "levels": levels, "branches": branches, "states": states}

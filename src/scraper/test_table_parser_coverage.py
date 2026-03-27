@@ -31,7 +31,6 @@ from src.scraper.table_parser import (
     parse_infobox_role_key_query,
 )
 
-
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
@@ -150,7 +149,7 @@ def test_parse_infobox_role_key_query_trailing_dash_raises():
 def test_parse_infobox_role_key_query_unquoted_exclude_raises():
     """An unquoted exclude token must raise ValueError."""
     with pytest.raises(ValueError, match="quoted"):
-        parse_infobox_role_key_query('-chief')
+        parse_infobox_role_key_query("-chief")
 
 
 def test_parse_infobox_role_key_query_empty_quoted_term_raises():
@@ -411,7 +410,9 @@ def test_extract_party_text_match_returns_party_name():
     party_list = {"United States of America": [{"name": "Democratic", "link": ""}]}
     cells = [_cell("Democratic Party")]
     offices = _offices()
-    result = offices.extract_party("https://en.wikipedia.org/wiki/P", cells, od, tc, 0, party_list, "")
+    result = offices.extract_party(
+        "https://en.wikipedia.org/wiki/P", cells, od, tc, 0, party_list, ""
+    )
     assert result == "Democratic"
 
 
@@ -422,7 +423,9 @@ def test_extract_party_no_match_returns_no_value():
     party_list = {"United States of America": [{"name": "Democratic", "link": ""}]}
     cells = [_cell("Green Party")]
     offices = _offices()
-    result = offices.extract_party("https://en.wikipedia.org/wiki/P", cells, od, tc, 0, party_list, "N/A")
+    result = offices.extract_party(
+        "https://en.wikipedia.org/wiki/P", cells, od, tc, 0, party_list, "N/A"
+    )
     assert result == "N/A"
 
 
@@ -626,8 +629,12 @@ def test_row_matches_filter_non_matching_text_returns_false():
 # ---------------------------------------------------------------------------
 
 
-def _make_row(start: str | None = None, end: str | None = None,
-              start_year: int | None = None, end_year: int | None = None) -> dict:
+def _make_row(
+    start: str | None = None,
+    end: str | None = None,
+    start_year: int | None = None,
+    end_year: int | None = None,
+) -> dict:
     return {
         "Wiki Link": "https://en.wikipedia.org/wiki/Alice",
         "Party": "Democratic",
