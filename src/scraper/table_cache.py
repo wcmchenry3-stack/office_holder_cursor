@@ -13,23 +13,20 @@ from pathlib import Path
 
 from bs4 import BeautifulSoup
 
+from src.db.connection import get_cache_dir
 from src.scraper.wiki_fetch import wiki_session, wiki_url_to_rest_html_url
 
 logger = logging.getLogger(__name__)
 
 TIMEOUT = 30
-CACHE_DIR_NAME = "wiki_cache"
 _LOCK = threading.Lock()
 _key_locks: dict[str, threading.Lock] = {}
 _key_locks_lock = threading.Lock()
 
 
-def _project_root() -> Path:
-    return Path(__file__).resolve().parent.parent
-
-
 def _cache_dir() -> Path:
-    return _project_root() / "data" / CACHE_DIR_NAME
+    """Return the wiki cache directory, respecting WIKI_CACHE_DIR env var (for Render disk)."""
+    return get_cache_dir()
 
 
 def _cache_key(url: str, table_no: int, use_full_page: bool = False) -> str:
