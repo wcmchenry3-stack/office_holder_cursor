@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 from pathlib import Path
 from typing import Any
 
@@ -74,9 +73,7 @@ def load_manifest(manifest_path: Path = MANIFEST_PATH) -> list[dict[str, Any]]:
     return normalized
 
 
-def export_manifest_from_db(
-    manifest_path: Path = MANIFEST_PATH, conn: sqlite3.Connection | None = None
-) -> int:
+def export_manifest_from_db(manifest_path: Path = MANIFEST_PATH, conn=None) -> int:
     own = conn is None
     if own:
         conn = get_connection()
@@ -97,7 +94,7 @@ def export_manifest_from_db(
 
 def import_manifest_to_db(
     manifest_path: Path = MANIFEST_PATH,
-    conn: sqlite3.Connection | None = None,
+    conn=None,
     *,
     overwrite_existing: bool = False,
 ) -> dict[str, int]:
@@ -114,7 +111,7 @@ def import_manifest_to_db(
             if not name:
                 raise ValueError("Manifest entry name is required")
             existing = conn.execute(
-                "SELECT id FROM parser_test_scripts WHERE name = ?", (name,)
+                "SELECT id FROM parser_test_scripts WHERE name = %s", (name,)
             ).fetchone()
             if existing:
                 if overwrite_existing:
@@ -131,9 +128,7 @@ def import_manifest_to_db(
             conn.close()
 
 
-def seed_db_from_manifest_if_empty(
-    manifest_path: Path = MANIFEST_PATH, conn: sqlite3.Connection | None = None
-) -> int:
+def seed_db_from_manifest_if_empty(manifest_path: Path = MANIFEST_PATH, conn=None) -> int:
     own = conn is None
     if own:
         conn = get_connection()
@@ -151,7 +146,12 @@ def seed_db_from_manifest_if_empty(
             conn.close()
 
 
-def _ensure_table(conn: sqlite3.Connection) -> None:
+def _ensure_table(conn) -> None:
+    from .connection import is_postgres
+
+    if is_postgres():
+        # Table is created by SCHEMA_PG_SQL in _init_postgres(); nothing to do here.
+        return
     conn.execute("""
         CREATE TABLE IF NOT EXISTS parser_test_scripts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -183,7 +183,7 @@ def _parse_row(row: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-def list_tests(conn: sqlite3.Connection | None = None) -> list[dict[str, Any]]:
+def list_tests(conn=None) -> list[dict[str, Any]]:
     own = conn is None
     if own:
         conn = get_connection()
@@ -196,20 +196,20 @@ def list_tests(conn: sqlite3.Connection | None = None) -> list[dict[str, Any]]:
             conn.close()
 
 
-def get_test(test_id: int, conn: sqlite3.Connection | None = None) -> dict[str, Any] | None:
+def get_test(test_id: int, conn=None) -> dict[str, Any] | None:
     own = conn is None
     if own:
         conn = get_connection()
     try:
         _ensure_table(conn)
-        row = conn.execute("SELECT * FROM parser_test_scripts WHERE id = ?", (test_id,)).fetchone()
+        row = conn.execute("SELECT * FROM parser_test_scripts WHERE id = %s", (test_id,)).fetchone()
         return _parse_row(_row_to_dict(row)) if row else None
     finally:
         if own:
             conn.close()
 
 
-def create_test(data: dict[str, Any], conn: sqlite3.Connection | None = None) -> int:
+def create_test(data: dict[str, Any], conn=None) -> int:
     own = conn is None
     if own:
         conn = get_connection()
@@ -218,7 +218,8 @@ def create_test(data: dict[str, Any], conn: sqlite3.Connection | None = None) ->
         cur = conn.execute(
             """
             INSERT INTO parser_test_scripts(name, test_type, enabled, html_file, source_url, config_json, expected_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
             """,
             (
                 (data.get("name") or "").strip(),
@@ -235,22 +236,20 @@ def create_test(data: dict[str, Any], conn: sqlite3.Connection | None = None) ->
             ),
         )
         conn.commit()
-        return int(cur.lastrowid)
+        return int(cur.fetchone()["id"])
     finally:
         if own:
             conn.close()
 
 
-def update_test_enabled(
-    test_id: int, enabled: bool, conn: sqlite3.Connection | None = None
-) -> None:
+def update_test_enabled(test_id: int, enabled: bool, conn=None) -> None:
     own = conn is None
     if own:
         conn = get_connection()
     try:
         _ensure_table(conn)
         conn.execute(
-            "UPDATE parser_test_scripts SET enabled = ?, updated_at = datetime('now') WHERE id = ?",
+            "UPDATE parser_test_scripts SET enabled = %s, updated_at = NOW() WHERE id = %s",
             (1 if enabled else 0, test_id),
         )
         conn.commit()
@@ -259,20 +258,20 @@ def update_test_enabled(
             conn.close()
 
 
-def delete_test(test_id: int, conn: sqlite3.Connection | None = None) -> None:
+def delete_test(test_id: int, conn=None) -> None:
     own = conn is None
     if own:
         conn = get_connection()
     try:
         _ensure_table(conn)
-        conn.execute("DELETE FROM parser_test_scripts WHERE id = ?", (test_id,))
+        conn.execute("DELETE FROM parser_test_scripts WHERE id = %s", (test_id,))
         conn.commit()
     finally:
         if own:
             conn.close()
 
 
-def update_test(test_id: int, data: dict[str, Any], conn: sqlite3.Connection | None = None) -> None:
+def update_test(test_id: int, data: dict[str, Any], conn=None) -> None:
     own = conn is None
     if own:
         conn = get_connection()
@@ -281,15 +280,15 @@ def update_test(test_id: int, data: dict[str, Any], conn: sqlite3.Connection | N
         conn.execute(
             """
             UPDATE parser_test_scripts
-               SET name = ?,
-                   test_type = ?,
-                   enabled = ?,
-                   html_file = ?,
-                   source_url = ?,
-                   config_json = ?,
-                   expected_json = ?,
-                   updated_at = datetime('now')
-             WHERE id = ?
+               SET name = %s,
+                   test_type = %s,
+                   enabled = %s,
+                   html_file = %s,
+                   source_url = %s,
+                   config_json = %s,
+                   expected_json = %s,
+                   updated_at = NOW()
+             WHERE id = %s
             """,
             (
                 (data.get("name") or "").strip(),

@@ -7,7 +7,6 @@ Supports: dry_run / test_run (no DB write), row limits, Full / Delta / Live pers
 from __future__ import annotations
 
 import hashlib
-import sqlite3
 import sys
 import time
 from dataclasses import dataclass, field

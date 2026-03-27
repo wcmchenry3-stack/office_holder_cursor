@@ -4,7 +4,6 @@
 import json
 import os
 import re
-import sqlite3
 import tempfile
 import threading
 import uuid
@@ -22,7 +21,7 @@ from src.routers._helpers import (
     _parse_optional_int,
     _office_draft_from_body,
 )
-from src.db.connection import get_connection
+from src.db.connection import get_connection, _DB_UNIQUE_ERRORS
 from src.db import offices as db_offices
 from src.db import refs as db_refs
 from src.db import parties as db_parties
@@ -932,7 +931,7 @@ async def office_update(request: Request, office_id: int):
         if save_all:
             return JSONResponse({"ok": False, "error": str(e), "redirect": redirect_url})
         return RedirectResponse(redirect_url, status_code=302)
-    except sqlite3.IntegrityError as e:
+    except _DB_UNIQUE_ERRORS as e:
         msg = "Save failed due to conflicting table settings: " + str(e)
         q = "?error=" + quote(msg)
         if nav_ids:
@@ -1487,7 +1486,7 @@ async def api_office_find_matching_table(office_id: int, request: Request):
     if confirm:
         with get_connection() as conn:
             conn.execute(
-                "UPDATE office_table_config SET table_no = ?, updated_at = datetime('now') WHERE id = ?",
+                "UPDATE office_table_config SET table_no = %s, updated_at = NOW() WHERE id = %s",
                 (int(found_table_no), int(target_tc_id)),
             )
             conn.commit()

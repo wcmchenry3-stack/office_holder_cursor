@@ -30,6 +30,9 @@ jobs:
 
   cve-python:
     uses: wcmchenry3-stack/.github/.github/workflows/called-cve-python.yml@main
+    with:
+      # pygments CVE-2026-4539: no fix released yet — remove once pygments >2.19.2 ships
+      ignore-vulns: CVE-2026-4539
     secrets: inherit
 
   validate-fixtures:

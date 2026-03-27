@@ -1,11 +1,17 @@
 import sqlite3
 
 from src.db import test_scripts as db_test_scripts
+from src.db.connection import _SQLiteConnWrapper
+
+
+def _memory_conn() -> _SQLiteConnWrapper:
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    return _SQLiteConnWrapper(conn)
 
 
 def test_create_test_serializes_infobox_role_key_filter_id_round_trip():
-    conn = sqlite3.connect(":memory:")
-    conn.row_factory = sqlite3.Row
+    conn = _memory_conn()
 
     test_id = db_test_scripts.create_test(
         {
@@ -31,8 +37,7 @@ def test_create_test_serializes_infobox_role_key_filter_id_round_trip():
 
 
 def test_update_test_serializes_infobox_role_key_filter_id_round_trip():
-    conn = sqlite3.connect(":memory:")
-    conn.row_factory = sqlite3.Row
+    conn = _memory_conn()
 
     test_id = db_test_scripts.create_test(
         {

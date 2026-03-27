@@ -35,19 +35,11 @@ def client(tmp_path_factory, monkeypatch_module=None):
 
     os.environ["OFFICE_HOLDER_DB_PATH"] = str(db_path)
 
-    # Suppress Datasette subprocess
     import src.main as main_mod
-
-    original_start = main_mod._start_datasette
-    original_stop = main_mod._stop_datasette
-    main_mod._start_datasette = lambda: None
-    main_mod._stop_datasette = lambda: None
 
     with TestClient(main_mod.app, raise_server_exceptions=False) as c:
         yield c
 
-    main_mod._start_datasette = original_start
-    main_mod._stop_datasette = original_stop
     os.environ.pop("OFFICE_HOLDER_DB_PATH", None)
 
 
@@ -88,8 +80,6 @@ def test_auth_middleware_redirects_unauthenticated_requests():
 
     import src.main as main_mod
 
-    main_mod._start_datasette = lambda: None
-    main_mod._stop_datasette = lambda: None
     original = main_mod._AUTH_ENABLED
     main_mod._AUTH_ENABLED = True
 
@@ -125,8 +115,6 @@ def test_auth_middleware_allows_public_paths():
 
     import src.main as main_mod
 
-    main_mod._start_datasette = lambda: None
-    main_mod._stop_datasette = lambda: None
     original = main_mod._AUTH_ENABLED
     main_mod._AUTH_ENABLED = True
 

@@ -1,24 +1,31 @@
 """Office config CRUD and list for scraper. Supports hierarchy: source_pages -> office_details -> office_table_config."""
 
-import sqlite3
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from .connection import get_connection, get_db_path
+from .connection import (
+    get_connection,
+    get_db_path,
+    _DB_UNIQUE_ERRORS,
+    _DB_OPERATIONAL_ERRORS,
+    is_postgres,
+)
 from .utils import _row_to_dict
 
 
-def _use_hierarchy(conn: sqlite3.Connection) -> bool:
+def _use_hierarchy(conn: Any) -> bool:
     """True if we have hierarchy data (source_pages has rows)."""
+    if is_postgres():
+        return True
     try:
         n = conn.execute("SELECT COUNT(*) FROM source_pages").fetchone()[0]
         return n > 0
-    except sqlite3.OperationalError:
+    except _DB_OPERATIONAL_ERRORS:
         return False
 
 
-def use_hierarchy(conn: sqlite3.Connection | None = None) -> bool:
+def use_hierarchy(conn: Any | None = None) -> bool:
     """True if hierarchy (source_pages) is in use. Public wrapper for route logic."""
     own_conn = conn is None
     if own_conn:
@@ -171,7 +178,7 @@ def _tc_row_to_config(rd: dict[str, Any]) -> dict[str, Any]:
 
 
 def _ref_names(
-    conn: sqlite3.Connection,
+    conn: Any,
     country_id: int | None,
     state_id: int | None,
     level_id: int | None,
@@ -180,16 +187,16 @@ def _ref_names(
     """Return (country_name, state_name, level_name, branch_name)."""
     c = s = lv = b = ""
     if country_id:
-        r = conn.execute("SELECT name FROM countries WHERE id = ?", (country_id,)).fetchone()
+        r = conn.execute("SELECT name FROM countries WHERE id = %s", (country_id,)).fetchone()
         c = r["name"] if r else ""
     if state_id:
-        r = conn.execute("SELECT name FROM states WHERE id = ?", (state_id,)).fetchone()
+        r = conn.execute("SELECT name FROM states WHERE id = %s", (state_id,)).fetchone()
         s = r["name"] if r else ""
     if level_id:
-        r = conn.execute("SELECT name FROM levels WHERE id = ?", (level_id,)).fetchone()
+        r = conn.execute("SELECT name FROM levels WHERE id = %s", (level_id,)).fetchone()
         lv = r["name"] if r else ""
     if branch_id:
-        r = conn.execute("SELECT name FROM branches WHERE id = ?", (branch_id,)).fetchone()
+        r = conn.execute("SELECT name FROM branches WHERE id = %s", (branch_id,)).fetchone()
         b = r["name"] if r else ""
     return (c, s, lv, b)
 
@@ -201,13 +208,13 @@ def _bool(data: dict, key: str) -> bool:
 
 
 def _scope_ids_for_office_details(
-    conn: sqlite3.Connection, office_details_id: int
+    conn: Any, office_details_id: int
 ) -> tuple[int | None, int | None, int | None]:
     row = conn.execute(
         """SELECT p.country_id, p.level_id, p.branch_id
                FROM office_details od
                JOIN source_pages p ON p.id = od.source_page_id
-              WHERE od.id = ?""",
+              WHERE od.id = %s""",
         (office_details_id,),
     ).fetchone()
     if not row:
@@ -216,7 +223,7 @@ def _scope_ids_for_office_details(
 
 
 def _resolve_infobox_role_key_filter_id(
-    conn: sqlite3.Connection,
+    conn: Any,
     office_details_id: int,
     tc_data: dict[str, Any],
 ) -> int | None:
@@ -236,10 +243,10 @@ def _resolve_infobox_role_key_filter_id(
                LEFT JOIN infobox_role_key_filter_countries fc ON fc.filter_id = f.id
                LEFT JOIN infobox_role_key_filter_levels fl ON fl.filter_id = f.id
                LEFT JOIN infobox_role_key_filter_branches fb ON fb.filter_id = f.id
-              WHERE f.role_key = ?
-                AND ((? IS NULL AND fc.country_id IS NULL) OR fc.country_id = ?)
-                AND ((? IS NULL AND fl.level_id IS NULL) OR fl.level_id = ?)
-                AND ((? IS NULL AND fb.branch_id IS NULL) OR fb.branch_id = ?)
+              WHERE f.role_key = %s
+                AND ((%s IS NULL AND fc.country_id IS NULL) OR fc.country_id = %s)
+                AND ((%s IS NULL AND fl.level_id IS NULL) OR fl.level_id = %s)
+                AND ((%s IS NULL AND fb.branch_id IS NULL) OR fb.branch_id = %s)
               LIMIT 1""",
         (role_key, country_id, country_id, level_id, level_id, branch_id, branch_id),
     ).fetchone()
@@ -250,26 +257,27 @@ def _resolve_infobox_role_key_filter_id(
     base_name = f"{role_key}__{scope}"
     name = base_name
     i = 2
-    while conn.execute("SELECT 1 FROM infobox_role_key_filter WHERE name = ?", (name,)).fetchone():
+    while conn.execute("SELECT 1 FROM infobox_role_key_filter WHERE name = %s", (name,)).fetchone():
         name = f"{base_name}_{i}"
         i += 1
-    conn.execute(
-        "INSERT INTO infobox_role_key_filter (name, role_key) VALUES (?, ?)", (name, role_key)
+    cur = conn.execute(
+        "INSERT INTO infobox_role_key_filter (name, role_key) VALUES (%s, %s) RETURNING id",
+        (name, role_key),
     )
-    fid = int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
+    fid = int(cur.fetchone()["id"])
     if country_id:
         conn.execute(
-            "INSERT OR IGNORE INTO infobox_role_key_filter_countries (filter_id, country_id) VALUES (?, ?)",
+            "INSERT INTO infobox_role_key_filter_countries (filter_id, country_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
             (fid, country_id),
         )
     if level_id:
         conn.execute(
-            "INSERT OR IGNORE INTO infobox_role_key_filter_levels (filter_id, level_id) VALUES (?, ?)",
+            "INSERT INTO infobox_role_key_filter_levels (filter_id, level_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
             (fid, level_id),
         )
     if branch_id:
         conn.execute(
-            "INSERT OR IGNORE INTO infobox_role_key_filter_branches (filter_id, branch_id) VALUES (?, ?)",
+            "INSERT INTO infobox_role_key_filter_branches (filter_id, branch_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
             (fid, branch_id),
         )
     return fid
@@ -351,7 +359,7 @@ def validate_office_table_config(
 def _safe_renumber_table_nos(
     office_details_id: int,
     new_table_nos: dict[int, int],
-    conn: sqlite3.Connection,
+    conn: Any,
 ) -> None:
     """Safely renumber table_no for all configs on an office_details row.
 
@@ -364,7 +372,7 @@ def _safe_renumber_table_nos(
     to avoid transient UNIQUE(office_details_id, table_no) conflicts.
     """
     cur = conn.execute(
-        "SELECT id, table_no FROM office_table_config WHERE office_details_id = ? ORDER BY table_no, id",
+        "SELECT id, table_no FROM office_table_config WHERE office_details_id = %s ORDER BY table_no, id",
         (office_details_id,),
     )
     rows = cur.fetchall()
@@ -403,39 +411,37 @@ def _safe_renumber_table_nos(
     update_ids = [tc_id for (tc_id, _) in prepared]
     for idx, tc_id in enumerate(update_ids):
         conn.execute(
-            "UPDATE office_table_config SET table_no = ? WHERE id = ?",
+            "UPDATE office_table_config SET table_no = %s WHERE id = %s",
             (-(office_details_id * 1000000 + idx + 1), tc_id),
         )
 
     for tc_id, desired_no in prepared:
         conn.execute(
-            "UPDATE office_table_config SET table_no = ?, updated_at=datetime('now') WHERE id = ?",
+            "UPDATE office_table_config SET table_no = %s, updated_at=NOW() WHERE id = %s",
             (desired_no, tc_id),
         )
 
 
 def _table_nos_on_page(
-    conn: sqlite3.Connection, source_page_id: int, *, exclude_office_details_id: int | None = None
+    conn: Any, source_page_id: int, *, exclude_office_details_id: int | None = None
 ) -> set[int]:
     """Return set of table_no values from all office_table_config rows on this page (optionally excluding one office)."""
     if exclude_office_details_id is not None:
         cur = conn.execute(
             """SELECT tc.table_no FROM office_table_config tc
-               JOIN office_details od ON od.id = tc.office_details_id WHERE od.source_page_id = ? AND od.id != ?""",
+               JOIN office_details od ON od.id = tc.office_details_id WHERE od.source_page_id = %s AND od.id != %s""",
             (source_page_id, exclude_office_details_id),
         )
     else:
         cur = conn.execute(
             """SELECT tc.table_no FROM office_table_config tc
-               JOIN office_details od ON od.id = tc.office_details_id WHERE od.source_page_id = ?""",
+               JOIN office_details od ON od.id = tc.office_details_id WHERE od.source_page_id = %s""",
             (source_page_id,),
         )
     return {int(row[0]) for row in cur.fetchall() if row[0] is not None}
 
 
-def get_runnable_unit_ids_for_office(
-    office_id: int, conn: sqlite3.Connection | None = None
-) -> list[int]:
+def get_runnable_unit_ids_for_office(office_id: int, conn: Any | None = None) -> list[int]:
     """Return list of runnable unit ids (office_table_config_id in hierarchy) for this office (office_details_id). For legacy, returns [office_id]."""
     own_conn = conn is None
     if own_conn:
@@ -447,7 +453,7 @@ def get_runnable_unit_ids_for_office(
                    LEFT JOIN infobox_role_key_filter rkf ON rkf.id = tc.infobox_role_key_filter_id
                    JOIN office_details od ON od.id = tc.office_details_id AND od.enabled = 1
                    JOIN source_pages p ON p.id = od.source_page_id AND p.enabled = 1
-                   WHERE tc.office_details_id = ? AND tc.enabled = 1""",
+                   WHERE tc.office_details_id = %s AND tc.enabled = 1""",
                 (office_id,),
             )
             return [row[0] for row in cur.fetchall()]
@@ -457,7 +463,7 @@ def get_runnable_unit_ids_for_office(
             conn.close()
 
 
-def list_runnable_units(conn: sqlite3.Connection | None = None) -> list[dict[str, Any]]:
+def list_runnable_units(conn: Any | None = None) -> list[dict[str, Any]]:
     """Return runnable units from hierarchy: one per enabled office_table_config (page + office + table all enabled).
     Each unit is a flattened office_row with id=office_table_config_id, office_details_id, country_id, alt_links.
     """
@@ -490,7 +496,7 @@ def list_runnable_units(conn: sqlite3.Connection | None = None) -> list[dict[str
             alt_links = [
                 row["link_path"]
                 for row in conn.execute(
-                    "SELECT link_path FROM alt_links WHERE office_details_id = ? ORDER BY id",
+                    "SELECT link_path FROM alt_links WHERE office_details_id = %s ORDER BY id",
                     (od_id,),
                 ).fetchall()
             ]
@@ -566,14 +572,14 @@ def list_runnable_units(conn: sqlite3.Connection | None = None) -> list[dict[str
             conn.close()
 
 
-def update_html_hash(tc_id: int, html_hash: str, conn: sqlite3.Connection | None = None) -> None:
+def update_html_hash(tc_id: int, html_hash: str, conn: Any | None = None) -> None:
     """Store the SHA-256 hash of the last-parsed HTML for an office_table_config row."""
     own_conn = conn is None
     if own_conn:
         conn = get_connection()
     try:
         conn.execute(
-            "UPDATE office_table_config SET last_html_hash = ? WHERE id = ?",
+            "UPDATE office_table_config SET last_html_hash = %s WHERE id = %s",
             (html_hash, tc_id),
         )
         conn.commit()
@@ -582,7 +588,7 @@ def update_html_hash(tc_id: int, html_hash: str, conn: sqlite3.Connection | None
             conn.close()
 
 
-def list_offices(conn: sqlite3.Connection | None = None) -> list[dict[str, Any]]:
+def list_offices(conn: Any | None = None) -> list[dict[str, Any]]:
     """Return all office configs as list of dicts (with country_name, state_name, level_name, branch_name from FKs).
     Uses hierarchy (office_details) when available; else legacy offices table."""
     own_conn = conn is None
@@ -618,7 +624,7 @@ def list_offices(conn: sqlite3.Connection | None = None) -> list[dict[str, Any]]
                 alt_links = [
                     row["link_path"]
                     for row in conn.execute(
-                        "SELECT link_path FROM alt_links WHERE office_details_id = ? ORDER BY id",
+                        "SELECT link_path FROM alt_links WHERE office_details_id = %s ORDER BY id",
                         (od_id,),
                     ).fetchall()
                 ]
@@ -722,7 +728,7 @@ def list_pages(
     enabled: int | None = None,
     limit: int | None = None,
     office_count_filter: str = "all",
-    conn: sqlite3.Connection | None = None,
+    conn: Any | None = None,
 ) -> list[dict[str, Any]]:
     """Return source pages with optional filters and counts (office_count, table_count, first_office_id).
     Used when hierarchy is in use; returns [] otherwise.
@@ -736,25 +742,25 @@ def list_pages(
         where_parts: list[str] = ["1=1"]
         params: list[Any] = []
         if country_id is not None and country_id != 0:
-            where_parts.append("p.country_id = ?")
+            where_parts.append("p.country_id = %s")
             params.append(country_id)
         if state_id is not None and state_id != 0:
-            where_parts.append("p.state_id = ?")
+            where_parts.append("p.state_id = %s")
             params.append(state_id)
         if level_id is not None and level_id != 0:
-            where_parts.append("p.level_id = ?")
+            where_parts.append("p.level_id = %s")
             params.append(level_id)
         if branch_id is not None and branch_id != 0:
-            where_parts.append("p.branch_id = ?")
+            where_parts.append("p.branch_id = %s")
             params.append(branch_id)
         if enabled is not None and enabled in (0, 1):
-            where_parts.append("p.enabled = ?")
+            where_parts.append("p.enabled = %s")
             params.append(enabled)
         if office_category_id is not None and office_category_id != 0:
             where_parts.append("""EXISTS (
                     SELECT 1 FROM office_details od
                     WHERE od.source_page_id = p.id
-                      AND od.office_category_id = ?
+                      AND od.office_category_id = %s
                 )""")
             params.append(office_category_id)
         if office_count_filter == "gt0":
@@ -768,7 +774,7 @@ def list_pages(
         where_sql = " AND ".join(where_parts)
         limit_sql = ""
         if limit is not None and limit > 0:
-            limit_sql = " LIMIT ?"
+            limit_sql = " LIMIT %s"
             params.append(limit)
         sql = f"""
             SELECT p.id, p.country_id, p.state_id, p.city_id, p.level_id, p.branch_id, p.url, p.enabled,
@@ -796,7 +802,7 @@ def list_pages(
 
 def get_runnable_unit_ids_for_office_category(
     office_category_id: int,
-    conn: sqlite3.Connection | None = None,
+    conn: Any | None = None,
 ) -> list[int]:
     """Return runnable unit ids for enabled offices in a given office category."""
     own_conn = conn is None
@@ -812,7 +818,7 @@ def get_runnable_unit_ids_for_office_category(
                    LEFT JOIN infobox_role_key_filter rkf ON rkf.id = tc.infobox_role_key_filter_id
                    JOIN office_details od ON od.id = tc.office_details_id
                    JOIN source_pages p ON p.id = od.source_page_id
-                   WHERE od.office_category_id = ?
+                   WHERE od.office_category_id = %s
                      AND tc.enabled = 1
                      AND od.enabled = 1
                      AND p.enabled = 1
@@ -826,7 +832,7 @@ def get_runnable_unit_ids_for_office_category(
             conn.close()
 
 
-def get_office(office_id: int, conn: sqlite3.Connection | None = None) -> dict[str, Any] | None:
+def get_office(office_id: int, conn: Any | None = None) -> dict[str, Any] | None:
     """Return one office by id. With hierarchy, office_id is office_details_id; else legacy offices id."""
     own_conn = conn is None
     if own_conn:
@@ -845,7 +851,7 @@ def get_office(office_id: int, conn: sqlite3.Connection | None = None) -> dict[s
                    JOIN source_pages p ON p.id = od.source_page_id
                    LEFT JOIN office_table_config tc ON tc.office_details_id = od.id
                    LEFT JOIN infobox_role_key_filter rkf ON rkf.id = tc.infobox_role_key_filter_id
-                   WHERE od.id = ?""",
+                   WHERE od.id = %s""",
                 (office_id,),
             )
             rows = cur.fetchall()
@@ -856,7 +862,7 @@ def get_office(office_id: int, conn: sqlite3.Connection | None = None) -> dict[s
             alt_links = [
                 r["link_path"]
                 for r in conn.execute(
-                    "SELECT link_path FROM alt_links WHERE office_details_id = ? ORDER BY id",
+                    "SELECT link_path FROM alt_links WHERE office_details_id = %s ORDER BY id",
                     (od_id,),
                 ).fetchall()
             ]
@@ -939,7 +945,7 @@ def get_office(office_id: int, conn: sqlite3.Connection | None = None) -> dict[s
                LEFT JOIN levels l ON l.id = o.level_id
                LEFT JOIN branches b ON b.id = o.branch_id
                LEFT JOIN infobox_role_key_filter rkf ON rkf.id = o.infobox_role_key_filter_id
-               WHERE o.id = ?""",
+               WHERE o.id = %s""",
             (office_id,),
         )
         row = cur.fetchone()
@@ -949,7 +955,7 @@ def get_office(office_id: int, conn: sqlite3.Connection | None = None) -> dict[s
             conn.close()
 
 
-def get_page(source_page_id: int, conn: sqlite3.Connection | None = None) -> dict[str, Any] | None:
+def get_page(source_page_id: int, conn: Any | None = None) -> dict[str, Any] | None:
     """Return source_pages row as dict (id, url, country_id, state_id, city_id, level_id, branch_id, notes, enabled, allow_reuse_tables, disable_auto_table_update) or None."""
     own_conn = conn is None
     if own_conn:
@@ -957,12 +963,12 @@ def get_page(source_page_id: int, conn: sqlite3.Connection | None = None) -> dic
     try:
         try:
             row = conn.execute(
-                "SELECT id, url, country_id, state_id, city_id, level_id, branch_id, notes, enabled, allow_reuse_tables, disable_auto_table_update FROM source_pages WHERE id = ?",
+                "SELECT id, url, country_id, state_id, city_id, level_id, branch_id, notes, enabled, allow_reuse_tables, disable_auto_table_update FROM source_pages WHERE id = %s",
                 (source_page_id,),
             ).fetchone()
-        except sqlite3.OperationalError:
+        except _DB_OPERATIONAL_ERRORS:
             row = conn.execute(
-                "SELECT id, url, country_id, state_id, city_id, level_id, branch_id, notes, enabled, allow_reuse_tables FROM source_pages WHERE id = ?",
+                "SELECT id, url, country_id, state_id, city_id, level_id, branch_id, notes, enabled, allow_reuse_tables FROM source_pages WHERE id = %s",
                 (source_page_id,),
             ).fetchone()
         if not row:
@@ -976,7 +982,7 @@ def get_page(source_page_id: int, conn: sqlite3.Connection | None = None) -> dic
             conn.close()
 
 
-def get_source_page_id_by_url(url: str, conn: sqlite3.Connection | None = None) -> int | None:
+def get_source_page_id_by_url(url: str, conn: Any | None = None) -> int | None:
     """Return source_pages.id if a row exists with this URL (comparison: trimmed, case-insensitive). Else None."""
     own_conn = conn is None
     if own_conn:
@@ -986,7 +992,7 @@ def get_source_page_id_by_url(url: str, conn: sqlite3.Connection | None = None) 
         if not url_clean:
             return None
         row = conn.execute(
-            "SELECT id FROM source_pages WHERE LOWER(TRIM(url)) = LOWER(?)",
+            "SELECT id FROM source_pages WHERE LOWER(TRIM(url)) = LOWER(%s)",
             (url_clean,),
         ).fetchone()
         return row[0] if row else None
@@ -995,9 +1001,7 @@ def get_source_page_id_by_url(url: str, conn: sqlite3.Connection | None = None) 
             conn.close()
 
 
-def update_page(
-    source_page_id: int, data: dict[str, Any], conn: sqlite3.Connection | None = None
-) -> bool:
+def update_page(source_page_id: int, data: dict[str, Any], conn: Any | None = None) -> bool:
     """Update only source_pages row. Data: url, country_id, state_id, city_id, level_id, branch_id, notes, enabled, allow_reuse_tables, disable_auto_table_update."""
     own_conn = conn is None
     if own_conn:
@@ -1019,7 +1023,7 @@ def update_page(
         city_id = int(data.get("city_id") or 0) or None
         try:
             conn.execute(
-                """UPDATE source_pages SET country_id=?, state_id=?, city_id=?, level_id=?, branch_id=?, url=?, notes=?, enabled=?, allow_reuse_tables=?, disable_auto_table_update=?, updated_at=datetime('now') WHERE id=?""",
+                """UPDATE source_pages SET country_id=%s, state_id=%s, city_id=%s, level_id=%s, branch_id=%s, url=%s, notes=%s, enabled=%s, allow_reuse_tables=%s, disable_auto_table_update=%s, updated_at=NOW() WHERE id=%s""",
                 (
                     country_id,
                     int(data.get("state_id") or 0) or None,
@@ -1034,9 +1038,9 @@ def update_page(
                     source_page_id,
                 ),
             )
-        except sqlite3.OperationalError:
+        except _DB_OPERATIONAL_ERRORS:
             conn.execute(
-                """UPDATE source_pages SET country_id=?, state_id=?, city_id=?, level_id=?, branch_id=?, url=?, notes=?, enabled=?, updated_at=datetime('now') WHERE id=?""",
+                """UPDATE source_pages SET country_id=%s, state_id=%s, city_id=%s, level_id=%s, branch_id=%s, url=%s, notes=%s, enabled=%s, updated_at=NOW() WHERE id=%s""",
                 (
                     country_id,
                     int(data.get("state_id") or 0) or None,
@@ -1056,9 +1060,7 @@ def update_page(
             conn.close()
 
 
-def get_page_export(
-    source_page_id: int, conn: sqlite3.Connection | None = None
-) -> dict[str, Any] | None:
+def get_page_export(source_page_id: int, conn: Any | None = None) -> dict[str, Any] | None:
     """Return full hierarchy for export: page (all source_pages cols), offices (each with office_details, alt_links, tables).
     Uses SELECT * so any new columns are included. Returns None if not hierarchy or page not found.
     """
@@ -1068,27 +1070,27 @@ def get_page_export(
     try:
         if not _use_hierarchy(conn):
             return None
-        row = conn.execute("SELECT * FROM source_pages WHERE id = ?", (source_page_id,)).fetchone()
+        row = conn.execute("SELECT * FROM source_pages WHERE id = %s", (source_page_id,)).fetchone()
         if not row:
             return None
         page_dict = _row_to_dict(row)
         offices_list: list[dict[str, Any]] = []
         for od_row in conn.execute(
-            "SELECT * FROM office_details WHERE source_page_id = ? ORDER BY id", (source_page_id,)
+            "SELECT * FROM office_details WHERE source_page_id = %s ORDER BY id", (source_page_id,)
         ).fetchall():
             od_dict = _row_to_dict(od_row)
             od_id = od_dict.get("id")
             alt_links_rows: list[dict[str, Any]] = []
             try:
                 for al_row in conn.execute(
-                    "SELECT * FROM alt_links WHERE office_details_id = ? ORDER BY id", (od_id,)
+                    "SELECT * FROM alt_links WHERE office_details_id = %s ORDER BY id", (od_id,)
                 ).fetchall():
                     alt_links_rows.append(_row_to_dict(al_row))
-            except sqlite3.OperationalError:
+            except _DB_OPERATIONAL_ERRORS:
                 pass
             tables_rows: list[dict[str, Any]] = []
             for tc_row in conn.execute(
-                "SELECT * FROM office_table_config WHERE office_details_id = ? ORDER BY table_no, id",
+                "SELECT * FROM office_table_config WHERE office_details_id = %s ORDER BY table_no, id",
                 (od_id,),
             ).fetchall():
                 tables_rows.append(_row_to_dict(tc_row))
@@ -1101,7 +1103,7 @@ def get_page_export(
             conn.close()
 
 
-def get_full_export(conn: sqlite3.Connection | None = None) -> dict[str, Any]:
+def get_full_export(conn: Any | None = None) -> dict[str, Any]:
     """Return full hierarchy for all pages: pages (each with page row, offices with alt_links and tables).
     Uses SELECT * so any new columns are included. Returns {\"pages\": []} when not hierarchy."""
     own_conn = conn is None
@@ -1116,7 +1118,7 @@ def get_full_export(conn: sqlite3.Connection | None = None) -> dict[str, Any]:
             source_page_id = page_dict.get("id")
             offices_list: list[dict[str, Any]] = []
             for od_row in conn.execute(
-                "SELECT * FROM office_details WHERE source_page_id = ? ORDER BY id",
+                "SELECT * FROM office_details WHERE source_page_id = %s ORDER BY id",
                 (source_page_id,),
             ).fetchall():
                 od_dict = _row_to_dict(od_row)
@@ -1124,14 +1126,14 @@ def get_full_export(conn: sqlite3.Connection | None = None) -> dict[str, Any]:
                 alt_links_rows: list[dict[str, Any]] = []
                 try:
                     for al_row in conn.execute(
-                        "SELECT * FROM alt_links WHERE office_details_id = ? ORDER BY id", (od_id,)
+                        "SELECT * FROM alt_links WHERE office_details_id = %s ORDER BY id", (od_id,)
                     ).fetchall():
                         alt_links_rows.append(_row_to_dict(al_row))
-                except sqlite3.OperationalError:
+                except _DB_OPERATIONAL_ERRORS:
                     pass
                 tables_rows: list[dict[str, Any]] = []
                 for tc_row in conn.execute(
-                    "SELECT * FROM office_table_config WHERE office_details_id = ? ORDER BY table_no, id",
+                    "SELECT * FROM office_table_config WHERE office_details_id = %s ORDER BY table_no, id",
                     (od_id,),
                 ).fetchall():
                     tables_rows.append(_row_to_dict(tc_row))
@@ -1145,9 +1147,7 @@ def get_full_export(conn: sqlite3.Connection | None = None) -> dict[str, Any]:
             conn.close()
 
 
-def list_offices_for_page(
-    source_page_id: int, conn: sqlite3.Connection | None = None
-) -> list[dict[str, Any]]:
+def list_offices_for_page(source_page_id: int, conn: Any | None = None) -> list[dict[str, Any]]:
     """Return all offices (flat) for a given source_page_id. Empty if not using hierarchy or page not found."""
     own_conn = conn is None
     if own_conn:
@@ -1167,7 +1167,7 @@ def list_offices_for_page(
                    JOIN source_pages p ON p.id = od.source_page_id
                    LEFT JOIN office_table_config tc ON tc.office_details_id = od.id
                    LEFT JOIN infobox_role_key_filter rkf ON rkf.id = tc.infobox_role_key_filter_id
-                   WHERE p.id = ?
+                   WHERE p.id = %s
                    ORDER BY od.id, tc.table_no, tc.id""",
             (source_page_id,),
         )
@@ -1186,7 +1186,7 @@ def list_offices_for_page(
             alt_links = [
                 row["link_path"]
                 for row in conn.execute(
-                    "SELECT link_path FROM alt_links WHERE office_details_id = ? ORDER BY id",
+                    "SELECT link_path FROM alt_links WHERE office_details_id = %s ORDER BY id",
                     (od_id,),
                 ).fetchall()
             ]
@@ -1266,7 +1266,7 @@ def list_offices_for_page(
 
 
 def search_pages_for_test_script_templates(
-    query: str, limit: int = 25, conn: sqlite3.Connection | None = None
+    query: str, limit: int = 25, conn: Any | None = None
 ) -> list[dict[str, Any]]:
     """Search source pages (hierarchy mode) by URL and office name for test-script template selection."""
     own_conn = conn is None
@@ -1290,14 +1290,14 @@ def search_pages_for_test_script_templates(
                LEFT JOIN states s ON s.id = p.state_id
                LEFT JOIN levels l ON l.id = p.level_id
                LEFT JOIN branches b ON b.id = p.branch_id
-               WHERE p.url LIKE ? OR EXISTS (
+               WHERE p.url LIKE %s OR EXISTS (
                    SELECT 1 FROM office_details od2
                    WHERE od2.source_page_id = p.id
-                     AND od2.name LIKE ?
+                     AND od2.name LIKE %s
                )
                GROUP BY p.id
                ORDER BY p.url
-               LIMIT ?""",
+               LIMIT %s""",
             (like, like, limit),
         )
         return [_row_to_dict(r) for r in cur.fetchall()]
@@ -1306,9 +1306,7 @@ def search_pages_for_test_script_templates(
             conn.close()
 
 
-def _insert_one_table_config(
-    conn: sqlite3.Connection, od_id: int, tc: dict[str, Any], enabled: int
-) -> None:
+def _insert_one_table_config(conn: Any, od_id: int, tc: dict[str, Any], enabled: int) -> None:
     """Insert one office_table_config row from tc dict."""
     t_merged = _bool(tc, "term_dates_merged")
     conn.execute(
@@ -1316,7 +1314,7 @@ def _insert_one_table_config(
               term_start_column, term_end_column, district_column, filter_column, filter_criteria, dynamic_parse, read_right_to_left, find_date_in_infobox,
               parse_rowspan, rep_link, party_link, enabled, use_full_page_for_table, years_only,
               term_dates_merged, party_ignore, district_ignore, district_at_large, ignore_non_links, remove_duplicates, consolidate_rowspan_terms, infobox_role_key_filter_id, notes, name, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))""",
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())""",
         (
             od_id,
             int(tc.get("table_no", 1)),
@@ -1352,7 +1350,7 @@ def _insert_one_table_config(
 
 
 def create_office_for_page(
-    source_page_id: int, data: dict[str, Any], conn: sqlite3.Connection | None = None
+    source_page_id: int, data: dict[str, Any], conn: Any | None = None
 ) -> int:
     """Add a new office (and its table config(s)) to an existing page. Returns new office_details id.
     If data has table_configs, creates multiple configs; else one from data."""
@@ -1361,7 +1359,7 @@ def create_office_for_page(
         conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT id, country_id, state_id, level_id, branch_id, url, notes, enabled FROM source_pages WHERE id = ?",
+            "SELECT id, country_id, state_id, level_id, branch_id, url, notes, enabled FROM source_pages WHERE id = %s",
             (source_page_id,),
         ).fetchone()
         if not row:
@@ -1415,9 +1413,9 @@ def create_office_for_page(
                 _ocid = None
         else:
             _ocid = None
-        conn.execute(
+        cur = conn.execute(
             """INSERT INTO office_details (source_page_id, name, variant_name, department, notes, alt_link_include_main, enabled, office_category_id, created_at, updated_at)
-               VALUES (?, ?, '', ?, ?, ?, ?, ?, datetime('now'), datetime('now'))""",
+               VALUES (%s, %s, '', %s, %s, %s, %s, %s, NOW(), NOW()) RETURNING id""",
             (
                 source_page_id,
                 (row_data.get("name") or "New office").strip(),
@@ -1428,7 +1426,7 @@ def create_office_for_page(
                 _ocid,
             ),
         )
-        od_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        od_id = cur.fetchone()["id"]
         for tc in table_configs:
             _insert_one_table_config(conn, od_id, tc, enabled)
         conn.commit()
@@ -1439,7 +1437,7 @@ def create_office_for_page(
             conn.close()
 
 
-def create_office(data: dict[str, Any], conn: sqlite3.Connection | None = None) -> int:
+def create_office(data: dict[str, Any], conn: Any | None = None) -> int:
     """Insert office and return new id (office_details_id in hierarchy). Creates source_page + office_details + office_table_config(s).
     If data has table_configs, creates multiple configs; else one from data."""
     own_conn = conn is None
@@ -1484,9 +1482,9 @@ def create_office(data: dict[str, Any], conn: sqlite3.Connection | None = None) 
                 raise ValueError("Duplicate table_no within office")
         enabled = 1 if row_data.get("enabled") in (True, 1, "TRUE", "true", "1") else 0
         _city_id = int(row_data.get("city_id") or 0) or None
-        conn.execute(
+        cur = conn.execute(
             """INSERT INTO source_pages (country_id, state_id, city_id, level_id, branch_id, url, notes, enabled, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW()) RETURNING id""",
             (
                 country_id,
                 int(row_data.get("state_id") or 0) or None,
@@ -1498,7 +1496,7 @@ def create_office(data: dict[str, Any], conn: sqlite3.Connection | None = None) 
                 enabled,
             ),
         )
-        page_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        page_id = cur.fetchone()["id"]
         _ocid = data.get("office_category_id")
         if _ocid is not None and _ocid != "":
             try:
@@ -1507,9 +1505,9 @@ def create_office(data: dict[str, Any], conn: sqlite3.Connection | None = None) 
                 _ocid = None
         else:
             _ocid = None
-        conn.execute(
+        cur = conn.execute(
             """INSERT INTO office_details (source_page_id, name, variant_name, department, notes, alt_link_include_main, enabled, office_category_id, created_at, updated_at)
-               VALUES (?, ?, '', ?, ?, ?, ?, ?, datetime('now'), datetime('now'))""",
+               VALUES (%s, %s, '', %s, %s, %s, %s, %s, NOW(), NOW()) RETURNING id""",
             (
                 page_id,
                 (row_data.get("name") or "").strip(),
@@ -1520,7 +1518,7 @@ def create_office(data: dict[str, Any], conn: sqlite3.Connection | None = None) 
                 _ocid,
             ),
         )
-        od_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        od_id = cur.fetchone()["id"]
         for tc in table_configs:
             _insert_one_table_config(conn, od_id, tc, enabled)
         conn.commit()
@@ -1534,7 +1532,7 @@ def create_office(data: dict[str, Any], conn: sqlite3.Connection | None = None) 
 def update_office(
     office_id: int,
     data: dict[str, Any],
-    conn: sqlite3.Connection | None = None,
+    conn: Any | None = None,
     *,
     office_only: bool = False,
 ) -> bool:
@@ -1558,7 +1556,7 @@ def update_office(
                 raise ValueError("country_id required")
         if _use_hierarchy(conn):
             row = conn.execute(
-                "SELECT source_page_id FROM office_details WHERE id = ?", (office_id,)
+                "SELECT source_page_id FROM office_details WHERE id = %s", (office_id,)
             ).fetchone()
             if not row:
                 return False
@@ -1566,7 +1564,7 @@ def update_office(
             if not office_only:
                 _city_id = int(row_data.get("city_id") or 0) or None
                 conn.execute(
-                    """UPDATE source_pages SET country_id=?, state_id=?, city_id=?, level_id=?, branch_id=?, url=?, notes=?, enabled=?, updated_at=datetime('now') WHERE id=?""",
+                    """UPDATE source_pages SET country_id=%s, state_id=%s, city_id=%s, level_id=%s, branch_id=%s, url=%s, notes=%s, enabled=%s, updated_at=NOW() WHERE id=%s""",
                     (
                         int(row_data.get("country_id") or 0),
                         int(row_data.get("state_id") or 0) or None,
@@ -1588,7 +1586,7 @@ def update_office(
             else:
                 _ocid = None
             conn.execute(
-                """UPDATE office_details SET name=?, department=?, notes=?, alt_link_include_main=?, enabled=?, office_category_id=?, updated_at=datetime('now') WHERE id=?""",
+                """UPDATE office_details SET name=%s, department=%s, notes=%s, alt_link_include_main=%s, enabled=%s, office_category_id=%s, updated_at=NOW() WHERE id=%s""",
                 (
                     (row_data.get("name") or "").strip(),
                     row_data.get("department") or "",
@@ -1632,7 +1630,7 @@ def update_office(
                     "notes": row_data.get("notes"),
                 }
                 existing_tc = conn.execute(
-                    "SELECT id FROM office_table_config WHERE office_details_id = ?", (office_id,)
+                    "SELECT id FROM office_table_config WHERE office_details_id = %s", (office_id,)
                 ).fetchall()
                 if len(existing_tc) == 1:
                     one["id"] = existing_tc[0][0]
@@ -1668,7 +1666,7 @@ def update_office(
                             "Table numbers must be unique per page when 'Allow reuse of tables' is unchecked"
                         )
                 existing_rows = conn.execute(
-                    "SELECT id, table_no FROM office_table_config WHERE office_details_id = ?",
+                    "SELECT id, table_no FROM office_table_config WHERE office_details_id = %s",
                     (office_id,),
                 ).fetchall()
                 existing_ids = {r[0] for r in existing_rows}
@@ -1701,7 +1699,7 @@ def update_office(
                 ]
                 for idx, existing_tc_id in enumerate(update_ids):
                     conn.execute(
-                        "UPDATE office_table_config SET table_no = ? WHERE id = ?",
+                        "UPDATE office_table_config SET table_no = %s WHERE id = %s",
                         (-(office_id * 1000000 + idx + 1), existing_tc_id),
                     )
 
@@ -1710,11 +1708,11 @@ def update_office(
                     if existing_tc_id is not None:
                         t_merged = _bool(tc, "term_dates_merged")
                         conn.execute(
-                            """UPDATE office_table_config SET table_no=?, table_rows=?, link_column=?, party_column=?,
-                                  term_start_column=?, term_end_column=?, district_column=?, filter_column=?, filter_criteria=?, dynamic_parse=?, read_right_to_left=?,
-                                  find_date_in_infobox=?, parse_rowspan=?, rep_link=?, party_link=?, enabled=?, use_full_page_for_table=?,
-                                  years_only=?, term_dates_merged=?, party_ignore=?, district_ignore=?, district_at_large=?, ignore_non_links=?, remove_duplicates=?,
-                                  consolidate_rowspan_terms=?, infobox_role_key_filter_id=?, notes=?, name=?, updated_at=datetime('now') WHERE id=?""",
+                            """UPDATE office_table_config SET table_no=%s, table_rows=%s, link_column=%s, party_column=%s,
+                                  term_start_column=%s, term_end_column=%s, district_column=%s, filter_column=%s, filter_criteria=%s, dynamic_parse=%s, read_right_to_left=%s,
+                                  find_date_in_infobox=%s, parse_rowspan=%s, rep_link=%s, party_link=%s, enabled=%s, use_full_page_for_table=%s,
+                                  years_only=%s, term_dates_merged=%s, party_ignore=%s, district_ignore=%s, district_at_large=%s, ignore_non_links=%s, remove_duplicates=%s,
+                                  consolidate_rowspan_terms=%s, infobox_role_key_filter_id=%s, notes=%s, name=%s, updated_at=NOW() WHERE id=%s""",
                             (
                                 tc_table_no,
                                 int(tc.get("table_rows", 4)),
@@ -1798,12 +1796,12 @@ def update_office(
                         kept_ids.append(existing_tc_id)
                     else:
                         t_merged = _bool(tc, "term_dates_merged")
-                        conn.execute(
+                        cur = conn.execute(
                             """INSERT INTO office_table_config (office_details_id, table_no, table_rows, link_column, party_column,
                                   term_start_column, term_end_column, district_column, filter_column, filter_criteria, dynamic_parse, read_right_to_left, find_date_in_infobox,
                                   parse_rowspan, rep_link, party_link, enabled, use_full_page_for_table, years_only,
                                   term_dates_merged, party_ignore, district_ignore, district_at_large, ignore_non_links, remove_duplicates, consolidate_rowspan_terms, infobox_role_key_filter_id, notes, name, created_at, updated_at)
-                               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))""",
+                               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW()) RETURNING id""",
                             (
                                 office_id,
                                 tc_table_no,
@@ -1884,28 +1882,28 @@ def update_office(
                                 tc.get("name") or "",
                             ),
                         )
-                        kept_ids.append(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
+                        kept_ids.append(cur.fetchone()["id"])
                 if kept_ids:
-                    placeholders = ",".join("?" * len(kept_ids))
+                    placeholders = ",".join(["%s"] * len(kept_ids))
                     conn.execute(
-                        f"DELETE FROM office_table_config WHERE office_details_id = ? AND id NOT IN ({placeholders})",
+                        f"DELETE FROM office_table_config WHERE office_details_id = %s AND id NOT IN ({placeholders})",
                         (office_id, *kept_ids),
                     )
             conn.commit()
             set_alt_links_for_office(office_id, row_data.get("alt_links") or [], conn=conn)
             return True
         if "enabled" not in data:
-            row = conn.execute("SELECT enabled FROM offices WHERE id = ?", (office_id,)).fetchone()
+            row = conn.execute("SELECT enabled FROM offices WHERE id = %s", (office_id,)).fetchone()
             enabled_val = row["enabled"] if row and "enabled" in row.keys() else 1
         cur = conn.execute(
             """UPDATE offices SET
-                country_id=?, state_id=?, level_id=?, branch_id=?, department=?, name=?, enabled=?, notes=?,
-                url=?, table_no=?, table_rows=?, link_column=?, party_column=?,
-                term_start_column=?, term_end_column=?, district_column=?,
-                dynamic_parse=?, read_right_to_left=?, find_date_in_infobox=?,
-                parse_rowspan=?, consolidate_rowspan_terms=?, rep_link=?, party_link=?, alt_link_include_main=?, use_full_page_for_table=?, years_only=?,
-                term_dates_merged=?, party_ignore=?, district_ignore=?, district_at_large=?, ignore_non_links=?, remove_duplicates=?, infobox_role_key=?
-            WHERE id=?""",
+                country_id=%s, state_id=%s, level_id=%s, branch_id=%s, department=%s, name=%s, enabled=%s, notes=%s,
+                url=%s, table_no=%s, table_rows=%s, link_column=%s, party_column=%s,
+                term_start_column=%s, term_end_column=%s, district_column=%s,
+                dynamic_parse=%s, read_right_to_left=%s, find_date_in_infobox=%s,
+                parse_rowspan=%s, consolidate_rowspan_terms=%s, rep_link=%s, party_link=%s, alt_link_include_main=%s, use_full_page_for_table=%s, years_only=%s,
+                term_dates_merged=%s, party_ignore=%s, district_ignore=%s, district_at_large=%s, ignore_non_links=%s, remove_duplicates=%s, infobox_role_key=%s
+            WHERE id=%s""",
             (
                 country_id,
                 int(row_data.get("state_id") or 0) or None,
@@ -1959,9 +1957,7 @@ def update_office(
             conn.close()
 
 
-def set_office_enabled(
-    office_id: int, enabled: bool, conn: sqlite3.Connection | None = None
-) -> bool:
+def set_office_enabled(office_id: int, enabled: bool, conn: Any | None = None) -> bool:
     """Set enabled flag for one office (office_details_id in hierarchy). Returns True if a row was updated."""
     own_conn = conn is None
     if own_conn:
@@ -1969,13 +1965,13 @@ def set_office_enabled(
     try:
         if _use_hierarchy(conn):
             cur = conn.execute(
-                "UPDATE office_details SET enabled = ? WHERE id = ?",
+                "UPDATE office_details SET enabled = %s WHERE id = %s",
                 (1 if enabled else 0, office_id),
             )
             conn.commit()
             return cur.rowcount > 0
         cur = conn.execute(
-            "UPDATE offices SET enabled = ? WHERE id = ?", (1 if enabled else 0, office_id)
+            "UPDATE offices SET enabled = %s WHERE id = %s", (1 if enabled else 0, office_id)
         )
         conn.commit()
         return cur.rowcount > 0
@@ -1984,16 +1980,16 @@ def set_office_enabled(
             conn.close()
 
 
-def set_all_offices_enabled(enabled: bool, conn: sqlite3.Connection | None = None) -> int:
+def set_all_offices_enabled(enabled: bool, conn: Any | None = None) -> int:
     """Set enabled flag for all offices (office_details in hierarchy). Returns number of rows updated."""
     own_conn = conn is None
     if own_conn:
         conn = get_connection()
     try:
         if _use_hierarchy(conn):
-            cur = conn.execute("UPDATE office_details SET enabled = ?", (1 if enabled else 0,))
+            cur = conn.execute("UPDATE office_details SET enabled = %s", (1 if enabled else 0,))
         else:
-            cur = conn.execute("UPDATE offices SET enabled = ?", (1 if enabled else 0,))
+            cur = conn.execute("UPDATE offices SET enabled = %s", (1 if enabled else 0,))
         conn.commit()
         return cur.rowcount
     finally:
@@ -2005,7 +2001,7 @@ def set_infobox_role_key(
     office_id: int,
     table_no: int,
     infobox_role_key: str,
-    conn: sqlite3.Connection | None = None,
+    conn: Any | None = None,
 ) -> bool:
     """Set infobox_role_key for one office/table_no. Returns True when a row was updated.
 
@@ -2020,8 +2016,8 @@ def set_infobox_role_key(
         if _use_hierarchy(conn):
             cur = conn.execute(
                 """UPDATE office_table_config
-                       SET infobox_role_key_filter_id = ?, updated_at = datetime('now')
-                     WHERE office_details_id = ? AND table_no = ?""",
+                       SET infobox_role_key_filter_id = %s, updated_at = NOW()
+                     WHERE office_details_id = %s AND table_no = %s""",
                 (
                     _resolve_infobox_role_key_filter_id(
                         conn, int(office_id), {"infobox_role_key": key}
@@ -2041,7 +2037,7 @@ def set_infobox_role_key(
 def set_infobox_role_key_by_table_config_id(
     office_table_config_id: int,
     infobox_role_key: str,
-    conn: sqlite3.Connection | None = None,
+    conn: Any | None = None,
 ) -> bool:
     """Set infobox_role_key for one office_table_config row by id.
 
@@ -2056,7 +2052,7 @@ def set_infobox_role_key_by_table_config_id(
         key = (infobox_role_key or "").strip()
         if _use_hierarchy(conn):
             scope_row = conn.execute(
-                "SELECT office_details_id FROM office_table_config WHERE id = ?",
+                "SELECT office_details_id FROM office_table_config WHERE id = %s",
                 (int(office_table_config_id),),
             ).fetchone()
             if not scope_row:
@@ -2066,8 +2062,8 @@ def set_infobox_role_key_by_table_config_id(
             )
             cur = conn.execute(
                 """UPDATE office_table_config
-                       SET infobox_role_key_filter_id = ?, updated_at = datetime('now')
-                     WHERE id = ?""",
+                       SET infobox_role_key_filter_id = %s, updated_at = NOW()
+                     WHERE id = %s""",
                 (filter_id, int(office_table_config_id)),
             )
             conn.commit()
@@ -2080,7 +2076,7 @@ def set_infobox_role_key_by_table_config_id(
 
 def get_office_by_table_config_id(
     office_table_config_id: int,
-    conn: sqlite3.Connection | None = None,
+    conn: Any | None = None,
 ) -> dict[str, Any] | None:
     """Return one flattened office row for a specific table-config id.
 
@@ -2111,7 +2107,7 @@ def get_office_by_table_config_id(
                    LEFT JOIN infobox_role_key_filter rkf ON rkf.id = tc.infobox_role_key_filter_id
                    JOIN office_details od ON od.id = tc.office_details_id
                    JOIN source_pages p ON p.id = od.source_page_id
-                   WHERE tc.id = ?""",
+                   WHERE tc.id = %s""",
                 (office_table_config_id,),
             ).fetchone()
             if not row:
@@ -2120,7 +2116,7 @@ def get_office_by_table_config_id(
             alt_links = [
                 r[0]
                 for r in conn.execute(
-                    "SELECT link_path FROM alt_links WHERE office_details_id = ? ORDER BY id",
+                    "SELECT link_path FROM alt_links WHERE office_details_id = %s ORDER BY id",
                     (rd.get("office_details_id"),),
                 ).fetchall()
             ]
@@ -2186,7 +2182,7 @@ def get_office_by_table_config_id(
             flat["office_details_id"] = rd.get("office_details_id")
             flat["source_page_id"] = rd.get("page_id")
             return flat
-        cur = conn.execute("SELECT * FROM offices WHERE id = ?", (office_table_config_id,))
+        cur = conn.execute("SELECT * FROM offices WHERE id = %s", (office_table_config_id,))
         row = cur.fetchone()
         return _row_to_dict(row) if row else None
     finally:
@@ -2194,7 +2190,7 @@ def get_office_by_table_config_id(
             conn.close()
 
 
-def delete_table(office_table_config_id: int, conn: sqlite3.Connection | None = None) -> bool:
+def delete_table(office_table_config_id: int, conn: Any | None = None) -> bool:
     """Delete one office_table_config and its office_terms. Fails if it would leave the office with zero configs."""
     own_conn = conn is None
     if own_conn:
@@ -2203,21 +2199,21 @@ def delete_table(office_table_config_id: int, conn: sqlite3.Connection | None = 
         if not _use_hierarchy(conn):
             return False
         row = conn.execute(
-            "SELECT office_details_id FROM office_table_config WHERE id = ?",
+            "SELECT office_details_id FROM office_table_config WHERE id = %s",
             (office_table_config_id,),
         ).fetchone()
         if not row:
             return False
         od_id = row[0]
         count = conn.execute(
-            "SELECT COUNT(*) FROM office_table_config WHERE office_details_id = ?", (od_id,)
+            "SELECT COUNT(*) FROM office_table_config WHERE office_details_id = %s", (od_id,)
         ).fetchone()[0]
         if count <= 1:
             raise ValueError("Office must have at least one table config")
         conn.execute(
-            "DELETE FROM office_terms WHERE office_table_config_id = ?", (office_table_config_id,)
+            "DELETE FROM office_terms WHERE office_table_config_id = %s", (office_table_config_id,)
         )
-        conn.execute("DELETE FROM office_table_config WHERE id = ?", (office_table_config_id,))
+        conn.execute("DELETE FROM office_table_config WHERE id = %s", (office_table_config_id,))
         conn.commit()
         return True
     finally:
@@ -2229,7 +2225,7 @@ def move_table(
     tc_id: int,
     to_office_details_id: int,
     delete_source_office_if_empty: bool = False,
-    conn: sqlite3.Connection | None = None,
+    conn: Any | None = None,
 ) -> int:
     """Move a table config to another office on the same page. Returns to_office_details_id on success.
     If source office has only one table and delete_source_office_if_empty is False, raises ValueError
@@ -2241,7 +2237,7 @@ def move_table(
         if not _use_hierarchy(conn):
             raise ValueError("Hierarchy required")
         row = conn.execute(
-            "SELECT office_details_id FROM office_table_config WHERE id = ?", (tc_id,)
+            "SELECT office_details_id FROM office_table_config WHERE id = %s", (tc_id,)
         ).fetchone()
         if not row:
             raise ValueError("Table config not found")
@@ -2249,28 +2245,28 @@ def move_table(
         if source_od_id == to_office_details_id:
             raise ValueError("Table is already in that office")
         src_page = conn.execute(
-            "SELECT source_page_id FROM office_details WHERE id = ?", (source_od_id,)
+            "SELECT source_page_id FROM office_details WHERE id = %s", (source_od_id,)
         ).fetchone()
         tgt_page = conn.execute(
-            "SELECT source_page_id FROM office_details WHERE id = ?", (to_office_details_id,)
+            "SELECT source_page_id FROM office_details WHERE id = %s", (to_office_details_id,)
         ).fetchone()
         if not src_page or not tgt_page or src_page[0] != tgt_page[0]:
             raise ValueError("Source and target office must be on the same page")
         count = conn.execute(
-            "SELECT COUNT(*) FROM office_table_config WHERE office_details_id = ?", (source_od_id,)
+            "SELECT COUNT(*) FROM office_table_config WHERE office_details_id = %s", (source_od_id,)
         ).fetchone()[0]
         if count == 1 and not delete_source_office_if_empty:
             name_row = conn.execute(
-                "SELECT name FROM office_details WHERE id = ?", (source_od_id,)
+                "SELECT name FROM office_details WHERE id = %s", (source_od_id,)
             ).fetchone()
             source_name = (name_row[0] or "Office").strip() if name_row else "Office"
             raise ValueError(f"OFFICE_WOULD_BE_EMPTY:{source_name}")
         try:
             conn.execute(
-                "UPDATE office_table_config SET office_details_id = ?, updated_at = datetime('now') WHERE id = ?",
+                "UPDATE office_table_config SET office_details_id = %s, updated_at = NOW() WHERE id = %s",
                 (to_office_details_id, tc_id),
             )
-        except sqlite3.IntegrityError:
+        except _DB_UNIQUE_ERRORS:
             raise ValueError(
                 "Target office already has a table with that table number. Change one of the table numbers first."
             )
@@ -2283,7 +2279,7 @@ def move_table(
             conn.close()
 
 
-def delete_page(source_page_id: int, conn: sqlite3.Connection | None = None) -> bool:
+def delete_page(source_page_id: int, conn: Any | None = None) -> bool:
     """Delete page and all its offices (each office's table configs, alt_links, office_terms, then office_details, then source_pages row)."""
     own_conn = conn is None
     if own_conn:
@@ -2294,15 +2290,15 @@ def delete_page(source_page_id: int, conn: sqlite3.Connection | None = None) -> 
         office_ids = [
             r[0]
             for r in conn.execute(
-                "SELECT id FROM office_details WHERE source_page_id = ?", (source_page_id,)
+                "SELECT id FROM office_details WHERE source_page_id = %s", (source_page_id,)
             ).fetchall()
         ]
         for od_id in office_ids:
-            conn.execute("DELETE FROM office_table_config WHERE office_details_id = ?", (od_id,))
-            conn.execute("DELETE FROM alt_links WHERE office_details_id = ?", (od_id,))
-            conn.execute("DELETE FROM office_terms WHERE office_details_id = ?", (od_id,))
-            conn.execute("DELETE FROM office_details WHERE id = ?", (od_id,))
-        conn.execute("DELETE FROM source_pages WHERE id = ?", (source_page_id,))
+            conn.execute("DELETE FROM office_table_config WHERE office_details_id = %s", (od_id,))
+            conn.execute("DELETE FROM alt_links WHERE office_details_id = %s", (od_id,))
+            conn.execute("DELETE FROM office_terms WHERE office_details_id = %s", (od_id,))
+            conn.execute("DELETE FROM office_details WHERE id = %s", (od_id,))
+        conn.execute("DELETE FROM source_pages WHERE id = %s", (source_page_id,))
         conn.commit()
         return True
     finally:
@@ -2310,7 +2306,7 @@ def delete_page(source_page_id: int, conn: sqlite3.Connection | None = None) -> 
             conn.close()
 
 
-def delete_office(office_id: int, conn: sqlite3.Connection | None = None) -> bool:
+def delete_office(office_id: int, conn: Any | None = None) -> bool:
     """Delete office by id (office_details_id in hierarchy: table_configs, alt_links, terms, office_details). Does not delete source_pages."""
     own_conn = conn is None
     if own_conn:
@@ -2318,20 +2314,20 @@ def delete_office(office_id: int, conn: sqlite3.Connection | None = None) -> boo
     try:
         if _use_hierarchy(conn):
             row = conn.execute(
-                "SELECT id FROM office_details WHERE id = ?", (office_id,)
+                "SELECT id FROM office_details WHERE id = %s", (office_id,)
             ).fetchone()
             if not row:
                 return False
             conn.execute(
-                "DELETE FROM office_table_config WHERE office_details_id = ?", (office_id,)
+                "DELETE FROM office_table_config WHERE office_details_id = %s", (office_id,)
             )
-            conn.execute("DELETE FROM alt_links WHERE office_details_id = ?", (office_id,))
-            conn.execute("DELETE FROM office_terms WHERE office_details_id = ?", (office_id,))
-            conn.execute("DELETE FROM office_details WHERE id = ?", (office_id,))
+            conn.execute("DELETE FROM alt_links WHERE office_details_id = %s", (office_id,))
+            conn.execute("DELETE FROM office_terms WHERE office_details_id = %s", (office_id,))
+            conn.execute("DELETE FROM office_details WHERE id = %s", (office_id,))
             conn.commit()
             return True
-        conn.execute("DELETE FROM alt_links WHERE office_id = ?", (office_id,))
-        cur = conn.execute("DELETE FROM offices WHERE id = ?", (office_id,))
+        conn.execute("DELETE FROM alt_links WHERE office_id = %s", (office_id,))
+        cur = conn.execute("DELETE FROM offices WHERE id = %s", (office_id,))
         conn.commit()
         return cur.rowcount > 0
     finally:
@@ -2339,7 +2335,7 @@ def delete_office(office_id: int, conn: sqlite3.Connection | None = None) -> boo
             conn.close()
 
 
-def deduplicate_source_pages_by_url(conn: sqlite3.Connection | None = None) -> dict[str, Any]:
+def deduplicate_source_pages_by_url(conn: Any | None = None) -> dict[str, Any]:
     """Deduplicate source_pages by URL: for each duplicate URL, keep the row with smallest id,
     relink all office_details from other rows to that one, then disable the duplicate rows.
     Returns {"relinked": [(duplicate_id, kept_id, office_count), ...], "disabled": [id, ...], "errors": []}.
@@ -2374,16 +2370,16 @@ def deduplicate_source_pages_by_url(conn: sqlite3.Connection | None = None) -> d
             duplicate_ids = [x[0] for x in id_list[1:]]
             for dup_id in duplicate_ids:
                 cur = conn.execute(
-                    "SELECT COUNT(*) FROM office_details WHERE source_page_id = ?", (dup_id,)
+                    "SELECT COUNT(*) FROM office_details WHERE source_page_id = %s", (dup_id,)
                 )
                 count = cur.fetchone()[0]
                 conn.execute(
-                    "UPDATE office_details SET source_page_id = ?, updated_at = datetime('now') WHERE source_page_id = ?",
+                    "UPDATE office_details SET source_page_id = %s, updated_at = NOW() WHERE source_page_id = %s",
                     (kept_id, dup_id),
                 )
                 relinked.append((dup_id, kept_id, count))
                 conn.execute(
-                    "UPDATE source_pages SET enabled = 0, updated_at = datetime('now') WHERE id = ?",
+                    "UPDATE source_pages SET enabled = 0, updated_at = NOW() WHERE id = %s",
                     (dup_id,),
                 )
                 disabled.append(dup_id)
@@ -2398,7 +2394,7 @@ def deduplicate_source_pages_by_url(conn: sqlite3.Connection | None = None) -> d
     return {"relinked": relinked, "disabled": list(disabled), "errors": errors}
 
 
-def list_alt_links(office_id: int, conn: sqlite3.Connection | None = None) -> list[str]:
+def list_alt_links(office_id: int, conn: Any | None = None) -> list[str]:
     """Return list of link_path strings for the office (office_details_id in hierarchy)."""
     own_conn = conn is None
     if own_conn:
@@ -2406,12 +2402,12 @@ def list_alt_links(office_id: int, conn: sqlite3.Connection | None = None) -> li
     try:
         if _use_hierarchy(conn):
             cur = conn.execute(
-                "SELECT link_path FROM alt_links WHERE office_details_id = ? ORDER BY id",
+                "SELECT link_path FROM alt_links WHERE office_details_id = %s ORDER BY id",
                 (office_id,),
             )
             return [row["link_path"] for row in cur.fetchall()]
         cur = conn.execute(
-            "SELECT link_path FROM alt_links WHERE office_id = ? ORDER BY id",
+            "SELECT link_path FROM alt_links WHERE office_id = %s ORDER BY id",
             (office_id,),
         )
         return [row["link_path"] for row in cur.fetchall()]
@@ -2420,30 +2416,28 @@ def list_alt_links(office_id: int, conn: sqlite3.Connection | None = None) -> li
             conn.close()
 
 
-def set_alt_links_for_office(
-    office_id: int, paths: list[str], conn: sqlite3.Connection | None = None
-) -> None:
+def set_alt_links_for_office(office_id: int, paths: list[str], conn: Any | None = None) -> None:
     """Replace all alt links for the office (office_details_id in hierarchy)."""
     own_conn = conn is None
     if own_conn:
         conn = get_connection()
     try:
         if _use_hierarchy(conn):
-            conn.execute("DELETE FROM alt_links WHERE office_details_id = ?", (office_id,))
+            conn.execute("DELETE FROM alt_links WHERE office_details_id = %s", (office_id,))
             for raw in paths:
                 path = _normalize_alt_link_path(raw)
                 if path:
                     conn.execute(
-                        "INSERT OR IGNORE INTO alt_links (office_details_id, link_path) VALUES (?, ?)",
+                        "INSERT INTO alt_links (office_details_id, link_path) VALUES (%s, %s) ON CONFLICT DO NOTHING",
                         (office_id, path),
                     )
         else:
-            conn.execute("DELETE FROM alt_links WHERE office_id = ?", (office_id,))
+            conn.execute("DELETE FROM alt_links WHERE office_id = %s", (office_id,))
             for raw in paths:
                 path = _normalize_alt_link_path(raw)
                 if path:
                     conn.execute(
-                        "INSERT OR IGNORE INTO alt_links (office_id, link_path) VALUES (?, ?)",
+                        "INSERT INTO alt_links (office_id, link_path) VALUES (%s, %s) ON CONFLICT DO NOTHING",
                         (office_id, path),
                     )
         conn.commit()

@@ -15,7 +15,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from src.routers._deps import templates
-from src.db.connection import get_connection
+from src.db.connection import get_connection, is_postgres
 from src.db import offices as db_offices
 
 router = APIRouter()
@@ -49,9 +49,13 @@ def _ui_test_env_defaults() -> dict[str, str]:
         # Fallback for older schema variants where list_offices may fail.
         try:
             conn = get_connection()
-            has_hierarchy = conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='office_details'"
-            ).fetchone()
+            # On PostgreSQL, office_details always exists; on SQLite check sqlite_master
+            if is_postgres():
+                has_hierarchy = True
+            else:
+                has_hierarchy = conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='office_details'"
+                ).fetchone()
             if has_hierarchy:
                 rows = conn.execute(
                     "SELECT od.id AS id, od.source_page_id AS source_page_id FROM office_details od ORDER BY od.id"
@@ -77,10 +81,17 @@ def _ui_test_env_defaults() -> dict[str, str]:
     # Find one source page with at least two offices for the table reuse test.
     try:
         conn = get_connection()
-        rows = conn.execute(
-            "SELECT source_page_id, GROUP_CONCAT(id, ',') AS office_ids, COUNT(*) AS c "
-            "FROM office_details GROUP BY source_page_id HAVING COUNT(*) >= 2 ORDER BY source_page_id LIMIT 1"
-        ).fetchall()
+        if is_postgres():
+            agg_sql = (
+                "SELECT source_page_id, STRING_AGG(id::TEXT, ',') AS office_ids, COUNT(*) AS c "
+                "FROM office_details GROUP BY source_page_id HAVING COUNT(*) >= 2 ORDER BY source_page_id LIMIT 1"
+            )
+        else:
+            agg_sql = (
+                "SELECT source_page_id, GROUP_CONCAT(id, ',') AS office_ids, COUNT(*) AS c "
+                "FROM office_details GROUP BY source_page_id HAVING COUNT(*) >= 2 ORDER BY source_page_id LIMIT 1"
+            )
+        rows = conn.execute(agg_sql).fetchall()
         if rows:
             ids = [x for x in str(rows[0][1] or "").split(",") if x]
             if len(ids) >= 2:

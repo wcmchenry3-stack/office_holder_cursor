@@ -1,13 +1,12 @@
 """Infobox role key filters, scoped by country/level/branch."""
 
-import sqlite3
 from typing import Any
 
-from .connection import get_connection
+from .connection import get_connection, _DB_UNIQUE_ERRORS
 from .utils import _row_to_dict
 
 
-def list_infobox_role_key_filters(conn: sqlite3.Connection | None = None) -> list[dict[str, Any]]:
+def list_infobox_role_key_filters(conn=None) -> list[dict[str, Any]]:
     """Return all infobox role key filters."""
     own = conn is None
     if own:
@@ -20,16 +19,14 @@ def list_infobox_role_key_filters(conn: sqlite3.Connection | None = None) -> lis
             conn.close()
 
 
-def get_infobox_role_key_filter(
-    filter_id: int, conn: sqlite3.Connection | None = None
-) -> dict[str, Any] | None:
+def get_infobox_role_key_filter(filter_id: int, conn=None) -> dict[str, Any] | None:
     """Return filter dict with scope ids. None if not found."""
     own = conn is None
     if own:
         conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT id, name, role_key FROM infobox_role_key_filter WHERE id = ?", (filter_id,)
+            "SELECT id, name, role_key FROM infobox_role_key_filter WHERE id = %s", (filter_id,)
         ).fetchone()
         if not row:
             return None
@@ -37,21 +34,21 @@ def get_infobox_role_key_filter(
         d["country_ids"] = [
             r[0]
             for r in conn.execute(
-                "SELECT country_id FROM infobox_role_key_filter_countries WHERE filter_id = ?",
+                "SELECT country_id FROM infobox_role_key_filter_countries WHERE filter_id = %s",
                 (filter_id,),
             ).fetchall()
         ]
         d["level_ids"] = [
             r[0]
             for r in conn.execute(
-                "SELECT level_id FROM infobox_role_key_filter_levels WHERE filter_id = ?",
+                "SELECT level_id FROM infobox_role_key_filter_levels WHERE filter_id = %s",
                 (filter_id,),
             ).fetchall()
         ]
         d["branch_ids"] = [
             r[0]
             for r in conn.execute(
-                "SELECT branch_id FROM infobox_role_key_filter_branches WHERE filter_id = ?",
+                "SELECT branch_id FROM infobox_role_key_filter_branches WHERE filter_id = %s",
                 (filter_id,),
             ).fetchall()
         ]
@@ -67,7 +64,7 @@ def create_infobox_role_key_filter(
     country_ids: list[int],
     level_ids: list[int],
     branch_ids: list[int],
-    conn: sqlite3.Connection | None = None,
+    conn=None,
 ) -> int:
     """Insert filter and scope rows. Empty scope list = all."""
     name = (name or "").strip()
@@ -80,32 +77,33 @@ def create_infobox_role_key_filter(
     if own:
         conn = get_connection()
     try:
-        conn.execute(
-            "INSERT INTO infobox_role_key_filter (name, role_key) VALUES (?, ?)", (name, role_key)
+        cur = conn.execute(
+            "INSERT INTO infobox_role_key_filter (name, role_key) VALUES (%s, %s) RETURNING id",
+            (name, role_key),
         )
-        filter_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        filter_id = cur.fetchone()["id"]
         for cid in country_ids:
             if cid:
                 conn.execute(
-                    "INSERT INTO infobox_role_key_filter_countries (filter_id, country_id) VALUES (?, ?)",
+                    "INSERT INTO infobox_role_key_filter_countries (filter_id, country_id) VALUES (%s, %s)",
                     (filter_id, cid),
                 )
         for lid in level_ids:
             if lid:
                 conn.execute(
-                    "INSERT INTO infobox_role_key_filter_levels (filter_id, level_id) VALUES (?, ?)",
+                    "INSERT INTO infobox_role_key_filter_levels (filter_id, level_id) VALUES (%s, %s)",
                     (filter_id, lid),
                 )
         for bid in branch_ids:
             if bid:
                 conn.execute(
-                    "INSERT INTO infobox_role_key_filter_branches (filter_id, branch_id) VALUES (?, ?)",
+                    "INSERT INTO infobox_role_key_filter_branches (filter_id, branch_id) VALUES (%s, %s)",
                     (filter_id, bid),
                 )
         conn.commit()
         return filter_id
-    except sqlite3.IntegrityError as e:
-        if "UNIQUE" in str(e):
+    except _DB_UNIQUE_ERRORS as e:
+        if "UNIQUE" in str(e) or "duplicate key" in str(e):
             raise ValueError("A filter with this name already exists") from e
         raise
     finally:
@@ -120,7 +118,7 @@ def update_infobox_role_key_filter(
     country_ids: list[int],
     level_ids: list[int],
     branch_ids: list[int],
-    conn: sqlite3.Connection | None = None,
+    conn=None,
 ) -> bool:
     """Update filter and replace scope rows."""
     name = (name or "").strip()
@@ -134,40 +132,42 @@ def update_infobox_role_key_filter(
         conn = get_connection()
     try:
         cur = conn.execute(
-            "UPDATE infobox_role_key_filter SET name = ?, role_key = ? WHERE id = ?",
+            "UPDATE infobox_role_key_filter SET name = %s, role_key = %s WHERE id = %s",
             (name, role_key, filter_id),
         )
         if cur.rowcount == 0:
             return False
         conn.execute(
-            "DELETE FROM infobox_role_key_filter_countries WHERE filter_id = ?", (filter_id,)
+            "DELETE FROM infobox_role_key_filter_countries WHERE filter_id = %s", (filter_id,)
         )
-        conn.execute("DELETE FROM infobox_role_key_filter_levels WHERE filter_id = ?", (filter_id,))
         conn.execute(
-            "DELETE FROM infobox_role_key_filter_branches WHERE filter_id = ?", (filter_id,)
+            "DELETE FROM infobox_role_key_filter_levels WHERE filter_id = %s", (filter_id,)
+        )
+        conn.execute(
+            "DELETE FROM infobox_role_key_filter_branches WHERE filter_id = %s", (filter_id,)
         )
         for cid in country_ids:
             if cid:
                 conn.execute(
-                    "INSERT INTO infobox_role_key_filter_countries (filter_id, country_id) VALUES (?, ?)",
+                    "INSERT INTO infobox_role_key_filter_countries (filter_id, country_id) VALUES (%s, %s)",
                     (filter_id, cid),
                 )
         for lid in level_ids:
             if lid:
                 conn.execute(
-                    "INSERT INTO infobox_role_key_filter_levels (filter_id, level_id) VALUES (?, ?)",
+                    "INSERT INTO infobox_role_key_filter_levels (filter_id, level_id) VALUES (%s, %s)",
                     (filter_id, lid),
                 )
         for bid in branch_ids:
             if bid:
                 conn.execute(
-                    "INSERT INTO infobox_role_key_filter_branches (filter_id, branch_id) VALUES (?, ?)",
+                    "INSERT INTO infobox_role_key_filter_branches (filter_id, branch_id) VALUES (%s, %s)",
                     (filter_id, bid),
                 )
         conn.commit()
         return True
-    except sqlite3.IntegrityError as e:
-        if "UNIQUE" in str(e):
+    except _DB_UNIQUE_ERRORS as e:
+        if "UNIQUE" in str(e) or "duplicate key" in str(e):
             raise ValueError("A filter with this name already exists") from e
         raise
     finally:
@@ -175,20 +175,22 @@ def update_infobox_role_key_filter(
             conn.close()
 
 
-def delete_infobox_role_key_filter(filter_id: int, conn: sqlite3.Connection | None = None) -> None:
+def delete_infobox_role_key_filter(filter_id: int, conn=None) -> None:
     """Delete filter and scope rows."""
     own = conn is None
     if own:
         conn = get_connection()
     try:
         conn.execute(
-            "DELETE FROM infobox_role_key_filter_countries WHERE filter_id = ?", (filter_id,)
+            "DELETE FROM infobox_role_key_filter_countries WHERE filter_id = %s", (filter_id,)
         )
-        conn.execute("DELETE FROM infobox_role_key_filter_levels WHERE filter_id = ?", (filter_id,))
         conn.execute(
-            "DELETE FROM infobox_role_key_filter_branches WHERE filter_id = ?", (filter_id,)
+            "DELETE FROM infobox_role_key_filter_levels WHERE filter_id = %s", (filter_id,)
         )
-        conn.execute("DELETE FROM infobox_role_key_filter WHERE id = ?", (filter_id,))
+        conn.execute(
+            "DELETE FROM infobox_role_key_filter_branches WHERE filter_id = %s", (filter_id,)
+        )
+        conn.execute("DELETE FROM infobox_role_key_filter WHERE id = %s", (filter_id,))
         conn.commit()
     finally:
         if own:
@@ -199,7 +201,7 @@ def list_filters_for_context(
     country_id: int | None,
     level_id: int | None,
     branch_id: int | None,
-    conn: sqlite3.Connection | None = None,
+    conn=None,
 ) -> list[dict[str, Any]]:
     """Return filters valid for this context. Empty scoped list means all."""
     own = conn is None
@@ -208,11 +210,11 @@ def list_filters_for_context(
     try:
         where = """
         (NOT EXISTS (SELECT 1 FROM infobox_role_key_filter_countries c WHERE c.filter_id = f.id)
-         OR (? IS NOT NULL AND EXISTS (SELECT 1 FROM infobox_role_key_filter_countries c WHERE c.filter_id = f.id AND c.country_id = ?)))
+         OR (%s IS NOT NULL AND EXISTS (SELECT 1 FROM infobox_role_key_filter_countries c WHERE c.filter_id = f.id AND c.country_id = %s)))
         AND (NOT EXISTS (SELECT 1 FROM infobox_role_key_filter_levels l WHERE l.filter_id = f.id)
-         OR (? IS NOT NULL AND EXISTS (SELECT 1 FROM infobox_role_key_filter_levels l WHERE l.filter_id = f.id AND l.level_id = ?)))
+         OR (%s IS NOT NULL AND EXISTS (SELECT 1 FROM infobox_role_key_filter_levels l WHERE l.filter_id = f.id AND l.level_id = %s)))
         AND (NOT EXISTS (SELECT 1 FROM infobox_role_key_filter_branches b WHERE b.filter_id = f.id)
-         OR (? IS NOT NULL AND EXISTS (SELECT 1 FROM infobox_role_key_filter_branches b WHERE b.filter_id = f.id AND b.branch_id = ?)))
+         OR (%s IS NOT NULL AND EXISTS (SELECT 1 FROM infobox_role_key_filter_branches b WHERE b.filter_id = f.id AND b.branch_id = %s)))
         """
         params: list[Any] = [country_id, country_id, level_id, level_id, branch_id, branch_id]
         cur = conn.execute(
