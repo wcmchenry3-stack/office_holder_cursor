@@ -7,12 +7,12 @@ import re
 from datetime import datetime, date
 from urllib.parse import urlparse, quote
 
-import requests
+from requests.exceptions import RequestException as _RequestException
 
 from src.scraper.wiki_fetch import (
-    WIKIPEDIA_REQUEST_HEADERS,
     canonical_holder_url,
     normalize_wiki_url,
+    wiki_session,
     wiki_url_to_rest_html_url,
 )
 from bs4 import BeautifulSoup
@@ -1856,7 +1856,7 @@ class Biography:
             if _cached_html_be is not None:
                 response = type("_R", (), {"status_code": 200, "text": _cached_html_be})()
             else:
-                response = requests.get(fetch_url, headers=WIKIPEDIA_REQUEST_HEADERS, timeout=30)
+                response = wiki_session().get(fetch_url, timeout=30)
                 if response.status_code == 200 and run_cache is not None:
                     run_cache.set(fetch_url, response.text)
             if response.status_code == 200:
@@ -1888,7 +1888,7 @@ class Biography:
                     f"Failed to fetch biography URL with status code: {response.status_code}", True
                 )
                 return {}
-        except requests.exceptions.RequestException as e:
+        except _RequestException as e:
             self.Logger.log(f"Request failed: {e}", True)
             return {}
 
@@ -1949,7 +1949,7 @@ class Biography:
             if _cached_html_ftd is not None:
                 response = type("_R", (), {"status_code": 200, "text": _cached_html_ftd})()
             else:
-                response = requests.get(fetch_url, headers=WIKIPEDIA_REQUEST_HEADERS, timeout=30)
+                response = wiki_session().get(fetch_url, timeout=30)
                 if response.status_code == 200 and run_cache is not None:
                     run_cache.set(fetch_url, response.text)
             if response.status_code == 200:
@@ -2185,7 +2185,7 @@ class Biography:
                 infobox_items.append("Failed to fetch page: HTTP %s" % response.status_code)
                 if (wiki_link or "").strip() and (wiki_link or "").strip() != "No link":
                     self._last_dead_link = True
-        except requests.exceptions.RequestException as e:
+        except _RequestException as e:
             self._last_bio_details = None
             self.Logger.log(f"Request failed: {e}", False)
             infobox_items.append("Request failed: %s" % str(e))

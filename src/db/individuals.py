@@ -95,7 +95,8 @@ def upsert_individual(data: dict[str, Any], conn=None) -> int:
             )
             # Recompute is_living only when currently marked living
             _recompute_is_living_for_individual(row["id"], conn)
-            conn.commit()
+            if own_conn:
+                conn.commit()
             return row["id"]
         cur = conn.execute(
             """INSERT INTO individuals (wiki_url, page_path, full_name, birth_date, death_date, birth_date_imprecise, death_date_imprecise, birth_place, death_place, is_dead_link)
@@ -117,7 +118,8 @@ def upsert_individual(data: dict[str, Any], conn=None) -> int:
         conn.execute("UPDATE individuals SET bio_batch = id %% 7 WHERE id = %s", (ind_id,))
         # New individuals start as living by default; recompute may downgrade to not living
         _recompute_is_living_for_individual(ind_id, conn)
-        conn.commit()
+        if own_conn:
+            conn.commit()
         return ind_id
     finally:
         if own_conn:
@@ -131,7 +133,8 @@ def purge_all_individuals(conn=None) -> int:
         conn = get_connection()
     try:
         cur = conn.execute("DELETE FROM individuals")
-        conn.commit()
+        if own_conn:
+            conn.commit()
         return cur.rowcount
     finally:
         if own_conn:
@@ -260,7 +263,8 @@ def mark_bio_refreshed(wiki_url: str, conn=None) -> None:
             "UPDATE individuals SET bio_refreshed_at = NOW() WHERE wiki_url = %s",
             (wiki_url,),
         )
-        conn.commit()
+        if own_conn:
+            conn.commit()
     finally:
         if own_conn:
             conn.close()

@@ -54,7 +54,7 @@ def test_run_cache_thread_safety():
 
 def test_fetch_table_skips_http_when_run_cache_hit(monkeypatch):
     """Second call with same URL + different table_no hits run_cache, no HTTP."""
-    import requests as _requests
+    import src.scraper.wiki_fetch as _wf
 
     from src.scraper.table_cache import _fetch_table_from_url
 
@@ -72,12 +72,13 @@ def test_fetch_table_skips_http_when_run_cache_hit(monkeypatch):
         status_code = 200
         text = html
 
-    def _fake_get(url, **kwargs):
-        nonlocal call_count
-        call_count += 1
-        return _FakeResp()
+    class _MockSession:
+        def get(self, url, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return _FakeResp()
 
-    monkeypatch.setattr(_requests, "get", _fake_get)
+    monkeypatch.setattr(_wf, "_session", _MockSession())
 
     # Also patch wiki_url_to_rest_html_url to return the URL unchanged
     monkeypatch.setattr(

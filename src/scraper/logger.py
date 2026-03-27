@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """File-based logger for scraper (no Colab/Drive)."""
 
-HTTP_USER_AGENT = "OfficeHolder/1.0 (Office Holder bot; wcmchenry3@gmail.com)"
+HTTP_USER_AGENT = "OfficeHolder/1.0 (https://github.com/wcmchenry3-stack/office-holder; wcmchenry3@gmail.com)"
 
 from datetime import datetime
 import os

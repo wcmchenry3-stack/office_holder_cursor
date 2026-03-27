@@ -224,14 +224,17 @@ _PARAGRAPH_HTML = """
 
 
 def test_biography_extract_cache_hit_skips_http(monkeypatch):
-    """When run_cache returns HTML, requests.get must not be called."""
+    """When run_cache returns HTML, wiki_session().get must not be called."""
+    import src.scraper.wiki_fetch as _wf
+
     called = []
 
-    def _bad_get(*a, **kw):
-        called.append(True)
-        raise AssertionError("requests.get should not be called on cache hit")
+    class _BadSession:
+        def get(self, *a, **kw):
+            called.append(True)
+            raise AssertionError("wiki_session().get should not be called on cache hit")
 
-    monkeypatch.setattr("src.scraper.table_parser.requests.get", _bad_get)
+    monkeypatch.setattr(_wf, "_session", _BadSession())
 
     class _Cache:
         def get(self, key):
@@ -248,7 +251,8 @@ def test_biography_extract_cache_hit_skips_http(monkeypatch):
 
 
 def test_biography_extract_200_response_no_cache(monkeypatch):
-    """Cache miss: requests.get called, 200 response → parses infobox."""
+    """Cache miss: wiki_session().get called, 200 response → parses infobox."""
+    import src.scraper.wiki_fetch as _wf
 
     class _Cache:
         stored = {}
@@ -259,10 +263,11 @@ def test_biography_extract_200_response_no_cache(monkeypatch):
         def set(self, key, val):
             _Cache.stored[key] = val
 
-    monkeypatch.setattr(
-        "src.scraper.table_parser.requests.get",
-        lambda *a, **kw: _Resp(200, _INFOBOX_HTML),
-    )
+    class _MockSession:
+        def get(self, *a, **kw):
+            return _Resp(200, _INFOBOX_HTML)
+
+    monkeypatch.setattr(_wf, "_session", _MockSession())
 
     bio = _bio()
     result = bio.biography_extract("https://en.wikipedia.org/wiki/Jane_Doe", run_cache=_Cache())
@@ -272,23 +277,28 @@ def test_biography_extract_200_response_no_cache(monkeypatch):
 
 def test_biography_extract_non_200_returns_empty(monkeypatch):
     """Non-200 HTTP status → returns {}."""
-    monkeypatch.setattr(
-        "src.scraper.table_parser.requests.get",
-        lambda *a, **kw: _Resp(404),
-    )
+    import src.scraper.wiki_fetch as _wf
+
+    class _MockSession:
+        def get(self, *a, **kw):
+            return _Resp(404)
+
+    monkeypatch.setattr(_wf, "_session", _MockSession())
     bio = _bio()
     result = bio.biography_extract("https://en.wikipedia.org/wiki/Jane_Doe")
     assert result == {}
 
 
 def test_biography_extract_request_exception_returns_empty(monkeypatch):
-    """requests.exceptions.RequestException → returns {}."""
-    import requests as _req
+    """Network error (RequestException) → returns {}."""
+    from requests.exceptions import RequestException
+    import src.scraper.wiki_fetch as _wf
 
-    monkeypatch.setattr(
-        "src.scraper.table_parser.requests.get",
-        lambda *a, **kw: (_ for _ in ()).throw(_req.exceptions.RequestException("timeout")),
-    )
+    class _MockSession:
+        def get(self, *a, **kw):
+            raise RequestException("timeout")
+
+    monkeypatch.setattr(_wf, "_session", _MockSession())
     bio = _bio()
     result = bio.biography_extract("https://en.wikipedia.org/wiki/Jane_Doe")
     assert result == {}
@@ -296,10 +306,13 @@ def test_biography_extract_request_exception_returns_empty(monkeypatch):
 
 def test_biography_extract_no_infobox_no_paragraph_returns_empty(monkeypatch):
     """Page with no infobox and no <p> tag → returns {}."""
-    monkeypatch.setattr(
-        "src.scraper.table_parser.requests.get",
-        lambda *a, **kw: _Resp(200, "<html><body><div>No paragraph here</div></body></html>"),
-    )
+    import src.scraper.wiki_fetch as _wf
+
+    class _MockSession:
+        def get(self, *a, **kw):
+            return _Resp(200, "<html><body><div>No paragraph here</div></body></html>")
+
+    monkeypatch.setattr(_wf, "_session", _MockSession())
     bio = _bio()
     result = bio.biography_extract("https://en.wikipedia.org/wiki/Jane_Doe")
     assert result == {}

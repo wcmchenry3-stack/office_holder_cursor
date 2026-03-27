@@ -16,8 +16,8 @@ import os
 from pathlib import Path
 
 import pytest
-import requests as _requests_module
 
+import src.scraper.wiki_fetch as _wiki_fetch_module
 from tests.conftest import PROJECT_ROOT, _extract_table, _write_fixture_to_cache
 
 FIXTURES_DIR = PROJECT_ROOT / "test_scripts" / "fixtures"
@@ -67,12 +67,10 @@ def _build_member_html_map(entries: list[dict]) -> dict[str, str]:
 
 def _make_requests_mock(member_html: dict[str, str], call_counter: dict | None = None):
     """
-    Return a patched requests.get that:
+    Return a mock wiki_session()-compatible object whose .get() method:
     - Serves fixture HTML (200) when the URL is in member_html.
     - Returns HTTP 404 for unknown individual bio URLs (matches live behaviour for
       red-link/non-existent Wikipedia pages; expected_json already records these as 404).
-    - Raises AssertionError for any call that looks like a main-table/page fetch
-      (i.e. a full Wikipedia article that should have been served from disk cache).
     """
     from src.scraper.wiki_fetch import normalize_wiki_url
 
@@ -94,7 +92,10 @@ def _make_requests_mock(member_html: dict[str, str], call_counter: dict | None =
         # was generated with those same 404s already incorporated.
         return _FakeResp(404)
 
-    return _patched_get
+    class _MockSession:
+        get = staticmethod(_patched_get)
+
+    return _MockSession()
 
 
 def _seed_office(conn, country_id: int, entry: dict) -> tuple[int, int]:
@@ -159,7 +160,7 @@ def test_all_manifest_entries_match_expected(db_with_cache, monkeypatch):
     member_html = _build_member_html_map(enabled)
 
     # Patch requests.get to serve member HTML; raise for any unknown URL
-    monkeypatch.setattr(_requests_module, "get", _make_requests_mock(member_html))
+    monkeypatch.setattr(_wiki_fetch_module, "_session", _make_requests_mock(member_html))
 
     conn = get_connection(db_path)
     try:
@@ -289,7 +290,7 @@ def test_runner_is_idempotent(db_with_cache, monkeypatch):
     enabled = [e for e in manifest if e.get("enabled")]
 
     member_html = _build_member_html_map(enabled)
-    monkeypatch.setattr(_requests_module, "get", _make_requests_mock(member_html))
+    monkeypatch.setattr(_wiki_fetch_module, "_session", _make_requests_mock(member_html))
 
     conn = get_connection(db_path)
     try:
@@ -370,7 +371,7 @@ def test_bio_batch_stamps_refreshed_at(db_with_cache, monkeypatch):
     )
 
     member_html = _build_member_html_map([infobox_entry])
-    monkeypatch.setattr(_requests_module, "get", _make_requests_mock(member_html))
+    monkeypatch.setattr(_wiki_fetch_module, "_session", _make_requests_mock(member_html))
 
     conn = get_connection(db_path)
     try:
@@ -481,7 +482,7 @@ def test_run_cache_prevents_duplicate_http(db_with_cache, monkeypatch):
     page_html_map: dict[str, str] = {rest_url: full_html}
 
     call_counter: dict[str, int] = {"n": 0}
-    monkeypatch.setattr(_requests_module, "get", _make_requests_mock(page_html_map, call_counter))
+    monkeypatch.setattr(_wiki_fetch_module, "_session", _make_requests_mock(page_html_map, call_counter))
 
     # Create two offices pointing at the SAME URL with the SAME table config.
     # Do NOT pre-fill the disk cache — force the HTTP path on the first office so

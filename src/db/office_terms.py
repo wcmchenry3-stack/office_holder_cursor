@@ -189,7 +189,8 @@ def delete_office_terms_for_office(office_id: int, conn=None) -> int:
             )
         else:
             cur = conn.execute("DELETE FROM office_terms WHERE office_id = %s", (office_id,))
-        conn.commit()
+        if own_conn:
+            conn.commit()
         return cur.rowcount
     finally:
         if own_conn:

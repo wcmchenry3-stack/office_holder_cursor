@@ -1461,6 +1461,7 @@ def run_with_db(
         try:
             for oid in replaceable_office_ids:
                 db_office_terms.delete_office_terms_for_office(oid, conn=conn)
+
             for row in all_office_data:
                 office_id = row.get("_office_id")
                 if office_id is None:
@@ -1549,6 +1550,10 @@ def run_with_db(
                     db_individuals._recompute_is_living_for_individual(individual_id, conn)
             for tc_id, h in html_hashes_to_update.items():
                 db_offices.update_html_hash(tc_id, h, conn=conn)
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
         finally:
             conn.close()
 

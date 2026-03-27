@@ -54,10 +54,10 @@ def _build_infobox_html_with_all_three_roles() -> str:
 
 
 def test_find_term_dates_filters_by_infobox_role_key(monkeypatch):
-    monkeypatch.setattr(
-        "src.scraper.table_parser.requests.get",
-        lambda *args, **kwargs: _Resp(_build_infobox_html()),
-    )
+    import src.scraper.wiki_fetch as _wf
+    class _S:
+        def get(self, *a, **kw): return (lambda *args, **kwargs: _Resp(_build_infobox_html()))(*a, **kw)
+    monkeypatch.setattr(_wf, "_session", _S())
 
     logger = Logger("test", "infobox_role_key")
     cleanup = DataCleanup(logger)
@@ -80,10 +80,10 @@ def test_find_term_dates_filters_by_infobox_role_key(monkeypatch):
 
 
 def test_find_term_dates_without_infobox_role_key_returns_all_matching_rows(monkeypatch):
-    monkeypatch.setattr(
-        "src.scraper.table_parser.requests.get",
-        lambda *args, **kwargs: _Resp(_build_infobox_html()),
-    )
+    import src.scraper.wiki_fetch as _wf
+    class _S:
+        def get(self, *a, **kw): return (lambda *args, **kwargs: _Resp(_build_infobox_html()))(*a, **kw)
+    monkeypatch.setattr(_wf, "_session", _S())
 
     logger = Logger("test", "infobox_no_role_key")
     cleanup = DataCleanup(logger)
@@ -105,10 +105,10 @@ def test_find_term_dates_without_infobox_role_key_returns_all_matching_rows(monk
 
 
 def test_find_term_dates_role_key_matches_when_first_link_is_not_office(monkeypatch):
-    monkeypatch.setattr(
-        "src.scraper.table_parser.requests.get",
-        lambda *args, **kwargs: _Resp(_build_infobox_html_with_non_office_first_link()),
-    )
+    import src.scraper.wiki_fetch as _wf
+    class _S:
+        def get(self, *a, **kw): return (lambda *args, **kwargs: _Resp(_build_infobox_html_with_non_office_first_link()))(*a, **kw)
+    monkeypatch.setattr(_wf, "_session", _S())
 
     logger = Logger("test", "infobox_non_office_first_link")
     cleanup = DataCleanup(logger)
@@ -131,10 +131,10 @@ def test_find_term_dates_role_key_matches_when_first_link_is_not_office(monkeypa
 
 
 def test_find_term_dates_role_key_supports_excludes(monkeypatch):
-    monkeypatch.setattr(
-        "src.scraper.table_parser.requests.get",
-        lambda *args, **kwargs: _Resp(_build_infobox_html_with_all_three_roles()),
-    )
+    import src.scraper.wiki_fetch as _wf
+    class _S:
+        def get(self, *a, **kw): return (lambda *args, **kwargs: _Resp(_build_infobox_html_with_all_three_roles()))(*a, **kw)
+    monkeypatch.setattr(_wf, "_session", _S())
 
     logger = Logger("test", "infobox_role_key_excludes")
     cleanup = DataCleanup(logger)
