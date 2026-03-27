@@ -1,0 +1,10 @@
+name: Sync main → dev
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  sync:
+    uses: wcmchenry3-stack/.github/.github/workflows/called-sync-main-to-dev.yml@main
+    secrets: inherit

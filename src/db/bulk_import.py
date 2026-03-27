@@ -16,23 +16,25 @@ def _resolve_refs(
     country_id = state_id = level_id = branch_id = None
     if country_name:
         cur = conn.execute(
-            "SELECT id FROM countries WHERE name = ? LIMIT 1", (country_name.strip(),)
+            "SELECT id FROM countries WHERE name = %s LIMIT 1", (country_name.strip(),)
         )
         row = cur.fetchone()
         country_id = row["id"] if row else None
     if state_name and country_id:
         cur = conn.execute(
-            "SELECT id FROM states WHERE country_id = ? AND name = ? LIMIT 1",
+            "SELECT id FROM states WHERE country_id = %s AND name = %s LIMIT 1",
             (country_id, state_name.strip()),
         )
         row = cur.fetchone()
         state_id = row["id"] if row else None
     if level_name:
-        cur = conn.execute("SELECT id FROM levels WHERE name = ? LIMIT 1", (level_name.strip(),))
+        cur = conn.execute("SELECT id FROM levels WHERE name = %s LIMIT 1", (level_name.strip(),))
         row = cur.fetchone()
         level_id = row["id"] if row else None
     if branch_name:
-        cur = conn.execute("SELECT id FROM branches WHERE name = ? LIMIT 1", (branch_name.strip(),))
+        cur = conn.execute(
+            "SELECT id FROM branches WHERE name = %s LIMIT 1", (branch_name.strip(),)
+        )
         row = cur.fetchone()
         branch_id = row["id"] if row else None
     return (country_id, state_id, level_id, branch_id)

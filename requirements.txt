@@ -17,8 +17,8 @@ itsdangerous>=2.1.0
 # Scheduler
 apscheduler>=3.10.0
 
-# DB explorer
-datasette>=0.64.0
+# Database
+psycopg2-binary>=2.9.0
 
 # Testing
 pytest>=7.0.0

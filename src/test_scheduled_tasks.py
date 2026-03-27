@@ -110,7 +110,7 @@ def test_run_daily_delta_sends_crash_email_on_exception(monkeypatch):
     def _explode(**kwargs):
         raise RuntimeError("scraper exploded")
 
-    monkeypatch.setattr("src.scraper.runner.run_with_db", _explode)
+    monkeypatch.setattr("src.scheduled_tasks._run_daily_delta_in_subprocess", _explode)
 
     from src.scheduled_tasks import run_daily_delta
 
@@ -121,3 +121,29 @@ def test_run_daily_delta_sends_crash_email_on_exception(monkeypatch):
     assert len(smtp.sent) == 1
     _, _, raw_msg = smtp.sent[0]
     assert "FAILED" in raw_msg
+
+
+def test_is_daily_delta_enabled_parses_false_values(monkeypatch):
+    from src.scheduled_tasks import is_daily_delta_enabled
+
+    for raw in ("0", "false", "False", "NO", "off"):
+        monkeypatch.setenv("DAILY_DELTA_ENABLED", raw)
+        assert is_daily_delta_enabled() is False
+
+
+def test_run_daily_delta_skips_when_disabled(monkeypatch):
+    monkeypatch.setenv("DAILY_DELTA_ENABLED", "0")
+
+    called = {"subprocess": False}
+
+    def _should_not_run(**kwargs):
+        called["subprocess"] = True
+        return {}
+
+    monkeypatch.setattr("src.scheduled_tasks._run_daily_delta_in_subprocess", _should_not_run)
+
+    from src.scheduled_tasks import run_daily_delta
+
+    run_daily_delta()
+
+    assert called["subprocess"] is False

@@ -15,17 +15,17 @@ def seed_reference_data(conn=None):
 
         # Levels: federal, state, local
         conn.executemany(
-            "INSERT OR IGNORE INTO levels (name) VALUES (?)",
+            "INSERT INTO levels (name) VALUES (%s) ON CONFLICT DO NOTHING",
             [("Federal",), ("State",), ("Local",)],
         )
         # Branches: executive, legislative, judicial
         conn.executemany(
-            "INSERT OR IGNORE INTO branches (name) VALUES (?)",
+            "INSERT INTO branches (name) VALUES (%s) ON CONFLICT DO NOTHING",
             [("Executive",), ("Legislative",), ("Judicial",)],
         )
         # Countries (common for office lists)
         conn.executemany(
-            "INSERT OR IGNORE INTO countries (name) VALUES (?)",
+            "INSERT INTO countries (name) VALUES (%s) ON CONFLICT DO NOTHING",
             [
                 ("United States of America",),
                 ("Canada",),
@@ -34,7 +34,9 @@ def seed_reference_data(conn=None):
         conn.commit()
 
         # States / provinces / territories per country
-        cur = conn.execute("SELECT id FROM countries WHERE name = ?", ("United States of America",))
+        cur = conn.execute(
+            "SELECT id FROM countries WHERE name = %s", ("United States of America",)
+        )
         us_id = cur.fetchone()[0]
         us_states = [
             "Alabama",
@@ -95,11 +97,11 @@ def seed_reference_data(conn=None):
             "Northern Mariana Islands",
         ]
         conn.executemany(
-            "INSERT OR IGNORE INTO states (country_id, name) VALUES (?, ?)",
+            "INSERT INTO states (country_id, name) VALUES (%s, %s) ON CONFLICT DO NOTHING",
             [(us_id, name) for name in us_states],
         )
 
-        cur = conn.execute("SELECT id FROM countries WHERE name = ?", ("Canada",))
+        cur = conn.execute("SELECT id FROM countries WHERE name = %s", ("Canada",))
         ca_id = cur.fetchone()[0]
         canada_provinces = [
             "Alberta",
@@ -117,7 +119,7 @@ def seed_reference_data(conn=None):
             "Yukon",
         ]
         conn.executemany(
-            "INSERT OR IGNORE INTO states (country_id, name) VALUES (?, ?)",
+            "INSERT INTO states (country_id, name) VALUES (%s, %s) ON CONFLICT DO NOTHING",
             [(ca_id, name) for name in canada_provinces],
         )
         conn.commit()

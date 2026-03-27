@@ -10,12 +10,16 @@ Required env var (for email):
 Optional env vars:
     EMAIL_FROM          — sender address (default: wcmchenry3@gmail.com)
     EMAIL_TO            — recipient address (default: wcmchenry3@gmail.com)
+    DAILY_DELTA_ENABLED — set to 0/false/no/off to pause daily job (default: enabled)
 """
 
 from __future__ import annotations
 
 import os
+import json
 import smtplib
+import subprocess
+import sys
 import traceback
 from datetime import datetime, timezone
 from email.mime.text import MIMEText
@@ -23,9 +27,57 @@ from email.mime.text import MIMEText
 _DEFAULT_EMAIL = "wcmchenry3@gmail.com"
 
 
+def is_daily_delta_enabled() -> bool:
+    """Return True unless DAILY_DELTA_ENABLED is set to a false-like value."""
+    raw = os.environ.get("DAILY_DELTA_ENABLED", "1").strip().lower()
+    return raw not in {"0", "false", "no", "off"}
+
+
+def _run_daily_delta_in_subprocess(today_batch: int) -> dict:
+    """Run scraper in a child process so memory is fully released when job ends."""
+    payload = f"""
+import json
+from src.scraper.runner import run_with_db
+
+result = run_with_db(
+    run_mode="delta",
+    run_bio=True,
+    run_office_bio=True,
+    bio_batch={today_batch},
+)
+print(json.dumps(result))
+"""
+    completed = subprocess.run(
+        [sys.executable, "-c", payload],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        stderr = (completed.stderr or "").strip()
+        stdout = (completed.stdout or "").strip()
+        details = stderr or stdout or "subprocess exited with non-zero status"
+        raise RuntimeError(details)
+    stdout = (completed.stdout or "").strip()
+    if not stdout:
+        raise RuntimeError("subprocess returned no output")
+    last_line = stdout.splitlines()[-1]
+    try:
+        parsed = json.loads(last_line)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"invalid subprocess JSON output: {last_line[:300]}") from exc
+    if not isinstance(parsed, dict):
+        raise RuntimeError("subprocess result was not a dict")
+    return parsed
+
+
 def run_daily_delta() -> None:
     """Entry point called by APScheduler at 06:00 UTC each day."""
-    from src.scraper.runner import run_with_db, _cleanup_disk_cache
+    if not is_daily_delta_enabled():
+        print("[scheduler] Daily delta run skipped because DAILY_DELTA_ENABLED is disabled")
+        return
+
+    from src.scraper.runner import _cleanup_disk_cache
 
     run_start = datetime.now(timezone.utc)
     today_batch = run_start.weekday()  # 0=Mon … 6=Sun
@@ -40,12 +92,7 @@ def run_daily_delta() -> None:
         print(f"[scheduler] Cache cleanup error (non-fatal): {e}")
 
     try:
-        result = run_with_db(
-            run_mode="delta",
-            run_bio=True,
-            run_office_bio=True,
-            bio_batch=today_batch,
-        )
+        result = _run_daily_delta_in_subprocess(today_batch=today_batch)
         result["cache_deleted"] = cache_deleted
     except Exception:
         tb = traceback.format_exc()
