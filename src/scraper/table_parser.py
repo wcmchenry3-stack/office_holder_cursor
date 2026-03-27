@@ -2,10 +2,9 @@
 """Table parsing: DataCleanup, Offices, Biography. In-repo implementation (sample file ignored)."""
 
 import copy
-import json
+import logging
 import re
 from datetime import datetime, date
-from pathlib import Path
 from urllib.parse import urlparse, quote
 
 import requests
@@ -18,6 +17,8 @@ from src.scraper.wiki_fetch import (
 )
 from bs4 import BeautifulSoup
 from dateutil.parser import parse
+
+logger = logging.getLogger(__name__)
 
 
 def _parse_date(s):
@@ -115,29 +116,6 @@ def parse_infobox_role_key_query(raw_query: str) -> tuple[list[str], list[str]]:
 
 def _emit_merged_run(run, years_only, out):
     """Merge a run of consecutive term rows into one row; append to out."""
-    # #region agent log
-    _log_path = Path(__file__).resolve().parent.parent.parent / ".cursor" / "debug.log"
-    try:
-        with open(_log_path, "a", encoding="utf-8") as _f:
-            _f.write(
-                json.dumps(
-                    {
-                        "location": "table_parser:_emit_merged_run",
-                        "message": "emit run",
-                        "data": {
-                            "run_len": len(run),
-                            "first_start": run[0].get("Term Start") if run else None,
-                            "last_end": run[-1].get("Term End") if run else None,
-                        },
-                        "timestamp": __import__("time").time() * 1000,
-                        "hypothesisId": "H5",
-                    }
-                )
-                + "\n"
-            )
-    except Exception:
-        pass
-    # #endregion
     if not run:
         return
     merged = copy.deepcopy(run[0])
@@ -160,27 +138,6 @@ def _emit_merged_run(run, years_only, out):
         merged["Term End"] = de.strftime("%Y-%m-%d") if de else run[-1].get("Term End")
         merged["Term Start Year"] = ds.year if ds else run[0].get("Term Start Year")
         merged["Term End Year"] = de.year if de else run[-1].get("Term End Year")
-    # #region agent log
-    try:
-        with open(_log_path, "a", encoding="utf-8") as _f:
-            _f.write(
-                json.dumps(
-                    {
-                        "location": "table_parser:_emit_merged_run",
-                        "message": "merged output",
-                        "data": {
-                            "merged_term_start": merged.get("Term Start"),
-                            "merged_term_end": merged.get("Term End"),
-                        },
-                        "timestamp": __import__("time").time() * 1000,
-                        "hypothesisId": "H5",
-                    }
-                )
-                + "\n"
-            )
-    except Exception:
-        pass
-    # #endregion
     out.append(merged)
 
 
@@ -416,28 +373,6 @@ class DataCleanup:
         # Dynamic identification of the link column and subsequent data columns.
         # If max_column_index is set (0-based), only consider cells up to that index so we never
         # pick a link from a non-data column (e.g. President column) when it appears after term dates.
-        # #region agent log
-        try:
-            _log_path = Path(__file__).resolve().parent.parent.parent / ".cursor" / "debug.log"
-            open(_log_path, "a", encoding="utf-8").write(
-                json.dumps(
-                    {
-                        "location": "table_parser:find_link_and_data_columns",
-                        "message": "entry",
-                        "data": {
-                            "len_row": len(row),
-                            "max_column_index": max_column_index,
-                            "min_column_index": min_column_index,
-                        },
-                        "timestamp": __import__("time").time() * 1000,
-                        "hypothesisId": "H2",
-                    }
-                )
-                + "\n"
-            )
-        except Exception:
-            pass
-        # #endregion
         for i, cell in enumerate(row):
             if min_column_index is not None and i < min_column_index:
                 continue
@@ -448,26 +383,6 @@ class DataCleanup:
                     cell
                 )  # Convert BeautifulSoup object or similar to string, if necessary
             except Exception as e:
-                # #region agent log
-                try:
-                    _log_path = (
-                        Path(__file__).resolve().parent.parent.parent / ".cursor" / "debug.log"
-                    )
-                    open(_log_path, "a", encoding="utf-8").write(
-                        json.dumps(
-                            {
-                                "location": "table_parser:find_link_and_data_columns",
-                                "message": "str_cell_error",
-                                "data": {"i": i, "error": str(e), "type": type(e).__name__},
-                                "timestamp": __import__("time").time() * 1000,
-                                "hypothesisId": "H3",
-                            }
-                        )
-                        + "\n"
-                    )
-                except Exception:
-                    pass
-                # #endregion
                 raise
             # Wiki article link: absolute path, relative (./), or full URL
             has_absolute = 'href="/wiki/' in cell_str
@@ -492,54 +407,10 @@ class DataCleanup:
                 or "/wiki/Special:" in cell_str
             )
             if has_wiki_link and not has_file_link and not has_fragment_link:
-                # #region agent log
-                try:
-                    _log_path = (
-                        Path(__file__).resolve().parent.parent.parent / ".cursor" / "debug.log"
-                    )
-                    open(_log_path, "a", encoding="utf-8").write(
-                        json.dumps(
-                            {
-                                "location": "table_parser:find_link_and_data_columns",
-                                "message": "return_column",
-                                "data": {
-                                    "column": i,
-                                    "has_absolute": has_absolute,
-                                    "has_relative": has_relative,
-                                    "has_full_url": has_full_url,
-                                    "cell_snippet": cell_str[:200],
-                                },
-                                "timestamp": __import__("time").time() * 1000,
-                                "hypothesisId": "H1",
-                            }
-                        )
-                        + "\n"
-                    )
-                except Exception:
-                    pass
-                # #endregion
                 self.Logger.debug_log(
                     f"Wiki link (not a file link) found at column {i}: {cell}", True
                 )
                 return i  # Return the index of the column containing the link
-        # #region agent log
-        try:
-            _log_path = Path(__file__).resolve().parent.parent.parent / ".cursor" / "debug.log"
-            open(_log_path, "a", encoding="utf-8").write(
-                json.dumps(
-                    {
-                        "location": "table_parser:find_link_and_data_columns",
-                        "message": "return_none",
-                        "data": {"reason": "no_cell_matched"},
-                        "timestamp": __import__("time").time() * 1000,
-                        "hypothesisId": "H4",
-                    }
-                )
-                + "\n"
-            )
-        except Exception:
-            pass
-        # #endregion
         self.Logger.debug_log(f"Wiki did not find a link in {row}", True)
         return None  # If no matching link column is found, or data structure is different
 
@@ -675,30 +546,6 @@ class Offices:
         total_rows = len(rows)
         report_infobox = table_config.get("find_date_in_infobox") and progress_callback is not None
 
-        # #region agent log
-        _log_path = Path(__file__).resolve().parent.parent.parent / ".cursor" / "debug.log"
-        try:
-            _f = open(_log_path, "a", encoding="utf-8")
-            _f.write(
-                json.dumps(
-                    {
-                        "location": "table_parser:process_table",
-                        "message": "table rows total",
-                        "data": {
-                            "total_rows": total_rows,
-                            "table_rows_config": table_config.get("table_rows"),
-                            "term_end_column": table_config.get("term_end_column"),
-                        },
-                        "timestamp": __import__("time").time() * 1000,
-                        "hypothesisId": "H3",
-                    }
-                )
-                + "\n"
-            )
-            _f.close()
-        except Exception:
-            pass
-        # #endregion
 
         # Per-table cache so we only call find_term_dates once per wiki_link (same person in multiple rows)
         self._infobox_cache = {}
@@ -747,42 +594,6 @@ class Offices:
                     previous_row_district = last_result.get("District")
                     previous_row_party = last_result.get("Party")
 
-                # #region agent log
-                skip_reason = None
-                if not appended:
-                    if len(cells_td) <= table_rows_val:
-                        skip_reason = "table_rows"
-                    elif term_end_col >= 0 and len(cells_td) <= term_end_col:
-                        skip_reason = "term_end_col"
-                    else:
-                        skip_reason = "other"
-                try:
-                    _f = open(_log_path, "a", encoding="utf-8")
-                    _f.write(
-                        json.dumps(
-                            {
-                                "location": "table_parser:process_table",
-                                "message": "row",
-                                "data": {
-                                    "row_index": row_index,
-                                    "len_td": len(cells_td),
-                                    "appended": appended,
-                                    "skip_reason": skip_reason,
-                                },
-                                "timestamp": __import__("time").time() * 1000,
-                                "hypothesisId": (
-                                    "H1"
-                                    if skip_reason == "table_rows"
-                                    else "H2" if skip_reason == "term_end_col" else "H4"
-                                ),
-                            }
-                        )
-                        + "\n"
-                    )
-                    _f.close()
-                except Exception:
-                    pass
-                # #endregion
             except (
                 IndexError,
                 AttributeError,
@@ -792,25 +603,6 @@ class Offices:
                 UnicodeDecodeError,
             ) as e:
                 self.Logger.log(f" found error {e} when processing row {row_index}", True)
-                # #region agent log
-                try:
-                    _f = open(_log_path, "a", encoding="utf-8")
-                    _f.write(
-                        json.dumps(
-                            {
-                                "location": "table_parser:process_table",
-                                "message": "exception",
-                                "data": {"row_index": row_index, "error": str(e)},
-                                "timestamp": __import__("time").time() * 1000,
-                                "hypothesisId": "H4",
-                            }
-                        )
-                        + "\n"
-                    )
-                    _f.close()
-                except Exception:
-                    pass
-                # #endregion
 
         if table_config.get("consolidate_rowspan_terms"):
             accumulated_results = self._consolidate_rowspan_terms(accumulated_results, table_config)
@@ -819,36 +611,6 @@ class Offices:
 
     def _consolidate_rowspan_terms(self, rows: list, table_config: dict) -> list:
         """Group rows by holder (Wiki Link or _name_from_table), sort by term start, merge consecutive terms (gap <= 1 day or year)."""
-        # #region agent log
-        _log_path = Path(__file__).resolve().parent.parent.parent / ".cursor" / "debug.log"
-        try:
-            with open(_log_path, "a", encoding="utf-8") as _f:
-                _f.write(
-                    json.dumps(
-                        {
-                            "location": "table_parser:_consolidate_rowspan_terms",
-                            "message": "input rows",
-                            "data": {
-                                "n": len(rows),
-                                "rows": [
-                                    {
-                                        "holder": (r.get("Wiki Link") or "").strip()
-                                        or ("_name_:" + (r.get("_name_from_table") or "")),
-                                        "term_start": r.get("Term Start"),
-                                        "term_end": r.get("Term End"),
-                                    }
-                                    for r in rows
-                                ],
-                            },
-                            "timestamp": __import__("time").time() * 1000,
-                            "hypothesisId": "H1",
-                        }
-                    )
-                    + "\n"
-                )
-        except Exception:
-            pass
-        # #endregion
         if not rows:
             return rows
         years_only = table_config.get("years_only", False)
@@ -888,98 +650,15 @@ class Offices:
             k = holder_key(r)
             grouped.setdefault(k, []).append(copy.deepcopy(r))
 
-        # #region agent log
-        try:
-            with open(_log_path, "a", encoding="utf-8") as _f:
-                _f.write(
-                    json.dumps(
-                        {
-                            "location": "table_parser:_consolidate_rowspan_terms",
-                            "message": "grouped",
-                            "data": {
-                                "groups": {
-                                    k: [
-                                        {
-                                            "term_start": r.get("Term Start"),
-                                            "term_end": r.get("Term End"),
-                                        }
-                                        for r in v
-                                    ]
-                                    for k, v in grouped.items()
-                                }
-                            },
-                            "timestamp": __import__("time").time() * 1000,
-                            "hypothesisId": "H2",
-                        }
-                    )
-                    + "\n"
-                )
-        except Exception:
-            pass
-        # #endregion
 
         out = []
         for group in grouped.values():
             group.sort(key=sort_key)
-            # #region agent log
-            try:
-                with open(_log_path, "a", encoding="utf-8") as _f:
-                    _f.write(
-                        json.dumps(
-                            {
-                                "location": "table_parser:_consolidate_rowspan_terms",
-                                "message": "after sort",
-                                "data": {
-                                    "ordered": [
-                                        {
-                                            "term_start": r.get("Term Start"),
-                                            "term_end": r.get("Term End"),
-                                        }
-                                        for r in group
-                                    ]
-                                },
-                                "timestamp": __import__("time").time() * 1000,
-                                "hypothesisId": "H4",
-                            }
-                        )
-                        + "\n"
-                    )
-            except Exception:
-                pass
-            # #endregion
             run = [group[0]]
             for i in range(1, len(group)):
                 if gap_consecutive(run[-1], group[i]):
                     run.append(group[i])
                 else:
-                    # #region agent log
-                    try:
-                        with open(_log_path, "a", encoding="utf-8") as _f:
-                            _f.write(
-                                json.dumps(
-                                    {
-                                        "location": "table_parser:_consolidate_rowspan_terms",
-                                        "message": "gap break",
-                                        "data": {
-                                            "prev_end": run[-1].get("Term End"),
-                                            "curr_start": group[i].get("Term Start"),
-                                            "prev_end_parsed": str(
-                                                _parse_date(run[-1].get("Term End"))
-                                            ),
-                                            "curr_start_parsed": str(
-                                                _parse_date(group[i].get("Term Start"))
-                                            ),
-                                            "run_len": len(run),
-                                        },
-                                        "timestamp": __import__("time").time() * 1000,
-                                        "hypothesisId": "H3",
-                                    }
-                                )
-                                + "\n"
-                            )
-                    except Exception:
-                        pass
-                    # #endregion
                     _emit_merged_run(run, years_only, out)
                     run = [group[i]]
             _emit_merged_run(run, years_only, out)
@@ -1363,32 +1042,6 @@ class Offices:
             name_from_table = first_a.get_text(strip=True) if first_a else None
             if name_from_table is None:
                 name_from_table = cells[link_column].get_text(strip=True) or None
-                # #region agent log
-                if name_from_table and (wiki_link or "").strip() in ("", "No link"):
-                    try:
-                        import json
-
-                        _dp = (
-                            Path(__file__).resolve().parent.parent.parent / ".cursor" / "debug.log"
-                        )
-                        open(_dp, "a", encoding="utf-8").write(
-                            json.dumps(
-                                {
-                                    "location": "table_parser:parse_table_row",
-                                    "message": "name_from_table from cell text (no link)",
-                                    "data": {
-                                        "wiki_link": (wiki_link or "")[:60],
-                                        "name_from_table": (name_from_table or "")[:80],
-                                    },
-                                    "timestamp": __import__("time").time() * 1000,
-                                    "hypothesisId": "H1",
-                                }
-                            )
-                            + "\n"
-                        )
-                    except Exception:
-                        pass
-                    # #endregion
         infobox_debug = getattr(self, "_last_infobox_items", None)
         if infobox_debug is not None:
             self._last_infobox_items = None  # Consume so next row does not inherit
@@ -1505,30 +1158,6 @@ class Offices:
 
         self.Logger.debug_log(f"country in find_link: {country}", True)
 
-        # #region agent log
-        _log_path = Path(__file__).resolve().parent.parent.parent / ".cursor" / "debug.log"
-        _num_links = 0
-        if self.column_present(link_column, cells):
-            _link_tags = cells[link_column].find_all("a", href=True)
-            _num_links = len(_link_tags)
-        try:
-            _f = open(_log_path, "a", encoding="utf-8")
-            _f.write(
-                json.dumps(
-                    {
-                        "location": "table_parser:find_link",
-                        "message": "entry",
-                        "data": {"link_column": link_column, "num_links_in_cell": _num_links},
-                        "timestamp": __import__("time").time() * 1000,
-                        "hypothesisId": "H1",
-                    }
-                )
-                + "\n"
-            )
-            _f.close()
-        except Exception:
-            pass
-        # #endregion
 
         had_links_in_configured_col = False
         if self.column_present(link_column, cells):
@@ -1541,67 +1170,10 @@ class Offices:
                     full_url = _candidate_from_link_tag(link_tag)
                     if full_url:
                         self.Logger.debug_log(f"URL passed all checks: {full_url}", True)
-                        # #region agent log
-                        try:
-                            _f = open(_log_path, "a", encoding="utf-8")
-                            _f.write(
-                                json.dumps(
-                                    {
-                                        "location": "table_parser:find_link",
-                                        "message": "returned",
-                                        "data": {"find_link_returned": True, "url": full_url},
-                                        "timestamp": __import__("time").time() * 1000,
-                                        "hypothesisId": "H1",
-                                    }
-                                )
-                                + "\n"
-                            )
-                            _f.close()
-                        except Exception:
-                            pass
-                        # #endregion
                         return full_url
 
             except (ValueError, TypeError, IndexError, AttributeError) as e:
                 self.Logger.log(f"found error when finding url for {full_url} in {cells}", True)
-                # #region agent log
-                try:
-                    _f = open(_log_path, "a", encoding="utf-8")
-                    _f.write(
-                        json.dumps(
-                            {
-                                "location": "table_parser:find_link",
-                                "message": "exception",
-                                "data": {"error": str(e)},
-                                "timestamp": __import__("time").time() * 1000,
-                                "hypothesisId": "H1",
-                            }
-                        )
-                        + "\n"
-                    )
-                    _f.close()
-                except Exception:
-                    pass
-                # #endregion
-        # #region agent log
-        try:
-            _f = open(_log_path, "a", encoding="utf-8")
-            _f.write(
-                json.dumps(
-                    {
-                        "location": "table_parser:find_link",
-                        "message": "returned None",
-                        "data": {"find_link_returned": False, "reason": "no_valid_link"},
-                        "timestamp": __import__("time").time() * 1000,
-                        "hypothesisId": "H1",
-                    }
-                )
-                + "\n"
-            )
-            _f.close()
-        except Exception:
-            pass
-        # #endregion
 
         # Fallback: wrong link column often points at footnote-only cells.
         # Only run fallback when configured column had link markup but no acceptable candidate.
@@ -1663,30 +1235,6 @@ class Offices:
             term_start_column = parse_row_no
             term_end_column = parse_row_no
 
-        # #region agent log
-        try:
-            _log_path = Path(__file__).resolve().parent.parent.parent / ".cursor" / "debug.log"
-            open(_log_path, "a", encoding="utf-8").write(
-                json.dumps(
-                    {
-                        "location": "table_parser:extract_term_dates",
-                        "message": "entry",
-                        "data": {
-                            "term_start_column": term_start_column,
-                            "term_end_column": term_end_column,
-                            "len_cells": len(cells),
-                            "would_oob": term_start_column >= len(cells)
-                            or term_end_column >= len(cells),
-                        },
-                        "timestamp": __import__("time").time() * 1000,
-                        "hypothesisId": "H2",
-                    }
-                )
-                + "\n"
-            )
-        except Exception:
-            pass
-        # #endregion
 
         # Extract and format the term start and end dates
 
@@ -1867,30 +1415,6 @@ class Offices:
             return (term_start, term_end, None, None)
 
         except (ValueError, TypeError, AttributeError, IndexError) as e:
-            # #region agent log
-            try:
-                _log_path = Path(__file__).resolve().parent.parent.parent / ".cursor" / "debug.log"
-                open(_log_path, "a", encoding="utf-8").write(
-                    json.dumps(
-                        {
-                            "location": "table_parser:extract_term_dates",
-                            "message": "caught_exception",
-                            "data": {
-                                "error": str(e),
-                                "type": type(e).__name__,
-                                "term_start_column": term_start_column,
-                                "term_end_column": term_end_column,
-                                "len_cells": len(cells),
-                            },
-                            "timestamp": __import__("time").time() * 1000,
-                            "hypothesisId": "H2",
-                        }
-                    )
-                    + "\n"
-                )
-            except Exception:
-                pass
-            # #endregion
             self.Logger.log(f" error {e} when parsing {wiki_link}", True)
             return ("Invalid date", "Invalid date", None, None)
 
@@ -2222,29 +1746,6 @@ class Offices:
         table_config_to_parse["term_end_column"] = term_end_column
         table_config_to_parse["district_column"] = district_column
 
-        # #region agent log
-        try:
-            _log_path = Path(__file__).resolve().parent.parent.parent / ".cursor" / "debug.log"
-            open(_log_path, "a", encoding="utf-8").write(
-                json.dumps(
-                    {
-                        "location": "table_parser:process_dynamic_parse",
-                        "message": "columns_updated",
-                        "data": {
-                            "link_column": link_column,
-                            "term_start_column": term_start_column,
-                            "term_end_column": term_end_column,
-                            "len_cells": len(cells),
-                        },
-                        "timestamp": __import__("time").time() * 1000,
-                        "hypothesisId": "H2",
-                    }
-                )
-                + "\n"
-            )
-        except Exception:
-            pass
-        # #endregion
 
         self.Logger.debug_log(
             f"table config at the end of dynamic parse: \n {table_config_to_parse} \n\n", True
@@ -2397,26 +1898,6 @@ class Biography:
 
         self.Logger.debug_log(f"running find_term_dates \n url value {url}", True)
 
-        # #region agent log
-        _log_path = Path(__file__).resolve().parent.parent.parent / ".cursor" / "debug.log"
-        try:
-            _f = open(_log_path, "a", encoding="utf-8")
-            _f.write(
-                json.dumps(
-                    {
-                        "location": "table_parser:find_term_dates",
-                        "message": "entry",
-                        "data": {"wiki_link": wiki_link, "url": url},
-                        "timestamp": __import__("time").time() * 1000,
-                        "hypothesisId": "H2",
-                    }
-                )
-                + "\n"
-            )
-            _f.close()
-        except Exception:
-            pass
-        # #endregion
 
         """
       Replink == true is used for US representative tables with only years in the table, such as New Jersey.
@@ -2634,29 +2115,6 @@ class Biography:
                                         self.Logger.debug_log(
                                             f"Found term dates: {start_date}, {end_date}", True
                                         )
-                                        # #region agent log
-                                        try:
-                                            _f = open(_log_path, "a", encoding="utf-8")
-                                            _f.write(
-                                                json.dumps(
-                                                    {
-                                                        "location": "table_parser:find_term_dates",
-                                                        "message": "success return",
-                                                        "data": {
-                                                            "term_start": start_date,
-                                                            "term_end": end_date,
-                                                        },
-                                                        "timestamp": __import__("time").time()
-                                                        * 1000,
-                                                        "hypothesisId": "H3",
-                                                    }
-                                                )
-                                                + "\n"
-                                            )
-                                            _f.close()
-                                        except Exception:
-                                            pass
-                                        # #endregion
                                         all_terms.append((start_date, end_date))
                                         term_added_this_tr = True
                                         infobox_items.append(
@@ -2681,29 +2139,6 @@ class Biography:
                                         self.Logger.debug_log(
                                             f"Found term dates: {start_date}", True
                                         )
-                                        # #region agent log
-                                        try:
-                                            _f = open(_log_path, "a", encoding="utf-8")
-                                            _f.write(
-                                                json.dumps(
-                                                    {
-                                                        "location": "table_parser:find_term_dates",
-                                                        "message": "success return",
-                                                        "data": {
-                                                            "term_start": start_date,
-                                                            "term_end": end_date,
-                                                        },
-                                                        "timestamp": __import__("time").time()
-                                                        * 1000,
-                                                        "hypothesisId": "H3",
-                                                    }
-                                                )
-                                                + "\n"
-                                            )
-                                            _f.close()
-                                        except Exception:
-                                            pass
-                                        # #endregion
                                         all_terms.append((start_date, end_date))
                                         term_added_this_tr = True
                                         infobox_items.append(
@@ -2750,112 +2185,15 @@ class Biography:
                 infobox_items.append("Failed to fetch page: HTTP %s" % response.status_code)
                 if (wiki_link or "").strip() and (wiki_link or "").strip() != "No link":
                     self._last_dead_link = True
-                    # #region agent log
-                    try:
-                        _log_path = (
-                            Path(__file__).resolve().parent.parent.parent / ".cursor" / "debug.log"
-                        )
-                        open(_log_path, "a", encoding="utf-8").write(
-                            json.dumps(
-                                {
-                                    "location": "table_parser:find_term_dates",
-                                    "message": "dead_link_reason",
-                                    "data": {
-                                        "wiki_link": (wiki_link or "")[:120],
-                                        "reason": "http_error",
-                                        "status": response.status_code,
-                                    },
-                                    "timestamp": __import__("time").time() * 1000,
-                                    "hypothesisId": "H3",
-                                }
-                            )
-                            + "\n"
-                        )
-                    except Exception:
-                        pass
-                    # #endregion
         except requests.exceptions.RequestException as e:
             self._last_bio_details = None
             self.Logger.log(f"Request failed: {e}", False)
             infobox_items.append("Request failed: %s" % str(e))
             if (wiki_link or "").strip() and (wiki_link or "").strip() != "No link":
                 self._last_dead_link = True
-                # #region agent log
-                try:
-                    _log_path = (
-                        Path(__file__).resolve().parent.parent.parent / ".cursor" / "debug.log"
-                    )
-                    open(_log_path, "a", encoding="utf-8").write(
-                        json.dumps(
-                            {
-                                "location": "table_parser:find_term_dates",
-                                "message": "dead_link_reason",
-                                "data": {
-                                    "wiki_link": (wiki_link or "")[:120],
-                                    "reason": "request_exception",
-                                    "error": str(e)[:100],
-                                },
-                                "timestamp": __import__("time").time() * 1000,
-                                "hypothesisId": "H5",
-                            }
-                        )
-                        + "\n"
-                    )
-                except Exception:
-                    pass
-                # #endregion
-            # #region agent log
-            try:
-                _f = open(_log_path, "a", encoding="utf-8")
-                _f.write(
-                    json.dumps(
-                        {
-                            "location": "table_parser:find_term_dates",
-                            "message": "RequestException",
-                            "data": {"error": str(e)},
-                            "timestamp": __import__("time").time() * 1000,
-                            "hypothesisId": "H5",
-                        }
-                    )
-                    + "\n"
-                )
-                _f.close()
-            except Exception:
-                pass
-            # #endregion
 
         # Placeholder return: no infobox or no matching terms. Do NOT set dead link here — dead link means
         # the page does not exist (404, request failed). Missing/mismatched infobox means the page exists.
-        # #region agent log
-        try:
-            _f = open(_log_path, "a", encoding="utf-8")
-            infobox_reason = (
-                (infobox_items[-1][:150] if infobox_items else "no_items")
-                if isinstance(infobox_items, list)
-                else str(infobox_items)[:150]
-            )
-            _f.write(
-                json.dumps(
-                    {
-                        "location": "table_parser:find_term_dates",
-                        "message": "placeholder return",
-                        "data": {
-                            "term_start": "YYYY-00-00",
-                            "term_end": "YYYY-00-00",
-                            "wiki_link": (wiki_link or "")[:120],
-                            "dead_link_set": False,
-                            "infobox_reason": infobox_reason,
-                        },
-                        "timestamp": __import__("time").time() * 1000,
-                        "hypothesisId": "H3",
-                    }
-                )
-                + "\n"
-            )
-            _f.close()
-        except Exception:
-            pass
-        # #endregion
         return (
             [("YYYY-00-00", "YYYY-00-00")],
             infobox_items if infobox_items else ["No dates found (placeholder)."],

@@ -7,6 +7,7 @@ Supports: dry_run / test_run (no DB write), row limits, Full / Delta / Live pers
 from __future__ import annotations
 
 import hashlib
+import logging
 import sys
 import time
 from dataclasses import dataclass, field
@@ -29,7 +30,7 @@ from src.scraper.logger import HTTP_USER_AGENT, Logger
 from src.scraper.config_test import get_raw_table_preview
 from src.scraper.table_cache import get_table_html_cached
 from src.scraper.run_cache import RunPageCache
-from src.scraper.wiki_fetch import normalize_wiki_url
+from src.scraper.wiki_fetch import canonical_holder_url, normalize_wiki_url
 
 from src.scraper import parse_core
 
@@ -173,7 +174,7 @@ def _holder_key_from_existing_term(term: dict[str, Any]) -> tuple[str, str, str]
     raw = (term.get("wiki_url") or "").strip()
     if _is_dead_wiki_url(raw):
         return ("", "", "")
-    url = _canonical_holder_url(raw)
+    url = canonical_holder_url(raw)
     return (url, "", "")
 
 
@@ -243,7 +244,7 @@ def _holder_keys_from_parsed_rows(
             and not row.get("_dead_link")
             and not _is_dead_wiki_url(raw_link)
         ):
-            keys.add((_canonical_holder_url(raw_link), "", ""))
+            keys.add((canonical_holder_url(raw_link), "", ""))
             continue
         normalized = _normalize_row_for_import(row, years_only=years_only)
         if (
@@ -262,45 +263,13 @@ def _holder_keys_from_parsed_rows(
             wiki_url = (
                 "No link:" + str(office_id) + ":" + (row.get("_name_from_table") or "Unknown")
             )
-        keys.add((_canonical_holder_url(wiki_url), "", ""))
+        keys.add((canonical_holder_url(wiki_url), "", ""))
     return keys
 
 
 def _is_dead_wiki_url(url: str) -> bool:
     u = (url or "").lower()
     return "redlink=1" in u
-
-
-def _canonical_holder_url(url: str) -> str:
-    """Canonicalize holder URL for comparisons.
-
-    For Wikipedia links, normalize and strip query/fragment so redlink/edit query params
-    don't break holder matching across table variants.
-    """
-    u = (url or "").strip()
-    if not u:
-        return ""
-    if u.startswith("No link:"):
-        return u
-    normalized = normalize_wiki_url(u)
-    if normalized:
-        try:
-            from urllib.parse import urlparse, urlunparse
-
-            p = urlparse(normalized)
-            path = (p.path or "").rstrip("/")
-            # Compare Wikipedia pages by canonical /wiki/<title> key so
-            # scheme/host/query/encoding/case differences don't create false mismatches.
-            parts = [x for x in path.split("/") if x]
-            if len(parts) >= 2 and parts[0].lower() == "wiki":
-                from urllib.parse import unquote
-
-                title = unquote(parts[1]).replace(" ", "_").strip().lower()
-                return f"/wiki/{title}"
-            return urlunparse(("https", (p.netloc or "").lower(), path, "", "", ""))
-        except Exception:
-            return normalized
-    return u
 
 
 def _dedupe_parsed_rows(table_data: list[dict], years_only: bool) -> list[dict]:
@@ -1939,32 +1908,6 @@ def preview_with_config(
         dead_link = bool(
             row.get("_dead_link") or (wiki_link in ("", "No link") and row.get("_name_from_table"))
         )
-        # #region agent log
-        if dead_link and wiki_link in ("", "No link"):
-            try:
-                import json
-                from pathlib import Path
-
-                _dp = Path(__file__).resolve().parent.parent.parent / ".cursor" / "debug.log"
-                open(_dp, "a", encoding="utf-8").write(
-                    json.dumps(
-                        {
-                            "location": "runner:preview_with_config",
-                            "message": "adding no-link row to preview",
-                            "data": {
-                                "name_from_table": (row.get("_name_from_table") or "")[:80],
-                                "term_start_year": term_start_year,
-                                "term_end_year": term_end_year,
-                            },
-                            "timestamp": __import__("time").time() * 1000,
-                            "hypothesisId": "H2",
-                        }
-                    )
-                    + "\n"
-                )
-            except Exception:
-                pass
-        # #endregion
         preview_rows.append(
             {
                 "Wiki Link": wiki_link,

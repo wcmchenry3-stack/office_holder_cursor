@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Router: Main scraper run — start, status, cancel, and table-cache refresh."""
 
+import time
 import threading
 import uuid
 from pathlib import Path
@@ -24,6 +25,21 @@ router = APIRouter()
 
 _run_job_store: dict = {}
 _run_job_lock = threading.Lock()
+
+_JOB_MAX_AGE_SECONDS = 2 * 3600  # 2 hours
+
+
+def _evict_old_jobs() -> None:
+    """Remove finished jobs older than _JOB_MAX_AGE_SECONDS from the in-memory store."""
+    cutoff = time.monotonic() - _JOB_MAX_AGE_SECONDS
+    with _run_job_lock:
+        stale = [
+            jid
+            for jid, job in _run_job_store.items()
+            if job.get("status") not in ("running",) and job.get("_created_at", 0) < cutoff
+        ]
+        for jid in stale:
+            del _run_job_store[jid]
 
 
 # ---------------------------------------------------------------------------
@@ -219,10 +235,12 @@ async def api_run(
         run_bio = False
         run_office_bio = False
         refresh_table_cache = False
+    _evict_old_jobs()
     job_id = str(uuid.uuid4())
     with _run_job_lock:
         _run_job_store[job_id] = {
             "status": "running",
+            "_created_at": time.monotonic(),
             "progress": {
                 "office": {"current": 0, "total": 1, "message": "Starting…"},
                 "table": {"current": 0, "total": 0, "message": ""},

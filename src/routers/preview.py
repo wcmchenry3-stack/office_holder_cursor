@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
 """Router: Preview (single office) — draft preview, async preview jobs, debug export."""
 
+import logging
 import re
+import time
 import threading
 import uuid
 from datetime import datetime
@@ -27,6 +29,8 @@ from src.scraper.config_test import (
     get_table_header_from_html,
 )
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
 
 # Project root (two levels up from src/routers/preview.py)
@@ -39,6 +43,25 @@ _preview_job_store: dict = {}
 _preview_job_lock = threading.Lock()
 _export_job_store: dict = {}
 _export_job_lock = threading.Lock()
+
+_JOB_MAX_AGE_SECONDS = 2 * 3600  # 2 hours
+
+
+def _evict_old_jobs() -> None:
+    """Remove finished preview/export jobs older than _JOB_MAX_AGE_SECONDS."""
+    cutoff = time.monotonic() - _JOB_MAX_AGE_SECONDS
+    for store, lock in (
+        (_preview_job_store, _preview_job_lock),
+        (_export_job_store, _export_job_lock),
+    ):
+        with lock:
+            stale = [
+                jid
+                for jid, job in store.items()
+                if job.get("status") not in ("running",) and job.get("_created_at", 0) < cutoff
+            ]
+            for jid in stale:
+                del store[jid]
 
 
 # ---------------------------------------------------------------------------
@@ -320,32 +343,6 @@ async def office_preview_page(request: Request, office_id: int):
     office = db_offices.get_office(office_id)
     if not office:
         raise HTTPException(status_code=404)
-    # #region agent log
-    try:
-        import json
-        from pathlib import Path
-
-        _log_path = Path(__file__).resolve().parent.parent.parent / ".cursor" / "debug.log"
-        with open(_log_path, "a", encoding="utf-8") as _f:
-            _f.write(
-                json.dumps(
-                    {
-                        "location": "main.py:office_preview_page",
-                        "message": "preview page using run_with_db",
-                        "data": {
-                            "office_id": office_id,
-                            "url": (office.get("url") or "")[:80],
-                            "table_no": office.get("table_no"),
-                            "hypothesisId": "H3",
-                        },
-                        "timestamp": __import__("time").time() * 1000,
-                    }
-                )
-                + "\n"
-            )
-    except Exception:
-        pass
-    # #endregion
     unit_ids = db_offices.get_runnable_unit_ids_for_office(office_id) or [office_id]
     result = run_with_db(
         run_mode="delta",
@@ -441,10 +438,12 @@ async def api_preview_draft(request: Request):
         max_rows = int(max_rows_val) if max_rows_val is not None else 10
     use_infobox = bool(draft.get("find_date_in_infobox"))
     if use_infobox:
+        _evict_old_jobs()
         job_id = str(uuid.uuid4())
         with _preview_job_lock:
             _preview_job_store[job_id] = {
                 "status": "running",
+                "_created_at": time.monotonic(),
                 "phase": "infobox",
                 "current": 0,
                 "total": 1,
@@ -501,27 +500,6 @@ async def api_preview_all_tables(request: Request):
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON")
     url = (body.get("url") or "").strip()
-    # #region agent log
-    try:
-        with open("c:\\Users\\wcmch\\cursor\\office_holder\\.cursor\\debug.log", "a") as _f:
-            _f.write(
-                __import__("json").dumps(
-                    {
-                        "location": "main.py:api_preview_all_tables",
-                        "message": "request",
-                        "data": {
-                            "url_len": len(url),
-                            "url_preview": url[:80] if url else "",
-                            "has_confirm": body.get("confirm") is True,
-                        },
-                        "timestamp": __import__("time").time() * 1000,
-                    }
-                )
-                + "\n"
-            )
-    except Exception:
-        pass
-    # #endregion
     if not url:
         raise HTTPException(status_code=400, detail="url required")
     confirmed = body.get("confirm") is True
@@ -696,10 +674,12 @@ async def api_office_debug_export(request: Request):
 
     # Full export: async when find_date_in_infobox, else sync with full parse
     if export_mode == "full" and use_infobox:
+        _evict_old_jobs()
         job_id = str(uuid.uuid4())
         with _export_job_lock:
             _export_job_store[job_id] = {
                 "status": "running",
+                "_created_at": time.monotonic(),
                 "phase": "infobox",
                 "current": 0,
                 "total": 1,

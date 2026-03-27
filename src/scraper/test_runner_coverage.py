@@ -74,7 +74,7 @@ def test_missing_holders_display_empty_missing_keys():
 def test_missing_holders_display_skips_deadlinks():
     """Terms with empty wiki_url (key[0]=='') are ignored."""
     terms = [_term("")]  # empty URL → deadlink key → skipped
-    from src.scraper.runner import _canonical_holder_url
+    from src.scraper.wiki_fetch import canonical_holder_url as _canonical_holder_url
 
     key = (_canonical_holder_url(""), "", "")
     result = _missing_holders_display(terms, {key}, _holder_key_from_existing_term)
@@ -83,7 +83,7 @@ def test_missing_holders_display_skips_deadlinks():
 
 def test_missing_holders_display_returns_label_for_matched_key():
     """Term whose key is in missing_keys → appears in labels."""
-    from src.scraper.runner import _canonical_holder_url
+    from src.scraper.wiki_fetch import canonical_holder_url as _canonical_holder_url
 
     url = "https://en.wikipedia.org/wiki/John_Smith"
     terms = [_term(url, start="2001", end="2005")]
@@ -95,7 +95,7 @@ def test_missing_holders_display_returns_label_for_matched_key():
 
 def test_missing_holders_display_term_without_dates():
     """Term with no start/end dates → label is just the name."""
-    from src.scraper.runner import _canonical_holder_url
+    from src.scraper.wiki_fetch import canonical_holder_url as _canonical_holder_url
 
     url = "https://en.wikipedia.org/wiki/Jane"
     terms = [{"wiki_url": url, "term_start": None, "term_end": None}]
@@ -662,7 +662,7 @@ def test_normalize_row_years_only_fallback_when_no_dates():
 # _canonical_holder_url — exception branch
 # ---------------------------------------------------------------------------
 
-from src.scraper.runner import _canonical_holder_url
+from src.scraper.wiki_fetch import canonical_holder_url as _canonical_holder_url
 
 
 def test_canonical_holder_url_empty_returns_empty():
