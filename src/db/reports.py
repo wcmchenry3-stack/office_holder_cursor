@@ -1,22 +1,22 @@
 """Report queries: recent deaths, recent term ends, recent term starts (last 90 days)."""
 
-import sqlite3
 from typing import Any
 
-from .connection import get_connection
+from .connection import get_connection, is_postgres
 from .office_terms import _has_hierarchy_terms
 from .utils import _row_to_dict
 
 
-def get_recent_deaths(conn: sqlite3.Connection | None = None) -> list[dict[str, Any]]:
+def get_recent_deaths(conn=None) -> list[dict[str, Any]]:
     """Individuals with death_date in the last 90 days. Returns list of dicts (full_name, birth_date, death_date)."""
     own_conn = conn is None
     if own_conn:
         conn = get_connection()
     try:
-        cur = conn.execute("""SELECT full_name, birth_date, death_date
+        since = "CURRENT_DATE - INTERVAL '90 days'" if is_postgres() else "date('now', '-90 days')"
+        cur = conn.execute(f"""SELECT full_name, birth_date, death_date
                FROM individuals
-               WHERE death_date BETWEEN date('now', '-90 days') AND date('now')
+               WHERE death_date BETWEEN {since} AND CURRENT_DATE
                ORDER BY death_date DESC""")
         return [_row_to_dict(r) for r in cur.fetchall()]
     finally:
@@ -25,11 +25,12 @@ def get_recent_deaths(conn: sqlite3.Connection | None = None) -> list[dict[str, 
 
 
 def _term_report_query(
-    conn: sqlite3.Connection,
+    conn,
     date_column: str,
     order_column: str,
 ) -> list[dict[str, Any]]:
     """Shared logic: term report filtered by date_column (term_start or term_end), ordered by order_column."""
+    since = "CURRENT_DATE - INTERVAL '90 days'" if is_postgres() else "date('now', '-90 days')"
     if _has_hierarchy_terms(conn):
         cur = conn.execute(f"""
             SELECT
@@ -50,7 +51,7 @@ def _term_report_query(
             LEFT JOIN states s ON s.id = sp.state_id
             LEFT JOIN levels l ON l.id = sp.level_id
             LEFT JOIN branches b ON b.id = sp.branch_id
-            WHERE ot.{date_column} BETWEEN date('now', '-90 days') AND date('now')
+            WHERE ot.{date_column} BETWEEN {since} AND CURRENT_DATE
             ORDER BY ot.{order_column} DESC
             """)
     else:
@@ -72,13 +73,13 @@ def _term_report_query(
             LEFT JOIN states s ON s.id = o.state_id
             LEFT JOIN levels l ON l.id = o.level_id
             LEFT JOIN branches b ON b.id = o.branch_id
-            WHERE ot.{date_column} BETWEEN date('now', '-90 days') AND date('now')
+            WHERE ot.{date_column} BETWEEN {since} AND CURRENT_DATE
             ORDER BY ot.{order_column} DESC
             """)
     return [_row_to_dict(r) for r in cur.fetchall()]
 
 
-def get_recent_term_ends(conn: sqlite3.Connection | None = None) -> list[dict[str, Any]]:
+def get_recent_term_ends(conn=None) -> list[dict[str, Any]]:
     """Office terms with term_end in the last 90 days. Returns list of dicts with Name, Country Name, etc."""
     own_conn = conn is None
     if own_conn:
@@ -90,7 +91,7 @@ def get_recent_term_ends(conn: sqlite3.Connection | None = None) -> list[dict[st
             conn.close()
 
 
-def get_recent_term_starts(conn: sqlite3.Connection | None = None) -> list[dict[str, Any]]:
+def get_recent_term_starts(conn=None) -> list[dict[str, Any]]:
     """Office terms with term_start in the last 90 days. Returns list of dicts with Name, Country Name, etc."""
     own_conn = conn is None
     if own_conn:
