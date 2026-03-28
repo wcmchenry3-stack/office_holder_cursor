@@ -6,7 +6,6 @@ from urllib.parse import urlparse
 
 from .connection import (
     get_connection,
-    get_db_path,
     _DB_UNIQUE_ERRORS,
     _DB_OPERATIONAL_ERRORS,
     is_postgres,
