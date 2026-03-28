@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS states (
 );
 CREATE INDEX IF NOT EXISTS idx_states_country_id ON states(country_id);
 
--- Reference: cities (per state; state implies country)
+-- Reference: cities (per state, state implies country)
 CREATE TABLE IF NOT EXISTS cities (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     state_id INTEGER NOT NULL REFERENCES states(id),
@@ -174,7 +174,7 @@ CREATE INDEX IF NOT EXISTS idx_office_table_config_office_details_id ON office_t
 CREATE INDEX IF NOT EXISTS idx_office_table_config_enabled ON office_table_config(enabled);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_office_table_config_office_table_no ON office_table_config(office_details_id, table_no);
 
--- Offices: office definitions (what we scrape); link by FK to countries, states, levels, branches (legacy; migrated to hierarchy)
+-- Offices: office definitions (what we scrape) — link by FK to countries, states, levels, branches (legacy, migrated to hierarchy)
 CREATE TABLE IF NOT EXISTS offices (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     country_id INTEGER NOT NULL REFERENCES countries(id),
@@ -304,7 +304,7 @@ CREATE TABLE IF NOT EXISTS states (
 );
 CREATE INDEX IF NOT EXISTS idx_states_country_id ON states(country_id);
 
--- Reference: cities (per state; state implies country)
+-- Reference: cities (per state, state implies country)
 CREATE TABLE IF NOT EXISTS cities (
     id SERIAL PRIMARY KEY,
     state_id INTEGER NOT NULL REFERENCES states(id),
@@ -466,7 +466,7 @@ CREATE INDEX IF NOT EXISTS idx_office_table_config_office_details_id ON office_t
 CREATE INDEX IF NOT EXISTS idx_office_table_config_enabled ON office_table_config(enabled);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_office_table_config_office_table_no ON office_table_config(office_details_id, table_no);
 
--- Offices (legacy; new data goes through source_pages → office_details → office_table_config)
+-- Offices (legacy — new data goes through source_pages → office_details → office_table_config)
 CREATE TABLE IF NOT EXISTS offices (
     id SERIAL PRIMARY KEY,
     country_id INTEGER NOT NULL REFERENCES countries(id),
