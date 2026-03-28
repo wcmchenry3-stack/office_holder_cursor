@@ -129,7 +129,7 @@ async def ai_offices_page(request: Request):
     countries = db_refs.list_countries()
     levels = db_refs.list_levels()
     branches = db_refs.list_branches()
-    states = db_refs.list_states()
+    states = db_refs.list_states_with_country()
     api_key_set = bool(os.environ.get("OPENAI_API_KEY", ""))
     return templates.TemplateResponse(
         request,
