@@ -87,9 +87,9 @@ def _batch_job_worker(job_id: str, urls: list[str], batch_defaults: dict) -> Non
             with _batch_job_lock:
                 if job_id in _batch_job_store:
                     _batch_job_store[job_id]["results"][i]["status"] = "failed"
-                    _batch_job_store[job_id]["results"][i]["error"] = (
-                        "OpenAI authentication failed — check OPENAI_API_KEY"
-                    )
+                    _batch_job_store[job_id]["results"][i][
+                        "error"
+                    ] = "OpenAI authentication failed — check OPENAI_API_KEY"
                     _batch_job_store[job_id]["status"] = "failed"
             return
         except Exception as e:
@@ -221,12 +221,14 @@ async def api_ai_offices_batch_status(job_id: str):
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    return JSONResponse({
-        "status": job["status"],
-        "current_url_index": job.get("current_url_index", 0),
-        "total_urls": job.get("total_urls", 0),
-        "results": job.get("results", []),
-    })
+    return JSONResponse(
+        {
+            "status": job["status"],
+            "current_url_index": job.get("current_url_index", 0),
+            "total_urls": job.get("total_urls", 0),
+            "results": job.get("results", []),
+        }
+    )
 
 
 @router.post("/api/ai-offices/batch/{job_id}/cancel")

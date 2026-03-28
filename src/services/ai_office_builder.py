@@ -4,6 +4,7 @@ AI-assisted office builder: uses OpenAI to analyze a Wikipedia page and
 determine the table parsing config, then validates via preview and saves.
 No FastAPI dependency — fully unit-testable.
 """
+
 from __future__ import annotations
 
 import json
@@ -280,7 +281,9 @@ class AIOfficeBuilder:
     ) -> AIOfficePageResponse:
         """Build initial messages and call OpenAI. Mutates messages in place."""
         messages.append({"role": "system", "content": _SYSTEM_PROMPT})
-        messages.append({"role": "user", "content": self._format_tables_message(url, tables_preview)})
+        messages.append(
+            {"role": "user", "content": self._format_tables_message(url, tables_preview)}
+        )
         return self._call_openai(messages)
 
     def _call_openai(self, messages: list[dict]) -> AIOfficePageResponse:
@@ -475,7 +478,9 @@ class AIOfficeBuilder:
                     f"Start={r.get('Term Start', '')!r}  "
                     f"End={r.get('Term End', '')!r}"
                 )
-            lines.append(f"  Previous config: {json.dumps(config.model_dump(exclude={'reasoning'}))}")
+            lines.append(
+                f"  Previous config: {json.dumps(config.model_dump(exclude={'reasoning'}))}"
+            )
             lines.append("")
 
         lines += [

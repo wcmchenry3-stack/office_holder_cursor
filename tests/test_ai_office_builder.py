@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """Unit tests for src/services/ai_office_builder.py."""
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
@@ -11,7 +12,6 @@ from src.services.ai_office_builder import (
     AIOfficePageResponse,
     AITableConfig,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -118,7 +118,9 @@ class TestCheckSuccessCriteria:
 class TestAnalyzePage:
     @patch("src.services.ai_office_builder.openai.OpenAI")
     def test_appends_system_and_user_messages(self, mock_openai_cls):
-        config = AITableConfig(table_no=1, name="Gov", link_column=1, term_start_column=3, term_end_column=4)
+        config = AITableConfig(
+            table_no=1, name="Gov", link_column=1, term_start_column=3, term_end_column=4
+        )
         completion = _make_completion([config])
         mock_openai_cls.return_value.beta.chat.completions.parse.return_value = completion
 
@@ -151,20 +153,30 @@ class TestProcessUrlWithRetries:
     @patch("src.services.ai_office_builder.get_all_tables_preview", return_value=_TABLES_PREVIEW)
     @patch("src.services.ai_office_builder.openai.OpenAI")
     def test_success_on_first_attempt(
-        self, mock_openai_cls, mock_preview_fn, mock_pwc, mock_create,
-        mock_validate, mock_state, mock_branch, mock_level, mock_country,
+        self,
+        mock_openai_cls,
+        mock_preview_fn,
+        mock_pwc,
+        mock_create,
+        mock_validate,
+        mock_state,
+        mock_branch,
+        mock_level,
+        mock_country,
     ):
-        config = AITableConfig(table_no=1, name="Gov", link_column=1, term_start_column=3, term_end_column=4)
-        mock_openai_cls.return_value.beta.chat.completions.parse.return_value = _make_completion([config])
+        config = AITableConfig(
+            table_no=1, name="Gov", link_column=1, term_start_column=3, term_end_column=4
+        )
+        mock_openai_cls.return_value.beta.chat.completions.parse.return_value = _make_completion(
+            [config]
+        )
         mock_pwc.return_value = {
             "error": None,
             "preview_rows": [{"Wiki Link": "/wiki/A"}, {"Wiki Link": "/wiki/B"}],
         }
 
         b = AIOfficeBuilder(api_key="test")
-        result = b.process_url_with_retries(
-            "https://en.wikipedia.org/wiki/Test", _BATCH_DEFAULTS
-        )
+        result = b.process_url_with_retries("https://en.wikipedia.org/wiki/Test", _BATCH_DEFAULTS)
 
         assert result["status"] == "success"
         assert result["offices_created"] == [42]
@@ -181,12 +193,24 @@ class TestProcessUrlWithRetries:
     @patch("src.services.ai_office_builder.get_all_tables_preview", return_value=_TABLES_PREVIEW)
     @patch("src.services.ai_office_builder.openai.OpenAI")
     def test_success_on_second_attempt(
-        self, mock_openai_cls, mock_preview_fn, mock_pwc, mock_create,
-        mock_validate, mock_state, mock_branch, mock_level, mock_country,
+        self,
+        mock_openai_cls,
+        mock_preview_fn,
+        mock_pwc,
+        mock_create,
+        mock_validate,
+        mock_state,
+        mock_branch,
+        mock_level,
+        mock_country,
     ):
         """First preview returns empty rows; second attempt returns good config that passes."""
-        bad_config = AITableConfig(table_no=1, name="Gov", link_column=9, term_start_column=3, term_end_column=4)
-        good_config = AITableConfig(table_no=1, name="Gov", link_column=1, term_start_column=3, term_end_column=4)
+        bad_config = AITableConfig(
+            table_no=1, name="Gov", link_column=9, term_start_column=3, term_end_column=4
+        )
+        good_config = AITableConfig(
+            table_no=1, name="Gov", link_column=1, term_start_column=3, term_end_column=4
+        )
 
         call_n = {"n": 0}
 
@@ -223,12 +247,24 @@ class TestProcessUrlWithRetries:
     @patch("src.services.ai_office_builder.get_all_tables_preview", return_value=_TABLES_PREVIEW)
     @patch("src.services.ai_office_builder.openai.OpenAI")
     def test_gives_up_after_max_retries(
-        self, mock_openai_cls, mock_preview_fn, mock_pwc, mock_create,
-        mock_validate, mock_state, mock_branch, mock_level, mock_country,
+        self,
+        mock_openai_cls,
+        mock_preview_fn,
+        mock_pwc,
+        mock_create,
+        mock_validate,
+        mock_state,
+        mock_branch,
+        mock_level,
+        mock_country,
     ):
         """Always fails validation; create_office is never called; status=failed."""
-        bad_config = AITableConfig(table_no=1, name="Gov", link_column=9, term_start_column=3, term_end_column=4)
-        mock_openai_cls.return_value.beta.chat.completions.parse.return_value = _make_completion([bad_config])
+        bad_config = AITableConfig(
+            table_no=1, name="Gov", link_column=9, term_start_column=3, term_end_column=4
+        )
+        mock_openai_cls.return_value.beta.chat.completions.parse.return_value = _make_completion(
+            [bad_config]
+        )
         mock_pwc.return_value = {"error": None, "preview_rows": []}  # always empty
 
         b = AIOfficeBuilder(api_key="test")
@@ -268,11 +304,23 @@ class TestProcessUrlWithRetries:
     @patch("src.services.ai_office_builder.get_all_tables_preview", return_value=_TABLES_PREVIEW)
     @patch("src.services.ai_office_builder.openai.OpenAI")
     def test_cancel_check_stops_processing(
-        self, mock_openai_cls, mock_preview_fn, mock_pwc, mock_create,
-        mock_validate, mock_state, mock_branch, mock_level, mock_country,
+        self,
+        mock_openai_cls,
+        mock_preview_fn,
+        mock_pwc,
+        mock_create,
+        mock_validate,
+        mock_state,
+        mock_branch,
+        mock_level,
+        mock_country,
     ):
-        config = AITableConfig(table_no=1, name="Gov", link_column=1, term_start_column=3, term_end_column=4)
-        mock_openai_cls.return_value.beta.chat.completions.parse.return_value = _make_completion([config])
+        config = AITableConfig(
+            table_no=1, name="Gov", link_column=1, term_start_column=3, term_end_column=4
+        )
+        mock_openai_cls.return_value.beta.chat.completions.parse.return_value = _make_completion(
+            [config]
+        )
         mock_pwc.return_value = {"error": None, "preview_rows": []}
 
         b = AIOfficeBuilder(api_key="test")
