@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}{{ table }} – DB Explorer – Office Holder{% endblock %}
+{% block content %}
+<p><a href="/db">← DB Explorer</a></p>
+<h1>{{ table }}</h1>
+
+{% if total == 0 %}
+<p>Table is empty.</p>
+{% else %}
+<p>
+  Rows {{ offset + 1 }}–{{ [offset + limit, total] | min }} of {{ total }}
+  &nbsp;
+  {% if has_prev %}<a href="/db/{{ table }}?limit={{ limit }}&offset={{ prev_offset }}">← Prev</a>{% else %}<span>← Prev</span>{% endif %}
+  &nbsp;
+  {% if has_next %}<a href="/db/{{ table }}?limit={{ limit }}&offset={{ next_offset }}">Next →</a>{% else %}<span>Next →</span>{% endif %}
+</p>
+
+<div style="overflow-x:auto">
+<table>
+  <thead>
+    <tr>
+      {% for col in columns %}
+      <th>{{ col }}</th>
+      {% endfor %}
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+    <tr>
+      {% for cell in row %}
+      <td>{{ cell if cell is not none else '—' }}</td>
+      {% endfor %}
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<p>
+  {% if has_prev %}<a href="/db/{{ table }}?limit={{ limit }}&offset={{ prev_offset }}">← Prev</a>{% else %}<span>← Prev</span>{% endif %}
+  &nbsp;
+  {% if has_next %}<a href="/db/{{ table }}?limit={{ limit }}&offset={{ next_offset }}">Next →</a>{% else %}<span>Next →</span>{% endif %}
+</p>
+{% endif %}
+{% endblock %}

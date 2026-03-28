@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}DB Explorer – Office Holder{% endblock %}
+{% block content %}
+<h1>DB Explorer</h1>
+<table>
+  <thead>
+    <tr><th>Table</th><th style="text-align:right">Rows</th></tr>
+  </thead>
+  <tbody>
+    {% for t in tables %}
+    <tr>
+      <td><a href="/db/{{ t.name }}">{{ t.name }}</a></td>
+      <td style="text-align:right">{{ t.count }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="2">No tables found.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
