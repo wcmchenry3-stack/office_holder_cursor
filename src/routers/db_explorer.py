@@ -19,9 +19,7 @@ def _get_table_names() -> list[str]:
                 "WHERE table_schema = 'public' ORDER BY table_name"
             )
         else:
-            cur = conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
-            )
+            cur = conn.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
         return [row[0] for row in cur.fetchall()]
     finally:
         conn.close()
