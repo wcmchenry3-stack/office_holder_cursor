@@ -56,6 +56,8 @@ jobs:
 
   openai-policy:
     uses: wcmchenry3-stack/.github/.github/workflows/called-openai-policy.yml@main
+    with:
+      allowed-repos: wcmchenry3-stack/office_holder_cursor
     secrets: inherit
 
   wikipedia-policy:
