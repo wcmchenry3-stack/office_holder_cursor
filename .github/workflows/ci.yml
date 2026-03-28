@@ -24,8 +24,8 @@ jobs:
   test-python:
     uses: wcmchenry3-stack/.github/.github/workflows/called-test-python.yml@main
     with:
-      # Raised from 50 → 58 → 65 → 72 → 75 → 78 after P1-P3 hardening (test_run_api, SQL adapter, failure-mode tests)
-      coverage-threshold: 78
+      # Raised from 50 → 58 → 65 → 72 → 75 → 78 → 80 after coverage gap work (_helpers, db_explorer, scraper_jobs)
+      coverage-threshold: 80
     secrets: inherit
 
   cve-python:
