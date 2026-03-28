@@ -582,7 +582,8 @@ def update_html_hash(tc_id: int, html_hash: str, conn: Any | None = None) -> Non
             "UPDATE office_table_config SET last_html_hash = %s WHERE id = %s",
             (html_hash, tc_id),
         )
-        conn.commit()
+        if own_conn:
+            conn.commit()
     finally:
         if own_conn:
             conn.close()

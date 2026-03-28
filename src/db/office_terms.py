@@ -1,9 +1,12 @@
 """Office terms (scraped results) write/read and delta logic. Supports hierarchy: office_details_id, office_table_config_id."""
 
+import logging
 from typing import Any
 
 from .connection import get_connection, is_postgres, _DB_OPERATIONAL_ERRORS
 from .utils import _row_to_dict
+
+logger = logging.getLogger(__name__)
 
 
 def _has_hierarchy_terms(conn) -> bool:
@@ -41,36 +44,6 @@ def insert_office_term(
     try:
         ts_imp = 1 if term_start_imprecise else 0
         te_imp = 1 if term_end_imprecise else 0
-        # #region agent log
-        try:
-            from pathlib import Path as _P
-            import json as _J
-            import time as _T
-
-            _log_path = _P(__file__).resolve().parent.parent.parent / ".cursor" / "debug.log"
-            open(_log_path, "a", encoding="utf-8").write(
-                _J.dumps(
-                    {
-                        "id": "log_insert_office_term",
-                        "timestamp": _T.time() * 1000,
-                        "location": "db/office_terms.py:insert_office_term",
-                        "message": "insert_office_term call",
-                        "data": {
-                            "office_id": office_id,
-                            "office_details_id": office_details_id,
-                            "office_table_config_id": office_table_config_id,
-                            "has_hierarchy_terms": _has_hierarchy_terms(conn),
-                            "wiki_url": (wiki_url or "")[:80],
-                        },
-                        "runId": "pre-fix",
-                        "hypothesisId": "H4",
-                    }
-                )
-                + "\n"
-            )
-        except Exception:
-            pass
-        # #endregion
         if (
             _has_hierarchy_terms(conn)
             and office_details_id is not None
@@ -134,7 +107,8 @@ def insert_office_term(
                     wiki_url,
                 ),
             )
-        conn.commit()
+        if own_conn:
+            conn.commit()
         return cur.fetchone()["id"]
     finally:
         if own_conn:
@@ -215,7 +189,8 @@ def delete_office_terms_for_office(office_id: int, conn=None) -> int:
             )
         else:
             cur = conn.execute("DELETE FROM office_terms WHERE office_id = %s", (office_id,))
-        conn.commit()
+        if own_conn:
+            conn.commit()
         return cur.rowcount
     finally:
         if own_conn:

@@ -254,6 +254,18 @@ CREATE TABLE IF NOT EXISTS office_terms (
 CREATE INDEX IF NOT EXISTS idx_office_terms_office_id ON office_terms(office_id);
 CREATE INDEX IF NOT EXISTS idx_office_terms_individual_id ON office_terms(individual_id);
 CREATE INDEX IF NOT EXISTS idx_office_terms_wiki_url ON office_terms(wiki_url);
+
+-- Persistent job records: run_scraper and preview jobs survive server restart.
+CREATE TABLE IF NOT EXISTS scraper_jobs (
+    id TEXT PRIMARY KEY,
+    type TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'running',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    result_json TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_scraper_jobs_status ON scraper_jobs(status);
+CREATE INDEX IF NOT EXISTS idx_scraper_jobs_created_at ON scraper_jobs(created_at);
 """
 
 # Indexes on offices/parties/office_terms FK columns. Not in SCHEMA_SQL so that
@@ -551,7 +563,19 @@ CREATE TABLE IF NOT EXISTS parser_test_scripts (
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
-CREATE INDEX IF NOT EXISTS idx_parser_test_scripts_enabled ON parser_test_scripts(enabled)
+CREATE INDEX IF NOT EXISTS idx_parser_test_scripts_enabled ON parser_test_scripts(enabled);
+
+-- Persistent job records: run_scraper and preview jobs survive server restart.
+CREATE TABLE IF NOT EXISTS scraper_jobs (
+    id TEXT PRIMARY KEY,
+    type TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'running',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    result_json TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_scraper_jobs_status ON scraper_jobs(status);
+CREATE INDEX IF NOT EXISTS idx_scraper_jobs_created_at ON scraper_jobs(created_at)
 """
 
 # Same index SQL works for both backends (standard SQL).

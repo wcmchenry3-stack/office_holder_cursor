@@ -1,11 +1,11 @@
 """Unit tests for pure helper functions in runner.py."""
 
 from src.scraper.runner import (
-    _canonical_holder_url,
     _dedupe_parsed_rows,
     _holder_key_from_existing_term,
     _is_dead_wiki_url,
 )
+from src.scraper.wiki_fetch import canonical_holder_url as _canonical_holder_url
 
 # ---------------------------------------------------------------------------
 # _is_dead_wiki_url

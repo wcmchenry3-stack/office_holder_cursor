@@ -2,6 +2,7 @@
 
 import re
 import sqlite3
+from datetime import datetime, timezone
 
 from .connection import get_connection
 
@@ -11,15 +12,59 @@ def _columns(conn, table: str) -> list[str]:
     return [row[1] for row in cur.fetchall()]
 
 
+# ---------------------------------------------------------------------------
+# Migration version tracking
+# ---------------------------------------------------------------------------
+
+
+def _ensure_migrations_table(conn) -> None:
+    """Create schema_migrations table if it doesn't exist."""
+    conn.execute("""CREATE TABLE IF NOT EXISTS schema_migrations
+           (id TEXT PRIMARY KEY, applied_at TEXT NOT NULL)""")
+    conn.commit()
+
+
+def _applied_migrations(conn) -> set:
+    """Return set of already-applied migration IDs."""
+    try:
+        cur = conn.execute("SELECT id FROM schema_migrations")
+        return {row[0] for row in cur.fetchall()}
+    except Exception:
+        return set()
+
+
+def _record_migration(conn, name: str) -> None:
+    """Record a migration as applied."""
+    ts = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        "INSERT OR IGNORE INTO schema_migrations (id, applied_at) VALUES (%s, %s)",
+        (name, ts),
+    )
+    conn.commit()
+
+
+def _apply_migration(conn, name: str, fn, applied: set) -> None:
+    """Run fn(conn) only if name is not already in applied; record it after."""
+    if name in applied:
+        return
+    fn(conn)
+    _record_migration(conn, name)
+    applied.add(name)
+
+
 def migrate_to_fk(conn=None):
     """
     If offices/parties have old text columns (country, level, branch, state),
     add FK columns, seed ref data, backfill, then replace tables with FK-only structure.
+    New migrations are recorded in schema_migrations; already-applied ones are skipped.
     """
     own_conn = conn is None
     if own_conn:
         conn = get_connection()
     try:
+        _ensure_migrations_table(conn)
+        applied = _applied_migrations(conn)
+
         # Ensure ref tables exist (schema already created them)
         from .seed import seed_reference_data
 
@@ -29,61 +74,85 @@ def migrate_to_fk(conn=None):
         parties_cols = _columns(conn, "parties")
 
         # New schema has country_id; old has country (text)
-        offices_has_fk = "country_id" in offices_cols
-        parties_has_fk = "country_id" in parties_cols
+        if "country" in offices_cols and "country_id" not in offices_cols:
+            _apply_migration(conn, "offices_to_fk", _migrate_offices_to_fk, applied)
+        if "country" in parties_cols and "country_id" not in parties_cols:
+            _apply_migration(conn, "parties_to_fk", _migrate_parties_to_fk, applied)
 
-        if not offices_has_fk and "country" in offices_cols:
-            _migrate_offices_to_fk(conn)
-        if not parties_has_fk and "country" in parties_cols:
-            _migrate_parties_to_fk(conn)
-
-        # office_terms: add party_id FK if missing and backfill from party text
+        # office_terms migrations
         ot_cols = _columns(conn, "office_terms")
         if "party_id" not in ot_cols:
-            _migrate_office_terms_party_id(conn)
-        # office_terms: drop party column if present (use party_id only)
+            _apply_migration(conn, "office_terms_party_id", _migrate_office_terms_party_id, applied)
         ot_cols = _columns(conn, "office_terms")
         if "party" in ot_cols:
-            _migrate_office_terms_drop_party(conn)
+            _apply_migration(
+                conn, "office_terms_drop_party", _migrate_office_terms_drop_party, applied
+            )
 
-        # Add imprecise-date columns to individuals and office_terms if missing
-        _migrate_imprecise_date_columns(conn)
-        # Add enabled column to offices if missing
-        _migrate_offices_enabled(conn)
-        # Add use_full_page_for_table to offices if missing
-        _migrate_offices_use_full_page_for_table(conn)
-        # Add years_only to offices if missing
-        _migrate_offices_years_only(conn)
-        # Add term_start_year, term_end_year to office_terms and extend UNIQUE if missing
-        _migrate_office_terms_year_columns(conn)
-        # Add term_dates_merged, party_ignore, district_ignore, district_at_large to offices
-        _migrate_offices_parsing_options(conn)
-        _migrate_ignore_non_links(conn)
-        _migrate_remove_duplicates(conn)
-        _migrate_row_filter_columns(conn)
-        # Add is_dead_link and is_living to individuals if missing
-        _migrate_individuals_dead_link(conn)
-        _migrate_individuals_is_living(conn)
-        # Alt links: new table, backfill from offices.alt_link, verify, then drop offices.alt_link
-        _migrate_alt_links(conn)
-        # Page -> office_details -> office_table_config hierarchy: add columns and backfill from offices
-        _migrate_to_page_office_table_hierarchy(conn)
-        # Multiple tables per office: allow_reuse_tables on source_pages, unique (office_details_id, table_no)
-        _migrate_allow_reuse_tables_and_table_no_unique(conn)
-        # office_table_config: add name (table name for outline)
-        _migrate_office_table_config_name(conn)
-        # office_category tables and office_details.office_category_id
-        _migrate_office_category(conn)
-        _migrate_infobox_role_key(conn)
-        _migrate_infobox_role_key_filter(conn)
-        _migrate_office_table_config_infobox_role_key_filter_id(conn)
-        _migrate_offices_infobox_role_key_filter_id(conn)
-        _migrate_infobox_role_key_filter_role_key_format(conn)
-        # cities table and source_pages.city_id
-        _migrate_city(conn)
-        _migrate_source_pages_disable_auto_table_update(conn)
-        _migrate_office_table_config_html_hash(conn)
-        _migrate_individuals_bio_batch(conn)
+        _apply_migration(conn, "imprecise_date_columns", _migrate_imprecise_date_columns, applied)
+        _apply_migration(conn, "offices_enabled", _migrate_offices_enabled, applied)
+        _apply_migration(
+            conn,
+            "offices_use_full_page_for_table",
+            _migrate_offices_use_full_page_for_table,
+            applied,
+        )
+        _apply_migration(conn, "offices_years_only", _migrate_offices_years_only, applied)
+        _apply_migration(
+            conn, "office_terms_year_columns", _migrate_office_terms_year_columns, applied
+        )
+        _apply_migration(conn, "offices_parsing_options", _migrate_offices_parsing_options, applied)
+        _apply_migration(conn, "ignore_non_links", _migrate_ignore_non_links, applied)
+        _apply_migration(conn, "remove_duplicates", _migrate_remove_duplicates, applied)
+        _apply_migration(conn, "row_filter_columns", _migrate_row_filter_columns, applied)
+        _apply_migration(conn, "individuals_dead_link", _migrate_individuals_dead_link, applied)
+        _apply_migration(conn, "individuals_is_living", _migrate_individuals_is_living, applied)
+        _apply_migration(conn, "alt_links", _migrate_alt_links, applied)
+        _apply_migration(
+            conn, "page_office_table_hierarchy", _migrate_to_page_office_table_hierarchy, applied
+        )
+        _apply_migration(
+            conn,
+            "allow_reuse_tables_and_table_no_unique",
+            _migrate_allow_reuse_tables_and_table_no_unique,
+            applied,
+        )
+        _apply_migration(
+            conn, "office_table_config_name", _migrate_office_table_config_name, applied
+        )
+        _apply_migration(conn, "office_category", _migrate_office_category, applied)
+        _apply_migration(conn, "infobox_role_key", _migrate_infobox_role_key, applied)
+        _apply_migration(conn, "infobox_role_key_filter", _migrate_infobox_role_key_filter, applied)
+        _apply_migration(
+            conn,
+            "office_table_config_infobox_role_key_filter_id",
+            _migrate_office_table_config_infobox_role_key_filter_id,
+            applied,
+        )
+        _apply_migration(
+            conn,
+            "offices_infobox_role_key_filter_id",
+            _migrate_offices_infobox_role_key_filter_id,
+            applied,
+        )
+        _apply_migration(
+            conn,
+            "infobox_role_key_filter_role_key_format",
+            _migrate_infobox_role_key_filter_role_key_format,
+            applied,
+        )
+        _apply_migration(conn, "city", _migrate_city, applied)
+        _apply_migration(
+            conn,
+            "source_pages_disable_auto_table_update",
+            _migrate_source_pages_disable_auto_table_update,
+            applied,
+        )
+        _apply_migration(
+            conn, "office_table_config_html_hash", _migrate_office_table_config_html_hash, applied
+        )
+        _apply_migration(conn, "individuals_bio_batch", _migrate_individuals_bio_batch, applied)
+        _apply_migration(conn, "scraper_jobs", _migrate_scraper_jobs, applied)
     finally:
         if own_conn:
             conn.close()
@@ -1070,4 +1139,31 @@ def _migrate_individuals_bio_batch(conn):
         conn.commit()
     if "bio_refreshed_at" not in cols:
         conn.execute("ALTER TABLE individuals ADD COLUMN bio_refreshed_at TEXT")
+        conn.commit()
+
+
+def _migrate_scraper_jobs(conn):
+    """Create scraper_jobs table if missing (for DB instances predating this migration)."""
+    try:
+        tables = {
+            row[0]
+            for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+        }
+    except Exception:
+        tables = set()
+    if "scraper_jobs" not in tables:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS scraper_jobs (
+                id TEXT PRIMARY KEY,
+                type TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'running',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                result_json TEXT
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_scraper_jobs_status ON scraper_jobs(status)")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_scraper_jobs_created_at ON scraper_jobs(created_at)"
+        )
         conn.commit()

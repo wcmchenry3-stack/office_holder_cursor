@@ -1,10 +1,9 @@
 """Quick office config test: verify table exists and configured columns are in range."""
 
-import requests
 from bs4 import BeautifulSoup
 
 from src.db import offices as db_offices
-from src.scraper.wiki_fetch import WIKIPEDIA_REQUEST_HEADERS, wiki_url_to_rest_html_url
+from src.scraper.wiki_fetch import wiki_session, wiki_url_to_rest_html_url
 from src.scraper.table_cache import get_table_html_cached
 
 TIMEOUT = 10
@@ -120,11 +119,11 @@ def get_all_tables_preview(
         return {"num_tables": 0, "error": "No URL"}
     fetch_url = wiki_url_to_rest_html_url(url) or url
     try:
-        resp = requests.get(fetch_url, headers=WIKIPEDIA_REQUEST_HEADERS, timeout=TIMEOUT)
+        resp = wiki_session().get(fetch_url, timeout=TIMEOUT)
         if resp.status_code != 200:
             return {"num_tables": 0, "error": f"HTTP {resp.status_code}"}
         html_content = resp.text
-    except requests.RequestException as e:
+    except Exception as e:
         return {"num_tables": 0, "error": str(e)}
     soup = BeautifulSoup(html_content, "html.parser")
     tables = soup.find_all("table")
