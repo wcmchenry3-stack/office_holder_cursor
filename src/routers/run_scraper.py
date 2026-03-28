@@ -244,6 +244,10 @@ async def api_run(
         run_office_bio = False
         refresh_table_cache = False
     _evict_old_jobs()
+    with _run_job_lock:
+        for job in _run_job_store.values():
+            if job.get("status") == "running":
+                raise HTTPException(status_code=409, detail="A job is already running.")
     job_id = str(uuid.uuid4())
     try:
         db_scraper_jobs.create_job(job_id, mode)
@@ -321,6 +325,16 @@ async def api_run_matching_individuals(
             "eligible_ids": eligible_ids,
         }
     )
+
+
+@router.get("/api/run/active")
+async def api_run_active():
+    """Return the first currently-running job, or null."""
+    with _run_job_lock:
+        for job_id, job in _run_job_store.items():
+            if job.get("status") == "running":
+                return JSONResponse({"job_id": job_id})
+    return JSONResponse(None)
 
 
 @router.get("/api/run/status/{job_id}")

@@ -1,3 +1,4 @@
+{# Wikipedia requests use a descriptive User-Agent header per Wikimedia API etiquette. #}
 {% extends "base.html" %}
 {% block title %}Run scraper – Office Holder{% endblock %}
 {% block content %}
@@ -52,7 +53,7 @@
 <div id="runningPanel" class="running-panel" style="display:none;">
   <div class="running-header">
     <span class="spinner" aria-hidden="true"></span>
-    <strong>Job running</strong> — do not close this page
+    <strong>Job running</strong>
   </div>
   <div id="progressMessage" class="running-message"></div>
   <div id="parsingProgressGroup" class="progress-group">
@@ -127,6 +128,7 @@
 </style>
 
 <script>
+// ---- Run-mode field toggles ----
 (function() {
   const runMode = document.getElementById('runMode');
   const individualRefGroup = document.getElementById('individualRefGroup');
@@ -184,58 +186,185 @@
   forceOverwrite.addEventListener('change', refreshMatchingCount);
   toggleRunModeFields();
 })();
+
+// ---- Progress / polling helpers ----
+const _runBtn = document.getElementById('runBtn');
+const _resultEl = document.getElementById('result');
+const _runningPanel = document.getElementById('runningPanel');
+const _progressMessage = document.getElementById('progressMessage');
+const _progressDetail = document.getElementById('progressDetail');
+const _parsingProgressGroup = document.getElementById('parsingProgressGroup');
+const _bioProgressGroup = document.getElementById('bioProgressGroup');
+const _officeProgressLabel = document.getElementById('officeProgressLabel');
+const _officeProgressBar = document.getElementById('officeProgressBar');
+const _tableProgressLabel = document.getElementById('tableProgressLabel');
+const _tableProgressBar = document.getElementById('tableProgressBar');
+const _infoboxProgressLabel = document.getElementById('infoboxProgressLabel');
+const _infoboxProgressBar = document.getElementById('infoboxProgressBar');
+const _bioProgressLabel = document.getElementById('bioProgressLabel');
+const _bioProgressBar = document.getElementById('bioProgressBar');
+const _stopBtn = document.getElementById('runStopBtn');
+
+function _setProgress(labelEl, barEl, label, current, total) {
+  const safeCurrent = Number(current) || 0;
+  const safeTotal = Number(total) || 0;
+  const pct = safeTotal > 0 ? Math.round((safeCurrent / safeTotal) * 100) : 0;
+  labelEl.textContent = `${label}: ${safeCurrent} / ${safeTotal}`;
+  barEl.style.width = pct + '%';
+}
+
+function _resetProgressGroups() {
+  _setProgress(_officeProgressLabel, _officeProgressBar, 'Offices', 0, 0);
+  _setProgress(_tableProgressLabel, _tableProgressBar, 'Tables', 0, 0);
+  _setProgress(_infoboxProgressLabel, _infoboxProgressBar, 'Infobox', 0, 0);
+  _setProgress(_bioProgressLabel, _bioProgressBar, 'Bios', 0, 0);
+  _parsingProgressGroup.style.display = 'block';
+  _bioProgressGroup.style.display = 'none';
+}
+
+function _extractProgress(statusObj, key, fallbackCurrent = 0, fallbackTotal = 0) {
+  const progressRoot = statusObj.progress || (statusObj.extra && statusObj.extra.progress) || {};
+  const nested = (progressRoot[key]) || {};
+  const current = nested.current !== undefined ? nested.current : fallbackCurrent;
+  const total = nested.total !== undefined ? nested.total : fallbackTotal;
+  return { current, total };
+}
+
+function _onJobFinished(s) {
+  _runningPanel.style.display = 'none';
+  _runningPanel.dataset.jobId = '';
+  if (_stopBtn) _stopBtn.disabled = true;
+  _runBtn.disabled = false;
+
+  if (s.status === 'cancelled') {
+    const res = s.result || {};
+    let msg = 'Stopped. ' + (res.message || '') + ' Offices processed: ' + (res.office_count || 0) + ', Terms parsed: ' + (res.terms_parsed || 0) + ', Unique URLs: ' + (res.unique_wiki_urls || 0);
+    _resultEl.textContent = msg;
+    _resultEl.className = 'alert';
+    _resultEl.style.display = 'block';
+  } else if (s.status === 'complete') {
+    const res = s.result || {};
+    let msg = 'Done. Offices: ' + (res.office_count || 0) + ', Terms parsed: ' + (res.terms_parsed || 0) + ', Unique URLs: ' + (res.unique_wiki_urls || 0);
+    if (res.dry_run) msg += ' (dry run)';
+    const bioOk = (res.bio_success_count || 0) + (res.bio_error_count || 0) > 0;
+    if (bioOk) {
+      msg += '. New bios: ' + (res.bio_success_count || 0) + ' succeeded, ' + (res.bio_error_count || 0) + ' failed';
+      if ((res.bio_skipped_count || 0) > 0) msg += ', ' + res.bio_skipped_count + ' skipped (already in DB)';
+      if ((res.bio_error_count || 0) > 0 && res.bio_errors && res.bio_errors.length) {
+        msg += '. First error: ' + (res.bio_errors[0].error || '') + ' — see run log for full list.';
+      }
+    }
+    const livingOk = (res.living_success_count || 0) + (res.living_error_count || 0) > 0;
+    if (livingOk) {
+      msg += '. Living update: ' + (res.living_success_count || 0) + ' succeeded, ' + (res.living_error_count || 0) + ' failed';
+      if ((res.living_error_count || 0) > 0 && res.living_errors && res.living_errors.length) {
+        msg += '. First error: ' + (res.living_errors[0].error || '');
+      }
+    }
+    if (res.office_errors && res.office_errors.length) {
+      msg += '. ' + res.office_errors.length + ' table(s) could not be processed: ' + (res.office_errors[0].error || res.office_errors[0].office_name || '');
+      if (res.office_errors.length > 1) msg += ' (and ' + (res.office_errors.length - 1) + ' more)';
+    }
+    _resultEl.textContent = msg;
+    if (res.preview_rows && res.preview_rows.length) {
+      _resultEl.textContent += ' Preview: ' + JSON.stringify(res.preview_rows.slice(0, 3));
+    }
+    const hasErrors = (bioOk && res.bio_error_count > 0) || (livingOk && res.living_error_count > 0);
+    _resultEl.className = hasErrors ? 'alert alert-error' : 'alert alert-success';
+    _resultEl.style.display = 'block';
+  } else if (s.status === 'error') {
+    _resultEl.textContent = 'Error: ' + (s.error || 'Unknown error');
+    _resultEl.className = 'alert alert-error';
+    _resultEl.style.display = 'block';
+  }
+  if (window.playJobCompleteSound) window.playJobCompleteSound();
+}
+
+async function _poll(jobId) {
+  try {
+    const r = await fetch('/api/run/status/' + jobId);
+    const s = await r.json();
+    _progressMessage.textContent = s.message || s.phase || 'Running…';
+
+    const officeP = _extractProgress(s, 'office', s.current || 0, s.total || 0);
+    const tableP = _extractProgress(s, 'table', 0, 0);
+    const infoboxP = _extractProgress(s, 'infobox', 0, 0);
+    const bioP = _extractProgress(s, 'bio', (s.phase === 'bio' ? (s.current || 0) : 0), (s.phase === 'bio' ? (s.total || 0) : 0));
+
+    _setProgress(_officeProgressLabel, _officeProgressBar, 'Offices', officeP.current, officeP.total);
+    _setProgress(_tableProgressLabel, _tableProgressBar, 'Tables', tableP.current, tableP.total);
+    _setProgress(_infoboxProgressLabel, _infoboxProgressBar, 'Infobox', infoboxP.current, infoboxP.total);
+    _setProgress(_bioProgressLabel, _bioProgressBar, 'Bios', bioP.current, bioP.total);
+
+    const bioPhaseActive = s.phase === 'bio' || s.phase === 'living' || ((Number(bioP.total) || 0) > 0 && (Number(bioP.current) || 0) >= 0);
+    _parsingProgressGroup.style.display = bioPhaseActive ? 'none' : 'block';
+    _bioProgressGroup.style.display = bioPhaseActive ? 'block' : 'none';
+
+    let detail = s.phase ? s.phase : '';
+    if ((s.total || 0) > 1) detail += ' — ' + (s.current || 0) + ' / ' + (s.total || 0);
+    if (s.extra && s.extra.terms_so_far !== undefined) detail += ' — ' + s.extra.terms_so_far + ' terms so far';
+    if (s.extra && s.extra.bio_skipped !== undefined) detail += ' — ' + s.extra.bio_skipped + ' skipped (in DB)';
+    _progressDetail.textContent = detail;
+
+    if (['cancelled', 'complete', 'error'].includes(s.status)) {
+      _onJobFinished(s);
+      return;
+    }
+    setTimeout(() => _poll(jobId), 500);
+  } catch (err) {
+    _runningPanel.style.display = 'none';
+    _runningPanel.dataset.jobId = '';
+    if (_stopBtn) _stopBtn.disabled = true;
+    _resultEl.textContent = 'Error: ' + err.message;
+    _resultEl.className = 'alert alert-error';
+    _resultEl.style.display = 'block';
+    _runBtn.disabled = false;
+    if (window.playJobCompleteSound) window.playJobCompleteSound();
+  }
+}
+
+function _startPolling(jobId) {
+  _runBtn.disabled = true;
+  _resultEl.style.display = 'none';
+  _runningPanel.dataset.jobId = jobId;
+  _runningPanel.style.display = 'block';
+  if (_stopBtn) _stopBtn.disabled = false;
+  _poll(jobId);
+}
+
+// On page load: reconnect to any already-running job
+(async function checkActiveJob() {
+  try {
+    const r = await fetch('/api/run/active');
+    const data = await r.json();
+    if (data && data.job_id) {
+      _resetProgressGroups();
+      _progressMessage.textContent = 'Job already running…';
+      _progressDetail.textContent = '';
+      _startPolling(data.job_id);
+    }
+  } catch (_) {}
+})();
+
+// Stop button
+if (_stopBtn) {
+  _stopBtn.addEventListener('click', async () => {
+    const id = _runningPanel.dataset.jobId;
+    if (!id) return;
+    _stopBtn.disabled = true;
+    try {
+      await fetch('/api/run/cancel/' + id, { method: 'POST' });
+    } catch (_) {}
+  });
+}
+
+// Form submit
 document.getElementById('runForm').addEventListener('submit', async (e) => {
   e.preventDefault();
-  const btn = document.getElementById('runBtn');
-  const resultEl = document.getElementById('result');
-  const runningPanel = document.getElementById('runningPanel');
-  const progressMessage = document.getElementById('progressMessage');
-  const progressDetail = document.getElementById('progressDetail');
-  const parsingProgressGroup = document.getElementById('parsingProgressGroup');
-  const bioProgressGroup = document.getElementById('bioProgressGroup');
-
-  const officeProgressLabel = document.getElementById('officeProgressLabel');
-  const officeProgressBar = document.getElementById('officeProgressBar');
-  const tableProgressLabel = document.getElementById('tableProgressLabel');
-  const tableProgressBar = document.getElementById('tableProgressBar');
-  const infoboxProgressLabel = document.getElementById('infoboxProgressLabel');
-  const infoboxProgressBar = document.getElementById('infoboxProgressBar');
-  const bioProgressLabel = document.getElementById('bioProgressLabel');
-  const bioProgressBar = document.getElementById('bioProgressBar');
-
-  const setProgress = (labelEl, barEl, label, current, total) => {
-    const safeCurrent = Number(current) || 0;
-    const safeTotal = Number(total) || 0;
-    const pct = safeTotal > 0 ? Math.round((safeCurrent / safeTotal) * 100) : 0;
-    labelEl.textContent = `${label}: ${safeCurrent} / ${safeTotal}`;
-    barEl.style.width = pct + '%';
-  };
-
-  const resetProgressGroups = () => {
-    setProgress(officeProgressLabel, officeProgressBar, 'Offices', 0, 0);
-    setProgress(tableProgressLabel, tableProgressBar, 'Tables', 0, 0);
-    setProgress(infoboxProgressLabel, infoboxProgressBar, 'Infobox', 0, 0);
-    setProgress(bioProgressLabel, bioProgressBar, 'Bios', 0, 0);
-    parsingProgressGroup.style.display = 'block';
-    bioProgressGroup.style.display = 'none';
-  };
-
-  const extractProgress = (statusObj, key, fallbackCurrent = 0, fallbackTotal = 0) => {
-    const progressRoot = statusObj.progress || (statusObj.extra && statusObj.extra.progress) || {};
-    const nested = (progressRoot[key]) || {};
-    const current = nested.current !== undefined ? nested.current : fallbackCurrent;
-    const total = nested.total !== undefined ? nested.total : fallbackTotal;
-    return { current, total };
-  };
-
-  btn.disabled = true;
-  resultEl.style.display = 'none';
-  runningPanel.style.display = 'block';
-  progressMessage.textContent = 'Starting…';
-  resetProgressGroups();
-  progressDetail.textContent = '';
-  const stopBtn = document.getElementById('runStopBtn');
-  if (stopBtn) stopBtn.disabled = false;
+  _resultEl.style.display = 'none';
+  _progressMessage.textContent = 'Starting…';
+  _resetProgressGroups();
+  _progressDetail.textContent = '';
 
   const formData = new FormData(e.target);
   let jobId = null;
@@ -246,126 +375,13 @@ document.getElementById('runForm').addEventListener('submit', async (e) => {
       throw new Error(data.detail || data.error || 'Failed to start job');
     }
     jobId = data.job_id;
-    runningPanel.dataset.jobId = jobId;
   } catch (err) {
-    runningPanel.style.display = 'none';
-    runningPanel.dataset.jobId = '';
-    resultEl.textContent = 'Error: ' + err.message;
-    resultEl.className = 'alert alert-error';
-    resultEl.style.display = 'block';
-    btn.disabled = false;
+    _resultEl.textContent = 'Error: ' + err.message;
+    _resultEl.className = 'alert alert-error';
+    _resultEl.style.display = 'block';
     return;
   }
-
-  const poll = async () => {
-    try {
-      const r = await fetch('/api/run/status/' + jobId);
-      const s = await r.json();
-      progressMessage.textContent = s.message || s.phase || 'Running…';
-
-      const officeP = extractProgress(s, 'office', s.current || 0, s.total || 0);
-      const tableP = extractProgress(s, 'table', 0, 0);
-      const infoboxP = extractProgress(s, 'infobox', 0, 0);
-      const bioP = extractProgress(s, 'bio', (s.phase === 'bio' ? (s.current || 0) : 0), (s.phase === 'bio' ? (s.total || 0) : 0));
-
-      setProgress(officeProgressLabel, officeProgressBar, 'Offices', officeP.current, officeP.total);
-      setProgress(tableProgressLabel, tableProgressBar, 'Tables', tableP.current, tableP.total);
-      setProgress(infoboxProgressLabel, infoboxProgressBar, 'Infobox', infoboxP.current, infoboxP.total);
-      setProgress(bioProgressLabel, bioProgressBar, 'Bios', bioP.current, bioP.total);
-
-      const bioPhaseActive = s.phase === 'bio' || s.phase === 'living' || ((Number(bioP.total) || 0) > 0 && (Number(bioP.current) || 0) >= 0);
-      parsingProgressGroup.style.display = bioPhaseActive ? 'none' : 'block';
-      bioProgressGroup.style.display = bioPhaseActive ? 'block' : 'none';
-
-      let detail = s.phase ? s.phase : '';
-      if ((s.total || 0) > 1) detail += ' — ' + (s.current || 0) + ' / ' + (s.total || 0);
-      if (s.extra && s.extra.terms_so_far !== undefined) detail += ' — ' + s.extra.terms_so_far + ' terms so far';
-      if (s.extra && s.extra.bio_skipped !== undefined) detail += ' — ' + s.extra.bio_skipped + ' skipped (in DB)';
-      progressDetail.textContent = detail;
-
-      if (s.status === 'cancelled') {
-        runningPanel.style.display = 'none';
-        runningPanel.dataset.jobId = '';
-        if (stopBtn) stopBtn.disabled = true;
-        const res = s.result || {};
-        let msg = 'Stopped. ' + (res.message || '') + ' Offices processed: ' + (res.office_count || 0) + ', Terms parsed: ' + (res.terms_parsed || 0) + ', Unique URLs: ' + (res.unique_wiki_urls || 0);
-        resultEl.textContent = msg;
-        resultEl.className = 'alert';
-        resultEl.style.display = 'block';
-        btn.disabled = false;
-        if (window.playJobCompleteSound) window.playJobCompleteSound();
-        return;
-      }
-      if (s.status === 'complete') {
-        runningPanel.style.display = 'none';
-        runningPanel.dataset.jobId = '';
-        if (stopBtn) stopBtn.disabled = true;
-        const res = s.result || {};
-        let msg = 'Done. Offices: ' + (res.office_count || 0) + ', Terms parsed: ' + (res.terms_parsed || 0) + ', Unique URLs: ' + (res.unique_wiki_urls || 0);
-        if (res.dry_run) msg += ' (dry run)';
-        const bioOk = (res.bio_success_count || 0) + (res.bio_error_count || 0) > 0;
-        if (bioOk) {
-          msg += '. New bios: ' + (res.bio_success_count || 0) + ' succeeded, ' + (res.bio_error_count || 0) + ' failed';
-          if ((res.bio_skipped_count || 0) > 0) msg += ', ' + res.bio_skipped_count + ' skipped (already in DB)';
-          if ((res.bio_error_count || 0) > 0 && res.bio_errors && res.bio_errors.length) {
-            msg += '. First error: ' + (res.bio_errors[0].error || '') + ' — see run log for full list.';
-          }
-        }
-        const livingOk = (res.living_success_count || 0) + (res.living_error_count || 0) > 0;
-        if (livingOk) {
-          msg += '. Living update: ' + (res.living_success_count || 0) + ' succeeded, ' + (res.living_error_count || 0) + ' failed';
-          if ((res.living_error_count || 0) > 0 && res.living_errors && res.living_errors.length) {
-            msg += '. First error: ' + (res.living_errors[0].error || '');
-          }
-        }
-        if (res.office_errors && res.office_errors.length) {
-          msg += '. ' + res.office_errors.length + ' table(s) could not be processed: ' + (res.office_errors[0].error || res.office_errors[0].office_name || '');
-          if (res.office_errors.length > 1) msg += ' (and ' + (res.office_errors.length - 1) + ' more)';
-        }
-        resultEl.textContent = msg;
-        const hasErrors = (bioOk && res.bio_error_count > 0) || (livingOk && res.living_error_count > 0);
-        resultEl.className = hasErrors ? 'alert alert-error' : 'alert alert-success';
-        resultEl.style.display = 'block';
-        if (res.preview_rows && res.preview_rows.length) {
-          resultEl.textContent += ' Preview: ' + JSON.stringify(res.preview_rows.slice(0, 3));
-        }
-        btn.disabled = false;
-        if (window.playJobCompleteSound) window.playJobCompleteSound();
-        return;
-      }
-      if (s.status === 'error') {
-        runningPanel.style.display = 'none';
-        runningPanel.dataset.jobId = '';
-        if (stopBtn) stopBtn.disabled = true;
-        resultEl.textContent = 'Error: ' + (s.error || 'Unknown error');
-        resultEl.className = 'alert alert-error';
-        resultEl.style.display = 'block';
-        btn.disabled = false;
-        if (window.playJobCompleteSound) window.playJobCompleteSound();
-        return;
-      }
-      setTimeout(poll, 500);
-    } catch (err) {
-      runningPanel.style.display = 'none';
-      runningPanel.dataset.jobId = '';
-      if (stopBtn) stopBtn.disabled = true;
-      resultEl.textContent = 'Error: ' + err.message;
-      resultEl.className = 'alert alert-error';
-      resultEl.style.display = 'block';
-      btn.disabled = false;
-      if (window.playJobCompleteSound) window.playJobCompleteSound();
-    }
-  };
-  document.getElementById('runStopBtn').addEventListener('click', async () => {
-    const id = runningPanel.dataset.jobId;
-    if (!id) return;
-    const sb = document.getElementById('runStopBtn');
-    if (sb) sb.disabled = true;
-    try {
-      await fetch('/api/run/cancel/' + id, { method: 'POST' });
-    } catch (_) {}
-  });
-  poll();
+  _startPolling(jobId);
 });
 </script>
 {% endblock %}

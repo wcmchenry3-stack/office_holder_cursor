@@ -88,6 +88,37 @@ def _fetch_table_from_url(
     return {"table_no": table_no, "num_tables": num_tables, "html": str(target)}
 
 
+def write_table_html_cache(
+    url: str,
+    table_no: int,
+    html: str,
+    num_tables: int,
+    use_full_page: bool = False,
+) -> None:
+    """
+    Write table HTML directly into the disk cache without an HTTP fetch.
+    Used by the AI office builder to prime the cache from already-fetched page HTML,
+    so retry validations never re-fetch Wikipedia.
+    """
+    url = (url or "").strip()
+    if not url or not html:
+        return
+    key = _cache_key(url, table_no, use_full_page)
+    cache_dir = _cache_dir()
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_path = cache_dir / f"{key}.json.gz"
+    key_lock = _key_lock(key)
+    with key_lock:
+        try:
+            with gzip.open(cache_path, "wt", encoding="utf-8") as f:
+                json.dump(
+                    {"table_no": table_no, "num_tables": num_tables, "html": html},
+                    f,
+                )
+        except OSError as e:
+            logger.warning("write_table_html_cache: failed to write %s: %s", cache_path, e)
+
+
 def get_table_html_cached(
     url: str,
     table_no: int = 1,
