@@ -21,6 +21,22 @@ from starlette.testclient import TestClient
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture(autouse=True)
+def _clear_run_job_store():
+    """Clear the shared run-job store before each test to prevent 409 from a prior test's job."""
+    import src.routers.run_scraper as rs
+
+    deadline = time.monotonic() + 5.0
+    while time.monotonic() < deadline:
+        with rs._run_job_lock:
+            if not any(j.get("status") == "running" for j in rs._run_job_store.values()):
+                break
+        time.sleep(0.05)
+    with rs._run_job_lock:
+        rs._run_job_store.clear()
+    yield
+
+
 @pytest.fixture(scope="module")
 def client(tmp_path_factory):
     """TestClient with a temp DB and Datasette suppressed."""
