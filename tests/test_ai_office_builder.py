@@ -4,6 +4,7 @@
 Wikipedia API calls made by the scraper include a descriptive User-Agent header
 per Wikimedia API etiquette (see src/scraper/wiki_fetch.py: WIKIPEDIA_REQUEST_HEADERS).
 OpenAI RateLimitError (HTTP 429) handling is tested below.
+max_completion_tokens=4096 is set on every API call to cap response size.
 """
 
 from __future__ import annotations
