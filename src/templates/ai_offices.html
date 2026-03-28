@@ -1,0 +1,261 @@
+{% extends "base.html" %}
+{% block title %}AI Office Builder – Office Holder{% endblock %}
+{% block content %}
+<h1>AI Office Builder</h1>
+<p class="muted">
+  Paste one Wikipedia URL per line. OpenAI will analyze each page, determine
+  the table parsing config, validate it against a live preview, and save
+  successful offices automatically. Failed URLs are reported so you can add
+  them manually.
+</p>
+
+{% if not api_key_set %}
+<div class="alert alert-error" role="alert">
+  <strong>OPENAI_API_KEY not configured.</strong>
+  Set it in <code>.env.local</code> and restart the app before using this feature.
+</div>
+{% endif %}
+
+<div id="batchForm">
+  <div class="form-group">
+    <label for="urlList">Wikipedia URLs <small>(one per line)</small></label>
+    <textarea id="urlList" rows="8" style="width:100%;font-family:monospace;font-size:0.875rem;"
+      placeholder="https://en.wikipedia.org/wiki/Governor_of_California&#10;https://en.wikipedia.org/wiki/United_States_Senate"></textarea>
+  </div>
+
+  <fieldset style="margin-bottom:1rem;">
+    <legend>Default hierarchy <small>(applied to all offices)</small></legend>
+    <div class="form-row">
+      <div class="form-group">
+        <label for="countryId">Country <span class="required">*</span></label>
+        <select id="countryId" required>
+          <option value="">— select —</option>
+          {% for c in countries %}
+          <option value="{{ c.id }}">{{ c.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="levelId">Level <span class="required">*</span></label>
+        <select id="levelId" required>
+          <option value="">— select —</option>
+          {% for l in levels %}
+          <option value="{{ l.id }}">{{ l.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="branchId">Branch <span class="required">*</span></label>
+        <select id="branchId" required>
+          <option value="">— select —</option>
+          {% for b in branches %}
+          <option value="{{ b.id }}">{{ b.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="stateId">State <small>(optional)</small></label>
+        <select id="stateId">
+          <option value="">— none —</option>
+          {% for s in states %}
+          <option value="{{ s.id }}">{{ s.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+  </fieldset>
+
+  <div class="actions">
+    <button type="button" id="startBtn" class="btn"{% if not api_key_set %} disabled{% endif %}>
+      Start AI batch
+    </button>
+    <button type="button" id="cancelBtn" class="btn btn-secondary" style="display:none">Cancel</button>
+  </div>
+</div>
+
+<div id="batchProgress" style="display:none;margin-top:1.5rem;">
+  <div id="summaryLine" class="muted" style="margin-bottom:0.75rem;"></div>
+  <table class="data-table" style="width:100%;">
+    <thead>
+      <tr>
+        <th>URL</th>
+        <th>Status</th>
+        <th>Offices created</th>
+        <th>Attempts</th>
+        <th>Error</th>
+      </tr>
+    </thead>
+    <tbody id="resultsBody"></tbody>
+  </table>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  let jobId = null;
+  let pollTimer = null;
+
+  const startBtn = document.getElementById('startBtn');
+  const cancelBtn = document.getElementById('cancelBtn');
+  const progressDiv = document.getElementById('batchProgress');
+  const resultsBody = document.getElementById('resultsBody');
+  const summaryLine = document.getElementById('summaryLine');
+
+  // ---- Status badge helper ----
+  const STATUS_LABEL = {
+    pending:    { text: 'Pending',          cls: 'badge-grey' },
+    running:    { text: 'Running\u2026',     cls: 'badge-blue' },
+    success:    { text: 'Success',           cls: 'badge-green' },
+    failed:     { text: 'Failed',            cls: 'badge-red' },
+    no_tables:  { text: 'No holder tables',  cls: 'badge-amber' },
+    cancelled:  { text: 'Cancelled',         cls: 'badge-grey' },
+  };
+
+  function badge(status) {
+    const s = STATUS_LABEL[status] || { text: status, cls: 'badge-grey' };
+    const spin = status === 'running' ? '<span class="spinner" aria-hidden="true" style="margin-right:0.25em;"></span>' : '';
+    return `<span class="badge ${s.cls}">${spin}${window.esc(s.text)}</span>`;
+  }
+
+  // ---- Build initial table from URL list ----
+  function initTable(urls) {
+    resultsBody.innerHTML = '';
+    urls.forEach(url => {
+      const tr = document.createElement('tr');
+      tr.id = 'row-' + btoa(url).replace(/[^a-zA-Z0-9]/g, '').slice(0, 20);
+      tr.innerHTML = `
+        <td style="word-break:break-all;max-width:30ch;"><a href="${window.esc(url)}" target="_blank" rel="noopener">${window.esc(url)}</a></td>
+        <td>${badge('pending')}</td>
+        <td>—</td>
+        <td>—</td>
+        <td></td>`;
+      resultsBody.appendChild(tr);
+    });
+    progressDiv.style.display = '';
+  }
+
+  // ---- Update one row from result object ----
+  function updateRow(result, index) {
+    const tr = resultsBody.rows[index];
+    if (!tr) return;
+    const officeLinks = (result.offices_created || [])
+      .map(id => `<a href="/offices/${id}/edit">${id}</a>`)
+      .join(', ') || '—';
+    tr.cells[1].innerHTML = badge(result.status);
+    tr.cells[2].innerHTML = officeLinks;
+    tr.cells[3].textContent = result.attempts > 0 ? result.attempts : '—';
+    tr.cells[4].textContent = result.error || '';
+    tr.cells[4].title = result.error || '';
+  }
+
+  // ---- Poll loop ----
+  async function poll() {
+    if (!jobId) return;
+    let data;
+    try {
+      const r = await fetch(`/api/ai-offices/batch/${jobId}/status`);
+      if (!r.ok) { console.error('Status poll failed', r.status); return; }
+      data = await r.json();
+    } catch (e) {
+      console.error('Poll error', e);
+      pollTimer = setTimeout(poll, 2000);
+      return;
+    }
+
+    (data.results || []).forEach((result, i) => updateRow(result, i));
+
+    const done = data.total_urls || 0;
+    const complete = (data.results || []).filter(r => !['pending','running'].includes(r.status)).length;
+    summaryLine.textContent = `Processing ${complete} / ${done} URLs — job ${data.status}`;
+
+    const terminal = ['complete', 'cancelled', 'failed'];
+    if (terminal.includes(data.status)) {
+      startBtn.disabled = false;
+      cancelBtn.style.display = 'none';
+      if (data.status === 'complete') {
+        try { window.playJobCompleteSound(); } catch (e) {}
+      }
+      return;
+    }
+    pollTimer = setTimeout(poll, 2000);
+  }
+
+  // ---- Start ----
+  startBtn.addEventListener('click', async () => {
+    const rawUrls = document.getElementById('urlList').value;
+    const urls = rawUrls.split('\n').map(s => s.trim()).filter(Boolean);
+    if (!urls.length) { alert('Enter at least one URL.'); return; }
+
+    const countryId = document.getElementById('countryId').value;
+    const levelId = document.getElementById('levelId').value;
+    const branchId = document.getElementById('branchId').value;
+    if (!countryId || !levelId || !branchId) {
+      alert('Country, Level, and Branch are required.');
+      return;
+    }
+
+    startBtn.disabled = true;
+    cancelBtn.style.display = '';
+    initTable(urls);
+    summaryLine.textContent = 'Starting…';
+
+    const body = {
+      urls,
+      defaults: {
+        country_id: parseInt(countryId, 10),
+        level_id: parseInt(levelId, 10),
+        branch_id: parseInt(branchId, 10),
+        state_id: parseInt(document.getElementById('stateId').value, 10) || null,
+        city_id: null,
+      },
+    };
+
+    let resp;
+    try {
+      const r = await fetch('/api/ai-offices/batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      resp = await r.json();
+      if (!r.ok || !resp.job_id) {
+        alert('Error starting job: ' + (resp.detail || JSON.stringify(resp)));
+        startBtn.disabled = false;
+        cancelBtn.style.display = 'none';
+        return;
+      }
+    } catch (e) {
+      alert('Network error: ' + e);
+      startBtn.disabled = false;
+      cancelBtn.style.display = 'none';
+      return;
+    }
+
+    jobId = resp.job_id;
+    poll();
+  });
+
+  // ---- Cancel ----
+  cancelBtn.addEventListener('click', async () => {
+    if (!jobId) return;
+    cancelBtn.disabled = true;
+    try {
+      await fetch(`/api/ai-offices/batch/${jobId}/cancel`, { method: 'POST' });
+    } catch (e) { console.error('Cancel error', e); }
+  });
+})();
+</script>
+
+<style>
+.badge { display:inline-flex;align-items:center;padding:0.15em 0.5em;border-radius:3px;font-size:0.8rem;font-weight:600; }
+.badge-grey   { background:#e5e7eb;color:#374151; }
+.badge-blue   { background:#dbeafe;color:#1e40af; }
+.badge-green  { background:#d1fae5;color:#065f46; }
+.badge-red    { background:#fee2e2;color:#991b1b; }
+.badge-amber  { background:#fef3c7;color:#92400e; }
+.data-table td, .data-table th { padding:0.4rem 0.6rem;border-bottom:1px solid #e5e7eb;vertical-align:top; }
+.data-table th { text-align:left;font-weight:600;background:#f9fafb; }
+.data-table td:last-child { max-width:30ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+</style>
+{% endblock %}
