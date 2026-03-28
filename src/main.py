@@ -61,6 +61,14 @@ from src.scraper.wiki_fetch import (
     wiki_url_to_rest_html_url,
     normalize_wiki_url,
 )
+from dotenv import load_dotenv
+
+load_dotenv(".env.local")  # loads OPENAI_API_KEY (and others) in dev; no-op if file absent
+# OpenAI RateLimitError (HTTP 429) and retry backoff are handled by AIOfficeBuilder
+# (src/services/ai_office_builder.py). The router (_batch_job_worker) adds an additional
+# 30-second backoff sleep when a rate-limit failure is detected before continuing.
+# max_completion_tokens=4096 is set on every API call to cap response size and avoid cost spikes.
+
 from src.routers import refs as refs_router
 from src.routers import parties as parties_router
 from src.routers import data as data_router
@@ -69,6 +77,7 @@ from src.routers import test_scripts as test_scripts_router
 from src.routers import ui_tests as ui_tests_router
 from src.routers import preview as preview_router
 from src.routers import offices as offices_router
+from src.routers import ai_offices as ai_offices_router
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from src.routers._deps import templates
 from src.scheduled_tasks import is_daily_delta_enabled, run_daily_delta
@@ -194,6 +203,7 @@ app.include_router(test_scripts_router.router)
 app.include_router(ui_tests_router.router)
 app.include_router(preview_router.router)
 app.include_router(offices_router.router)
+app.include_router(ai_offices_router.router)
 
 # Stoppable process types: server-side (e.g. "run") have a cancel endpoint and job store with cancelled flag;
 # client-side (e.g. "preview_all") use a Stop button and a running/stopped flag (optional AbortController).

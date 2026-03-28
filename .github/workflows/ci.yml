@@ -53,3 +53,13 @@ jobs:
 
       - name: Run tests
         run: pytest --tb=short
+
+  openai-policy:
+    uses: wcmchenry3-stack/.github/.github/workflows/called-openai-policy.yml@main
+    secrets: inherit
+
+  wikipedia-policy:
+    uses: wcmchenry3-stack/.github/.github/workflows/called-wikipedia-policy.yml@main
+    with:
+      allowed-repo: wcmchenry3-stack/office_holder_cursor
+    secrets: inherit
