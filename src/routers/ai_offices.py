@@ -101,6 +101,12 @@ def _batch_job_worker(job_id: str, urls: list[str], batch_defaults: dict) -> Non
                 "attempts": 0,
             }
 
+        # Back off before the next URL if OpenAI returned a RateLimitError (HTTP 429)
+        error_msg = url_result.get("error") or ""
+        if "RateLimitError" in error_msg or "rate limit" in error_msg.lower():
+            logger.warning("OpenAI rate limit hit for %s; backing off 30 s before next URL", url)
+            time.sleep(30)
+
         with _batch_job_lock:
             if job_id in _batch_job_store:
                 _batch_job_store[job_id]["results"][i].update(url_result)
