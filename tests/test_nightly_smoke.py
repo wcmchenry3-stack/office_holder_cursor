@@ -88,8 +88,10 @@ def test_nightly_delta_parses_offices_and_finds_individuals(db_with_cache, monke
         office_ids=tc_ids,
     )
 
-    assert result["office_count"] == SMOKE_ENTRY_COUNT, (
-        f"Expected {SMOKE_ENTRY_COUNT} offices processed, got {result['office_count']}"
-    )
-    assert result["terms_parsed"] > 0, "No individual terms found — scraper may have failed silently"
+    assert (
+        result["office_count"] == SMOKE_ENTRY_COUNT
+    ), f"Expected {SMOKE_ENTRY_COUNT} offices processed, got {result['office_count']}"
+    assert (
+        result["terms_parsed"] > 0
+    ), "No individual terms found — scraper may have failed silently"
     assert result["office_errors"] == [], f"Office errors: {result['office_errors']}"
