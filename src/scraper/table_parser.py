@@ -547,7 +547,6 @@ class Offices:
         total_rows = len(rows)
         report_infobox = table_config.get("find_date_in_infobox") and progress_callback is not None
 
-
         # Per-table cache so we only call find_term_dates once per wiki_link (same person in multiple rows)
         self._infobox_cache = {}
         # tracks the previous entry --> this helps the rowspan function track
@@ -650,7 +649,6 @@ class Offices:
         for r in rows:
             k = holder_key(r)
             grouped.setdefault(k, []).append(copy.deepcopy(r))
-
 
         out = []
         for group in grouped.values():
@@ -1159,7 +1157,6 @@ class Offices:
 
         self.Logger.debug_log(f"country in find_link: {country}", True)
 
-
         had_links_in_configured_col = False
         if self.column_present(link_column, cells):
             self.Logger.debug_log("url column present", True)
@@ -1235,7 +1232,6 @@ class Offices:
         else:
             term_start_column = parse_row_no
             term_end_column = parse_row_no
-
 
         # Extract and format the term start and end dates
 
@@ -1747,7 +1743,6 @@ class Offices:
         table_config_to_parse["term_end_column"] = term_end_column
         table_config_to_parse["district_column"] = district_column
 
-
         self.Logger.debug_log(
             f"table config at the end of dynamic parse: \n {table_config_to_parse} \n\n", True
         )
@@ -1899,7 +1894,6 @@ class Biography:
     ):
 
         self.Logger.debug_log(f"running find_term_dates \n url value {url}", True)
-
 
         """
       Replink == true is used for US representative tables with only years in the table, such as New Jersey.

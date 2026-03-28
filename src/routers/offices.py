@@ -73,6 +73,7 @@ def _evict_old_jobs() -> None:
         for jid in stale:
             del _populate_job_store[jid]
 
+
 REVALIDATE_MSG_MISSING_HOLDERS = (
     "New list is missing office holders that were in existing data. Kept existing terms."
 )

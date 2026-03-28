@@ -5,10 +5,10 @@ Tests for _SQLiteConnWrapper._adapt() and _split_sql().
 Documents known behaviour and edge-cases of the string-replacement-based
 SQL adapter, including cases where it is known NOT to handle correctly.
 """
+
 import pytest
 
 from src.db.connection import _SQLiteConnWrapper, _split_sql
-
 
 # ---------------------------------------------------------------------------
 # _adapt: basic translations
@@ -66,8 +66,8 @@ def test_adapt_no_substitutions_needed():
 def test_adapt_mixed_substitutions():
     sql = "UPDATE individuals SET bio_batch = id %% 7 WHERE id = %s AND updated_at = NOW()"
     result = _SQLiteConnWrapper._adapt(sql)
-    assert "?" in result       # %s → ?
-    assert "%" in result       # %% → %
+    assert "?" in result  # %s → ?
+    assert "%" in result  # %% → %
     assert "NOW()" not in result
     assert "CURRENT_TIMESTAMP" in result
 

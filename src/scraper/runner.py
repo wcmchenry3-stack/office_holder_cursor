@@ -1206,9 +1206,7 @@ def _run_selected_bios(ctx: _RunContext, logger: Logger, report: Callable) -> di
                 )
         if not wiki_url:
             bio_error_count += 1
-            bio_errors.append(
-                {"url": str(individual_id), "error": "Missing wiki_url/page_path"}
-            )
+            bio_errors.append({"url": str(individual_id), "error": "Missing wiki_url/page_path"})
             continue
         try:
             bio_info = biography.biography_extract(wiki_url)
@@ -1668,9 +1666,17 @@ def run_with_db(
                 living_errors.append({"url": wiki_url, "error": err})
 
             def _lp_progress(done: int, total: int) -> None:
-                report("living", done, total, "Updating living individuals…", {"current": done, "total": total})
+                report(
+                    "living",
+                    done,
+                    total,
+                    "Updating living individuals…",
+                    {"current": done, "total": total},
+                )
 
-            if _fetch_bio_batch(unique_living, biography, cancel_check, _lp_progress, _lp_success, _lp_error):
+            if _fetch_bio_batch(
+                unique_living, biography, cancel_check, _lp_progress, _lp_success, _lp_error
+            ):
                 logger.log("Run cancelled by user (during living update).", True)
                 bio_cancelled = True
             living_success_count += _lp_counts[0]
@@ -1740,12 +1746,23 @@ def run_with_db(
 
             def _new_bio_progress(done: int, total: int) -> None:
                 combined = _new_bio_done[0] + done
-                report("bio", combined, total_bios, "Fetching biographies (new individuals)…",
-                       {"current": combined, "total": total_bios, "bio_skipped": bio_skipped_count})
+                report(
+                    "bio",
+                    combined,
+                    total_bios,
+                    "Fetching biographies (new individuals)…",
+                    {"current": combined, "total": total_bios, "bio_skipped": bio_skipped_count},
+                )
 
             unique_http_urls = list(dict.fromkeys(http_urls))
-            if _fetch_bio_batch(unique_http_urls, biography, cancel_check,
-                                _new_bio_progress, _new_bio_success, _new_bio_error):
+            if _fetch_bio_batch(
+                unique_http_urls,
+                biography,
+                cancel_check,
+                _new_bio_progress,
+                _new_bio_success,
+                _new_bio_error,
+            ):
                 logger.log("Run cancelled by user (during bio fetch).", True)
                 bio_cancelled = True
             bio_success_count += _new_bio_counts[0]
@@ -1791,12 +1808,23 @@ def run_with_db(
                         living_errors.append({"url": wiki_url, "error": err})
 
                     def _liv2_progress(done: int, total: int) -> None:
-                        report("living", done, total, "Updating living individuals…",
-                               {"current": done, "total": total})
+                        report(
+                            "living",
+                            done,
+                            total,
+                            "Updating living individuals…",
+                            {"current": done, "total": total},
+                        )
 
-                    if _fetch_bio_batch(unique_living2, biography, cancel_check,
-                                       _liv2_progress, _liv2_success, _liv2_error,
-                                       run_cache=run_cache):
+                    if _fetch_bio_batch(
+                        unique_living2,
+                        biography,
+                        cancel_check,
+                        _liv2_progress,
+                        _liv2_success,
+                        _liv2_error,
+                        run_cache=run_cache,
+                    ):
                         logger.log("Run cancelled by user (during living update).", True)
                         bio_cancelled = True
                     living_success_count += _liv2_counts[0]

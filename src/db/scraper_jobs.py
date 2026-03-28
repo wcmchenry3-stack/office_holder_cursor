@@ -7,6 +7,7 @@ backing store; the routers keep an in-memory dict for live progress updates.
 
 Status lifecycle: running → complete | cancelled | error
 """
+
 from __future__ import annotations
 
 import json
@@ -94,8 +95,7 @@ def list_recent_jobs(limit: int = 20, conn=None) -> list[dict]:
             (limit,),
         ).fetchall()
         return [
-            dict(zip(("id", "type", "status", "created_at", "updated_at"), row))
-            for row in rows
+            dict(zip(("id", "type", "status", "created_at", "updated_at"), row)) for row in rows
         ]
     finally:
         if own_conn:
@@ -110,6 +110,7 @@ def delete_jobs_older_than(hours: int = 48, conn=None) -> int:
     try:
         cutoff = datetime.now(timezone.utc)
         from datetime import timedelta
+
         cutoff = cutoff - timedelta(hours=hours)
         cutoff_iso = cutoff.strftime("%Y-%m-%dT%H:%M:%SZ")
         cursor = conn.execute(

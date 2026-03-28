@@ -93,6 +93,7 @@ def run_daily_delta() -> None:
 
     try:
         from src.db.scraper_jobs import delete_jobs_older_than
+
         jobs_deleted = delete_jobs_older_than(hours=48)
         if jobs_deleted:
             print(f"[scheduler] Deleted {jobs_deleted} stale scraper_jobs records.")

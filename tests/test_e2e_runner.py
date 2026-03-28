@@ -482,7 +482,9 @@ def test_run_cache_prevents_duplicate_http(db_with_cache, monkeypatch):
     page_html_map: dict[str, str] = {rest_url: full_html}
 
     call_counter: dict[str, int] = {"n": 0}
-    monkeypatch.setattr(_wiki_fetch_module, "_session", _make_requests_mock(page_html_map, call_counter))
+    monkeypatch.setattr(
+        _wiki_fetch_module, "_session", _make_requests_mock(page_html_map, call_counter)
+    )
 
     # Create two offices pointing at the SAME URL with the SAME table config.
     # Do NOT pre-fill the disk cache — force the HTTP path on the first office so

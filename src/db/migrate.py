@@ -16,12 +16,11 @@ def _columns(conn, table: str) -> list[str]:
 # Migration version tracking
 # ---------------------------------------------------------------------------
 
+
 def _ensure_migrations_table(conn) -> None:
     """Create schema_migrations table if it doesn't exist."""
-    conn.execute(
-        """CREATE TABLE IF NOT EXISTS schema_migrations
-           (id TEXT PRIMARY KEY, applied_at TEXT NOT NULL)"""
-    )
+    conn.execute("""CREATE TABLE IF NOT EXISTS schema_migrations
+           (id TEXT PRIMARY KEY, applied_at TEXT NOT NULL)""")
     conn.commit()
 
 
@@ -68,6 +67,7 @@ def migrate_to_fk(conn=None):
 
         # Ensure ref tables exist (schema already created them)
         from .seed import seed_reference_data
+
         seed_reference_data(conn=conn)
 
         offices_cols = _columns(conn, "offices")
@@ -85,13 +85,22 @@ def migrate_to_fk(conn=None):
             _apply_migration(conn, "office_terms_party_id", _migrate_office_terms_party_id, applied)
         ot_cols = _columns(conn, "office_terms")
         if "party" in ot_cols:
-            _apply_migration(conn, "office_terms_drop_party", _migrate_office_terms_drop_party, applied)
+            _apply_migration(
+                conn, "office_terms_drop_party", _migrate_office_terms_drop_party, applied
+            )
 
         _apply_migration(conn, "imprecise_date_columns", _migrate_imprecise_date_columns, applied)
         _apply_migration(conn, "offices_enabled", _migrate_offices_enabled, applied)
-        _apply_migration(conn, "offices_use_full_page_for_table", _migrate_offices_use_full_page_for_table, applied)
+        _apply_migration(
+            conn,
+            "offices_use_full_page_for_table",
+            _migrate_offices_use_full_page_for_table,
+            applied,
+        )
         _apply_migration(conn, "offices_years_only", _migrate_offices_years_only, applied)
-        _apply_migration(conn, "office_terms_year_columns", _migrate_office_terms_year_columns, applied)
+        _apply_migration(
+            conn, "office_terms_year_columns", _migrate_office_terms_year_columns, applied
+        )
         _apply_migration(conn, "offices_parsing_options", _migrate_offices_parsing_options, applied)
         _apply_migration(conn, "ignore_non_links", _migrate_ignore_non_links, applied)
         _apply_migration(conn, "remove_duplicates", _migrate_remove_duplicates, applied)
@@ -99,18 +108,49 @@ def migrate_to_fk(conn=None):
         _apply_migration(conn, "individuals_dead_link", _migrate_individuals_dead_link, applied)
         _apply_migration(conn, "individuals_is_living", _migrate_individuals_is_living, applied)
         _apply_migration(conn, "alt_links", _migrate_alt_links, applied)
-        _apply_migration(conn, "page_office_table_hierarchy", _migrate_to_page_office_table_hierarchy, applied)
-        _apply_migration(conn, "allow_reuse_tables_and_table_no_unique", _migrate_allow_reuse_tables_and_table_no_unique, applied)
-        _apply_migration(conn, "office_table_config_name", _migrate_office_table_config_name, applied)
+        _apply_migration(
+            conn, "page_office_table_hierarchy", _migrate_to_page_office_table_hierarchy, applied
+        )
+        _apply_migration(
+            conn,
+            "allow_reuse_tables_and_table_no_unique",
+            _migrate_allow_reuse_tables_and_table_no_unique,
+            applied,
+        )
+        _apply_migration(
+            conn, "office_table_config_name", _migrate_office_table_config_name, applied
+        )
         _apply_migration(conn, "office_category", _migrate_office_category, applied)
         _apply_migration(conn, "infobox_role_key", _migrate_infobox_role_key, applied)
         _apply_migration(conn, "infobox_role_key_filter", _migrate_infobox_role_key_filter, applied)
-        _apply_migration(conn, "office_table_config_infobox_role_key_filter_id", _migrate_office_table_config_infobox_role_key_filter_id, applied)
-        _apply_migration(conn, "offices_infobox_role_key_filter_id", _migrate_offices_infobox_role_key_filter_id, applied)
-        _apply_migration(conn, "infobox_role_key_filter_role_key_format", _migrate_infobox_role_key_filter_role_key_format, applied)
+        _apply_migration(
+            conn,
+            "office_table_config_infobox_role_key_filter_id",
+            _migrate_office_table_config_infobox_role_key_filter_id,
+            applied,
+        )
+        _apply_migration(
+            conn,
+            "offices_infobox_role_key_filter_id",
+            _migrate_offices_infobox_role_key_filter_id,
+            applied,
+        )
+        _apply_migration(
+            conn,
+            "infobox_role_key_filter_role_key_format",
+            _migrate_infobox_role_key_filter_role_key_format,
+            applied,
+        )
         _apply_migration(conn, "city", _migrate_city, applied)
-        _apply_migration(conn, "source_pages_disable_auto_table_update", _migrate_source_pages_disable_auto_table_update, applied)
-        _apply_migration(conn, "office_table_config_html_hash", _migrate_office_table_config_html_hash, applied)
+        _apply_migration(
+            conn,
+            "source_pages_disable_auto_table_update",
+            _migrate_source_pages_disable_auto_table_update,
+            applied,
+        )
+        _apply_migration(
+            conn, "office_table_config_html_hash", _migrate_office_table_config_html_hash, applied
+        )
         _apply_migration(conn, "individuals_bio_batch", _migrate_individuals_bio_batch, applied)
         _apply_migration(conn, "scraper_jobs", _migrate_scraper_jobs, applied)
     finally:
@@ -1105,7 +1145,10 @@ def _migrate_individuals_bio_batch(conn):
 def _migrate_scraper_jobs(conn):
     """Create scraper_jobs table if missing (for DB instances predating this migration)."""
     try:
-        tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+        tables = {
+            row[0]
+            for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+        }
     except Exception:
         tables = set()
     if "scraper_jobs" not in tables:
@@ -1120,5 +1163,7 @@ def _migrate_scraper_jobs(conn):
             )
         """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_scraper_jobs_status ON scraper_jobs(status)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_scraper_jobs_created_at ON scraper_jobs(created_at)")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_scraper_jobs_created_at ON scraper_jobs(created_at)"
+        )
         conn.commit()

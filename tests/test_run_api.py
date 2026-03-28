@@ -6,6 +6,7 @@ Uses FastAPI TestClient (starlette) with run_with_db monkeypatched to a fast stu
 Tests the full HTTP layer: POST /api/run → GET /api/run/status → POST /api/run/cancel.
 No network or DB writes are required.
 """
+
 from __future__ import annotations
 
 import time
@@ -38,6 +39,7 @@ def client(tmp_path_factory):
 
     from src.main import app
     from src.db.connection import init_db
+
     init_db()
     with TestClient(app, raise_server_exceptions=False) as c:
         yield c
@@ -75,6 +77,7 @@ def _stub_run_with_db(**kwargs):
 def test_api_run_returns_job_id(client, monkeypatch):
     """POST /api/run returns 202 with a job_id."""
     import src.routers.run_scraper as rs
+
     monkeypatch.setattr(rs, "run_with_db", _stub_run_with_db)
 
     resp = client.post("/api/run", data={"run_mode": "delta"})
@@ -87,6 +90,7 @@ def test_api_run_returns_job_id(client, monkeypatch):
 def test_api_run_status_running_then_complete(client, monkeypatch):
     """Status is 'running' immediately, then 'complete' after the job finishes."""
     import src.routers.run_scraper as rs
+
     monkeypatch.setattr(rs, "run_with_db", _stub_run_with_db)
 
     resp = client.post("/api/run", data={"run_mode": "delta"})
@@ -185,6 +189,7 @@ def test_job_store_eviction_removes_old_completed_jobs(client, monkeypatch):
 
     # Backdate the job's _created_at so it looks old
     import time as _time
+
     with rs._run_job_lock:
         if job_id in rs._run_job_store:
             rs._run_job_store[job_id]["_created_at"] = _time.monotonic() - (3 * 3600)
