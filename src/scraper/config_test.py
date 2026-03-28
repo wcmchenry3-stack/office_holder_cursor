@@ -107,12 +107,17 @@ def get_all_tables_preview(
     max_rows_per_table: int = 10,
     confirm_threshold: int = 10,
     confirmed: bool = False,
+    include_html: bool = False,
 ) -> dict:
     """
     Fetch URL and return all tables, each with first max_rows_per_table rows as raw cell text.
     If num_tables > confirm_threshold and not confirmed, return only { "num_tables", "confirm_required": True }.
     Otherwise return { "num_tables", "tables": [ {"table_index": 1, "rows": [[...], ...] }, ... ] }.
     On fetch error returns { "num_tables": 0, "error": "..." }.
+
+    include_html: if True, each table entry also includes "html" (full outer HTML of the table,
+    truncated to the first 50 <tr> tags) and the top-level result includes "page_html" (full raw
+    page HTML) so callers can prime the table disk cache without re-fetching.
     """
     url = (url or "").strip()
     if not url:
@@ -132,13 +137,21 @@ def get_all_tables_preview(
         return {"num_tables": num_tables, "confirm_required": True}
     result_tables: list[dict] = []
     for i, target in enumerate(tables):
-        data_rows = target.find_all("tr")[1:][:max_rows_per_table]
+        all_trs = target.find_all("tr")
+        data_rows = all_trs[1:][:max_rows_per_table]
         rows: list[list[str]] = []
         for row in data_rows:
             cells = row.find_all(["td", "th"])
             rows.append([(c.get_text(strip=True) or "").replace("\n", " ").strip() for c in cells])
-        result_tables.append({"table_index": i + 1, "rows": rows})
-    return {"num_tables": num_tables, "tables": result_tables}
+        entry: dict = {"table_index": i + 1, "rows": rows}
+        if include_html:
+            # Full outer HTML of the table — callers truncate as needed for AI messages
+            entry["html"] = str(target)
+        result_tables.append(entry)
+    result: dict = {"num_tables": num_tables, "tables": result_tables}
+    if include_html:
+        result["page_html"] = html_content
+    return result
 
 
 def get_table_html(

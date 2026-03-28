@@ -14,10 +14,13 @@ from typing import Callable
 import openai
 from pydantic import BaseModel
 
+from bs4 import BeautifulSoup
+
 from src.db import offices as db_offices
 from src.db import refs as db_refs
 from src.scraper.config_test import get_all_tables_preview
 from src.scraper.runner import preview_with_config
+from src.scraper.table_cache import write_table_html_cache
 
 logger = logging.getLogger(__name__)
 
@@ -65,43 +68,66 @@ Your job is to identify which tables on a Wikipedia page list people who held
 a political or governmental office, and to determine the exact parsing
 configuration needed to extract that data.
 
+You will be given:
+  1. A formatted text preview of each table (column indices shown on every
+     row, cells containing a Wikipedia hyperlink marked with [LINK]).
+  2. A raw HTML snippet (first few rows) of each table so you can inspect
+     <a href>, rowspan, colspan, and <th> structure directly.
+
+IDENTIFYING THE CORRECT COLUMNS:
+- link_column: the column whose data cells contain <a href="/wiki/..."> links
+  to individual people. In the text preview these cells are marked [LINK].
+  This is the most important field — get it right or the preview will be empty.
+- term_start_column / term_end_column: columns with start/end dates or years.
+- party_column: column showing political party affiliation.
+- district_column: column showing electoral district.
+- filter_column / filter_criteria: use only when the table mixes holder types
+  and you need to filter rows (e.g. filter_criteria="Senator").
+
 RULES:
 1. Only include tables that list PEOPLE WHO HELD AN OFFICE (i.e. office
    holders). Skip tables showing statistics, geography, election results by
    district, footnotes, navboxes, or any other general information.
 2. For each holder table, output one entry in the 'tables' list.
-3. ALL column indices are 1-BASED (first column = 1).
-4. link_column REQUIRED: the column whose cells contain Wikipedia hyperlinks
-   to individual office holders' pages (e.g. /wiki/John_Smith). Must be >= 1.
-5. term_start_column / term_end_column: columns with start/end dates. Set to
-   0 if absent.
-6. party_column, district_column, filter_column: 1-based; 0 = not present.
-7. table_rows: number of header rows to skip at the top before data starts.
-   Usually 1, sometimes 2 when there is a sub-header row.
-8. Set term_dates_merged = true when a single column contains a merged date
-   range like "1990–1998". In that case set term_start_column = that column
-   and term_end_column = 0 (it will be set equal to term_start_column
-   automatically).
-9. Set parse_rowspan = true when the table uses HTML rowspan to merge
-   consecutive cells for the same person across multiple rows.
-10. Set consolidate_rowspan_terms = true when the same person appears in
-    multiple consecutive rows and those rows should be merged into one term.
-11. Set years_only = true when date columns contain only year numbers (e.g.
-    "1998") rather than full dates.
-12. Set dynamic_parse = true (the default) to auto-detect section headers
-    within the table. Leave true unless you have a specific reason to disable.
-13. Infer office name from the Wikipedia page title or table caption. Use the
+3. ALL column indices are 1-BASED (first column = 1). Use 0 to mean "absent".
+4. link_column REQUIRED: must be >= 1. It is the column marked [LINK] in the
+   text preview, or the column whose HTML cells contain <a href="/wiki/...">.
+5. table_rows: number of <tr> rows at the top to skip before data begins.
+   Count ALL header rows including sub-headers. Usually 1; sometimes 2 or 3
+   when the table has a multi-row header or a section label as the first row.
+6. Set term_dates_merged = true when a single column contains a merged date
+   range like "1990–1998". Set term_start_column = that column, term_end_column = 0.
+7. Set parse_rowspan = true when <td rowspan="N"> merges a cell vertically
+   across multiple rows (the same person listed across N consecutive rows).
+   Example HTML:
+     <tr><td rowspan="2"><a href="/wiki/Smith">Smith</a></td><td>1990</td><td>1994</td></tr>
+     <tr><td>1994</td><td>1998</td></tr>
+   → parse_rowspan=true, consolidate_rowspan_terms=true
+8. Set consolidate_rowspan_terms = true when the same person appears in
+   multiple consecutive rows that should be merged into one term record.
+9. Set years_only = true when date columns contain only year numbers
+   (e.g. "1998") rather than full dates ("January 3, 1998").
+10. Set dynamic_parse = true (the default) to auto-detect section headers
+    within the table body. Leave true unless you have a specific reason.
+11. Infer office name from the Wikipedia page title or table caption. Use the
     most specific name possible (e.g. "Governor of California" not "Governor").
-14. Populate reasoning with a brief explanation of your choices.
-15. Return an empty tables list if no holder tables are found.
+12. Populate reasoning with a brief explanation of your choices.
+13. Return an empty tables list if no holder tables are found.
 
-EXAMPLE — a typical holders table looks like:
-  Col 1: Name (with /wiki/ link)
-  Col 2: Party
-  Col 3: Term start
-  Col 4: Term end
+WHAT A SUCCESSFUL PARSE LOOKS LIKE:
+The config is correct when:
+  - At least half of data rows have a non-empty Wiki Link (a /wiki/Person URL).
+  - Term Start / Term End columns show dates or years (not names or party info).
+  - Party column (if set) shows party names, not dates or names.
+If link_column is wrong, every row will have an empty Wiki Link — the most
+common failure. Always double-check which column has the [LINK] markers.
+
+EXAMPLE — typical holders table:
+  Row 1 (header): [1] Name  [2] Party  [3] Term start  [4] Term end
+  Row 2: [1] John Smith [LINK]  [2] Democrat  [3] January 3, 1991  [4] January 3, 1995
+  Row 3: [1] Jane Doe [LINK]    [2] Republican  [3] January 3, 1995  [4] January 3, 1999
 → link_column=1, party_column=2, term_start_column=3, term_end_column=4,
-  table_rows=1 (skip the header row)
+  table_rows=1
 """
 
 
@@ -154,9 +180,9 @@ class AIOfficeBuilder:
             "status": "failed",
         }
 
-        # ---- Step 1: Fetch all tables from the page ----
+        # ---- Step 1: Fetch all tables from the page (HTML included for cache priming) ----
         try:
-            tables_preview = get_all_tables_preview(url, confirmed=True)
+            tables_preview = get_all_tables_preview(url, confirmed=True, include_html=True)
         except Exception as e:
             return {**result_base, "error": f"Page fetch error: {e}"}
 
@@ -164,6 +190,9 @@ class AIOfficeBuilder:
             return {**result_base, "error": tables_preview["error"]}
         if not tables_preview.get("tables"):
             return {**result_base, "error": "No tables found on page"}
+
+        # Prime the disk cache with already-fetched HTML so retries never re-fetch Wikipedia
+        self._prime_table_cache(url, tables_preview)
 
         # ---- Step 2: Initial OpenAI analysis ----
         messages: list[dict] = []
@@ -417,31 +446,57 @@ class AIOfficeBuilder:
     # ------------------------------------------------------------------
 
     def _format_tables_message(self, url: str, tables_preview: dict) -> str:
-        """Format table data from get_all_tables_preview() into a readable message."""
+        """
+        Format table data from get_all_tables_preview() into a readable message for OpenAI.
+
+        Each table section includes:
+        - Column-indexed rows (every row, not just the header)
+        - [LINK] marker on cells containing a /wiki/ hyperlink
+        - A raw HTML snippet (first 3 rows) for rowspan/colspan inspection
+        """
         num_tables = tables_preview.get("num_tables", 0)
         tables = tables_preview.get("tables") or []
 
         lines = [
             f"Wikipedia URL: {url}",
-            f"The page has {num_tables} table(s). "
-            "Shown below: first 10 data rows per table (header row is row 1). "
-            "Column numbers are 1-based.",
+            f"The page has {num_tables} table(s). Column numbers are 1-based.",
+            "Cells marked [LINK] contain a Wikipedia hyperlink (/wiki/...) — "
+            "these cells identify the link_column.",
             "",
         ]
 
         for tbl in tables:
             idx = tbl.get("table_index", "?")
             rows = tbl.get("rows") or []
+            raw_html = tbl.get("html") or ""
             lines.append(f"--- TABLE {idx} ---")
+
             if not rows:
                 lines.append("  (empty table)")
             else:
-                # Show column indices above first row
-                if rows[0]:
-                    col_header = " | ".join(f"[{i + 1}] {cell}" for i, cell in enumerate(rows[0]))
-                    lines.append(f"  Header: {col_header}")
-                for row in rows[1:]:
-                    lines.append("  " + " | ".join(row))
+                # Build per-cell link presence map from raw HTML when available
+                link_map: dict[tuple[int, int], bool] = {}
+                if raw_html:
+                    link_map = self._build_link_map(raw_html)
+
+                for row_idx, row in enumerate(rows):
+                    label = "Row 1 (header)" if row_idx == 0 else f"Row {row_idx + 1}"
+                    cells = []
+                    for col_idx, cell in enumerate(row):
+                        has_link = link_map.get((row_idx, col_idx), False)
+                        marker = " [LINK]" if has_link else ""
+                        cells.append(f"[{col_idx + 1}] {cell}{marker}")
+                    lines.append(f"  {label}: {'  '.join(cells)}")
+
+            # Raw HTML snippet — first 3 rows, so OpenAI can see rowspan/colspan/href
+            if raw_html:
+                soup = BeautifulSoup(raw_html, "html.parser")
+                snippet_rows = soup.find_all("tr")[:3]
+                if snippet_rows:
+                    lines.append("  Raw HTML (first 3 rows):")
+                    for tr in snippet_rows:
+                        lines.append(f"    {tr}")
+
             lines.append("")
 
         lines.append(
@@ -449,6 +504,41 @@ class AIOfficeBuilder:
             "Return an empty tables list if none found."
         )
         return "\n".join(lines)
+
+    def _build_link_map(self, table_html: str) -> dict[tuple[int, int], bool]:
+        """
+        Parse table HTML and return a dict mapping (row_idx, col_idx) → True
+        for any cell that contains an <a href="/wiki/..."> link.
+        row_idx and col_idx are 0-based, matching the rows list from get_all_tables_preview().
+        Skips the first row (header).
+        """
+        link_map: dict[tuple[int, int], bool] = {}
+        try:
+            soup = BeautifulSoup(table_html, "html.parser")
+            trs = soup.find_all("tr")
+            for row_idx, tr in enumerate(trs):
+                cells = tr.find_all(["td", "th"])
+                for col_idx, cell in enumerate(cells):
+                    if cell.find("a", href=lambda h: h and h.startswith("/wiki/")):
+                        link_map[(row_idx, col_idx)] = True
+        except Exception:
+            pass
+        return link_map
+
+    def _prime_table_cache(self, url: str, tables_preview: dict) -> None:
+        """
+        Write each table's HTML into the disk cache so that _validate_config()
+        never re-fetches Wikipedia during the retry loop.
+        """
+        num_tables = tables_preview.get("num_tables", 0)
+        for tbl in tables_preview.get("tables") or []:
+            html = tbl.get("html") or ""
+            table_no = tbl.get("table_index", 1)
+            if html:
+                try:
+                    write_table_html_cache(url, table_no, html, num_tables)
+                except Exception as e:
+                    logger.warning("_prime_table_cache: table %d: %s", table_no, e)
 
     def _build_retry_message(
         self,
