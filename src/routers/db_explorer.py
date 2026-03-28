@@ -6,7 +6,7 @@ import time
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
-from src.db.connection import get_connection, is_postgres
+from src.db.connection import get_connection
 from src.routers._deps import templates
 
 router = APIRouter()
@@ -18,13 +18,10 @@ _ALLOWED_STMT = re.compile(r"^\s*(select|with)\s", re.IGNORECASE | re.DOTALL)
 def _get_table_names() -> list[str]:
     conn = get_connection()
     try:
-        if is_postgres():
-            cur = conn.execute(
-                "SELECT table_name FROM information_schema.tables "
-                "WHERE table_schema = 'public' ORDER BY table_name"
-            )
-        else:
-            cur = conn.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+        cur = conn.execute(
+            "SELECT table_name FROM information_schema.tables "
+            "WHERE table_schema = 'public' ORDER BY table_name"
+        )
         return [row[0] for row in cur.fetchall()]
     finally:
         conn.close()
@@ -33,9 +30,8 @@ def _get_table_names() -> list[str]:
 @router.get("/db", response_class=HTMLResponse, include_in_schema=False)
 async def db_explorer(request: Request):
     tables = _get_table_names()
-    db_type = "PostgreSQL" if is_postgres() else "SQLite"
     return templates.TemplateResponse(
-        request, "db_explorer.html", {"tables": tables, "db_type": db_type}
+        request, "db_explorer.html", {"tables": tables, "db_type": "PostgreSQL"}
     )
 
 

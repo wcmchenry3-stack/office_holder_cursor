@@ -1,4 +1,13 @@
-"""Database schema for office_holder — SQLite (local dev) and PostgreSQL (Render)."""
+"""Database schema for office_holder.
+
+Two schemas are maintained in sync:
+  • SCHEMA_SQL      — SQLite syntax, used by test fixtures only
+  • SCHEMA_PG_SQL   — PostgreSQL syntax, used by the production Render app
+
+IMPORTANT: When adding a column or table, update BOTH constants and add a
+_run_pg_migrations() entry in connection.py for the live PostgreSQL database.
+The test_schema_sync.py suite will fail CI if the two schemas drift.
+"""
 
 SCHEMA_SQL = """
 -- Reference: countries
@@ -94,6 +103,8 @@ CREATE TABLE IF NOT EXISTS individuals (
     death_place TEXT,
     is_dead_link INTEGER NOT NULL DEFAULT 0,
     is_living INTEGER NOT NULL DEFAULT 1,
+    bio_batch INTEGER NOT NULL DEFAULT 0,
+    bio_refreshed_at TEXT,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
 );
@@ -127,6 +138,7 @@ CREATE TABLE IF NOT EXISTS office_details (
     department TEXT,
     notes TEXT,
     alt_link_include_main INTEGER NOT NULL DEFAULT 0,
+    office_category_id INTEGER REFERENCES office_category(id),
     enabled INTEGER NOT NULL DEFAULT 1,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
@@ -167,6 +179,7 @@ CREATE TABLE IF NOT EXISTS office_table_config (
     infobox_role_key TEXT NOT NULL DEFAULT '',
     notes TEXT,
     name TEXT,
+    last_html_hash TEXT,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
 );
@@ -212,13 +225,16 @@ CREATE TABLE IF NOT EXISTS offices (
     ignore_non_links INTEGER NOT NULL DEFAULT 0,
     remove_duplicates INTEGER NOT NULL DEFAULT 0,
     infobox_role_key TEXT NOT NULL DEFAULT '',
+    infobox_role_key_filter_id INTEGER REFERENCES infobox_role_key_filter(id),
     created_at TEXT DEFAULT (datetime('now'))
 );
 
 -- Alt links: one row per office alternate infobox link (offices may have many)
+-- office_id is nullable: hierarchy entries use office_details_id and leave office_id NULL
 CREATE TABLE IF NOT EXISTS alt_links (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    office_id INTEGER NOT NULL REFERENCES offices(id),
+    office_id INTEGER REFERENCES offices(id),
+    office_details_id INTEGER REFERENCES office_details(id),
     link_path TEXT NOT NULL,
     UNIQUE(office_id, link_path)
 );
@@ -233,10 +249,12 @@ CREATE TABLE IF NOT EXISTS parties (
     created_at TEXT DEFAULT (datetime('now'))
 );
 
--- Office terms: one row per scraped term (party via party_id FK only)
+-- Office terms: one row per scraped term
 CREATE TABLE IF NOT EXISTS office_terms (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    office_id INTEGER NOT NULL REFERENCES offices(id),
+    office_id INTEGER NOT NULL,
+    office_details_id INTEGER REFERENCES office_details(id),
+    office_table_config_id INTEGER REFERENCES office_table_config(id),
     individual_id INTEGER REFERENCES individuals(id),
     party_id INTEGER REFERENCES parties(id),
     district TEXT,
@@ -250,10 +268,24 @@ CREATE TABLE IF NOT EXISTS office_terms (
     scraped_at TEXT DEFAULT (datetime('now')),
     UNIQUE(office_id, wiki_url, term_start, term_end, term_start_year, term_end_year)
 );
-
 CREATE INDEX IF NOT EXISTS idx_office_terms_office_id ON office_terms(office_id);
 CREATE INDEX IF NOT EXISTS idx_office_terms_individual_id ON office_terms(individual_id);
 CREATE INDEX IF NOT EXISTS idx_office_terms_wiki_url ON office_terms(wiki_url);
+
+-- Parser test scripts
+CREATE TABLE IF NOT EXISTS parser_test_scripts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    test_type TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    html_file TEXT NOT NULL,
+    source_url TEXT,
+    config_json TEXT NOT NULL,
+    expected_json TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_parser_test_scripts_enabled ON parser_test_scripts(enabled);
 
 -- Persistent job records: run_scraper and preview jobs survive server restart.
 CREATE TABLE IF NOT EXISTS scraper_jobs (
@@ -266,10 +298,25 @@ CREATE TABLE IF NOT EXISTS scraper_jobs (
 );
 CREATE INDEX IF NOT EXISTS idx_scraper_jobs_status ON scraper_jobs(status);
 CREATE INDEX IF NOT EXISTS idx_scraper_jobs_created_at ON scraper_jobs(created_at);
+
+-- Indexes on offices/parties/office_terms FK columns
+CREATE INDEX IF NOT EXISTS idx_offices_country_id ON offices(country_id);
+CREATE INDEX IF NOT EXISTS idx_offices_state_id ON offices(state_id);
+CREATE INDEX IF NOT EXISTS idx_offices_level_id ON offices(level_id);
+CREATE INDEX IF NOT EXISTS idx_offices_branch_id ON offices(branch_id);
+CREATE INDEX IF NOT EXISTS idx_parties_country_id ON parties(country_id);
+CREATE INDEX IF NOT EXISTS idx_office_terms_party_id ON office_terms(party_id);
+
+-- schema_migrations: tracks applied PostgreSQL-only corrections (used by _run_pg_migrations)
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    id TEXT PRIMARY KEY,
+    applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 """
 
-# Indexes on offices/parties/office_terms FK columns. Not in SCHEMA_SQL so that
-# existing DBs with old schema don't fail; applied after migrate_to_fk() in init_db().
+# Kept as a separate constant so _init_sqlite() and _init_postgres() can both reference it.
+# For SQLite (tests) these are now embedded in SCHEMA_SQL above; this constant is still used
+# by _init_postgres() which passes it separately after the main schema.
 OFFICES_PARTIES_INDEX_SQL = """
 CREATE INDEX IF NOT EXISTS idx_offices_country_id ON offices(country_id);
 CREATE INDEX IF NOT EXISTS idx_offices_state_id ON offices(state_id);
@@ -280,13 +327,10 @@ CREATE INDEX IF NOT EXISTS idx_office_terms_party_id ON office_terms(party_id);
 """
 
 # ---------------------------------------------------------------------------
-# PostgreSQL schema — the final (fully-migrated) state of every table.
-# Used by _init_postgres() in connection.py; SCHEMA_SQL is kept for local
-# SQLite dev.  Differences from SCHEMA_SQL:
+# PostgreSQL schema — production schema used by _init_postgres() in connection.py.
+# Differences from SCHEMA_SQL:
 #   • SERIAL PRIMARY KEY instead of INTEGER PRIMARY KEY AUTOINCREMENT
 #   • TIMESTAMPTZ DEFAULT NOW() instead of TEXT DEFAULT (datetime('now'))
-#   • All columns that migrate.py would add on SQLite are included upfront
-#   • parser_test_scripts included here (not dynamically created)
 # ---------------------------------------------------------------------------
 SCHEMA_PG_SQL = """
 -- Reference: countries
@@ -509,9 +553,10 @@ CREATE TABLE IF NOT EXISTS offices (
 );
 
 -- Alt links
+-- office_id is nullable: hierarchy entries use office_details_id and leave office_id NULL
 CREATE TABLE IF NOT EXISTS alt_links (
     id SERIAL PRIMARY KEY,
-    office_id INTEGER NOT NULL REFERENCES offices(id),
+    office_id INTEGER REFERENCES offices(id),
     office_details_id INTEGER REFERENCES office_details(id),
     link_path TEXT NOT NULL,
     UNIQUE(office_id, link_path)
