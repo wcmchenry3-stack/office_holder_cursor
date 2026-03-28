@@ -24,8 +24,8 @@ jobs:
   test-python:
     uses: wcmchenry3-stack/.github/.github/workflows/called-test-python.yml@main
     with:
-      # Raised from 50 → 58 → 65 → 72 → 75 → 78 → 80 after coverage gap work (_helpers, db_explorer, scraper_jobs)
-      coverage-threshold: 80
+      # Raised from 50 → 58 → 65 → 72 → 75 → 78 → 80 → 85 after coverage gap work (parties, ai_offices, bulk_import, refs cities/categories)
+      coverage-threshold: 85
     secrets: inherit
 
   cve-python:
