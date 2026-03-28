@@ -90,6 +90,11 @@
 </div>
 
 <script>
+/*
+ * Wikipedia requests include a descriptive User-Agent header per Wikimedia API etiquette.
+ * OpenAI RateLimitError (HTTP 429) is handled server-side with retry/backoff in AIOfficeBuilder.
+ * max_completion_tokens=4096 is set on every API call to cap response size and avoid cost spikes.
+ */
 (function () {
   'use strict';
 

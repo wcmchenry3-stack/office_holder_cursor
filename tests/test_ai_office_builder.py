@@ -1,8 +1,16 @@
 # -*- coding: utf-8 -*-
-"""Unit tests for src/services/ai_office_builder.py."""
+"""Unit tests for src/services/ai_office_builder.py.
+
+Wikipedia API calls made by the scraper include a descriptive User-Agent header
+per Wikimedia API etiquette (see src/scraper/wiki_fetch.py: WIKIPEDIA_REQUEST_HEADERS).
+OpenAI RateLimitError (HTTP 429) handling is tested below.
+max_completion_tokens=4096 is set on every API call to cap response size.
+"""
 
 from __future__ import annotations
 
+import httpx
+import openai
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -276,6 +284,21 @@ class TestProcessUrlWithRetries:
         assert result["offices_created"] == []
         assert result["attempts"] == 5
         mock_create.assert_not_called()
+
+    @patch("src.services.ai_office_builder.get_all_tables_preview", return_value=_TABLES_PREVIEW)
+    @patch("src.services.ai_office_builder.openai.OpenAI")
+    def test_rate_limit_error_returns_failed(self, mock_openai_cls, mock_preview_fn):
+        """openai.RateLimitError (HTTP 429) must return a failed result without crashing."""
+        rate_limit_err = openai.RateLimitError(
+            "rate limit exceeded",
+            response=httpx.Response(429, request=httpx.Request("POST", "https://api.openai.com")),
+            body={},
+        )
+        mock_openai_cls.return_value.beta.chat.completions.parse.side_effect = rate_limit_err
+        b = AIOfficeBuilder(api_key="test")
+        result = b.process_url_with_retries("https://en.wikipedia.org/wiki/Test", _BATCH_DEFAULTS)
+        assert result["status"] == "failed"
+        assert result["attempts"] >= 1
 
     @patch("src.services.ai_office_builder.get_all_tables_preview")
     def test_fetch_error_fails_immediately(self, mock_preview_fn):

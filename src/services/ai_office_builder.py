@@ -292,6 +292,7 @@ class AIOfficeBuilder:
             model=self._model,
             messages=messages,
             response_format=AIOfficePageResponse,
+            max_completion_tokens=4096,
         )
         choice = completion.choices[0]
         # Append assistant message for multi-turn continuity

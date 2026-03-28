@@ -64,8 +64,10 @@ from src.scraper.wiki_fetch import (
 from dotenv import load_dotenv
 
 load_dotenv(".env.local")  # loads OPENAI_API_KEY (and others) in dev; no-op if file absent
-# OpenAI RateLimitError (HTTP 429) and retry backoff are handled by AIOfficeBuilder.
-# max_completion_tokens=4096 is set on every API call to cap response size.
+# OpenAI RateLimitError (HTTP 429) and retry backoff are handled by AIOfficeBuilder
+# (src/services/ai_office_builder.py). The router (_batch_job_worker) adds an additional
+# 30-second backoff sleep when a rate-limit failure is detected before continuing.
+# max_completion_tokens=4096 is set on every API call to cap response size and avoid cost spikes.
 
 from src.routers import refs as refs_router
 from src.routers import parties as parties_router
