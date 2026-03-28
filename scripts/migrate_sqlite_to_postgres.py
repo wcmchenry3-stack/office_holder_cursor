@@ -39,9 +39,9 @@ TABLE_ORDER = [
     "infobox_role_key_filter_branches",
     "source_pages",
     "offices",
-    "alt_links",
     "office_details",
     "office_table_config",
+    "alt_links",
     "parser_test_scripts",
     # individuals and office_terms are intentionally excluded — re-scraped fresh.
 ]
