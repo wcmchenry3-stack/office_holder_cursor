@@ -743,6 +743,10 @@ def _process_single_office(
         and html_hash == stored_hash
         and has_existing
     ):
+        cfg.logger.log(
+            f"Skipped (HTML unchanged): {office_name} — table HTML matches last run hash. No write.",
+            True,
+        )
         return _OfficeResult(offices_unchanged_inc=True)
 
     # When office has existing terms and find_date_in_infobox is on: validate from
@@ -848,7 +852,8 @@ def _process_single_office(
             )
             if current_new_holders_years == old_holders_years:
                 cfg.logger.log(
-                    f"Delta: holder set unchanged for {office_name}, skipping infobox fetch.", True
+                    f"Skipped (holders unchanged): {office_name} — holder set identical to existing terms. No write.",
+                    True,
                 )
                 return _OfficeResult(offices_unchanged_inc=True, html_hash=html_hash)
 
@@ -1535,6 +1540,14 @@ def run_with_db(
     )
 
     # Write to DB unless dry_run or test_run (same filter/normalize as preview via _normalize_row_for_import)
+    if not dry_run and not test_run and not all_office_data and not html_hashes_to_update:
+        logger.log(
+            f"Nothing written to DB — all {len(offices)} office(s) were skipped "
+            f"(unchanged HTML/holders or validation failures). "
+            f"Revalidation failures: {len(revalidate_failed_offices)}. "
+            f"Offices unchanged: {offices_unchanged}.",
+            True,
+        )
     if not dry_run and not test_run and (all_office_data or html_hashes_to_update):
         report("saving", 0, 1, "Writing to database…", {"terms": total_terms})
         conn = get_connection()
