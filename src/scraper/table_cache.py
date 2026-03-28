@@ -7,27 +7,26 @@ Preview / test / run use cache by default; use Refresh to refetch from Wikipedia
 import gzip
 import hashlib
 import json
+import logging
 import threading
 from pathlib import Path
 
-import requests
 from bs4 import BeautifulSoup
 
-from src.scraper.wiki_fetch import WIKIPEDIA_REQUEST_HEADERS, wiki_url_to_rest_html_url
+from src.db.connection import get_cache_dir
+from src.scraper.wiki_fetch import wiki_session, wiki_url_to_rest_html_url
+
+logger = logging.getLogger(__name__)
 
 TIMEOUT = 30
-CACHE_DIR_NAME = "wiki_cache"
 _LOCK = threading.Lock()
 _key_locks: dict[str, threading.Lock] = {}
 _key_locks_lock = threading.Lock()
 
 
-def _project_root() -> Path:
-    return Path(__file__).resolve().parent.parent
-
-
 def _cache_dir() -> Path:
-    return _project_root() / "data" / CACHE_DIR_NAME
+    """Return the wiki cache directory, respecting WIKI_CACHE_DIR env var (for Render disk)."""
+    return get_cache_dir()
 
 
 def _cache_key(url: str, table_no: int, use_full_page: bool = False) -> str:
@@ -72,13 +71,13 @@ def _fetch_table_from_url(
             }
 
     try:
-        resp = requests.get(fetch_url, headers=WIKIPEDIA_REQUEST_HEADERS, timeout=TIMEOUT)
+        resp = wiki_session().get(fetch_url, timeout=TIMEOUT)
         if resp.status_code != 200:
             return {"error": f"HTTP {resp.status_code}"}
         html_content = resp.text
         if run_cache is not None:
             run_cache.set(fetch_url, html_content)
-    except requests.RequestException as e:
+    except Exception as e:
         return {"error": str(e)}
     soup = BeautifulSoup(html_content, "html.parser")
     tables = soup.find_all("table")
@@ -102,51 +101,12 @@ def get_table_html_cached(
     Returns {"table_no", "num_tables", "html": "<table>...</table>"} or {"error": "..."}.
     """
 
-    # #region agent log
-    def _debug_log(loc, msg, data):
-        try:
-            _open = open(
-                Path(__file__).resolve().parent.parent.parent / ".cursor" / "debug.log",
-                "a",
-                encoding="utf-8",
-            )
-            _open.write(
-                json.dumps(
-                    {
-                        "location": loc,
-                        "message": msg,
-                        "data": data,
-                        "timestamp": __import__("time").time() * 1000,
-                    }
-                )
-                + "\n"
-            )
-            _open.close()
-        except Exception:
-            pass
-
-    # #endregion
     url = (url or "").strip()
     if not url:
         return {"error": "No URL"}
     key = _cache_key(url, table_no, use_full_page)
     cache_dir = _cache_dir()
     cache_path = cache_dir / f"{key}.json.gz"
-    # #region agent log
-    _debug_log(
-        "table_cache.py:get_table_html_cached:entry",
-        "get_table_html_cached called",
-        {
-            "url": url[:80],
-            "table_no": table_no,
-            "refresh": refresh,
-            "use_full_page": use_full_page,
-            "key": key,
-            "cache_path": str(cache_path),
-            "hypothesisId": "H1",
-        },
-    )
-    # #endregion
     key_lock = _key_lock(key)
     with key_lock:
         if not refresh:
@@ -155,43 +115,16 @@ def get_table_html_cached(
                     with gzip.open(cache_path, "rt", encoding="utf-8") as f:
                         data = json.load(f)
                     if isinstance(data, dict) and "html" in data and "table_no" in data:
-                        # #region agent log
-                        _debug_log(
-                            "table_cache.py:get_table_html_cached:hit",
-                            "cache hit, returning",
-                            {"key": key, "hypothesisId": "H2"},
-                        )
-                        # #endregion
                         return {
                             "table_no": data["table_no"],
                             "num_tables": data.get("num_tables", 0),
                             "html": data["html"],
                         }
                 except (OSError, json.JSONDecodeError, KeyError) as e:
-                    # #region agent log
-                    _debug_log(
-                        "table_cache.py:get_table_html_cached:read_fail",
-                        "cache file exists but read failed",
-                        {"key": key, "error": str(e), "hypothesisId": "H4"},
-                    )
-                    # #endregion
                     pass
             else:
-                # #region agent log
-                _debug_log(
-                    "table_cache.py:get_table_html_cached:miss",
-                    "cache file does not exist",
-                    {"key": key, "hypothesisId": "H2"},
-                )
-                # #endregion
+                pass  # cache miss — fall through to fetch
         result = _fetch_table_from_url(url, table_no, use_full_page, run_cache=run_cache)
-        # #region agent log
-        _debug_log(
-            "table_cache.py:get_table_html_cached:after_fetch",
-            "after _fetch_table_from_url",
-            {"has_error": "error" in result, "hypothesisId": "H2"},
-        )
-        # #endregion
         if "error" in result:
             return result
         cache_dir.mkdir(parents=True, exist_ok=True)
@@ -210,19 +143,5 @@ def get_table_html_cached(
             result["cache_file"] = str(cache_path)
             write_ok = True
         except OSError as e:
-            # #region agent log
-            _debug_log(
-                "table_cache.py:get_table_html_cached:write_fail",
-                "cache write failed",
-                {"key": key, "error": str(e), "hypothesisId": "H2"},
-            )
-            # #endregion
             pass
-        # #region agent log
-        _debug_log(
-            "table_cache.py:get_table_html_cached:write_done",
-            "cache write result",
-            {"key": key, "write_ok": write_ok, "hypothesisId": "H2"},
-        )
-        # #endregion
         return result

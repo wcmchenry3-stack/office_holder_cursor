@@ -2,10 +2,11 @@
 """Office config CRUD and related routes."""
 
 import json
+import logging
 import os
 import re
-import sqlite3
 import tempfile
+import time
 import threading
 import uuid
 from pathlib import Path
@@ -22,7 +23,7 @@ from src.routers._helpers import (
     _parse_optional_int,
     _office_draft_from_body,
 )
-from src.db.connection import get_connection
+from src.db.connection import get_connection, _DB_UNIQUE_ERRORS
 from src.db import offices as db_offices
 from src.db import refs as db_refs
 from src.db import parties as db_parties
@@ -47,6 +48,8 @@ from src.scraper.config_test import (
 from src.scraper.test_script_runner import run_test_script, run_test_script_from_html
 from src.scraper.wiki_fetch import normalize_wiki_url
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
 
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -54,6 +57,22 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 # Job progress store for async populate-bio/terms (in-memory, single-user)
 _populate_job_store: dict = {}
 _populate_job_lock = threading.Lock()
+
+_JOB_MAX_AGE_SECONDS = 2 * 3600  # 2 hours
+
+
+def _evict_old_jobs() -> None:
+    """Remove finished populate-bio jobs older than _JOB_MAX_AGE_SECONDS."""
+    cutoff = time.monotonic() - _JOB_MAX_AGE_SECONDS
+    with _populate_job_lock:
+        stale = [
+            jid
+            for jid, job in _populate_job_store.items()
+            if job.get("status") not in ("running",) and job.get("_created_at", 0) < cutoff
+        ]
+        for jid in stale:
+            del _populate_job_store[jid]
+
 
 REVALIDATE_MSG_MISSING_HOLDERS = (
     "New list is missing office holders that were in existing data. Kept existing terms."
@@ -541,17 +560,6 @@ async def office_create(request: Request):
 
 @router.get("/offices/import", response_class=HTMLResponse)
 async def offices_import_page(request: Request):
-    # #region agent log
-    try:
-        with open(ROOT / ".cursor" / "debug.log", "a", encoding="utf-8") as _f:
-            _f.write(
-                '{"id":"import_page","timestamp":'
-                + str(int(__import__("time").time() * 1000))
-                + ',"location":"main.py:offices_import_page","message":"GET /offices/import handler entered","data":{"path":"/offices/import"},"hypothesisId":"A"}\n'
-            )
-    except Exception:
-        pass
-    # #endregion
     return templates.TemplateResponse(request, "import.html")
 
 
@@ -932,7 +940,7 @@ async def office_update(request: Request, office_id: int):
         if save_all:
             return JSONResponse({"ok": False, "error": str(e), "redirect": redirect_url})
         return RedirectResponse(redirect_url, status_code=302)
-    except sqlite3.IntegrityError as e:
+    except _DB_UNIQUE_ERRORS as e:
         msg = "Save failed due to conflicting table settings: " + str(e)
         q = "?error=" + quote(msg)
         if nav_ids:
@@ -1404,10 +1412,12 @@ async def api_office_populate_terms(office_id: int, request: Request):
             force_override = body.get("force_override") in (True, 1, "true", "1")
         except Exception:
             pass
+    _evict_old_jobs()
     job_id = str(uuid.uuid4())
     with _populate_job_lock:
         _populate_job_store[job_id] = {
             "status": "running",
+            "_created_at": time.monotonic(),
             "phase": "init",
             "current": 0,
             "total": 1,
@@ -1487,7 +1497,7 @@ async def api_office_find_matching_table(office_id: int, request: Request):
     if confirm:
         with get_connection() as conn:
             conn.execute(
-                "UPDATE office_table_config SET table_no = ?, updated_at = datetime('now') WHERE id = ?",
+                "UPDATE office_table_config SET table_no = %s, updated_at = NOW() WHERE id = %s",
                 (int(found_table_no), int(target_tc_id)),
             )
             conn.commit()

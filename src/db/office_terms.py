@@ -1,19 +1,23 @@
 """Office terms (scraped results) write/read and delta logic. Supports hierarchy: office_details_id, office_table_config_id."""
 
-import sqlite3
+import logging
 from typing import Any
 
-from .connection import get_connection
+from .connection import get_connection, is_postgres, _DB_OPERATIONAL_ERRORS
 from .utils import _row_to_dict
 
+logger = logging.getLogger(__name__)
 
-def _has_hierarchy_terms(conn: sqlite3.Connection) -> bool:
+
+def _has_hierarchy_terms(conn) -> bool:
     """True if office_terms has office_table_config_id column."""
+    if is_postgres():
+        return True
     try:
         cur = conn.execute("PRAGMA table_info(office_terms)")
         cols = [row[1] for row in cur.fetchall()]
         return "office_table_config_id" in cols
-    except sqlite3.OperationalError:
+    except _DB_OPERATIONAL_ERRORS:
         return False
 
 
@@ -31,7 +35,7 @@ def insert_office_term(
     term_end_imprecise: bool = False,
     office_details_id: int | None = None,
     office_table_config_id: int | None = None,
-    conn: sqlite3.Connection | None = None,
+    conn=None,
 ) -> int:
     """Insert one office term. Returns id. With hierarchy pass office_details_id and office_table_config_id; else office_id (legacy)."""
     own_conn = conn is None
@@ -40,36 +44,6 @@ def insert_office_term(
     try:
         ts_imp = 1 if term_start_imprecise else 0
         te_imp = 1 if term_end_imprecise else 0
-        # #region agent log
-        try:
-            from pathlib import Path as _P
-            import json as _J
-            import time as _T
-
-            _log_path = _P(__file__).resolve().parent.parent.parent / ".cursor" / "debug.log"
-            open(_log_path, "a", encoding="utf-8").write(
-                _J.dumps(
-                    {
-                        "id": "log_insert_office_term",
-                        "timestamp": _T.time() * 1000,
-                        "location": "db/office_terms.py:insert_office_term",
-                        "message": "insert_office_term call",
-                        "data": {
-                            "office_id": office_id,
-                            "office_details_id": office_details_id,
-                            "office_table_config_id": office_table_config_id,
-                            "has_hierarchy_terms": _has_hierarchy_terms(conn),
-                            "wiki_url": (wiki_url or "")[:80],
-                        },
-                        "runId": "pre-fix",
-                        "hypothesisId": "H4",
-                    }
-                )
-                + "\n"
-            )
-        except Exception:
-            pass
-        # #endregion
         if (
             _has_hierarchy_terms(conn)
             and office_details_id is not None
@@ -77,9 +51,18 @@ def insert_office_term(
         ):
             # office_id is NOT NULL; use office_table_config_id so the runnable-unit id is consistent.
             cur = conn.execute(
-                """INSERT OR REPLACE INTO office_terms
+                """INSERT INTO office_terms
                    (office_id, office_details_id, office_table_config_id, individual_id, party_id, district, term_start, term_end, term_start_year, term_end_year, term_start_imprecise, term_end_imprecise, wiki_url)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                   ON CONFLICT (office_id, wiki_url, term_start, term_end, term_start_year, term_end_year) DO UPDATE SET
+                     individual_id=EXCLUDED.individual_id,
+                     party_id=EXCLUDED.party_id,
+                     district=EXCLUDED.district,
+                     term_start_imprecise=EXCLUDED.term_start_imprecise,
+                     term_end_imprecise=EXCLUDED.term_end_imprecise,
+                     office_details_id=EXCLUDED.office_details_id,
+                     office_table_config_id=EXCLUDED.office_table_config_id
+                   RETURNING id""",
                 (
                     office_table_config_id,
                     office_details_id,
@@ -98,9 +81,18 @@ def insert_office_term(
             )
         else:
             cur = conn.execute(
-                """INSERT OR REPLACE INTO office_terms
+                """INSERT INTO office_terms
                    (office_id, individual_id, party_id, district, term_start, term_end, term_start_year, term_end_year, term_start_imprecise, term_end_imprecise, wiki_url)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                   ON CONFLICT (office_id, wiki_url, term_start, term_end, term_start_year, term_end_year) DO UPDATE SET
+                     individual_id=EXCLUDED.individual_id,
+                     party_id=EXCLUDED.party_id,
+                     district=EXCLUDED.district,
+                     term_start_imprecise=EXCLUDED.term_start_imprecise,
+                     term_end_imprecise=EXCLUDED.term_end_imprecise,
+                     office_details_id=EXCLUDED.office_details_id,
+                     office_table_config_id=EXCLUDED.office_table_config_id
+                   RETURNING id""",
                 (
                     office_id,
                     individual_id,
@@ -115,14 +107,15 @@ def insert_office_term(
                     wiki_url,
                 ),
             )
-        conn.commit()
-        return cur.lastrowid
+        if own_conn:
+            conn.commit()
+        return cur.fetchone()["id"]
     finally:
         if own_conn:
             conn.close()
 
 
-def count_terms_for_office(office_id: int, conn: sqlite3.Connection | None = None) -> int:
+def count_terms_for_office(office_id: int, conn=None) -> int:
     """Return the number of office_terms for an office (office_id is office_details_id in hierarchy)."""
     own_conn = conn is None
     if own_conn:
@@ -130,11 +123,11 @@ def count_terms_for_office(office_id: int, conn: sqlite3.Connection | None = Non
     try:
         if _has_hierarchy_terms(conn):
             cur = conn.execute(
-                "SELECT COUNT(*) FROM office_terms WHERE office_details_id = ?", (office_id,)
+                "SELECT COUNT(*) FROM office_terms WHERE office_details_id = %s", (office_id,)
             )
         else:
             cur = conn.execute(
-                "SELECT COUNT(*) FROM office_terms WHERE office_id = ?", (office_id,)
+                "SELECT COUNT(*) FROM office_terms WHERE office_id = %s", (office_id,)
             )
         return cur.fetchone()[0]
     finally:
@@ -142,7 +135,7 @@ def count_terms_for_office(office_id: int, conn: sqlite3.Connection | None = Non
             conn.close()
 
 
-def get_terms_counts_by_office(conn: sqlite3.Connection | None = None) -> dict[int, int]:
+def get_terms_counts_by_office(conn=None) -> dict[int, int]:
     """Return dict mapping office_id to count (office_details_id in hierarchy, else legacy office_id)."""
     own_conn = conn is None
     if own_conn:
@@ -160,9 +153,7 @@ def get_terms_counts_by_office(conn: sqlite3.Connection | None = None) -> dict[i
             conn.close()
 
 
-def get_existing_terms_for_office(
-    office_id: int, conn: sqlite3.Connection | None = None
-) -> list[dict[str, Any]]:
+def get_existing_terms_for_office(office_id: int, conn=None) -> list[dict[str, Any]]:
     """Return existing office_terms for a unit (office_id is office_table_config_id in hierarchy, for delta compare)."""
     own_conn = conn is None
     if own_conn:
@@ -171,13 +162,13 @@ def get_existing_terms_for_office(
         if _has_hierarchy_terms(conn):
             cur = conn.execute(
                 """SELECT id, office_id, office_details_id, office_table_config_id, individual_id, party_id, district, term_start, term_end, term_start_year, term_end_year, wiki_url
-                   FROM office_terms WHERE office_table_config_id = ?""",
+                   FROM office_terms WHERE office_table_config_id = %s""",
                 (office_id,),
             )
         else:
             cur = conn.execute(
                 """SELECT id, office_id, individual_id, party_id, district, term_start, term_end, term_start_year, term_end_year, wiki_url
-                   FROM office_terms WHERE office_id = ?""",
+                   FROM office_terms WHERE office_id = %s""",
                 (office_id,),
             )
         return [_row_to_dict(r) for r in cur.fetchall()]
@@ -186,7 +177,7 @@ def get_existing_terms_for_office(
             conn.close()
 
 
-def delete_office_terms_for_office(office_id: int, conn: sqlite3.Connection | None = None) -> int:
+def delete_office_terms_for_office(office_id: int, conn=None) -> int:
     """Delete all office_terms for a unit (office_id is office_table_config_id in hierarchy). Returns count deleted."""
     own_conn = conn is None
     if own_conn:
@@ -194,18 +185,19 @@ def delete_office_terms_for_office(office_id: int, conn: sqlite3.Connection | No
     try:
         if _has_hierarchy_terms(conn):
             cur = conn.execute(
-                "DELETE FROM office_terms WHERE office_table_config_id = ?", (office_id,)
+                "DELETE FROM office_terms WHERE office_table_config_id = %s", (office_id,)
             )
         else:
-            cur = conn.execute("DELETE FROM office_terms WHERE office_id = ?", (office_id,))
-        conn.commit()
+            cur = conn.execute("DELETE FROM office_terms WHERE office_id = %s", (office_id,))
+        if own_conn:
+            conn.commit()
         return cur.rowcount
     finally:
         if own_conn:
             conn.close()
 
 
-def purge_all_office_terms(conn: sqlite3.Connection | None = None) -> int:
+def purge_all_office_terms(conn=None) -> int:
     """Delete all office_terms. Returns count deleted."""
     own_conn = conn is None
     if own_conn:
@@ -219,7 +211,7 @@ def purge_all_office_terms(conn: sqlite3.Connection | None = None) -> int:
             conn.close()
 
 
-def purge_all_individuals(conn: sqlite3.Connection | None = None) -> int:
+def purge_all_individuals(conn=None) -> int:
     """Delete all individuals. Returns count deleted. Call after purge_all_office_terms if doing full reset."""
     own_conn = conn is None
     if own_conn:
@@ -237,7 +229,7 @@ def list_office_terms(
     limit: int = 200,
     offset: int = 0,
     office_id: int | None = None,
-    conn: sqlite3.Connection | None = None,
+    conn=None,
 ) -> list[dict[str, Any]]:
     """List office terms with optional office filter (office_id is office_details_id in hierarchy) and pagination."""
     own_conn = conn is None
@@ -257,8 +249,8 @@ def list_office_terms(
                    JOIN source_pages sp ON sp.id = od.source_page_id
                    LEFT JOIN countries c ON c.id = sp.country_id
                    LEFT JOIN parties p ON p.id = ot.party_id
-                   WHERE ot.office_details_id = ?
-                   ORDER BY COALESCE(ot.term_start, ot.term_start_year) DESC LIMIT ? OFFSET ?""",
+                   WHERE ot.office_details_id = %s
+                   ORDER BY COALESCE(ot.term_start, ot.term_start_year::TEXT) DESC LIMIT %s OFFSET %s""",
                 (office_id, limit, offset),
             )
         elif office_id is not None:
@@ -273,8 +265,8 @@ def list_office_terms(
                    JOIN offices o ON o.id = ot.office_id
                    LEFT JOIN countries c ON c.id = o.country_id
                    LEFT JOIN parties p ON p.id = ot.party_id
-                   WHERE ot.office_id = ?
-                   ORDER BY COALESCE(ot.term_start, ot.term_start_year) DESC LIMIT ? OFFSET ?""",
+                   WHERE ot.office_id = %s
+                   ORDER BY COALESCE(ot.term_start, ot.term_start_year::TEXT) DESC LIMIT %s OFFSET %s""",
                 (office_id, limit, offset),
             )
         elif _has_hierarchy_terms(conn):
@@ -290,7 +282,7 @@ def list_office_terms(
                    LEFT JOIN source_pages sp ON sp.id = od.source_page_id
                    LEFT JOIN countries c ON c.id = sp.country_id
                    LEFT JOIN parties p ON p.id = ot.party_id
-                   ORDER BY ot.scraped_at DESC LIMIT ? OFFSET ?""",
+                   ORDER BY ot.scraped_at DESC LIMIT %s OFFSET %s""",
                 (limit, offset),
             )
         else:
@@ -305,7 +297,7 @@ def list_office_terms(
                    JOIN offices o ON o.id = ot.office_id
                    LEFT JOIN countries c ON c.id = o.country_id
                    LEFT JOIN parties p ON p.id = ot.party_id
-                   ORDER BY ot.scraped_at DESC LIMIT ? OFFSET ?""",
+                   ORDER BY ot.scraped_at DESC LIMIT %s OFFSET %s""",
                 (limit, offset),
             )
         return [_row_to_dict(r) for r in cur.fetchall()]

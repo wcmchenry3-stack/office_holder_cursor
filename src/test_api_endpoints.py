@@ -31,16 +31,9 @@ def client(tmp_path_factory):
 
     import src.main as main_mod
 
-    original_start = main_mod._start_datasette
-    original_stop = main_mod._stop_datasette
-    main_mod._start_datasette = lambda: None
-    main_mod._stop_datasette = lambda: None
-
     with TestClient(main_mod.app, raise_server_exceptions=False) as c:
         yield c
 
-    main_mod._start_datasette = original_start
-    main_mod._stop_datasette = original_stop
     os.environ.pop("OFFICE_HOLDER_DB_PATH", None)
 
 

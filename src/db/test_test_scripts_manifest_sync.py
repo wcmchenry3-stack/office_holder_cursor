@@ -3,14 +3,15 @@ import sqlite3
 from pathlib import Path
 
 from src.db import test_scripts as db_test_scripts
+from src.db.connection import _SQLiteConnWrapper
 
 FIXTURE_REL_PATH = "test_scripts/fixtures/sample_parser_fixture.html"
 
 
-def _memory_conn() -> sqlite3.Connection:
+def _memory_conn() -> _SQLiteConnWrapper:
     conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row
-    return conn
+    return _SQLiteConnWrapper(conn)
 
 
 def test_import_manifest_to_db_inserts_rows(tmp_path: Path):
