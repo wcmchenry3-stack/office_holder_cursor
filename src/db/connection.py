@@ -19,10 +19,9 @@ except ImportError:
     pass
 
 
-# Default paths for local SQLite dev (no DATABASE_URL set)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
-DB_PATH = DATA_DIR / "office_holder.db"
+DB_PATH = DATA_DIR / "office_holder.db"  # test-only default; production uses DATABASE_URL
 _DEFAULT_LOG_DIR = DATA_DIR / "logs"
 _DEFAULT_CACHE_DIR = DATA_DIR / "wiki_cache"
 
@@ -33,7 +32,7 @@ def is_postgres() -> bool:
 
 
 def get_db_path() -> Path:
-    """Return the SQLite DB path. Uses OFFICE_HOLDER_DB_PATH env var when set."""
+    """Return the SQLite DB path (test use only). Uses OFFICE_HOLDER_DB_PATH env var when set."""
     env_path = os.environ.get("OFFICE_HOLDER_DB_PATH")
     if env_path:
         return Path(env_path)
@@ -45,10 +44,6 @@ def get_log_dir() -> Path:
     env_path = os.environ.get("LOG_DIR")
     if env_path:
         return Path(env_path)
-    # Legacy: when using SQLite on Render, logs lived next to the DB file
-    sqlite_env = os.environ.get("OFFICE_HOLDER_DB_PATH")
-    if sqlite_env:
-        return Path(sqlite_env).parent / "logs"
     return _DEFAULT_LOG_DIR
 
 
@@ -64,8 +59,7 @@ def ensure_data_dir() -> None:
     """Create cache and log directories if they don't exist."""
     get_log_dir().mkdir(parents=True, exist_ok=True)
     get_cache_dir().mkdir(parents=True, exist_ok=True)
-    if not is_postgres():
-        DATA_DIR.mkdir(parents=True, exist_ok=True)
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 
 class _PGConnWrapper:
@@ -227,10 +221,8 @@ class _SQLiteConnWrapper:
 def get_connection(path: Path | None = None):
     """Return a database connection.
 
-    On Render / when DATABASE_URL is set (and path is not explicitly provided):
-      returns a _PGConnWrapper (psycopg2).
-    Locally (no DATABASE_URL) OR when path is explicitly provided (tests):
-      returns a sqlite3 connection.
+    Production (DATABASE_URL set, no path): returns a _PGConnWrapper (psycopg2).
+    Tests (path provided, or DATABASE_URL not set): returns a _SQLiteConnWrapper.
     """
     if is_postgres() and path is None:
         import psycopg2
@@ -242,7 +234,7 @@ def get_connection(path: Path | None = None):
         )
         return _PGConnWrapper(conn)
 
-    # SQLite path — wrapped to accept PostgreSQL-style SQL from CRUD modules
+    # Test-only: SQLite path — wrapped to accept PostgreSQL-style SQL from CRUD modules
     ensure_data_dir()
     db_path = path if path is not None else get_db_path()
     conn = sqlite3.connect(str(db_path), timeout=10.0)
@@ -317,10 +309,9 @@ def _run_pg_migrations(conn) -> None:
 
 
 def _init_sqlite(path: Path | None = None) -> None:
-    """Original SQLite init — unchanged."""
-    from .schema import SCHEMA_SQL, OFFICES_PARTIES_INDEX_SQL
+    """SQLite init for tests — applies the final schema directly (no migrations needed)."""
+    from .schema import SCHEMA_SQL
     from .seed import seed_reference_data
-    from .migrate import migrate_to_fk
     from . import test_scripts as db_test_scripts
 
     conn = get_connection(path)
@@ -328,9 +319,7 @@ def _init_sqlite(path: Path | None = None) -> None:
         conn.executescript(SCHEMA_SQL)
         conn.commit()
         seed_reference_data(conn=conn)
-        migrate_to_fk(conn=conn)
         db_test_scripts.seed_db_from_manifest_if_empty(conn=conn)
-        conn.executescript(OFFICES_PARTIES_INDEX_SQL)
         conn.commit()
     finally:
         conn.close()
