@@ -280,9 +280,40 @@ def _init_postgres() -> None:
 
         db_test_scripts.seed_db_from_manifest_if_empty(conn=conn)
         conn.commit()
+
+        _run_pg_migrations(conn)
+
         # migrate_to_fk() is deliberately NOT called — PostgreSQL starts with the final schema
     finally:
         conn.close()
+
+
+def _run_pg_migrations(conn) -> None:
+    """Apply idempotent PostgreSQL-only schema corrections that cannot be expressed as
+    CREATE TABLE IF NOT EXISTS (e.g. dropping stale FK constraints)."""
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS schema_migrations "
+        "(id TEXT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW())"
+    )
+    conn.commit()
+
+    cur = conn.execute("SELECT id FROM schema_migrations")
+    applied = {row[0] for row in cur.fetchall()}
+
+    def _apply(name: str, sql: str) -> None:
+        if name in applied:
+            return
+        conn.execute(sql)
+        conn.execute("INSERT INTO schema_migrations (id) VALUES (%s)", (name,))
+        conn.commit()
+
+    # office_terms.office_id previously had REFERENCES offices(id), but in hierarchy
+    # mode it stores office_table_config_id values — violating the FK. Drop it; the
+    # office_table_config_id column already carries the proper referential integrity.
+    _apply(
+        "pg_drop_office_terms_office_id_fkey",
+        "ALTER TABLE office_terms DROP CONSTRAINT IF EXISTS office_terms_office_id_fkey",
+    )
 
 
 def _init_sqlite(path: Path | None = None) -> None:
