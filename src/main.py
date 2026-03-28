@@ -78,6 +78,7 @@ from src.routers import ui_tests as ui_tests_router
 from src.routers import preview as preview_router
 from src.routers import offices as offices_router
 from src.routers import ai_offices as ai_offices_router
+from src.routers import db_explorer as db_explorer_router
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from src.routers._deps import templates
 from src.scheduled_tasks import is_daily_delta_enabled, run_daily_delta
@@ -204,23 +205,13 @@ app.include_router(ui_tests_router.router)
 app.include_router(preview_router.router)
 app.include_router(offices_router.router)
 app.include_router(ai_offices_router.router)
+app.include_router(db_explorer_router.router)
 
 # Stoppable process types: server-side (e.g. "run") have a cancel endpoint and job store with cancelled flag;
 # client-side (e.g. "preview_all") use a Stop button and a running/stopped flag (optional AbortController).
 # To add a new type: follow the same pattern (job store + cancel_check + cancel API for server-side;
 # flag + Stop button for client-side) and append to this list.
 PROCESS_TYPES = ["run", "preview_all"]
-
-
-@app.get("/db", include_in_schema=False)
-@app.get("/db/{path:path}", include_in_schema=False)
-async def db_explorer_removed(path: str = ""):
-    return JSONResponse(
-        {
-            "message": "DB explorer removed. Use psql or TablePlus with the Render connection string."
-        },
-        status_code=410,
-    )
 
 
 # ---------- Favicon (avoid 404 in console) ----------
