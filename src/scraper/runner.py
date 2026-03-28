@@ -10,6 +10,7 @@ import hashlib
 import logging
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
@@ -270,6 +271,56 @@ def _holder_keys_from_parsed_rows(
 def _is_dead_wiki_url(url: str) -> bool:
     u = (url or "").lower()
     return "redlink=1" in u
+
+
+def _fetch_bio_batch(
+    urls: list[str],
+    biography,
+    cancel_check,
+    progress_fn,
+    on_success,
+    on_error,
+    run_cache=None,
+    max_workers: int = 3,
+) -> bool:
+    """Fetch biographies for *urls* with up to *max_workers* concurrent HTTP calls.
+
+    Rate-limiting (≤1 req/s) is enforced globally inside biography_extract via
+    wiki_throttle() so the combined throughput never exceeds Wikipedia's policy limit.
+
+    ``progress_fn(done, total)`` is called on the main thread after each result.
+    ``on_success(wiki_url, bio_info)`` is called on the main thread for each good result.
+    ``on_error(wiki_url, error_str)`` is called on the main thread for each failure.
+
+    Returns True if the run was cancelled, False if all URLs were processed.
+    """
+
+    def _worker(url: str) -> tuple[str, dict | None, str | None]:
+        try:
+            return url, biography.biography_extract(url, run_cache=run_cache), None
+        except Exception as exc:
+            return url, None, str(exc)
+
+    total = len(urls)
+    cancelled = False
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(_worker, url): url for url in urls}
+        done = 0
+        for future in as_completed(futures):
+            if cancel_check and cancel_check():
+                cancelled = True
+                executor.shutdown(wait=False, cancel_futures=True)
+                break
+            url, bio_info, err = future.result()
+            done += 1
+            progress_fn(done, total)
+            if err:
+                on_error(url, err)
+            elif bio_info:
+                on_success(url, bio_info)
+            else:
+                on_error(url, "No bio data extracted")
+    return cancelled
 
 
 def _dedupe_parsed_rows(table_data: list[dict], years_only: bool) -> list[dict]:
@@ -560,6 +611,26 @@ class _RunConfig:
     report: Callable
     run_cache: Any = None
     bio_batch: int | None = None
+
+
+@dataclass
+class _RunContext:
+    """All call-time parameters for run_with_db, passed into each mode function."""
+
+    run_mode: str
+    run_bio: bool
+    run_office_bio: bool
+    refresh_table_cache: bool
+    dry_run: bool
+    test_run: bool
+    max_rows_per_table: int | None
+    office_ids: list[int] | None
+    individual_ref: str | None
+    individual_ids: list[int] | None
+    cancel_check: Callable[[], bool] | None
+    force_replace_office_ids: list[int] | None
+    force_overwrite: bool
+    bio_batch: int | None
 
 
 @dataclass
@@ -1007,6 +1078,225 @@ def _cleanup_disk_cache(max_age_days: int = 30) -> int:
     return deleted
 
 
+def _run_single_bio(ctx: _RunContext, logger: Logger, report: Callable) -> dict[str, Any]:
+    """Run a biography fetch for one individual (single_bio mode)."""
+    ref = (ctx.individual_ref or "").strip()
+    if not ref:
+        logger.log("single_bio requires individual_ref (id or Wikipedia URL).", True)
+        logger.close()
+        return {
+            "office_count": 0,
+            "message": "Individual (ID or URL) required.",
+            "bio_success_count": 0,
+            "bio_error_count": 1,
+            "bio_errors": [{"url": "", "error": "individual_ref required"}],
+        }
+    if ref.isdigit():
+        ind = db_individuals.get_individual(int(ref))
+        if not ind:
+            logger.log(f"No individual with id={ref}.", True)
+            logger.close()
+            return {
+                "office_count": 0,
+                "message": f"No individual with id {ref}.",
+                "bio_success_count": 0,
+                "bio_error_count": 1,
+                "bio_errors": [{"url": ref, "error": "Individual not found"}],
+            }
+        wiki_url = ind.get("wiki_url") or ""
+    else:
+        wiki_url = ref
+        if not wiki_url.startswith("http"):
+            wiki_url = (
+                ("https://en.wikipedia.org" + wiki_url)
+                if wiki_url.startswith("/")
+                else f"https://en.wikipedia.org/wiki/{wiki_url}"
+            )
+    report("bio", 1, 1, "Fetching biography…", {})
+    from src.scraper import parse_core
+
+    data_cleanup = parse_core.DataCleanup(logger)
+    biography = parse_core.Biography(logger, data_cleanup)
+    bio_success_count = 0
+    bio_error_count = 0
+    bio_errors: list[dict[str, str]] = []
+    try:
+        bio_info = biography.biography_extract(wiki_url)
+        if bio_info:
+            bio_info["wiki_url"] = wiki_url
+            bd, bd_imp = normalize_date(bio_info.get("birth_date"))
+            dd, dd_imp = normalize_date(bio_info.get("death_date"))
+            bio_info["birth_date"] = bd
+            bio_info["death_date"] = dd
+            bio_info["birth_date_imprecise"] = bd_imp
+            bio_info["death_date_imprecise"] = dd_imp
+            db_individuals.upsert_individual(bio_info)
+            bio_success_count = 1
+        else:
+            bio_error_count = 1
+            bio_errors.append({"url": wiki_url, "error": "No bio data extracted"})
+    except Exception as e:
+        bio_error_count = 1
+        bio_errors.append({"url": wiki_url, "error": str(e)})
+    logger.close()
+    return {
+        "office_count": 0,
+        "terms_parsed": 0,
+        "unique_wiki_urls": 1,
+        "bio_success_count": bio_success_count,
+        "bio_error_count": bio_error_count,
+        "bio_errors": bio_errors,
+        "bio_skipped_count": 0,
+        "living_success_count": 0,
+        "living_error_count": 0,
+        "living_errors": [],
+    }
+
+
+def _run_selected_bios(ctx: _RunContext, logger: Logger, report: Callable) -> dict[str, Any]:
+    """Run biography fetch for a specific set of individual IDs (selected_bios mode)."""
+    from src.scraper import parse_core
+
+    selected_ids = sorted({int(i) for i in (ctx.individual_ids or []) if int(i) > 0})
+    if not selected_ids:
+        logger.close()
+        return {
+            "office_count": 0,
+            "terms_parsed": 0,
+            "unique_wiki_urls": 0,
+            "bio_success_count": 0,
+            "bio_error_count": 0,
+            "bio_errors": [],
+            "bio_skipped_count": 0,
+            "living_success_count": 0,
+            "living_error_count": 0,
+            "living_errors": [],
+            "message": "No individuals selected.",
+        }
+    data_cleanup = parse_core.DataCleanup(logger)
+    biography = parse_core.Biography(logger, data_cleanup)
+    bio_success_count = 0
+    bio_error_count = 0
+    bio_errors: list[dict[str, str]] = []
+    total_bios = len(selected_ids)
+    for bio_idx, individual_id in enumerate(selected_ids):
+        if ctx.cancel_check and ctx.cancel_check():
+            logger.log("Selected bios run cancelled by user.", True)
+            break
+        report(
+            "bio",
+            bio_idx + 1,
+            total_bios,
+            "Updating selected individuals…",
+            {"current": bio_idx + 1, "total": total_bios},
+        )
+        individual = db_individuals.get_individual(individual_id)
+        if not individual:
+            bio_error_count += 1
+            bio_errors.append({"url": str(individual_id), "error": "Individual not found"})
+            continue
+        wiki_url = (individual.get("wiki_url") or "").strip()
+        if not wiki_url:
+            page_path = (individual.get("page_path") or "").strip()
+            if page_path:
+                wiki_url = (
+                    page_path
+                    if page_path.startswith("http")
+                    else f"https://en.wikipedia.org/wiki/{page_path.lstrip('/')}"
+                )
+        if not wiki_url:
+            bio_error_count += 1
+            bio_errors.append(
+                {"url": str(individual_id), "error": "Missing wiki_url/page_path"}
+            )
+            continue
+        try:
+            bio_info = biography.biography_extract(wiki_url)
+            if bio_info:
+                bio_info["wiki_url"] = wiki_url
+                bd, bd_imp = normalize_date(bio_info.get("birth_date"))
+                dd, dd_imp = normalize_date(bio_info.get("death_date"))
+                bio_info["birth_date"] = bd
+                bio_info["death_date"] = dd
+                bio_info["birth_date_imprecise"] = bd_imp
+                bio_info["death_date_imprecise"] = dd_imp
+                db_individuals.upsert_individual(bio_info)
+                bio_success_count += 1
+            else:
+                bio_error_count += 1
+                bio_errors.append({"url": wiki_url, "error": "No bio data extracted"})
+        except Exception as e:
+            bio_error_count += 1
+            bio_errors.append({"url": wiki_url, "error": str(e)})
+    logger.close()
+    return {
+        "office_count": 0,
+        "terms_parsed": 0,
+        "unique_wiki_urls": total_bios,
+        "bio_success_count": bio_success_count,
+        "bio_error_count": bio_error_count,
+        "bio_errors": bio_errors,
+        "bio_skipped_count": 0,
+        "living_success_count": 0,
+        "living_error_count": 0,
+        "living_errors": [],
+        "dry_run": False,
+        "test_run": False,
+        "preview_rows": None,
+    }
+
+
+def _run_bios_only(ctx: _RunContext, logger: Logger, report: Callable) -> dict[str, Any]:
+    """Refresh biography data for every individual in the DB (bios_only mode)."""
+    from src.scraper import parse_core
+
+    data_cleanup = parse_core.DataCleanup(logger)
+    biography = parse_core.Biography(logger, data_cleanup)
+    to_fetch = list(db_individuals.get_all_individual_wiki_urls())
+    to_fetch = [u for u in to_fetch if (u or "").strip()]
+    total_bios = len(to_fetch)
+    bio_errors: list[dict[str, str]] = []
+    unique_to_fetch = list(dict.fromkeys(to_fetch))
+    _counts = [0, 0]  # [success, error]
+
+    def _success(wiki_url: str, bio_info: dict) -> None:
+        bio_info["wiki_url"] = wiki_url
+        bd, bd_imp = normalize_date(bio_info.get("birth_date"))
+        dd, dd_imp = normalize_date(bio_info.get("death_date"))
+        bio_info["birth_date"] = bd
+        bio_info["death_date"] = dd
+        bio_info["birth_date_imprecise"] = bd_imp
+        bio_info["death_date_imprecise"] = dd_imp
+        db_individuals.upsert_individual(bio_info)
+        _counts[0] += 1
+
+    def _error(wiki_url: str, err: str) -> None:
+        _counts[1] += 1
+        bio_errors.append({"url": wiki_url, "error": err})
+
+    def _progress(done: int, total: int) -> None:
+        report("bio", done, total, "Updating all individuals…", {"current": done, "total": total})
+
+    if _fetch_bio_batch(unique_to_fetch, biography, ctx.cancel_check, _progress, _success, _error):
+        logger.log("Bios only run cancelled by user.", True)
+    logger.close()
+    return {
+        "office_count": 0,
+        "terms_parsed": 0,
+        "unique_wiki_urls": 0,
+        "bio_success_count": _counts[0],
+        "bio_error_count": _counts[1],
+        "bio_errors": bio_errors,
+        "bio_skipped_count": 0,
+        "living_success_count": 0,
+        "living_error_count": 0,
+        "living_errors": [],
+        "dry_run": False,
+        "test_run": False,
+        "preview_rows": None,
+    }
+
+
 def run_with_db(
     run_mode: str = "delta",  # full | delta | live_person | single_bio | bios_only
     run_bio: bool = False,
@@ -1040,241 +1330,33 @@ def run_with_db(
         if progress_callback:
             progress_callback(phase, current, total, message, extra or {})
 
-    # Single-individual bio run: resolve ref to wiki_url, run bio once, return
+    ctx = _RunContext(
+        run_mode=run_mode,
+        run_bio=run_bio,
+        run_office_bio=run_office_bio,
+        refresh_table_cache=refresh_table_cache,
+        dry_run=dry_run,
+        test_run=test_run,
+        max_rows_per_table=max_rows_per_table,
+        office_ids=office_ids,
+        individual_ref=individual_ref,
+        individual_ids=individual_ids,
+        cancel_check=cancel_check,
+        force_replace_office_ids=force_replace_office_ids,
+        force_overwrite=force_overwrite,
+        bio_batch=bio_batch,
+    )
+
+    # Dispatch short-circuit modes that don't need office table parsing.
     if run_mode == "single_bio":
-        ref = (individual_ref or "").strip()
-        if not ref:
-            logger.log("single_bio requires individual_ref (id or Wikipedia URL).", True)
-            logger.close()
-            return {
-                "office_count": 0,
-                "message": "Individual (ID or URL) required.",
-                "bio_success_count": 0,
-                "bio_error_count": 1,
-                "bio_errors": [{"url": "", "error": "individual_ref required"}],
-            }
-        if ref.isdigit():
-            ind = db_individuals.get_individual(int(ref))
-            if not ind:
-                logger.log(f"No individual with id={ref}.", True)
-                logger.close()
-                return {
-                    "office_count": 0,
-                    "message": f"No individual with id {ref}.",
-                    "bio_success_count": 0,
-                    "bio_error_count": 1,
-                    "bio_errors": [{"url": ref, "error": "Individual not found"}],
-                }
-            wiki_url = ind.get("wiki_url") or ""
-        else:
-            wiki_url = ref
-            if not wiki_url.startswith("http"):
-                wiki_url = (
-                    ("https://en.wikipedia.org" + wiki_url)
-                    if wiki_url.startswith("/")
-                    else f"https://en.wikipedia.org/wiki/{wiki_url}"
-                )
-        report("bio", 1, 1, "Fetching biography…", {})
-        from src.scraper import parse_core
-
-        data_cleanup = parse_core.DataCleanup(logger)
-        biography = parse_core.Biography(logger, data_cleanup)
-        bio_success_count = 0
-        bio_error_count = 0
-        bio_errors: list[dict[str, str]] = []
-        try:
-            bio_info = biography.biography_extract(wiki_url)
-            if bio_info:
-                bio_info["wiki_url"] = wiki_url
-                bd, bd_imp = normalize_date(bio_info.get("birth_date"))
-                dd, dd_imp = normalize_date(bio_info.get("death_date"))
-                bio_info["birth_date"] = bd
-                bio_info["death_date"] = dd
-                bio_info["birth_date_imprecise"] = bd_imp
-                bio_info["death_date_imprecise"] = dd_imp
-                db_individuals.upsert_individual(bio_info)
-                bio_success_count = 1
-            else:
-                bio_error_count = 1
-                bio_errors.append({"url": wiki_url, "error": "No bio data extracted"})
-        except Exception as e:
-            bio_error_count = 1
-            bio_errors.append({"url": wiki_url, "error": str(e)})
-        logger.close()
-        return {
-            "office_count": 0,
-            "terms_parsed": 0,
-            "unique_wiki_urls": 1,
-            "bio_success_count": bio_success_count,
-            "bio_error_count": bio_error_count,
-            "bio_errors": bio_errors,
-            "bio_skipped_count": 0,
-            "living_success_count": 0,
-            "living_error_count": 0,
-            "living_errors": [],
-        }
-
+        return _run_single_bio(ctx, logger, report)
     if run_mode == "selected_bios":
-        from src.scraper import parse_core
-
-        selected_ids = sorted({int(i) for i in (individual_ids or []) if int(i) > 0})
-        if not selected_ids:
-            logger.close()
-            return {
-                "office_count": 0,
-                "terms_parsed": 0,
-                "unique_wiki_urls": 0,
-                "bio_success_count": 0,
-                "bio_error_count": 0,
-                "bio_errors": [],
-                "bio_skipped_count": 0,
-                "living_success_count": 0,
-                "living_error_count": 0,
-                "living_errors": [],
-                "message": "No individuals selected.",
-            }
-        data_cleanup = parse_core.DataCleanup(logger)
-        biography = parse_core.Biography(logger, data_cleanup)
-        bio_success_count = 0
-        bio_error_count = 0
-        bio_errors: list[dict[str, str]] = []
-        total_bios = len(selected_ids)
-        for bio_idx, individual_id in enumerate(selected_ids):
-            if cancel_check and cancel_check():
-                logger.log("Selected bios run cancelled by user.", True)
-                break
-            report(
-                "bio",
-                bio_idx + 1,
-                total_bios,
-                "Updating selected individuals…",
-                {"current": bio_idx + 1, "total": total_bios},
-            )
-            individual = db_individuals.get_individual(individual_id)
-            if not individual:
-                bio_error_count += 1
-                bio_errors.append({"url": str(individual_id), "error": "Individual not found"})
-                continue
-            wiki_url = (individual.get("wiki_url") or "").strip()
-            if not wiki_url:
-                page_path = (individual.get("page_path") or "").strip()
-                if page_path:
-                    wiki_url = (
-                        page_path
-                        if page_path.startswith("http")
-                        else f"https://en.wikipedia.org/wiki/{page_path.lstrip('/')}"
-                    )
-            if not wiki_url:
-                bio_error_count += 1
-                bio_errors.append(
-                    {"url": str(individual_id), "error": "Missing wiki_url/page_path"}
-                )
-                continue
-            if bio_idx > 0:
-                time.sleep(1.5)
-            try:
-                bio_info = biography.biography_extract(wiki_url)
-                if bio_info:
-                    bio_info["wiki_url"] = wiki_url
-                    bd, bd_imp = normalize_date(bio_info.get("birth_date"))
-                    dd, dd_imp = normalize_date(bio_info.get("death_date"))
-                    bio_info["birth_date"] = bd
-                    bio_info["death_date"] = dd
-                    bio_info["birth_date_imprecise"] = bd_imp
-                    bio_info["death_date_imprecise"] = dd_imp
-                    db_individuals.upsert_individual(bio_info)
-                    bio_success_count += 1
-                else:
-                    bio_error_count += 1
-                    bio_errors.append({"url": wiki_url, "error": "No bio data extracted"})
-            except Exception as e:
-                bio_error_count += 1
-                bio_errors.append({"url": wiki_url, "error": str(e)})
-        logger.close()
-        return {
-            "office_count": 0,
-            "terms_parsed": 0,
-            "unique_wiki_urls": total_bios,
-            "bio_success_count": bio_success_count,
-            "bio_error_count": bio_error_count,
-            "bio_errors": bio_errors,
-            "bio_skipped_count": 0,
-            "living_success_count": 0,
-            "living_error_count": 0,
-            "living_errors": [],
-            "dry_run": False,
-            "test_run": False,
-            "preview_rows": None,
-        }
-
-    # Bios only: update biography for every individual in the DB (no office table parsing).
+        return _run_selected_bios(ctx, logger, report)
     if run_mode == "bios_only":
-        from src.scraper import parse_core
+        return _run_bios_only(ctx, logger, report)
 
-        data_cleanup = parse_core.DataCleanup(logger)
-        biography = parse_core.Biography(logger, data_cleanup)
-        to_fetch = list(db_individuals.get_all_individual_wiki_urls())
-        to_fetch = [u for u in to_fetch if (u or "").strip()]
-        total_bios = len(to_fetch)
-        bio_success_count = 0
-        bio_error_count = 0
-        bio_errors: list[dict[str, str]] = []
-        bio_fetched: set[str] = set()
-        for bio_idx, wiki_url in enumerate(to_fetch):
-            if cancel_check and cancel_check():
-                logger.log("Bios only run cancelled by user.", True)
-                break
-            report(
-                "bio",
-                bio_idx + 1,
-                total_bios,
-                "Updating all individuals…",
-                {"current": bio_idx + 1, "total": total_bios},
-            )
-            if wiki_url in bio_fetched:
-                continue
-            if bio_idx > 0:
-                time.sleep(1.5)
-            try:
-                bio_info = biography.biography_extract(wiki_url)
-                bio_fetched.add(wiki_url)
-                if bio_info:
-                    bio_info["wiki_url"] = wiki_url
-                    bd, bd_imp = normalize_date(bio_info.get("birth_date"))
-                    dd, dd_imp = normalize_date(bio_info.get("death_date"))
-                    bio_info["birth_date"] = bd
-                    bio_info["death_date"] = dd
-                    bio_info["birth_date_imprecise"] = bd_imp
-                    bio_info["death_date_imprecise"] = dd_imp
-                    db_individuals.upsert_individual(bio_info)
-                    bio_success_count += 1
-                else:
-                    bio_error_count += 1
-                    bio_errors.append({"url": wiki_url, "error": "No bio data extracted"})
-            except Exception as e:
-                bio_fetched.add(wiki_url)
-                bio_error_count += 1
-                bio_errors.append({"url": wiki_url, "error": str(e)})
-        logger.close()
-        return {
-            "office_count": 0,
-            "terms_parsed": 0,
-            "unique_wiki_urls": 0,
-            "bio_success_count": bio_success_count,
-            "bio_error_count": bio_error_count,
-            "bio_errors": bio_errors,
-            "bio_skipped_count": 0,
-            "living_success_count": 0,
-            "living_error_count": 0,
-            "living_errors": [],
-            "dry_run": False,
-            "test_run": False,
-            "preview_rows": None,
-        }
-
-    # Get party list from DB (scraper format: { country: [ {name, link}, ... ] })
+    # Main loop modes (full | delta | live_person): load offices and dispatch.
     party_list = db_parties.get_party_list_for_scraper()
-    # Get runnable units from DB (hierarchy: page + office + table all enabled; else legacy offices)
     offices = db_offices.list_runnable_units()
     if not offices:
         offices = [o for o in db_offices.list_offices() if o.get("enabled", 1) == 1]
@@ -1566,47 +1648,33 @@ def run_with_db(
             to_fetch = list(db_individuals.get_living_individual_wiki_urls()) if run_bio else []
             bio_skipped_count = 0
             total_bios = len(to_fetch)
-            bio_fetched_this_run: set[str] = set()
-            for bio_idx, wiki_url in enumerate(to_fetch):
-                if cancel_check and cancel_check():
-                    logger.log("Run cancelled by user (during living update).", True)
-                    bio_cancelled = True
-                    break
-                report(
-                    "living",
-                    bio_idx + 1,
-                    total_bios,
-                    "Updating living individuals…",
-                    {"current": bio_idx + 1, "total": total_bios},
-                )
-                if wiki_url in bio_fetched_this_run:
-                    continue
-                if bio_idx > 0:
-                    time.sleep(1.5)
-                try:
-                    bio_info = biography.biography_extract(wiki_url)
-                    bio_fetched_this_run.add(wiki_url)
-                    if bio_info:
-                        bio_info["wiki_url"] = wiki_url
-                        bd, bd_imp = normalize_date(bio_info.get("birth_date"))
-                        dd, dd_imp = normalize_date(bio_info.get("death_date"))
-                        bio_info["birth_date"] = bd
-                        bio_info["death_date"] = dd
-                        bio_info["birth_date_imprecise"] = bd_imp
-                        bio_info["death_date_imprecise"] = dd_imp
-                        db_individuals.upsert_individual(bio_info)
-                        living_success_count += 1
-                    else:
-                        living_error_count += 1
-                        err_msg = "No bio data extracted"
-                        logger.log(f"Living update failed for {wiki_url}: {err_msg}", True)
-                        living_errors.append({"url": wiki_url, "error": err_msg})
-                except Exception as e:
-                    bio_fetched_this_run.add(wiki_url)
-                    living_error_count += 1
-                    err_msg = str(e)
-                    logger.log(f"Living update exception for {wiki_url}: {err_msg}", True)
-                    living_errors.append({"url": wiki_url, "error": err_msg})
+            unique_living = list(dict.fromkeys(to_fetch))
+            _lp_counts = [0, 0]  # [success, error]
+
+            def _lp_success(wiki_url: str, bio_info: dict) -> None:
+                bio_info["wiki_url"] = wiki_url
+                bd, bd_imp = normalize_date(bio_info.get("birth_date"))
+                dd, dd_imp = normalize_date(bio_info.get("death_date"))
+                bio_info["birth_date"] = bd
+                bio_info["death_date"] = dd
+                bio_info["birth_date_imprecise"] = bd_imp
+                bio_info["death_date_imprecise"] = dd_imp
+                db_individuals.upsert_individual(bio_info)
+                _lp_counts[0] += 1
+
+            def _lp_error(wiki_url: str, err: str) -> None:
+                _lp_counts[1] += 1
+                logger.log(f"Living update failed for {wiki_url}: {err}", True)
+                living_errors.append({"url": wiki_url, "error": err})
+
+            def _lp_progress(done: int, total: int) -> None:
+                report("living", done, total, "Updating living individuals…", {"current": done, "total": total})
+
+            if _fetch_bio_batch(unique_living, biography, cancel_check, _lp_progress, _lp_success, _lp_error):
+                logger.log("Run cancelled by user (during living update).", True)
+                bio_cancelled = True
+            living_success_count += _lp_counts[0]
+            living_error_count += _lp_counts[1]
         else:
             # Full/delta: bio only for new individuals (not already in DB).
             to_fetch = list(unique_wiki_urls - existing_individual_wiki_urls)
@@ -1632,65 +1700,56 @@ def run_with_db(
                     key = normalize_wiki_url(wiki_url_row) or wiki_url_row
                     if key not in bio_cache:
                         bio_cache[key] = row["_bio_details"]
-            bio_fetched_this_run: set[str] = set()
-            for bio_idx, wiki_url in enumerate(to_fetch):
-                if cancel_check and cancel_check():
-                    logger.log("Run cancelled by user (during bio fetch).", True)
-                    bio_cancelled = True
-                    break
-                report(
-                    "bio",
-                    bio_idx + 1,
-                    total_bios,
-                    "Fetching biographies (new individuals)…",
-                    {"current": bio_idx + 1, "total": total_bios, "bio_skipped": bio_skipped_count},
-                )
-                if wiki_url in bio_fetched_this_run:
-                    continue
-                try:
-                    bio_cache_key = normalize_wiki_url(wiki_url) or wiki_url
-                    if bio_cache_key in bio_cache:
-                        bio_info = dict(bio_cache[bio_cache_key])
-                        bio_info["wiki_url"] = wiki_url
-                        if bio_info.get("page_path") is None:
-                            bio_info["page_path"] = (wiki_url or "").rstrip("/").split("/")[
-                                -1
-                            ] or ""
-                        bd, bd_imp = normalize_date(bio_info.get("birth_date"))
-                        dd, dd_imp = normalize_date(bio_info.get("death_date"))
-                        bio_info["birth_date"] = bd
-                        bio_info["death_date"] = dd
-                        bio_info["birth_date_imprecise"] = bd_imp
-                        bio_info["death_date_imprecise"] = dd_imp
-                        db_individuals.upsert_individual(bio_info)
-                        bio_fetched_this_run.add(wiki_url)
-                        bio_success_count += 1
-                    else:
-                        if bio_idx > 0:
-                            time.sleep(1.5)
-                        bio_info = biography.biography_extract(wiki_url)
-                        bio_fetched_this_run.add(wiki_url)
-                        if bio_info:
-                            bio_info["wiki_url"] = wiki_url
-                            bd, bd_imp = normalize_date(bio_info.get("birth_date"))
-                            dd, dd_imp = normalize_date(bio_info.get("death_date"))
-                            bio_info["birth_date"] = bd
-                            bio_info["death_date"] = dd
-                            bio_info["birth_date_imprecise"] = bd_imp
-                            bio_info["death_date_imprecise"] = dd_imp
-                            db_individuals.upsert_individual(bio_info)
-                            bio_success_count += 1
-                        else:
-                            bio_error_count += 1
-                            err_msg = "No bio data extracted (e.g. 403 or empty page)"
-                            logger.log(f"Bio failed for {wiki_url}: {err_msg}", True)
-                            bio_errors.append({"url": wiki_url, "error": err_msg})
-                except Exception as e:
-                    bio_fetched_this_run.add(wiki_url)
-                    bio_error_count += 1
-                    err_msg = str(e)
-                    logger.log(f"Bio exception for {wiki_url}: {err_msg}", True)
-                    bio_errors.append({"url": wiki_url, "error": err_msg})
+            # Split: bio_cache hits (no HTTP) vs URLs that need HTTP fetch.
+            cache_hits = [u for u in to_fetch if (normalize_wiki_url(u) or u) in bio_cache]
+            http_urls = [u for u in to_fetch if (normalize_wiki_url(u) or u) not in bio_cache]
+            # Process bio_cache hits sequentially (no rate limiting needed).
+            for wiki_url in cache_hits:
+                bio_cache_key = normalize_wiki_url(wiki_url) or wiki_url
+                bio_info = dict(bio_cache[bio_cache_key])
+                bio_info["wiki_url"] = wiki_url
+                if bio_info.get("page_path") is None:
+                    bio_info["page_path"] = (wiki_url or "").rstrip("/").split("/")[-1] or ""
+                bd, bd_imp = normalize_date(bio_info.get("birth_date"))
+                dd, dd_imp = normalize_date(bio_info.get("death_date"))
+                bio_info["birth_date"] = bd
+                bio_info["death_date"] = dd
+                bio_info["birth_date_imprecise"] = bd_imp
+                bio_info["death_date_imprecise"] = dd_imp
+                db_individuals.upsert_individual(bio_info)
+                bio_success_count += 1
+            # Fetch remaining URLs in parallel (rate-limited via wiki_throttle in biography_extract).
+            _new_bio_counts = [0, 0]
+            _new_bio_done = [len(cache_hits)]
+
+            def _new_bio_success(wiki_url: str, bio_info: dict) -> None:
+                bio_info["wiki_url"] = wiki_url
+                bd, bd_imp = normalize_date(bio_info.get("birth_date"))
+                dd, dd_imp = normalize_date(bio_info.get("death_date"))
+                bio_info["birth_date"] = bd
+                bio_info["death_date"] = dd
+                bio_info["birth_date_imprecise"] = bd_imp
+                bio_info["death_date_imprecise"] = dd_imp
+                db_individuals.upsert_individual(bio_info)
+                _new_bio_counts[0] += 1
+
+            def _new_bio_error(wiki_url: str, err: str) -> None:
+                _new_bio_counts[1] += 1
+                logger.log(f"Bio failed for {wiki_url}: {err}", True)
+                bio_errors.append({"url": wiki_url, "error": err})
+
+            def _new_bio_progress(done: int, total: int) -> None:
+                combined = _new_bio_done[0] + done
+                report("bio", combined, total_bios, "Fetching biographies (new individuals)…",
+                       {"current": combined, "total": total_bios, "bio_skipped": bio_skipped_count})
+
+            unique_http_urls = list(dict.fromkeys(http_urls))
+            if _fetch_bio_batch(unique_http_urls, biography, cancel_check,
+                                _new_bio_progress, _new_bio_success, _new_bio_error):
+                logger.log("Run cancelled by user (during bio fetch).", True)
+                bio_cancelled = True
+            bio_success_count += _new_bio_counts[0]
+            bio_error_count += _new_bio_counts[1]
 
             # Optional second pass: update living individuals (death_date null). Full refresh of bio fields.
             if run_bio:
@@ -1711,54 +1770,37 @@ def run_with_db(
                         f"Updating {total_living} living individuals…",
                         {},
                     )
-                    living_fetched_this_run: set[str] = set()
-                    for liv_idx, wiki_url in enumerate(to_fetch_living):
-                        if cancel_check and cancel_check():
-                            logger.log("Run cancelled by user (during living update).", True)
-                            bio_cancelled = True
-                            break
-                        report(
-                            "living",
-                            liv_idx + 1,
-                            total_living,
-                            "Updating living individuals…",
-                            {"current": liv_idx + 1, "total": total_living},
-                        )
-                        if wiki_url in living_fetched_this_run:
-                            continue
-                        # Skip sleep when run_cache already has the page (no HTTP needed)
-                        _liv_fetch_url = normalize_wiki_url(wiki_url) or wiki_url
-                        from src.scraper.wiki_fetch import wiki_url_to_rest_html_url as _w2r
+                    unique_living2 = list(dict.fromkeys(to_fetch_living))
+                    _liv2_counts = [0, 0]
 
-                        _liv_fetch_url = _w2r(_liv_fetch_url) or _liv_fetch_url
-                        _cache_hit = run_cache.get(_liv_fetch_url) is not None
-                        if liv_idx > 0 and not _cache_hit:
-                            time.sleep(1.5)
-                        try:
-                            bio_info = biography.biography_extract(wiki_url, run_cache=run_cache)
-                            living_fetched_this_run.add(wiki_url)
-                            if bio_info:
-                                bio_info["wiki_url"] = wiki_url
-                                bd, bd_imp = normalize_date(bio_info.get("birth_date"))
-                                dd, dd_imp = normalize_date(bio_info.get("death_date"))
-                                bio_info["birth_date"] = bd
-                                bio_info["death_date"] = dd
-                                bio_info["birth_date_imprecise"] = bd_imp
-                                bio_info["death_date_imprecise"] = dd_imp
-                                db_individuals.upsert_individual(bio_info)
-                                db_individuals.mark_bio_refreshed(wiki_url)
-                                living_success_count += 1
-                            else:
-                                living_error_count += 1
-                                err_msg = "No bio data extracted"
-                                logger.log(f"Living update failed for {wiki_url}: {err_msg}", True)
-                                living_errors.append({"url": wiki_url, "error": err_msg})
-                        except Exception as e:
-                            living_fetched_this_run.add(wiki_url)
-                            living_error_count += 1
-                            err_msg = str(e)
-                            logger.log(f"Living update exception for {wiki_url}: {err_msg}", True)
-                            living_errors.append({"url": wiki_url, "error": err_msg})
+                    def _liv2_success(wiki_url: str, bio_info: dict) -> None:
+                        bio_info["wiki_url"] = wiki_url
+                        bd, bd_imp = normalize_date(bio_info.get("birth_date"))
+                        dd, dd_imp = normalize_date(bio_info.get("death_date"))
+                        bio_info["birth_date"] = bd
+                        bio_info["death_date"] = dd
+                        bio_info["birth_date_imprecise"] = bd_imp
+                        bio_info["death_date_imprecise"] = dd_imp
+                        db_individuals.upsert_individual(bio_info)
+                        db_individuals.mark_bio_refreshed(wiki_url)
+                        _liv2_counts[0] += 1
+
+                    def _liv2_error(wiki_url: str, err: str) -> None:
+                        _liv2_counts[1] += 1
+                        logger.log(f"Living update failed for {wiki_url}: {err}", True)
+                        living_errors.append({"url": wiki_url, "error": err})
+
+                    def _liv2_progress(done: int, total: int) -> None:
+                        report("living", done, total, "Updating living individuals…",
+                               {"current": done, "total": total})
+
+                    if _fetch_bio_batch(unique_living2, biography, cancel_check,
+                                       _liv2_progress, _liv2_success, _liv2_error,
+                                       run_cache=run_cache):
+                        logger.log("Run cancelled by user (during living update).", True)
+                        bio_cancelled = True
+                    living_success_count += _liv2_counts[0]
+                    living_error_count += _liv2_counts[1]
 
     if bio_cancelled:
         logger.close()

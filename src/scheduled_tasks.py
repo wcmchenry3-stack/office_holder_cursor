@@ -92,6 +92,14 @@ def run_daily_delta() -> None:
         print(f"[scheduler] Cache cleanup error (non-fatal): {e}")
 
     try:
+        from src.db.scraper_jobs import delete_jobs_older_than
+        jobs_deleted = delete_jobs_older_than(hours=48)
+        if jobs_deleted:
+            print(f"[scheduler] Deleted {jobs_deleted} stale scraper_jobs records.")
+    except Exception as e:
+        print(f"[scheduler] scraper_jobs cleanup error (non-fatal): {e}")
+
+    try:
         result = _run_daily_delta_in_subprocess(today_batch=today_batch)
         result["cache_deleted"] = cache_deleted
     except Exception:

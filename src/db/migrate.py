@@ -112,6 +112,7 @@ def migrate_to_fk(conn=None):
         _apply_migration(conn, "source_pages_disable_auto_table_update", _migrate_source_pages_disable_auto_table_update, applied)
         _apply_migration(conn, "office_table_config_html_hash", _migrate_office_table_config_html_hash, applied)
         _apply_migration(conn, "individuals_bio_batch", _migrate_individuals_bio_batch, applied)
+        _apply_migration(conn, "scraper_jobs", _migrate_scraper_jobs, applied)
     finally:
         if own_conn:
             conn.close()
@@ -1098,4 +1099,26 @@ def _migrate_individuals_bio_batch(conn):
         conn.commit()
     if "bio_refreshed_at" not in cols:
         conn.execute("ALTER TABLE individuals ADD COLUMN bio_refreshed_at TEXT")
+        conn.commit()
+
+
+def _migrate_scraper_jobs(conn):
+    """Create scraper_jobs table if missing (for DB instances predating this migration)."""
+    try:
+        tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+    except Exception:
+        tables = set()
+    if "scraper_jobs" not in tables:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS scraper_jobs (
+                id TEXT PRIMARY KEY,
+                type TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'running',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                result_json TEXT
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_scraper_jobs_status ON scraper_jobs(status)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_scraper_jobs_created_at ON scraper_jobs(created_at)")
         conn.commit()

@@ -5,6 +5,8 @@ Uses Wikimedia REST API for HTML when possible (policy-friendly and CDN-cached).
 The shared session automatically retries on transient errors and respects Retry-After on 429.
 """
 
+import threading
+import time
 from urllib.parse import urlparse, unquote, urlunparse
 
 import requests
@@ -23,6 +25,25 @@ _REQUEST_TIMEOUT = 30
 
 # One session per process; thread-safe for concurrent reads.
 _session: requests.Session | None = None
+
+# Global rate limiter: enforce ≤1 Wikipedia HTTP request per second across all threads.
+_throttle_lock = threading.Lock()
+_last_request_at: list[float] = [0.0]  # mutable container so closures can update it
+_MIN_REQUEST_INTERVAL = 1.0  # seconds
+
+
+def wiki_throttle() -> None:
+    """Block until at least 1 s has elapsed since the last Wikipedia HTTP request.
+
+    Must be called immediately before every wiki_session().get() call.  Using a global
+    lock ensures the ≤1 req/s limit is respected even with ThreadPoolExecutor workers.
+    """
+    with _throttle_lock:
+        now = time.monotonic()
+        wait = _MIN_REQUEST_INTERVAL - (now - _last_request_at[0])
+        if wait > 0:
+            time.sleep(wait)
+        _last_request_at[0] = time.monotonic()
 
 
 def wiki_session() -> requests.Session:

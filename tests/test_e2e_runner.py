@@ -541,3 +541,176 @@ def test_run_cache_prevents_duplicate_http(db_with_cache, monkeypatch):
     assert (
         call_counter["n"] == 1
     ), f"Expected 1 HTTP call for 2 offices sharing the same URL, got {call_counter['n']}"
+
+
+# ---------------------------------------------------------------------------
+# P3.3  HTTP failure-mode tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_network_timeout_skips_office_but_run_continues(db_with_cache, monkeypatch):
+    """
+    When wiki_session().get() raises Timeout for one office's table URL, the
+    runner records the error for that office (0 terms) but completes the run
+    and writes terms for other offices whose cache is pre-populated.
+    """
+    import requests.exceptions
+
+    db_path, cache_dir = db_with_cache
+
+    from src.db.connection import get_connection
+    from src.db import office_terms as db_office_terms
+    from src.db import offices as db_offices
+    from src.scraper.runner import run_with_db
+
+    GOOD_URL = "https://en.wikipedia.org/wiki/TestOfficeGood"
+    BAD_URL = "https://en.wikipedia.org/wiki/TestOfficeBad"
+    TABLE_NO = 1
+
+    # Minimal table HTML that the parser can process (no terms produced is fine —
+    # what matters is the run doesn't crash and BAD_URL produces no terms).
+    good_table_html = (
+        "<table><tr><th>Name</th><th>From</th><th>To</th></tr>"
+        "<tr><td><a href='/wiki/Alice'>Alice</a></td><td>2000</td><td>2004</td></tr>"
+        "</table>"
+    )
+
+    # Pre-fill disk cache only for the good office.
+    _write_fixture_to_cache(cache_dir, GOOD_URL, TABLE_NO, good_table_html)
+
+    # Mock session: raises Timeout for any URL not in member_html (covers BAD_URL).
+    class _TimeoutSession:
+        def get(self, url, *args, **kwargs):
+            raise requests.exceptions.Timeout(f"Simulated timeout for {url}")
+
+    monkeypatch.setattr(_wiki_fetch_module, "_session", _TimeoutSession())
+
+    conn = get_connection(db_path)
+    try:
+        country_id = _get_country_id(conn)
+
+        config_base = {
+            "table_no": TABLE_NO,
+            "table_rows": 3,
+            "link_column": 1,
+            "party_column": 0,
+            "term_start_column": 2,
+            "term_end_column": 3,
+            "district_column": 0,
+            "term_dates_merged": False,
+            "party_ignore": True,
+            "district_ignore": True,
+            "district_at_large": False,
+            "dynamic_parse": True,
+            "read_right_to_left": False,
+            "find_date_in_infobox": False,
+            "years_only": True,
+            "parse_rowspan": False,
+            "consolidate_rowspan_terms": False,
+            "rep_link": False,
+            "party_link": False,
+            "use_full_page_for_table": False,
+        }
+
+        def _make_tc(url, name):
+            od = db_offices.create_office(
+                {"country_id": country_id, "url": url, "name": name, "enabled": 1, **config_base},
+                conn=conn,
+            )
+            conn.commit()
+            return conn.execute(
+                "SELECT id FROM office_table_config WHERE office_details_id = ? ORDER BY id LIMIT 1",
+                (od,),
+            ).fetchone()[0]
+
+        good_tc = _make_tc(GOOD_URL, "Good Office")
+        bad_tc = _make_tc(BAD_URL, "Bad Office")
+    finally:
+        conn.close()
+
+    # Run must not raise even though BAD_URL will trigger a Timeout.
+    result = run_with_db(
+        run_mode="delta",
+        dry_run=False,
+        test_run=False,
+        office_ids=[good_tc, bad_tc],
+        run_office_bio=False,
+    )
+
+    # Run completes for both offices (office_count includes errored offices).
+    assert result.get("office_count", 0) == 2
+
+    conn2 = get_connection(db_path)
+    try:
+        good_terms = db_office_terms.get_existing_terms_for_office(good_tc)
+        bad_terms = db_office_terms.get_existing_terms_for_office(bad_tc)
+    finally:
+        conn2.close()
+
+    # Good office: cache hit → terms produced.
+    assert len(good_terms) > 0, "Good office should have produced terms from cached HTML"
+    # Bad office: Timeout → error recorded → no terms written.
+    assert len(bad_terms) == 0, "Bad office should have 0 terms after network timeout"
+
+
+@pytest.mark.integration
+def test_cancel_check_stops_run_before_all_offices(db_with_cache, monkeypatch):
+    """
+    When cancel_check() returns True, run_with_db stops processing remaining
+    offices and returns {"cancelled": True} without raising.
+    """
+    db_path, cache_dir = db_with_cache
+
+    from src.db.connection import get_connection
+    from src.db import offices as db_offices
+    from src.scraper.runner import run_with_db
+
+    # Build enough offices so at least one is pending when cancel fires.
+    manifest = _load_manifest()
+    enabled = [e for e in manifest if e.get("enabled")][:3]
+    assert len(enabled) >= 2, "Need at least 2 manifest entries for cancel test"
+
+    member_html = _build_member_html_map(enabled)
+    monkeypatch.setattr(_wiki_fetch_module, "_session", _make_requests_mock(member_html))
+
+    conn = get_connection(db_path)
+    try:
+        country_id = _get_country_id(conn)
+        tc_ids: list[int] = []
+        for entry in enabled:
+            source_url = (entry.get("source_url") or "").strip()
+            config = dict(entry.get("config_json") or {})
+            table_no = int(config.get("table_no", 1))
+            full_html = _load_html(entry["html_file"])
+            table_html, num_tables = _extract_table(full_html, table_no)
+            _write_fixture_to_cache(
+                cache_dir,
+                source_url,
+                table_no,
+                table_html,
+                use_full_page=bool(config.get("use_full_page_for_table", False)),
+                num_tables=num_tables,
+            )
+            _, tc_id = _seed_office(conn, country_id, entry)
+            tc_ids.append(tc_id)
+    finally:
+        conn.close()
+
+    # cancel_check fires immediately on first call.
+    cancel_calls = {"n": 0}
+
+    def _immediate_cancel():
+        cancel_calls["n"] += 1
+        return True
+
+    result = run_with_db(
+        run_mode="delta",
+        dry_run=False,
+        test_run=False,
+        office_ids=tc_ids,
+        run_office_bio=False,
+        cancel_check=_immediate_cancel,
+    )
+
+    assert result.get("cancelled") is True, f"Expected cancelled=True, got: {result}"

@@ -14,6 +14,7 @@ from src.routers._helpers import _parse_optional_int
 from src.db import offices as db_offices
 from src.db import individuals as db_individuals
 from src.db import office_category as db_office_category
+from src.db import scraper_jobs as db_scraper_jobs
 from src.scraper.runner import run_with_db
 from src.scraper.config_test import get_table_html
 
@@ -143,17 +144,24 @@ def _run_job_worker(
             cancel_check=cancel_check,
             force_overwrite=force_overwrite,
         )
+        final_status = "cancelled" if result.get("cancelled") else "complete"
         with _run_job_lock:
             if job_id in _run_job_store:
-                _run_job_store[job_id]["status"] = (
-                    "cancelled" if result.get("cancelled") else "complete"
-                )
+                _run_job_store[job_id]["status"] = final_status
                 _run_job_store[job_id]["result"] = result
+        try:
+            db_scraper_jobs.update_job(job_id, final_status, result)
+        except Exception:
+            pass
     except Exception as e:
         with _run_job_lock:
             if job_id in _run_job_store:
                 _run_job_store[job_id]["status"] = "error"
                 _run_job_store[job_id]["error"] = str(e)
+        try:
+            db_scraper_jobs.update_job(job_id, "error", {"error": str(e)})
+        except Exception:
+            pass
 
 
 @router.post("/api/run")
@@ -237,6 +245,10 @@ async def api_run(
         refresh_table_cache = False
     _evict_old_jobs()
     job_id = str(uuid.uuid4())
+    try:
+        db_scraper_jobs.create_job(job_id, mode)
+    except Exception:
+        pass
     with _run_job_lock:
         _run_job_store[job_id] = {
             "status": "running",
@@ -314,9 +326,21 @@ async def api_run_matching_individuals(
 @router.get("/api/run/status/{job_id}")
 async def api_run_status(job_id: str):
     with _run_job_lock:
-        if job_id not in _run_job_store:
-            raise HTTPException(status_code=404, detail="Job not found")
-        return _run_job_store[job_id]
+        if job_id in _run_job_store:
+            return _run_job_store[job_id]
+    # Not in memory (evicted or from a previous server run) — check persistent DB.
+    try:
+        db_record = db_scraper_jobs.get_job(job_id)
+        if db_record:
+            return {
+                "status": db_record["status"],
+                "result": db_record.get("result"),
+                "type": db_record.get("type"),
+                "created_at": db_record.get("created_at"),
+            }
+    except Exception:
+        pass
+    raise HTTPException(status_code=404, detail="Job not found")
 
 
 @router.post("/api/run/cancel/{job_id}")

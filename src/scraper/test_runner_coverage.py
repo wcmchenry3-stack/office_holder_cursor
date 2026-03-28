@@ -963,8 +963,8 @@ def test_run_with_db_bios_only_bio_raises_exception(tmp_path, monkeypatch):
     assert result["bio_error_count"] == 1
 
 
-def test_run_with_db_bios_only_two_individuals_triggers_sleep(tmp_path, monkeypatch):
-    """bios_only with two individuals: second one triggers sleep (bio_idx > 0)."""
+def test_run_with_db_bios_only_two_individuals_processes_both(tmp_path, monkeypatch):
+    """bios_only with two individuals: both are fetched and written to the DB."""
     db_path = _init_test_db(tmp_path, monkeypatch)
 
     from src.db.connection import get_connection
@@ -983,8 +983,8 @@ def test_run_with_db_bios_only_two_individuals_triggers_sleep(tmp_path, monkeypa
     finally:
         conn.close()
 
-    sleep_calls = []
-    monkeypatch.setattr("src.scraper.runner.time.sleep", lambda s: sleep_calls.append(s))
+    # Rate limiting is now handled by wiki_throttle() inside biography_extract; patch it out.
+    monkeypatch.setattr("src.scraper.wiki_fetch.wiki_throttle", lambda: None)
     monkeypatch.setattr(
         "src.scraper.table_parser.Biography.biography_extract",
         lambda self, url, **kw: {
@@ -1000,7 +1000,6 @@ def test_run_with_db_bios_only_two_individuals_triggers_sleep(tmp_path, monkeypa
 
     result = run_with_db(run_mode="bios_only")
     assert result["bio_success_count"] == 2
-    assert len(sleep_calls) == 1  # sleep called once (for second individual)
 
 
 def test_run_with_db_selected_bios_cancel_check(tmp_path, monkeypatch):
@@ -1101,8 +1100,8 @@ def test_run_with_db_selected_bios_exception_from_bio(tmp_path, monkeypatch):
     assert result["bio_error_count"] == 1
 
 
-def test_run_with_db_selected_bios_two_individuals_triggers_sleep(tmp_path, monkeypatch):
-    """selected_bios with two individuals: second triggers time.sleep (bio_idx > 0)."""
+def test_run_with_db_selected_bios_two_individuals_processes_both(tmp_path, monkeypatch):
+    """selected_bios with two individuals: both are fetched and written to the DB."""
     db_path = _init_test_db(tmp_path, monkeypatch)
 
     from src.db.connection import get_connection
@@ -1129,8 +1128,8 @@ def test_run_with_db_selected_bios_two_individuals_triggers_sleep(tmp_path, monk
     finally:
         conn.close()
 
-    sleep_calls = []
-    monkeypatch.setattr("src.scraper.runner.time.sleep", lambda s: sleep_calls.append(s))
+    # Rate limiting is now handled by wiki_throttle() inside biography_extract; patch it out.
+    monkeypatch.setattr("src.scraper.wiki_fetch.wiki_throttle", lambda: None)
     monkeypatch.setattr(
         "src.scraper.table_parser.Biography.biography_extract",
         lambda self, url, **kw: {
@@ -1146,7 +1145,6 @@ def test_run_with_db_selected_bios_two_individuals_triggers_sleep(tmp_path, monk
 
     result = run_with_db(run_mode="selected_bios", individual_ids=individual_ids)
     assert result["bio_success_count"] == 2
-    assert len(sleep_calls) == 1  # sleep once for second bio
 
 
 def test_run_with_db_bios_only_cancel_check(tmp_path, monkeypatch):

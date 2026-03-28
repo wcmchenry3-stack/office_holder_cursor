@@ -6,6 +6,7 @@ HTTP_USER_AGENT = "OfficeHolder/1.0 (https://github.com/wcmchenry3-stack/office-
 from datetime import datetime
 import os
 from pathlib import Path
+import threading
 
 
 def get_default_log_dir() -> Path:
@@ -26,13 +27,15 @@ class Logger:
         log_file_name = f"{process}_{run_type}_{timestamp}.txt"
         self.log_file_path = log_dir / log_file_name
         self.log_file = open(self.log_file_path, "w", encoding="utf-8")
+        self._lock = threading.Lock()
         print(f"using log file: {self.log_file_path}")
 
     def log(self, message: str, print_flag: bool) -> None:
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         formatted_message = f"[{timestamp}] {message}\n\n"
-        self.log_file.write(formatted_message)
-        self.log_file.flush()
+        with self._lock:
+            self.log_file.write(formatted_message)
+            self.log_file.flush()
         if print_flag and self.run_type:
             try:
                 print(f"{message}\n\n")

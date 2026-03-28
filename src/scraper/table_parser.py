@@ -13,6 +13,7 @@ from src.scraper.wiki_fetch import (
     canonical_holder_url,
     normalize_wiki_url,
     wiki_session,
+    wiki_throttle,
     wiki_url_to_rest_html_url,
 )
 from bs4 import BeautifulSoup
@@ -1856,6 +1857,7 @@ class Biography:
             if _cached_html_be is not None:
                 response = type("_R", (), {"status_code": 200, "text": _cached_html_be})()
             else:
+                wiki_throttle()
                 response = wiki_session().get(fetch_url, timeout=30)
                 if response.status_code == 200 and run_cache is not None:
                     run_cache.set(fetch_url, response.text)
@@ -1949,6 +1951,7 @@ class Biography:
             if _cached_html_ftd is not None:
                 response = type("_R", (), {"status_code": 200, "text": _cached_html_ftd})()
             else:
+                wiki_throttle()
                 response = wiki_session().get(fetch_url, timeout=30)
                 if response.status_code == 200 and run_cache is not None:
                     run_cache.set(fetch_url, response.text)
