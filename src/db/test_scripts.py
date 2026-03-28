@@ -149,10 +149,14 @@ def seed_db_from_manifest_if_empty(manifest_path: Path = MANIFEST_PATH, conn=Non
 def _ensure_table(conn) -> None:
     """Create parser_test_scripts if it doesn't exist.
 
-    On initialised connections (via init_db) the table already exists and this
-    is a no-op. On bare in-memory connections used in unit tests this creates
-    the table so tests don't need a full init_db() call.
+    On PostgreSQL (production) the table is created by SCHEMA_PG_SQL — nothing
+    to do. On bare in-memory SQLite connections used in unit tests the table
+    doesn't exist yet, so create it here with SQLite syntax.
     """
+    from .connection import is_postgres
+
+    if is_postgres():
+        return
     conn.execute("""
         CREATE TABLE IF NOT EXISTS parser_test_scripts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
