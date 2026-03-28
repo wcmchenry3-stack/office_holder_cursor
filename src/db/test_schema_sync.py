@@ -17,7 +17,6 @@ import pytest
 from src.db.schema import SCHEMA_PG_SQL
 from src.db.connection import init_db
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -45,7 +44,9 @@ def _parse_pg_tables(pg_sql: str) -> dict[str, list[str]]:
             if not line:
                 continue
             # Skip constraint lines
-            if re.match(r"(PRIMARY KEY|UNIQUE|CHECK|FOREIGN KEY|CONSTRAINT)\b", line, re.IGNORECASE):
+            if re.match(
+                r"(PRIMARY KEY|UNIQUE|CHECK|FOREIGN KEY|CONSTRAINT)\b", line, re.IGNORECASE
+            ):
                 continue
             # First token is the column name
             col_match = re.match(r"(\w+)\s+\w+", line)
@@ -94,7 +95,9 @@ def test_all_pg_tables_exist_in_sqlite(sqlite_db):
 def test_pg_columns_present_in_sqlite(sqlite_db, table, pg_cols):
     sqlite_tbls = _sqlite_tables(sqlite_db)
     if table not in sqlite_tbls:
-        pytest.skip(f"Table '{table}' not in SQLite DB (caught by test_all_pg_tables_exist_in_sqlite)")
+        pytest.skip(
+            f"Table '{table}' not in SQLite DB (caught by test_all_pg_tables_exist_in_sqlite)"
+        )
 
     sqlite_cols = _sqlite_columns(sqlite_db, table)
     missing = sorted(c for c in pg_cols if c not in sqlite_cols)
