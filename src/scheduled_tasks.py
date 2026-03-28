@@ -22,6 +22,9 @@ import subprocess
 import sys
 import traceback
 from datetime import datetime, timezone
+from email import encoders
+from email.mime.base import MIMEBase
+from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 _DEFAULT_EMAIL = "wcmchenry3@gmail.com"
@@ -157,10 +160,9 @@ Run date : {date_str}
 Started  : {started_str}
 Status   : FAILED
 
-CRASH OUTPUT
-------------
-{error or 'Unknown error — result was None'}
+See attached log file for the full crash output.
 """
+        crash_log = (error or "Unknown error — result was None").encode("utf-8")
     else:
         office_count = result.get("office_count", 0)
         unchanged = result.get("offices_unchanged", 0)
@@ -211,10 +213,27 @@ ERRORS
 """
 
     subject = f"Office Holder Daily Run — {date_str} — {status}"
-    msg = MIMEText(body, "plain", "utf-8")
-    msg["Subject"] = subject
-    msg["From"] = email_from
-    msg["To"] = email_to
+
+    if error or result is None:
+        msg = MIMEMultipart()
+        msg["Subject"] = subject
+        msg["From"] = email_from
+        msg["To"] = email_to
+        msg.attach(MIMEText(body, "plain", "utf-8"))
+        attachment = MIMEBase("text", "plain", charset="utf-8")
+        attachment.set_payload(crash_log)
+        encoders.encode_base64(attachment)
+        attachment.add_header(
+            "Content-Disposition",
+            "attachment",
+            filename=f"crash_{date_str}.log",
+        )
+        msg.attach(attachment)
+    else:
+        msg = MIMEText(body, "plain", "utf-8")
+        msg["Subject"] = subject
+        msg["From"] = email_from
+        msg["To"] = email_to
 
     try:
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
