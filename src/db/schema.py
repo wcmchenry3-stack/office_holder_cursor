@@ -530,7 +530,7 @@ CREATE TABLE IF NOT EXISTS parties (
 -- Office terms
 CREATE TABLE IF NOT EXISTS office_terms (
     id SERIAL PRIMARY KEY,
-    office_id INTEGER NOT NULL REFERENCES offices(id),
+    office_id INTEGER NOT NULL,
     office_details_id INTEGER REFERENCES office_details(id),
     office_table_config_id INTEGER REFERENCES office_table_config(id),
     individual_id INTEGER REFERENCES individuals(id),
