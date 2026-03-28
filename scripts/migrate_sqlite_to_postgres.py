@@ -42,9 +42,8 @@ TABLE_ORDER = [
     "alt_links",
     "office_details",
     "office_table_config",
-    "individuals",
-    "office_terms",
     "parser_test_scripts",
+    # individuals and office_terms are intentionally excluded — re-scraped fresh.
 ]
 
 # Timestamp columns that SQLite stores as "YYYY-MM-DD HH:MM:SS" strings.
