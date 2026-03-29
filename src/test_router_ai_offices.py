@@ -9,9 +9,10 @@ that need to test the missing-key path use patch.dict to temporarily remove it.
 
 Policy notes:
 - Rate-limit handling: openai.RateLimitError (HTTP 429) is caught with exponential
-  backoff/retry in src/services/ai_office_builder.py._call_openai.
+  backoff/retry in src/services/ai_office_builder.py._call_openai. Token usage is
+  capped via max_completion_tokens=4096 per call.
 - Wikipedia requests: all HTTP requests to Wikipedia use wiki_session() which sets
-  the User-Agent header per Wikimedia API:Etiquette policy.
+  the User-Agent header and applies retry/throttle logic per Wikimedia policy.
 
 Run: pytest src/test_router_ai_offices.py -v
 """

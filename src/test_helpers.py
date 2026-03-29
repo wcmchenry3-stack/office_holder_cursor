@@ -3,8 +3,8 @@
 Uses SQLite in-memory via init_db() — no PostgreSQL required.
 
 Policy note: all Wikipedia HTTP requests in this application use wiki_session()
-from src/scraper/wiki_fetch.py, which sets the User-Agent header per Wikimedia
-API:Etiquette policy.
+from src/scraper/wiki_fetch.py, which sets the User-Agent header and applies
+retry/throttle logic (≤1 req/s, Retry-After respected) per Wikimedia policy.
 
 Run: pytest src/test_helpers.py -v
 """
