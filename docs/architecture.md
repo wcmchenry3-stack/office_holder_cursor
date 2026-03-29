@@ -18,6 +18,7 @@ src/scraper/             src/db/
   ↓                          ↓
 Wikipedia REST API      SQLite file
 (en.wikipedia.org)      data/office_holder.db
+← rate-limited; retry + backoff on 429/503
 ```
 
 **Auth:** Google OAuth via `authlib`. `require_login()` middleware gates all routes except `/login`, `/auth/google*`, `/static`. When `GOOGLE_CLIENT_ID` is not set, auth is fully bypassed (local dev).
