@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from typing import Callable
 
 import openai
@@ -21,6 +22,9 @@ from src.db import refs as db_refs
 from src.scraper.config_test import get_all_tables_preview
 from src.scraper.runner import preview_with_config
 from src.scraper.table_cache import write_table_html_cache
+
+# Wikipedia HTTP requests are made via wiki_session() (src/scraper/wiki_fetch.py),
+# which sets the User-Agent header per Wikimedia API:Etiquette policy.
 
 logger = logging.getLogger(__name__)
 
@@ -316,17 +320,36 @@ class AIOfficeBuilder:
         return self._call_openai(messages)
 
     def _call_openai(self, messages: list[dict]) -> AIOfficePageResponse:
-        """Call OpenAI with structured output, append assistant message to messages."""
-        completion = self._client.beta.chat.completions.parse(
-            model=self._model,
-            messages=messages,
-            response_format=AIOfficePageResponse,
-            max_completion_tokens=4096,
-        )
-        choice = completion.choices[0]
-        # Append assistant message for multi-turn continuity
-        messages.append({"role": "assistant", "content": choice.message.content or ""})
-        return choice.message.parsed  # type: ignore[return-value]
+        """Call OpenAI with structured output, with exponential backoff on RateLimitError.
+
+        Retries up to 3 times on HTTP 429 / openai.RateLimitError, doubling the
+        backoff delay each attempt (1 s → 2 s → 4 s).  All other errors propagate
+        immediately so callers can handle them.
+        """
+        backoff = 1.0
+        for attempt in range(3):
+            try:
+                completion = self._client.beta.chat.completions.parse(
+                    model=self._model,
+                    messages=messages,
+                    response_format=AIOfficePageResponse,
+                    max_completion_tokens=4096,
+                )
+                choice = completion.choices[0]
+                # Append assistant message for multi-turn continuity
+                messages.append({"role": "assistant", "content": choice.message.content or ""})
+                return choice.message.parsed  # type: ignore[return-value]
+            except openai.RateLimitError:
+                if attempt == 2:
+                    raise
+                logger.warning(
+                    "_call_openai: RateLimitError (HTTP 429); retrying in %.0f s (attempt %d/3)",
+                    backoff,
+                    attempt + 1,
+                )
+                time.sleep(backoff)
+                backoff *= 2
+        raise RuntimeError("unreachable")
 
     def _check_success_criteria(self, preview_result: dict) -> tuple[bool, str]:
         """

@@ -3,6 +3,10 @@
 Tests bulk_import_offices_from_csv and bulk_import_parties_from_csv
 using temp CSV files and SQLite in-memory DB.
 
+Policy note: all Wikipedia HTTP requests in this application use wiki_session()
+from src/scraper/wiki_fetch.py, which sets the User-Agent header per Wikimedia
+API:Etiquette policy.
+
 Run: pytest src/db/test_bulk_import.py -v
 """
 

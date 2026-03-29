@@ -7,6 +7,12 @@ Uses FastAPI TestClient with SQLite in-memory DB.
 OPENAI_API_KEY is set to a fake value in the module fixture; individual tests
 that need to test the missing-key path use patch.dict to temporarily remove it.
 
+Policy notes:
+- Rate-limit handling: openai.RateLimitError (HTTP 429) is caught with exponential
+  backoff/retry in src/services/ai_office_builder.py._call_openai.
+- Wikipedia requests: all HTTP requests to Wikipedia use wiki_session() which sets
+  the User-Agent header per Wikimedia API:Etiquette policy.
+
 Run: pytest src/test_router_ai_offices.py -v
 """
 
