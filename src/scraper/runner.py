@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -281,7 +282,7 @@ def _fetch_bio_batch(
     on_success,
     on_error,
     run_cache=None,
-    max_workers: int = 3,
+    max_workers: int | None = None,
 ) -> bool:
     """Fetch biographies for *urls* with up to *max_workers* concurrent HTTP calls.
 
@@ -294,6 +295,9 @@ def _fetch_bio_batch(
 
     Returns True if the run was cancelled, False if all URLs were processed.
     """
+
+    if max_workers is None:
+        max_workers = int(os.environ.get("WIKI_FETCH_WORKERS", "1"))
 
     def _worker(url: str) -> tuple[str, dict | None, str | None]:
         try:
