@@ -15,5 +15,5 @@ jobs:
     with:
       service-name: 'office-holder-cursor'
       service-id: 'srv-d6ubbu24d50c73cpmgkg'
-      zap-target-url: 'https://office-holder-cursor.onrender.com'
+      zap-target-url: 'https://rulersai.buffingchi.com'
     secrets: inherit
