@@ -4,6 +4,8 @@ Tests all HTTP routes: GET /ai-offices, POST /api/ai-offices/batch,
 GET /api/ai-offices/batch/{job_id}/status, POST /api/ai-offices/batch/{job_id}/cancel.
 
 Uses FastAPI TestClient with SQLite in-memory DB.
+OPENAI_API_KEY is set to a fake value in the module fixture; individual tests
+that need to test the missing-key path use patch.dict to temporarily remove it.
 
 Run: pytest src/test_router_ai_offices.py -v
 """
@@ -12,14 +14,13 @@ from __future__ import annotations
 
 import importlib
 import os
-import threading
 import time
+from unittest.mock import patch
 
 import pytest
 from starlette.testclient import TestClient
 
 from src.db.connection import init_db
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -47,19 +48,6 @@ def client(db_path):
     os.environ.pop("OPENAI_API_KEY", None)
 
 
-@pytest.fixture(scope="module")
-def client_no_key(db_path):
-    """Client with no OPENAI_API_KEY set."""
-    os.environ["OFFICE_HOLDER_DB_PATH"] = str(db_path)
-    os.environ.pop("OPENAI_API_KEY", None)
-    import src.main as main_mod
-
-    importlib.reload(main_mod)
-    with TestClient(main_mod.app, raise_server_exceptions=False) as c:
-        yield c
-    os.environ.pop("OFFICE_HOLDER_DB_PATH", None)
-
-
 _VALID_DEFAULTS = {
     "country_id": 1,
     "level_id": 1,
@@ -83,9 +71,11 @@ def test_ai_offices_page_returns_200(client):
     assert "text/html" in resp.headers["content-type"]
 
 
-def test_ai_offices_page_no_key_shows_api_key_unset(client_no_key, db_path):
-    os.environ["OFFICE_HOLDER_DB_PATH"] = str(db_path)
-    resp = client_no_key.get("/ai-offices")
+def test_ai_offices_page_no_key_still_returns_200(client):
+    """GET /ai-offices is always 200; api_key_set flag changes but page still renders."""
+    with patch.dict(os.environ):
+        os.environ.pop("OPENAI_API_KEY", None)
+        resp = client.get("/ai-offices")
     assert resp.status_code == 200
 
 
@@ -95,8 +85,6 @@ def test_ai_offices_page_no_key_shows_api_key_unset(client_no_key, db_path):
 
 
 def test_batch_start_no_api_key_returns_503(client):
-    from unittest.mock import patch
-
     with patch.dict(os.environ):
         os.environ.pop("OPENAI_API_KEY", None)
         resp = client.post("/api/ai-offices/batch", json=_VALID_BODY)
@@ -161,7 +149,6 @@ def test_batch_status_unknown_job_returns_404(client):
 
 
 def test_batch_status_known_job_returns_200(client):
-    # Start a job first
     resp = client.post("/api/ai-offices/batch", json=_VALID_BODY)
     job_id = resp.json()["job_id"]
 
@@ -193,19 +180,18 @@ def test_batch_cancel_unknown_job_returns_404(client):
     assert resp.status_code == 404
 
 
-def test_batch_cancel_running_job_returns_200(client):
+def test_batch_cancel_running_job_returns_200_or_409(client):
     resp = client.post("/api/ai-offices/batch", json=_VALID_BODY)
     job_id = resp.json()["job_id"]
 
-    # Cancel while job may still be "running" in the thread
+    # Either 200 (cancelled running job) or 409 (worker finished before cancel)
     resp2 = client.post(f"/api/ai-offices/batch/{job_id}/cancel")
-    # Either 200 (cancelled) or 409 (already finished quickly)
     assert resp2.status_code in (200, 409)
 
 
 def test_batch_cancel_already_complete_job_returns_409(client):
     """Inject a complete job into the store and verify cancel returns 409."""
-    from src.routers.ai_offices import _batch_job_store, _batch_job_lock
+    from src.routers.ai_offices import _batch_job_lock, _batch_job_store
 
     fake_id = "test-complete-job-cancel-check"
     with _batch_job_lock:

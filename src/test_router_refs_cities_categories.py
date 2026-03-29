@@ -20,7 +20,6 @@ from src.db import office_category as db_office_category
 from src.db import infobox_role_key_filter as db_filter
 from src.db.connection import get_connection, init_db
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

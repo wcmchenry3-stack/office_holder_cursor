@@ -14,7 +14,6 @@ import pytest
 from src.db.connection import get_connection, init_db
 from src.db import scraper_jobs as db_jobs
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -106,9 +105,7 @@ def test_update_job_status(db_path):
     db_jobs.update_job("job-update-1", "complete")
 
     c = get_connection()
-    row = c.execute(
-        "SELECT status FROM scraper_jobs WHERE id = %s", ("job-update-1",)
-    ).fetchone()
+    row = c.execute("SELECT status FROM scraper_jobs WHERE id = %s", ("job-update-1",)).fetchone()
     c.close()
 
     assert row[0] == "complete"
@@ -143,9 +140,7 @@ def test_update_job_cancelled(db_path):
     db_jobs.update_job("job-cancel-1", "cancelled")
 
     c = get_connection()
-    row = c.execute(
-        "SELECT status FROM scraper_jobs WHERE id = %s", ("job-cancel-1",)
-    ).fetchone()
+    row = c.execute("SELECT status FROM scraper_jobs WHERE id = %s", ("job-cancel-1",)).fetchone()
     c.close()
 
     assert row[0] == "cancelled"

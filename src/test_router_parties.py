@@ -16,7 +16,6 @@ from starlette.testclient import TestClient
 from src.db import parties as db_parties
 from src.db.connection import get_connection, init_db
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

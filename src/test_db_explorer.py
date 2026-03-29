@@ -18,7 +18,6 @@ from starlette.testclient import TestClient
 
 from src.db.connection import init_db
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

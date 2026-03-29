@@ -15,7 +15,6 @@ import pytest
 from src.db.connection import get_connection, init_db
 from src.db import infobox_role_key_filter as db_filter
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -203,9 +202,7 @@ def test_office_draft_defaults(helpers):
 
 
 def test_office_draft_term_dates_merged_collapses_end_column(helpers):
-    draft = helpers._office_draft_from_body(
-        {"term_dates_merged": True, "term_start_column": "3"}
-    )
+    draft = helpers._office_draft_from_body({"term_dates_merged": True, "term_start_column": "3"})
     assert draft["term_dates_merged"] is True
     assert draft["term_end_column"] == draft["term_start_column"]
 
