@@ -283,6 +283,7 @@ function _onJobFinished(s) {
 async function _poll(jobId) {
   try {
     const r = await fetch('/api/run/status/' + jobId);
+    if (r.status === 401) throw new Error('Session expired — please reload and log in again');
     const s = await r.json();
     _progressMessage.textContent = s.message || s.phase || 'Running…';
 
