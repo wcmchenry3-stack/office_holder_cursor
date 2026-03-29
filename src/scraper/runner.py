@@ -1384,8 +1384,9 @@ def run_with_db(
     biography = parse_core.Biography(logger, data_cleanup)
     offices_parser = parse_core.Offices(logger, biography, data_cleanup)
 
-    # Full run: purge individuals only; office_terms are replaced per-office after validation
+    # Full run: purge office_terms first (FK constraint), then individuals; terms are re-populated per-office
     if run_mode == "full" and not dry_run and not test_run:
+        db_office_terms.purge_all_office_terms()
         db_individuals.purge_all_individuals()
         existing_individual_wiki_urls: set[str] = set()
     else:
