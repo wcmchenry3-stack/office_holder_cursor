@@ -131,6 +131,8 @@ async def require_login(request: Request, call_next):
     if request.url.path in _PUBLIC_PATHS or request.url.path.startswith("/static"):
         return await call_next(request)
     if not request.session.get("user_email"):
+        if request.url.path.startswith("/api/"):
+            return JSONResponse({"detail": "Not authenticated"}, status_code=401)
         return RedirectResponse("/login")
     return await call_next(request)
 
