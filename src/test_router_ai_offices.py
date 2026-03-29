@@ -38,7 +38,7 @@ def db_path(tmp_path_factory):
 @pytest.fixture(scope="module")
 def client(db_path):
     os.environ["OFFICE_HOLDER_DB_PATH"] = str(db_path)
-    os.environ["OPENAI_API_KEY"] = "sk-test-fake-key-for-testing"
+    os.environ["OPENAI_API_KEY"] = "fake-openai-key-for-tests"
     import src.main as main_mod
 
     importlib.reload(main_mod)
