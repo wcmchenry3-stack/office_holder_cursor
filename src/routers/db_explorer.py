@@ -7,7 +7,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from src.db.connection import get_connection
-from src.routers._deps import templates
+from src.routers._deps import templates, limiter
 
 router = APIRouter()
 
@@ -28,6 +28,7 @@ def _get_table_names() -> list[str]:
 
 
 @router.get("/db", response_class=HTMLResponse, include_in_schema=False)
+@limiter.limit("60/minute")
 async def db_explorer(request: Request):
     tables = _get_table_names()
     return templates.TemplateResponse(
@@ -36,6 +37,7 @@ async def db_explorer(request: Request):
 
 
 @router.post("/db/query", include_in_schema=False)
+@limiter.limit("60/minute")
 async def db_query(request: Request):
     body = await request.json()
     sql: str = (body.get("sql") or "").strip()

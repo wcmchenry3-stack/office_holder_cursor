@@ -301,3 +301,118 @@ def test_malformed_body_does_not_leak_internals(client):
     assert resp.status_code != 500, f"Malformed body caused unhandled 500: {resp.text[:200]}"
     assert "Traceback" not in resp.text
     assert 'File "' not in resp.text
+
+
+# ---------------------------------------------------------------------------
+# H11 — Content-Security-Policy header
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.security
+def test_csp_header_present(client):
+    """Every response must carry a Content-Security-Policy header."""
+    resp = client.get("/run")
+    assert resp.status_code == 200
+    csp = resp.headers.get("content-security-policy", "")
+    assert csp, "Content-Security-Policy header is missing"
+    assert "default-src" in csp, f"CSP must contain a default-src directive, got: {csp!r}"
+
+
+# ---------------------------------------------------------------------------
+# H12 — Rate limit exception handler wired up
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.security
+def test_rate_limit_handler_registered():
+    """The 429 RateLimitExceeded handler must be registered on the app.
+
+    If it is missing, a rate-limit event would fire a 500 instead of 429.
+    """
+    import src.main as main_mod
+    from slowapi.errors import RateLimitExceeded
+
+    assert RateLimitExceeded in main_mod.app.exception_handlers, (
+        "RateLimitExceeded handler not registered on app — rate limiting is non-functional"
+    )
+
+
+# ---------------------------------------------------------------------------
+# H13 — SSRF: non-Wikipedia URLs rejected in AI batch
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.security
+def test_ssrf_non_wikipedia_url_rejected(client):
+    """POST /api/ai-offices/batch must reject non-Wikipedia URLs with 400."""
+    import os
+    from unittest.mock import patch
+    from src.services.orchestrator import reset_ai_builder
+
+    reset_ai_builder()
+    with patch.dict(os.environ, {"OPENAI_API_KEY": "sk-fake-ssrf-test"}):
+        resp = client.post(
+            "/api/ai-offices/batch",
+            json={
+                "urls": ["https://evil.example.com/steal"],
+                "defaults": {"country_id": 1, "level_id": 1, "branch_id": 1},
+            },
+        )
+    assert resp.status_code == 400, (
+        f"Non-Wikipedia URL must be rejected with 400, got {resp.status_code}"
+    )
+    detail = resp.json().get("detail", "")
+    assert "wikipedia" in detail.lower() or "url" in detail.lower(), (
+        f"Error detail should reference Wikipedia URL requirement, got: {detail!r}"
+    )
+    reset_ai_builder()
+
+
+# ---------------------------------------------------------------------------
+# H14 — Batch URL count limit
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.security
+def test_ai_batch_too_many_urls_rejected(client):
+    """POST /api/ai-offices/batch with more than 20 URLs must return 400."""
+    import os
+    from unittest.mock import patch
+    from src.services.orchestrator import reset_ai_builder
+
+    reset_ai_builder()
+    urls = [f"https://en.wikipedia.org/wiki/Page_{i}" for i in range(21)]
+    with patch.dict(os.environ, {"OPENAI_API_KEY": "sk-fake-batch-count-test"}):
+        resp = client.post(
+            "/api/ai-offices/batch",
+            json={
+                "urls": urls,
+                "defaults": {"country_id": 1, "level_id": 1, "branch_id": 1},
+            },
+        )
+    assert resp.status_code == 400, (
+        f"Batch of 21 URLs must be rejected with 400, got {resp.status_code}"
+    )
+    reset_ai_builder()
+
+
+# ---------------------------------------------------------------------------
+# H15 — Request body size limit
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.security
+def test_request_body_size_limit(client):
+    """A request body larger than 1 MB must be rejected with 413."""
+    large = b"x" * (1_048_576 + 1)  # 1 MB + 1 byte
+    resp = client.post(
+        "/api/ai-offices/batch",
+        content=large,
+        headers={
+            "Content-Type": "application/json",
+            "Content-Length": str(len(large)),
+        },
+    )
+    assert resp.status_code == 413, (
+        f"Body > 1 MB must return 413 Content Too Large, got {resp.status_code}"
+    )

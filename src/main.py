@@ -30,6 +30,9 @@ from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, Resp
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 from authlib.integrations.starlette_client import OAuth
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 from src.db.connection import init_db, get_connection
 from src.db import offices as db_offices
@@ -80,7 +83,7 @@ from src.routers import offices as offices_router
 from src.routers import ai_offices as ai_offices_router
 from src.routers import db_explorer as db_explorer_router
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from src.routers._deps import templates
+from src.routers._deps import templates, limiter
 from src.scheduled_tasks import is_daily_delta_enabled, run_daily_delta
 
 
@@ -105,6 +108,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Office Holder", lifespan=lifespan)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Google OAuth setup
 _oauth = OAuth()
@@ -143,11 +148,38 @@ async def add_security_headers(request: Request, call_next):
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline'; img-src 'self' data:",
+    )
+    response.headers.setdefault("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
+    if request.url.scheme == "https":
+        response.headers.setdefault(
+            "Strict-Transport-Security", "max-age=31536000; includeSubDomains"
+        )
     return response
 
 
-# SessionMiddleware must be added AFTER require_login so it is outermost and
-# populates request.session before require_login runs.
+_MAX_BODY_SIZE = 1_048_576  # 1 MB
+
+
+@app.middleware("http")
+async def limit_request_body_size(request: Request, call_next):
+    content_length = request.headers.get("content-length")
+    if content_length and int(content_length) > _MAX_BODY_SIZE:
+        return JSONResponse(
+            {"detail": "Request body too large (max 1 MB)"}, status_code=413
+        )
+    return await call_next(request)
+
+
+# Middleware ordering (Starlette LIFO — last add_middleware call = outermost = runs first):
+#   SessionMiddleware (outermost) → populates request.session first
+#   SlowAPIMiddleware (inner) → rate-limit key function reads session email after session is set
+app.add_middleware(SlowAPIMiddleware)
+# SessionMiddleware must be added AFTER SlowAPIMiddleware (above) so it is outermost and
+# populates request.session before the rate-limit key function runs.
 app.add_middleware(
     SessionMiddleware, secret_key=os.environ.get("SECRET_KEY", "dev-only-insecure-key")
 )
@@ -159,6 +191,7 @@ async def login_page(request: Request):
 
 
 @app.get("/auth/google")
+@limiter.limit("10/minute")
 async def auth_google(request: Request):
     redirect_uri = (
         (_APP_BASE_URL.rstrip("/") + "/auth/google/callback")
@@ -169,6 +202,7 @@ async def auth_google(request: Request):
 
 
 @app.get("/auth/google/callback", name="auth_google_callback")
+@limiter.limit("10/minute")
 async def auth_google_callback(request: Request):
     try:
         token = await _oauth.google.authorize_access_token(request)

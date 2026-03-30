@@ -12,8 +12,8 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from src.db import refs as db_refs
-from src.routers._deps import templates
-from src.services.ai_office_builder import AIOfficeBuilder
+from src.routers._deps import templates, limiter
+from src.services.orchestrator import validate_and_normalize_wiki_url, get_ai_builder, reset_ai_builder
 
 logger = logging.getLogger(__name__)
 
@@ -52,15 +52,14 @@ def _batch_job_worker(job_id: str, urls: list[str], batch_defaults: dict) -> Non
         with _batch_job_lock:
             return _batch_job_store.get(job_id, {}).get("cancelled", False)
 
-    api_key = os.environ.get("OPENAI_API_KEY", "")
-    if not api_key:
+    try:
+        builder = get_ai_builder()
+    except RuntimeError as e:
         with _batch_job_lock:
             if job_id in _batch_job_store:
                 _batch_job_store[job_id]["status"] = "failed"
-                _batch_job_store[job_id]["error"] = "OPENAI_API_KEY not configured"
+                _batch_job_store[job_id]["error"] = str(e)
         return
-
-    builder = AIOfficeBuilder(api_key=api_key)
 
     for i, url in enumerate(urls):
         if cancel_check():
@@ -145,6 +144,7 @@ async def ai_offices_page(request: Request):
 
 
 @router.post("/api/ai-offices/batch")
+@limiter.limit("10/minute")
 async def api_ai_offices_batch_start(request: Request):
     """
     Start a batch AI office creation job.
@@ -163,7 +163,9 @@ async def api_ai_offices_batch_start(request: Request):
     """
     _evict_old_batch_jobs()
 
-    if not os.environ.get("OPENAI_API_KEY", ""):
+    try:
+        get_ai_builder()  # validate key is configured before creating the job
+    except RuntimeError:
         raise HTTPException(status_code=503, detail="OPENAI_API_KEY not configured")
 
     body = await request.json()
@@ -174,6 +176,26 @@ async def api_ai_offices_batch_start(request: Request):
     urls = [u.strip() for u in urls_raw if (u or "").strip()]
     if not urls:
         raise HTTPException(status_code=400, detail="At least one URL is required")
+
+    # Enforce URL count and SSRF limits
+    _MAX_BATCH_URLS = 20
+    if len(urls) > _MAX_BATCH_URLS:
+        raise HTTPException(
+            status_code=400, detail=f"Batch limited to {_MAX_BATCH_URLS} URLs per request"
+        )
+    _MAX_URL_LEN = 500
+    validated_urls = []
+    for u in urls:
+        if len(u) > _MAX_URL_LEN:
+            raise HTTPException(
+                status_code=400,
+                detail=f"URL exceeds maximum length of {_MAX_URL_LEN} characters",
+            )
+        try:
+            validated_urls.append(validate_and_normalize_wiki_url(u))
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+    urls = validated_urls
     if not int(defaults.get("country_id") or 0):
         raise HTTPException(status_code=400, detail="defaults.country_id is required")
     if not int(defaults.get("level_id") or 0):

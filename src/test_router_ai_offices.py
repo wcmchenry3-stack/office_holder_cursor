@@ -28,6 +28,7 @@ import pytest
 from starlette.testclient import TestClient
 
 from src.db.connection import init_db
+from src.services.orchestrator import reset_ai_builder
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -53,6 +54,22 @@ def client(db_path):
         yield c
     os.environ.pop("OFFICE_HOLDER_DB_PATH", None)
     os.environ.pop("OPENAI_API_KEY", None)
+
+
+@pytest.fixture(autouse=True)
+def reset_rate_limit_storage():
+    """Reset in-memory rate limit counters before each test.
+
+    Prevents false 429s when multiple tests in this module hit the same
+    rate-limited endpoint (the module-scoped client shares one in-memory
+    counter across all tests).
+    """
+    import src.main as main_mod
+
+    storage = getattr(getattr(main_mod.app.state, "limiter", None), "_storage", None)
+    if storage and hasattr(storage, "reset"):
+        storage.reset()
+    yield
 
 
 _VALID_DEFAULTS = {
@@ -92,10 +109,12 @@ def test_ai_offices_page_no_key_still_returns_200(client):
 
 
 def test_batch_start_no_api_key_returns_503(client):
+    reset_ai_builder()  # clear cached singleton so missing key is re-evaluated
     with patch.dict(os.environ):
         os.environ.pop("OPENAI_API_KEY", None)
         resp = client.post("/api/ai-offices/batch", json=_VALID_BODY)
     assert resp.status_code == 503
+    reset_ai_builder()  # restore so subsequent tests get a fresh builder
 
 
 def test_batch_start_empty_urls_returns_400(client):
@@ -134,6 +153,27 @@ def test_batch_start_missing_branch_id_returns_400(client):
         "defaults": {"country_id": 1, "level_id": 1, "branch_id": 0},
     }
     resp = client.post("/api/ai-offices/batch", json=body)
+    assert resp.status_code == 400
+
+
+def test_batch_start_ssrf_non_wikipedia_url_returns_400(client):
+    body = {"urls": ["https://internal.corp/secrets"], "defaults": _VALID_DEFAULTS}
+    resp = client.post("/api/ai-offices/batch", json=body)
+    assert resp.status_code == 400
+    assert "wikipedia" in resp.json().get("detail", "").lower()
+
+
+def test_batch_start_too_many_urls_returns_400(client):
+    urls = [f"https://en.wikipedia.org/wiki/Page_{i}" for i in range(21)]
+    resp = client.post("/api/ai-offices/batch", json={"urls": urls, "defaults": _VALID_DEFAULTS})
+    assert resp.status_code == 400
+
+
+def test_batch_start_url_too_long_returns_400(client):
+    long_url = "https://en.wikipedia.org/wiki/" + "A" * 480
+    resp = client.post(
+        "/api/ai-offices/batch", json={"urls": [long_url], "defaults": _VALID_DEFAULTS}
+    )
     assert resp.status_code == 400
 
 
