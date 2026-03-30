@@ -9,7 +9,7 @@ from pathlib import Path
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
-from src.routers._deps import templates
+from src.routers._deps import templates, limiter
 from src.routers._helpers import _parse_optional_int
 from src.db import offices as db_offices
 from src.db import individuals as db_individuals
@@ -165,7 +165,9 @@ def _run_job_worker(
 
 
 @router.post("/api/run")
+@limiter.limit("20/minute")
 async def api_run(
+    request: Request,
     run_mode: str = Form("delta"),
     individual_ref: str = Form(""),
     office_category_id: str = Form(""),

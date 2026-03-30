@@ -12,7 +12,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
-from src.routers._deps import templates
+from src.routers._deps import templates, limiter
 from src.routers._helpers import (
     _validate_infobox_role_key_filter_id,
     _resolve_infobox_role_key_from_filter_id,
@@ -407,6 +407,7 @@ async def api_preview(office_id: int):
 
 
 @router.post("/api/preview")
+@limiter.limit("30/minute")
 async def api_preview_draft(request: Request):
     """Preview using draft office config (unsaved form). Body: same fields as office form (country_id, url, table_no, etc.).
     Optional: max_rows (default 10); use max_rows=0 or show_all=true to return all rows.

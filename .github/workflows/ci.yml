@@ -53,7 +53,7 @@ jobs:
         run: python scripts/validate_parser_fixtures.py
 
       - name: Run tests
-        run: pytest --tb=short
+        run: pytest --tb=short -v
 
   openai-policy:
     uses: wcmchenry3-stack/.github/.github/workflows/called-openai-policy.yml@main

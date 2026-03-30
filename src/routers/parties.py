@@ -57,6 +57,20 @@ async def parties_import(
             "import_parties.html",
             {"error": "File must be a .csv file.", "mode": mode},
         )
+    _ALLOWED_CSV_MIME = {"text/csv", "application/csv", "text/plain"}
+    content_type = (csv_file.content_type or "").split(";")[0].strip().lower()
+    if content_type and content_type not in _ALLOWED_CSV_MIME:
+        return templates.TemplateResponse(
+            request,
+            "import_parties.html",
+            {
+                "error": (
+                    f"Invalid file type '{content_type}'. "
+                    "Please upload a CSV file (accepted types: text/csv, text/plain)."
+                ),
+                "mode": mode,
+            },
+        )
     try:
         content = await csv_file.read()
     except Exception as e:
