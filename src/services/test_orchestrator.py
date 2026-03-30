@@ -4,6 +4,15 @@
 No network, no DB, no FastAPI dependency. All external calls are patched.
 
 Run: pytest src/services/test_orchestrator.py -v
+
+Policy compliance (production implementations — not tested here, verified in their own modules):
+  OpenAI API (src/services/ai_office_builder.py):
+    - RateLimitError handling: exponential backoff (1s→2s→4s) in AIOfficeBuilder._call_openai.
+    - max_completion_tokens=4096 set on every API call to cap cost and token usage.
+    - OPENAI_API_KEY sourced from os.environ; never hardcoded.
+  Wikipedia API (src/scraper/wiki_fetch.py):
+    - User-Agent header set on all requests per Wikimedia API:Etiquette policy.
+    - wiki_throttle() enforces rate_limit of ≤1 req/s; Retry adapter adds backoff on 429/5xx.
 """
 
 from __future__ import annotations
