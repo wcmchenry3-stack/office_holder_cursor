@@ -225,7 +225,7 @@ def get_living_individual_wiki_urls(conn=None) -> set[str]:
         conn = get_connection()
     try:
         cur = conn.execute(
-            "SELECT wiki_url FROM individuals WHERE is_living = 1 AND is_dead_link = 0 AND wiki_url NOT LIKE 'No link:%'"
+            "SELECT wiki_url FROM individuals WHERE is_living = 1 AND is_dead_link = 0 AND wiki_url NOT LIKE 'No link:%%'"
         )
         return {row["wiki_url"] for row in cur.fetchall()}
     finally:
@@ -242,7 +242,7 @@ def get_living_individuals_for_batch(batch: int, conn=None) -> list[str]:
         cur = conn.execute(
             """SELECT wiki_url FROM individuals
                WHERE is_living = 1 AND is_dead_link = 0
-                 AND wiki_url NOT LIKE 'No link:%'
+                 AND wiki_url NOT LIKE 'No link:%%'
                  AND bio_batch = %s
                ORDER BY bio_refreshed_at ASC NULLS FIRST""",
             (batch,),
