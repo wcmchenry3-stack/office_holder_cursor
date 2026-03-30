@@ -5,6 +5,7 @@ No network, no DB, no FastAPI dependency. All external calls are patched.
 
 Run: pytest src/services/test_orchestrator.py -v
 """
+
 from __future__ import annotations
 
 import os
@@ -17,7 +18,6 @@ from src.services.orchestrator import (
     reset_ai_builder,
     validate_and_normalize_wiki_url,
 )
-
 
 # ---------------------------------------------------------------------------
 # validate_and_normalize_wiki_url

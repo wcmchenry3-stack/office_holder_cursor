@@ -332,9 +332,9 @@ def test_rate_limit_handler_registered():
     import src.main as main_mod
     from slowapi.errors import RateLimitExceeded
 
-    assert RateLimitExceeded in main_mod.app.exception_handlers, (
-        "RateLimitExceeded handler not registered on app — rate limiting is non-functional"
-    )
+    assert (
+        RateLimitExceeded in main_mod.app.exception_handlers
+    ), "RateLimitExceeded handler not registered on app — rate limiting is non-functional"
 
 
 # ---------------------------------------------------------------------------
@@ -358,13 +358,13 @@ def test_ssrf_non_wikipedia_url_rejected(client):
                 "defaults": {"country_id": 1, "level_id": 1, "branch_id": 1},
             },
         )
-    assert resp.status_code == 400, (
-        f"Non-Wikipedia URL must be rejected with 400, got {resp.status_code}"
-    )
+    assert (
+        resp.status_code == 400
+    ), f"Non-Wikipedia URL must be rejected with 400, got {resp.status_code}"
     detail = resp.json().get("detail", "")
-    assert "wikipedia" in detail.lower() or "url" in detail.lower(), (
-        f"Error detail should reference Wikipedia URL requirement, got: {detail!r}"
-    )
+    assert (
+        "wikipedia" in detail.lower() or "url" in detail.lower()
+    ), f"Error detail should reference Wikipedia URL requirement, got: {detail!r}"
     reset_ai_builder()
 
 
@@ -390,9 +390,9 @@ def test_ai_batch_too_many_urls_rejected(client):
                 "defaults": {"country_id": 1, "level_id": 1, "branch_id": 1},
             },
         )
-    assert resp.status_code == 400, (
-        f"Batch of 21 URLs must be rejected with 400, got {resp.status_code}"
-    )
+    assert (
+        resp.status_code == 400
+    ), f"Batch of 21 URLs must be rejected with 400, got {resp.status_code}"
     reset_ai_builder()
 
 
@@ -413,6 +413,6 @@ def test_request_body_size_limit(client):
             "Content-Length": str(len(large)),
         },
     )
-    assert resp.status_code == 413, (
-        f"Body > 1 MB must return 413 Content Too Large, got {resp.status_code}"
-    )
+    assert (
+        resp.status_code == 413
+    ), f"Body > 1 MB must return 413 Content Too Large, got {resp.status_code}"

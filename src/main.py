@@ -168,9 +168,7 @@ _MAX_BODY_SIZE = 1_048_576  # 1 MB
 async def limit_request_body_size(request: Request, call_next):
     content_length = request.headers.get("content-length")
     if content_length and int(content_length) > _MAX_BODY_SIZE:
-        return JSONResponse(
-            {"detail": "Request body too large (max 1 MB)"}, status_code=413
-        )
+        return JSONResponse({"detail": "Request body too large (max 1 MB)"}, status_code=413)
     return await call_next(request)
 
 

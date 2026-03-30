@@ -8,6 +8,7 @@ body size, security headers).
 
 Run: pytest tests/test_e2e_security.py -v
 """
+
 from __future__ import annotations
 
 import importlib
@@ -15,7 +16,6 @@ import os
 
 import pytest
 from starlette.testclient import TestClient
-
 
 # ---------------------------------------------------------------------------
 # Shared fixture: full app stack
@@ -98,9 +98,9 @@ def test_rate_limit_middleware_is_active(app_client):
 
     middleware_classes = [type(m) for m in main_mod.app.middleware_stack.__class__.__mro__]
     # Verify via app state (set in main.py: app.state.limiter = limiter)
-    assert hasattr(main_mod.app.state, "limiter"), (
-        "app.state.limiter not set — SlowAPIMiddleware may not be correctly wired"
-    )
+    assert hasattr(
+        main_mod.app.state, "limiter"
+    ), "app.state.limiter not set — SlowAPIMiddleware may not be correctly wired"
 
 
 # ---------------------------------------------------------------------------
@@ -120,9 +120,9 @@ def test_ssrf_non_wikipedia_url_blocked_e2e(app_client):
             "defaults": {"country_id": 1, "level_id": 1, "branch_id": 1},
         },
     )
-    assert resp.status_code == 400, (
-        f"SSRF to AWS metadata endpoint was not blocked: got {resp.status_code}"
-    )
+    assert (
+        resp.status_code == 400
+    ), f"SSRF to AWS metadata endpoint was not blocked: got {resp.status_code}"
 
 
 def test_ssrf_localhost_url_blocked_e2e(app_client):
@@ -137,9 +137,7 @@ def test_ssrf_localhost_url_blocked_e2e(app_client):
             "defaults": {"country_id": 1, "level_id": 1, "branch_id": 1},
         },
     )
-    assert resp.status_code == 400, (
-        f"SSRF to localhost was not blocked: got {resp.status_code}"
-    )
+    assert resp.status_code == 400, f"SSRF to localhost was not blocked: got {resp.status_code}"
 
 
 def test_ssrf_arbitrary_https_domain_blocked_e2e(app_client):
@@ -173,9 +171,9 @@ def test_body_size_limit_returns_413(app_client):
             "Content-Length": str(len(large)),
         },
     )
-    assert resp.status_code == 413, (
-        f"Expected 413 Content Too Large for oversized body, got {resp.status_code}"
-    )
+    assert (
+        resp.status_code == 413
+    ), f"Expected 413 Content Too Large for oversized body, got {resp.status_code}"
 
 
 # ---------------------------------------------------------------------------
@@ -210,11 +208,11 @@ def test_api_returns_json_401_when_auth_enabled():
     try:
         with TestClient(main_mod.app, raise_server_exceptions=False) as c:
             resp = c.get("/api/run/active", follow_redirects=False)
-        assert resp.status_code == 401, (
-            f"API route returned {resp.status_code} instead of 401 when auth is enabled"
-        )
-        assert resp.headers.get("content-type", "").startswith("application/json"), (
-            "API 401 response must be JSON, not HTML"
-        )
+        assert (
+            resp.status_code == 401
+        ), f"API route returned {resp.status_code} instead of 401 when auth is enabled"
+        assert resp.headers.get("content-type", "").startswith(
+            "application/json"
+        ), "API 401 response must be JSON, not HTML"
     finally:
         main_mod._AUTH_ENABLED = original

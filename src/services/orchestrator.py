@@ -16,6 +16,21 @@ Provides:
 
 Design: module-level functions with a lazy singleton protected by a threading.Lock,
 matching the wiki_session() pattern in src/scraper/wiki_fetch.py.
+
+--- Policy compliance ---
+
+OpenAI API (src/services/ai_office_builder.py):
+  - Rate limit / RateLimitError handling: exponential backoff in AIOfficeBuilder._call_openai
+    (3 retries, backoff 1s → 2s → 4s). Router adds additional 30 s sleep on HTTP 429.
+  - Token cap: max_completion_tokens=4096 set on every API call to prevent cost spikes.
+  - OPENAI_API_KEY is never hardcoded; always read via os.environ at runtime.
+  See: https://platform.openai.com/docs/guides/rate-limits
+
+Wikipedia API (src/scraper/wiki_fetch.py):
+  - User-Agent header: HTTP_USER_AGENT set per Wikimedia API:Etiquette policy on every request.
+  - Rate limiting: wiki_throttle() enforces ≤1 req/s; Retry adapter adds backoff on 429/5xx.
+  - All requests go to /w/rest.php or /w/api.php (official Wikimedia REST API, not scraping).
+  See: https://www.mediawiki.org/wiki/API:Etiquette
 """
 
 from __future__ import annotations

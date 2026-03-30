@@ -13,7 +13,11 @@ from fastapi.responses import HTMLResponse, JSONResponse
 
 from src.db import refs as db_refs
 from src.routers._deps import templates, limiter
-from src.services.orchestrator import validate_and_normalize_wiki_url, get_ai_builder, reset_ai_builder
+from src.services.orchestrator import (
+    validate_and_normalize_wiki_url,
+    get_ai_builder,
+    reset_ai_builder,
+)
 
 logger = logging.getLogger(__name__)
 
