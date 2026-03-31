@@ -1484,7 +1484,17 @@ def create_office(data: dict[str, Any], conn: Any | None = None) -> int:
         _city_id = int(row_data.get("city_id") or 0) or None
         cur = conn.execute(
             """INSERT INTO source_pages (country_id, state_id, city_id, level_id, branch_id, url, notes, enabled, created_at, updated_at)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW()) RETURNING id""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
+               ON CONFLICT (url) DO UPDATE SET
+                   country_id = EXCLUDED.country_id,
+                   state_id = EXCLUDED.state_id,
+                   city_id = EXCLUDED.city_id,
+                   level_id = EXCLUDED.level_id,
+                   branch_id = EXCLUDED.branch_id,
+                   notes = EXCLUDED.notes,
+                   enabled = EXCLUDED.enabled,
+                   updated_at = NOW()
+               RETURNING id""",
             (
                 country_id,
                 int(row_data.get("state_id") or 0) or None,

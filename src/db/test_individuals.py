@@ -245,3 +245,38 @@ def test_mark_bio_refreshed_stamps_bio_refreshed_at(tmp_db):
 
     row_after = db_individuals.get_individual_by_wiki_url("/wiki/RefreshMe", conn=tmp_db)
     assert row_after["bio_refreshed_at"] is not None
+
+
+# ---------------------------------------------------------------------------
+# Duplicate / race-condition protection
+# ---------------------------------------------------------------------------
+
+
+def test_upsert_individual_duplicate_wiki_url_does_not_create_second_row(tmp_db):
+    """Calling upsert_individual twice with the same wiki_url must not produce duplicate rows."""
+    db_individuals.upsert_individual(
+        {"wiki_url": "/wiki/DupPerson", "full_name": "First Insert"},
+        conn=tmp_db,
+    )
+    db_individuals.upsert_individual(
+        {"wiki_url": "/wiki/DupPerson", "full_name": "Second Insert"},
+        conn=tmp_db,
+    )
+    cur = tmp_db.execute(
+        "SELECT COUNT(*) FROM individuals WHERE wiki_url = ?", ("/wiki/DupPerson",)
+    )
+    assert cur.fetchone()[0] == 1, "individuals must not have duplicate wiki_url rows"
+
+
+def test_upsert_individual_db_unique_constraint_enforced(tmp_db):
+    """A raw INSERT of a duplicate wiki_url raises an integrity error — the constraint exists at DB level."""
+    import sqlite3
+
+    db_individuals.upsert_individual(
+        {"wiki_url": "/wiki/ConstraintCheck", "full_name": "Original"},
+        conn=tmp_db,
+    )
+    with pytest.raises(sqlite3.IntegrityError):
+        tmp_db.execute(
+            "INSERT INTO individuals (wiki_url) VALUES (?)", ("/wiki/ConstraintCheck",)
+        )

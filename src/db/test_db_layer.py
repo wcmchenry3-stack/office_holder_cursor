@@ -150,3 +150,77 @@ def test_bulk_import_offices_from_csv_valid_and_invalid_rows(tmp_db, tmp_path):
     imported, errors = bulk_import_offices_from_csv(csv_file, conn=tmp_db)
     assert imported == 1
     assert errors == 2
+
+
+# ---------------------------------------------------------------------------
+# Source pages — duplicate URL protection
+# ---------------------------------------------------------------------------
+
+
+def _make_office_data(url: str) -> dict:
+    return {
+        "country_id": 1,  # United States of America (seeded)
+        "state_id": None,
+        "city_id": None,
+        "level_id": None,
+        "branch_id": None,
+        "department": "",
+        "name": "Dup Test Office",
+        "enabled": True,
+        "notes": "original",
+        "url": url,
+        "table_configs": [
+            {
+                "name": "",
+                "table_no": 1,
+                "table_rows": 1,
+                "link_column": 1,
+                "party_column": 0,
+                "term_start_column": 2,
+                "term_end_column": 3,
+                "district_column": 0,
+                "enabled": 1,
+            }
+        ],
+    }
+
+
+def test_create_office_duplicate_url_upserts_source_page(tmp_db):
+    """Inserting a second office with the same URL updates the source_page row, not creates a duplicate."""
+    url = "https://en.wikipedia.org/wiki/Dup_Source_Page"
+    db_offices.create_office(_make_office_data(url), conn=tmp_db)
+
+    data2 = _make_office_data(url)
+    data2["notes"] = "updated"
+    db_offices.create_office(data2, conn=tmp_db)
+
+    cur = tmp_db.execute("SELECT COUNT(*) FROM source_pages WHERE url = ?", (url,))
+    assert cur.fetchone()[0] == 1, "source_pages must not have duplicate URL rows"
+
+
+def test_create_office_duplicate_url_updates_source_page_fields(tmp_db):
+    """Source page fields (notes) are overwritten on a duplicate-URL insert."""
+    url = "https://en.wikipedia.org/wiki/Dup_Source_Page_Fields"
+    db_offices.create_office(_make_office_data(url), conn=tmp_db)
+
+    data2 = _make_office_data(url)
+    data2["notes"] = "updated notes"
+    db_offices.create_office(data2, conn=tmp_db)
+
+    cur = tmp_db.execute("SELECT notes FROM source_pages WHERE url = ?", (url,))
+    assert cur.fetchone()["notes"] == "updated notes"
+
+
+def test_create_office_duplicate_url_adds_new_office_details(tmp_db):
+    """A second create_office with the same URL adds a new office_details child under the same source_page."""
+    url = "https://en.wikipedia.org/wiki/Dup_Source_Page_Details"
+    first_od = db_offices.create_office(_make_office_data(url), conn=tmp_db)
+    second_od = db_offices.create_office(_make_office_data(url), conn=tmp_db)
+
+    assert first_od != second_od, "Each create_office call should produce a distinct office_details_id"
+
+    cur = tmp_db.execute(
+        "SELECT source_page_id FROM office_details WHERE id IN (?, ?)", (first_od, second_od)
+    )
+    page_ids = {row["source_page_id"] for row in cur.fetchall()}
+    assert len(page_ids) == 1, "Both office_details rows should share the same source_page"
