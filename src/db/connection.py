@@ -307,6 +307,12 @@ def _run_pg_migrations(conn) -> None:
         "ALTER TABLE office_terms DROP CONSTRAINT IF EXISTS office_terms_office_id_fkey",
     )
 
+    # source_pages.url must be unique — prevent duplicate pages from AI-driven inserts.
+    _apply(
+        "pg_source_pages_url_unique",
+        "ALTER TABLE source_pages ADD CONSTRAINT source_pages_url_key UNIQUE (url)",
+    )
+
 
 def _init_sqlite(path: Path | None = None) -> None:
     """SQLite init for tests — applies the final schema directly (no migrations needed)."""

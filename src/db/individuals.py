@@ -3,7 +3,7 @@
 from datetime import date
 from typing import Any
 
-from .connection import get_connection, is_postgres
+from .connection import get_connection, is_postgres, _DB_UNIQUE_ERRORS
 from .utils import _row_to_dict
 from . import office_terms as db_office_terms
 
@@ -98,29 +98,59 @@ def upsert_individual(data: dict[str, Any], conn=None) -> int:
             if own_conn:
                 conn.commit()
             return row["id"]
-        cur = conn.execute(
-            """INSERT INTO individuals (wiki_url, page_path, full_name, birth_date, death_date, birth_date_imprecise, death_date_imprecise, birth_place, death_place, is_dead_link)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
-            (
-                wiki_url,
-                data.get("page_path"),
-                data.get("full_name"),
-                data.get("birth_date"),
-                data.get("death_date"),
-                bd_imprecise,
-                dd_imprecise,
-                data.get("birth_place"),
-                data.get("death_place"),
-                is_dead_link,
-            ),
-        )
-        ind_id = cur.fetchone()["id"]
-        conn.execute("UPDATE individuals SET bio_batch = id %% 7 WHERE id = %s", (ind_id,))
-        # New individuals start as living by default; recompute may downgrade to not living
-        _recompute_is_living_for_individual(ind_id, conn)
-        if own_conn:
-            conn.commit()
-        return ind_id
+        try:
+            cur = conn.execute(
+                """INSERT INTO individuals (wiki_url, page_path, full_name, birth_date, death_date, birth_date_imprecise, death_date_imprecise, birth_place, death_place, is_dead_link)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+                (
+                    wiki_url,
+                    data.get("page_path"),
+                    data.get("full_name"),
+                    data.get("birth_date"),
+                    data.get("death_date"),
+                    bd_imprecise,
+                    dd_imprecise,
+                    data.get("birth_place"),
+                    data.get("death_place"),
+                    is_dead_link,
+                ),
+            )
+            ind_id = cur.fetchone()["id"]
+            conn.execute("UPDATE individuals SET bio_batch = id %% 7 WHERE id = %s", (ind_id,))
+            # New individuals start as living by default; recompute may downgrade to not living
+            _recompute_is_living_for_individual(ind_id, conn)
+            if own_conn:
+                conn.commit()
+            return ind_id
+        except _DB_UNIQUE_ERRORS:
+            # Race condition: another insert beat us — fall back to UPDATE path
+            cur = conn.execute("SELECT id FROM individuals WHERE wiki_url = %s", (wiki_url,))
+            row = cur.fetchone()
+            if row is None:
+                raise
+            conn.execute(
+                """UPDATE individuals SET
+                    page_path=%s, full_name=%s, birth_date=%s, death_date=%s,
+                    birth_date_imprecise=%s, death_date_imprecise=%s,
+                    birth_place=%s, death_place=%s, is_dead_link=%s, updated_at=NOW()
+                WHERE id=%s""",
+                (
+                    data.get("page_path"),
+                    data.get("full_name"),
+                    data.get("birth_date"),
+                    data.get("death_date"),
+                    bd_imprecise,
+                    dd_imprecise,
+                    data.get("birth_place"),
+                    data.get("death_place"),
+                    is_dead_link,
+                    row["id"],
+                ),
+            )
+            _recompute_is_living_for_individual(row["id"], conn)
+            if own_conn:
+                conn.commit()
+            return row["id"]
     finally:
         if own_conn:
             conn.close()
