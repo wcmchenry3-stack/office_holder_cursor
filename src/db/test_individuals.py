@@ -4,8 +4,9 @@ All tests use the `tmp_db` fixture (fully initialised, seeded SQLite DB).
 No network access, no HTTP.
 
 Wikipedia URLs below are test-fixture values only — no real HTTP requests are
-made. Live scraper calls always include a descriptive User-Agent header per
-Wikimedia API etiquette (see src/scraper/ for user_agent configuration).
+made. Live scraper calls always include a descriptive User-Agent header and
+respect rate_limit / retry / backoff policies per Wikimedia API etiquette
+(see src/scraper/ for the actual request configuration).
 
 Run: pytest src/db/test_individuals.py -v
 """
