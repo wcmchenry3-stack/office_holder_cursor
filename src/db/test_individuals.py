@@ -3,6 +3,10 @@
 All tests use the `tmp_db` fixture (fully initialised, seeded SQLite DB).
 No network access, no HTTP.
 
+Wikipedia URLs below are test-fixture values only — no real HTTP requests are
+made. Live scraper calls always include a descriptive User-Agent header per
+Wikimedia API etiquette (see src/scraper/ for user_agent configuration).
+
 Run: pytest src/db/test_individuals.py -v
 """
 
@@ -277,6 +281,4 @@ def test_upsert_individual_db_unique_constraint_enforced(tmp_db):
         conn=tmp_db,
     )
     with pytest.raises(sqlite3.IntegrityError):
-        tmp_db.execute(
-            "INSERT INTO individuals (wiki_url) VALUES (?)", ("/wiki/ConstraintCheck",)
-        )
+        tmp_db.execute("INSERT INTO individuals (wiki_url) VALUES (?)", ("/wiki/ConstraintCheck",))

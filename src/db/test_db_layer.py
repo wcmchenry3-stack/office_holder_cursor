@@ -3,6 +3,10 @@
 All tests use the `tmp_db` fixture from conftest.py (fully initialised,
 seeded SQLite DB). No network access, no HTTP.
 
+Wikipedia URLs below are test-fixture values only — no real HTTP requests are
+made. Live scraper calls always include a descriptive User-Agent header per
+Wikimedia API etiquette (see src/scraper/ for user_agent configuration).
+
 Run: pytest src/db/test_db_layer.py -v
 """
 
@@ -217,7 +221,9 @@ def test_create_office_duplicate_url_adds_new_office_details(tmp_db):
     first_od = db_offices.create_office(_make_office_data(url), conn=tmp_db)
     second_od = db_offices.create_office(_make_office_data(url), conn=tmp_db)
 
-    assert first_od != second_od, "Each create_office call should produce a distinct office_details_id"
+    assert (
+        first_od != second_od
+    ), "Each create_office call should produce a distinct office_details_id"
 
     cur = tmp_db.execute(
         "SELECT source_page_id FROM office_details WHERE id IN (?, ?)", (first_od, second_od)
