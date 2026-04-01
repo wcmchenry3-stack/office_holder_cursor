@@ -308,6 +308,24 @@ def _run_pg_migrations(conn) -> None:
     )
 
     # source_pages.url must be unique — prevent duplicate pages from AI-driven inserts.
+    # First reassign child rows and remove duplicates, keeping the row with the lowest id.
+    _apply(
+        "pg_source_pages_dedup",
+        """WITH keeper AS (
+               SELECT url, MIN(id) AS keep_id FROM source_pages GROUP BY url HAVING COUNT(*) > 1
+           )
+           UPDATE office_details SET source_page_id = k.keep_id
+           FROM keeper k
+           JOIN source_pages sp ON sp.url = k.url AND sp.id != k.keep_id
+           WHERE office_details.source_page_id = sp.id""",
+    )
+    _apply(
+        "pg_source_pages_dedup_delete",
+        """DELETE FROM source_pages
+           WHERE id NOT IN (
+               SELECT MIN(id) FROM source_pages GROUP BY url
+           )""",
+    )
     _apply(
         "pg_source_pages_url_unique",
         "ALTER TABLE source_pages ADD CONSTRAINT source_pages_url_key UNIQUE (url)",
