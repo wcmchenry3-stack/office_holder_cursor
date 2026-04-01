@@ -175,8 +175,9 @@ def _emit_parse_failure(
     )
     try:
         reporter.collect(failure)
-    except Exception:
-        pass  # Reporter must never crash the parser
+    except Exception as _collect_err:
+        logger.debug("_emit_parse_failure: reporter.collect() failed: %s", _collect_err)
+        # Silenced — reporter must never crash the parser
 
 
 class DataCleanup:
