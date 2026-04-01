@@ -687,9 +687,7 @@ class AIOfficeBuilder:
         response = self._call_parse_failure_openai(messages)
         return response.analyses
 
-    def _call_parse_failure_openai(
-        self, messages: list[dict]
-    ) -> ParseFailureAnalysisResponse:
+    def _call_parse_failure_openai(self, messages: list[dict]) -> ParseFailureAnalysisResponse:
         """Call OpenAI with structured output for parse failure analysis.
 
         Rate limit / retry / backoff: exponential backoff on HTTP 429

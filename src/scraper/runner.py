@@ -1385,9 +1385,13 @@ def run_with_db(
     try:
         from src.services.parse_error_reporter import ParseErrorReporter
         from src.services.github_client import get_github_client
+
         _reporter = ParseErrorReporter() if get_github_client() is not None else None
     except Exception as _reporter_init_err:
-        logger.log(f"ParseErrorReporter init failed (reporting disabled for this run): {_reporter_init_err}", True)
+        logger.log(
+            f"ParseErrorReporter init failed (reporting disabled for this run): {_reporter_init_err}",
+            True,
+        )
         _reporter = None
 
     data_cleanup = parse_core.DataCleanup(logger, reporter=_reporter)
@@ -1898,7 +1902,9 @@ def run_with_db(
         try:
             _reporter.flush()
         except Exception as _flush_err:
-            logger.log(f"ParseErrorReporter flush failed (run result not affected): {_flush_err}", True)
+            logger.log(
+                f"ParseErrorReporter flush failed (run result not affected): {_flush_err}", True
+            )
     logger.close()
     report(
         "complete",

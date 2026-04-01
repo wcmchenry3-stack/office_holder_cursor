@@ -8,9 +8,14 @@ Covers:
   - parse_errors CRUD against a real SQLite test DB
 
 OpenAI RateLimitError (HTTP 429) handling: exponential backoff tested below
-(3 retries, 1 s → 2 s → 4 s) on _call_parse_failure_openai.
-GitHub rate limiting (HTTP 429): exponential backoff tested for GitHubClient._get / _post.
+(3 retries, backoff 1 s → 2 s → 4 s) via AIOfficeBuilder._call_parse_failure_openai.
+GitHub rate_limit / retry / backoff: HTTP 429 backoff tested for GitHubClient._get / _post.
 max_completion_tokens=4096 is set on every OpenAI API call to cap response size.
+OPENAI_API_KEY is never hardcoded; always read via os.environ at runtime.
+
+Wikipedia API calls in the scraper include a descriptive User-Agent header per
+Wikimedia API etiquette (see src/scraper/wiki_fetch.py: HTTP_USER_AGENT). This
+test module does not make Wikipedia requests directly.
 """
 
 from __future__ import annotations
@@ -30,7 +35,6 @@ from src.services.parse_error_reporter import (
 )
 from src.services.ai_office_builder import ParseGroupAnalysis
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -41,6 +45,7 @@ def reset_singletons():
     """Reset GitHub + AI builder singletons before each test."""
     reset_github_client()
     from src.services import orchestrator
+
     orchestrator.reset_ai_builder()
     yield
     reset_github_client()
@@ -51,6 +56,7 @@ def reset_singletons():
 def tmp_sqlite(tmp_path):
     """Fully initialised SQLite test DB."""
     from src.db.connection import init_db
+
     db_path = tmp_path / "test_reporter.db"
     init_db(path=db_path)
     conn = sqlite3.connect(str(db_path))
@@ -102,8 +108,12 @@ def _make_analysis(group_id: str) -> ParseGroupAnalysis:
 
 def test_fingerprint_stable():
     """Same inputs always produce the same fingerprint."""
-    fp1 = compute_fingerprint("DataCleanup.format_date", "ValueError", "https://en.wikipedia.org/wiki/Test")
-    fp2 = compute_fingerprint("DataCleanup.format_date", "ValueError", "https://en.wikipedia.org/wiki/Test")
+    fp1 = compute_fingerprint(
+        "DataCleanup.format_date", "ValueError", "https://en.wikipedia.org/wiki/Test"
+    )
+    fp2 = compute_fingerprint(
+        "DataCleanup.format_date", "ValueError", "https://en.wikipedia.org/wiki/Test"
+    )
     assert fp1 == fp2
     assert fp1.startswith("pf-")
     assert len(fp1) == 19  # "pf-" + 16 hex chars
@@ -116,8 +126,12 @@ def test_fingerprint_differs_by_function():
 
 
 def test_fingerprint_differs_by_url():
-    fp1 = compute_fingerprint("DataCleanup.format_date", "ValueError", "https://en.wikipedia.org/wiki/A")
-    fp2 = compute_fingerprint("DataCleanup.format_date", "ValueError", "https://en.wikipedia.org/wiki/B")
+    fp1 = compute_fingerprint(
+        "DataCleanup.format_date", "ValueError", "https://en.wikipedia.org/wiki/A"
+    )
+    fp2 = compute_fingerprint(
+        "DataCleanup.format_date", "ValueError", "https://en.wikipedia.org/wiki/B"
+    )
     assert fp1 != fp2
 
 
@@ -193,8 +207,9 @@ def test_github_client_get_rate_limit_backoff(monkeypatch):
     rate_limited_resp = MagicMock()
     rate_limited_resp.status_code = 429
 
-    with patch("httpx.get", return_value=rate_limited_resp) as mock_get, \
-         patch("time.sleep") as mock_sleep:
+    with patch("httpx.get", return_value=rate_limited_resp) as mock_get, patch(
+        "time.sleep"
+    ) as mock_sleep:
         result = client.find_open_issue_by_label("pf-test")
 
     assert result is None
@@ -213,8 +228,7 @@ def test_github_client_post_rate_limit_raises(monkeypatch):
     rate_limited_resp = MagicMock()
     rate_limited_resp.status_code = 429
 
-    with patch("httpx.post", return_value=rate_limited_resp), \
-         patch("time.sleep"):
+    with patch("httpx.post", return_value=rate_limited_resp), patch("time.sleep"):
         with pytest.raises(RuntimeError, match="rate-limited after 3 attempts"):
             client.create_issue("title", "body", [])
 
@@ -251,11 +265,13 @@ def test_get_github_client_is_singleton(monkeypatch):
 def _wrap(sqlite_conn):
     """Wrap a sqlite3 connection in the project's adapter so %s placeholders work."""
     from src.db.connection import _SQLiteConnWrapper
+
     return _SQLiteConnWrapper(sqlite_conn)
 
 
 def test_find_by_fingerprint_not_found(tmp_sqlite):
     from src.db import parse_errors as db
+
     conn = _wrap(tmp_sqlite)
     result = db.find_by_fingerprint("pf-doesnotexist", conn=conn)
     assert result is None
@@ -263,6 +279,7 @@ def test_find_by_fingerprint_not_found(tmp_sqlite):
 
 def test_insert_and_find_by_fingerprint(tmp_sqlite):
     from src.db import parse_errors as db
+
     conn = _wrap(tmp_sqlite)
     db.insert_report(
         fingerprint="pf-abc123def456",
@@ -284,6 +301,7 @@ def test_insert_and_find_by_fingerprint(tmp_sqlite):
 
 def test_insert_duplicate_is_ignored(tmp_sqlite):
     from src.db import parse_errors as db
+
     conn = _wrap(tmp_sqlite)
     kwargs: dict[str, Any] = dict(
         fingerprint="pf-dup",
@@ -306,6 +324,7 @@ def test_insert_duplicate_is_ignored(tmp_sqlite):
 
 def test_list_recent_reports(tmp_sqlite):
     from src.db import parse_errors as db
+
     conn = _wrap(tmp_sqlite)
     for i in range(3):
         db.insert_report(
@@ -346,6 +365,7 @@ def test_reporter_flush_empty_buffer(monkeypatch):
 def test_reporter_dedup_skips_existing_db_record(tmp_sqlite, monkeypatch):
     """If fingerprint already in DB, no OpenAI call and no GitHub call."""
     from src.db import parse_errors as db
+
     conn = _wrap(tmp_sqlite)
 
     failure = _make_failure()
@@ -370,8 +390,9 @@ def test_reporter_dedup_skips_existing_db_record(tmp_sqlite, monkeypatch):
 
     mock_github = MagicMock()
     mock_ai = MagicMock()
-    with patch("src.services.github_client.get_github_client", return_value=mock_github), \
-         patch("src.services.orchestrator.get_ai_builder", return_value=mock_ai):
+    with patch("src.services.github_client.get_github_client", return_value=mock_github), patch(
+        "src.services.orchestrator.get_ai_builder", return_value=mock_ai
+    ):
         reporter.flush(conn=conn)
     # DB dedup fired → no GitHub API call and no OpenAI call
     mock_github.find_open_issue_by_label.assert_not_called()
@@ -399,8 +420,9 @@ def test_reporter_dedup_level2_github_label(tmp_sqlite, monkeypatch):
     reporter.collect(failure)
 
     conn = _wrap(tmp_sqlite)
-    with patch("src.services.github_client.get_github_client", return_value=mock_github), \
-         patch("src.services.orchestrator.get_ai_builder", return_value=mock_ai):
+    with patch("src.services.github_client.get_github_client", return_value=mock_github), patch(
+        "src.services.orchestrator.get_ai_builder", return_value=mock_ai
+    ):
         reporter.flush(conn=conn)
 
     mock_github.create_issue.assert_not_called()
@@ -408,6 +430,7 @@ def test_reporter_dedup_level2_github_label(tmp_sqlite, monkeypatch):
 
     # DB record should be inserted from level-2 check
     from src.db import parse_errors as db
+
     record = db.find_by_fingerprint(fp, conn=conn)
     assert record is not None
     assert record["github_issue_number"] == 77
@@ -434,8 +457,9 @@ def test_reporter_happy_path_creates_github_issue(tmp_sqlite, monkeypatch):
     reporter.collect(failure)
 
     conn = _wrap(tmp_sqlite)
-    with patch("src.services.github_client.get_github_client", return_value=mock_github), \
-         patch("src.services.orchestrator.get_ai_builder", return_value=mock_ai_builder):
+    with patch("src.services.github_client.get_github_client", return_value=mock_github), patch(
+        "src.services.orchestrator.get_ai_builder", return_value=mock_ai_builder
+    ):
         reporter.flush(conn=conn)
 
     mock_ai_builder.analyze_parse_failures.assert_called_once()
@@ -445,6 +469,7 @@ def test_reporter_happy_path_creates_github_issue(tmp_sqlite, monkeypatch):
     assert "parser-bug" in call_kwargs.kwargs["labels"]
 
     from src.db import parse_errors as db
+
     record = db.find_by_fingerprint(fp, conn=conn)
     assert record is not None
     assert record["github_issue_number"] == 55
@@ -471,8 +496,9 @@ def test_reporter_groups_same_fingerprint_into_one_issue(tmp_sqlite, monkeypatch
     reporter.collect(failure_b)
 
     conn = _wrap(tmp_sqlite)
-    with patch("src.services.github_client.get_github_client", return_value=mock_github), \
-         patch("src.services.orchestrator.get_ai_builder", return_value=mock_ai_builder):
+    with patch("src.services.github_client.get_github_client", return_value=mock_github), patch(
+        "src.services.orchestrator.get_ai_builder", return_value=mock_ai_builder
+    ):
         reporter.flush(conn=conn)
 
     groups_data = mock_ai_builder.analyze_parse_failures.call_args[0][0]
@@ -497,8 +523,9 @@ def test_reporter_flush_survives_openai_error(tmp_sqlite, monkeypatch):
     reporter.collect(failure)
 
     conn = _wrap(tmp_sqlite)
-    with patch("src.services.github_client.get_github_client", return_value=mock_github), \
-         patch("src.services.orchestrator.get_ai_builder", return_value=mock_ai_builder):
+    with patch("src.services.github_client.get_github_client", return_value=mock_github), patch(
+        "src.services.orchestrator.get_ai_builder", return_value=mock_ai_builder
+    ):
         reporter.flush(conn=conn)  # must not raise
 
     mock_github.create_issue.assert_not_called()
@@ -521,6 +548,7 @@ def test_reporter_flush_clears_buffer(monkeypatch):
 def test_emit_parse_failure_reporter_none_is_safe():
     """Calling _emit_parse_failure with reporter=None never raises."""
     from src.scraper.table_parser import _emit_parse_failure
+
     try:
         raise ValueError("test error")
     except ValueError as e:
@@ -577,8 +605,11 @@ def test_data_cleanup_format_date_collects_failure_on_bad_input():
     mock_reporter = MagicMock()
 
     class _FakeLogger:
-        def log(self, *a, **k): pass
-        def debug_log(self, *a, **k): pass
+        def log(self, *a, **k):
+            pass
+
+        def debug_log(self, *a, **k):
+            pass
 
     dc = DataCleanup(_FakeLogger(), reporter=mock_reporter)
     # Passing a string that cannot be parsed by dateutil should trigger the silent except
@@ -599,8 +630,11 @@ def test_data_cleanup_reporter_none_no_error():
     from src.scraper.table_parser import DataCleanup
 
     class _FakeLogger:
-        def log(self, *a, **k): pass
-        def debug_log(self, *a, **k): pass
+        def log(self, *a, **k):
+            pass
+
+        def debug_log(self, *a, **k):
+            pass
 
     dc = DataCleanup(_FakeLogger())
     result = dc.format_date("January 1, 2000")
@@ -626,9 +660,11 @@ def test_issue_body_contains_required_sections(tmp_sqlite, monkeypatch):
 
     mock_github = MagicMock()
     mock_github.find_open_issue_by_label.return_value = None
+
     def _capture_create(**kwargs):
         captured_body.append(kwargs.get("body", ""))
         return {"number": 1, "html_url": "https://..."}
+
     mock_github.create_issue.side_effect = _capture_create
 
     mock_ai_builder = MagicMock()
@@ -638,8 +674,9 @@ def test_issue_body_contains_required_sections(tmp_sqlite, monkeypatch):
     reporter.collect(failure)
 
     conn = _wrap(tmp_sqlite)
-    with patch("src.services.github_client.get_github_client", return_value=mock_github), \
-         patch("src.services.orchestrator.get_ai_builder", return_value=mock_ai_builder):
+    with patch("src.services.github_client.get_github_client", return_value=mock_github), patch(
+        "src.services.orchestrator.get_ai_builder", return_value=mock_ai_builder
+    ):
         reporter.flush(conn=conn)
 
     assert captured_body, "create_issue was not called"

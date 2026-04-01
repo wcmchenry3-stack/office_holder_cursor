@@ -18,6 +18,21 @@ Design goals:
 
 GitHub issue body includes: root cause, HTML snippet, suggested parser fix,
 suggested unit + integration tests, and reproduction steps.
+
+--- Policy compliance ---
+
+OpenAI API (via src/services/orchestrator.py → AIOfficeBuilder.analyze_parse_failures):
+  - rate_limit / RateLimitError (HTTP 429) handling: exponential backoff in
+    AIOfficeBuilder._call_parse_failure_openai (3 retries, 1 s → 2 s → 4 s).
+  - max_completion_tokens=4096 set on every call to cap response size.
+  - OPENAI_API_KEY never hardcoded; always read via os.environ at runtime.
+  See: https://platform.openai.com/docs/guides/rate-limits
+
+GitHub REST API (via src/services/github_client.py):
+  - rate_limit / HTTP 429 handling: exponential backoff in GitHubClient._get / _post
+    (3 retries, 1 s → 2 s → 4 s).
+  - GITHUB_TOKEN never hardcoded; always read via os.environ at runtime.
+  See: https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api
 """
 
 from __future__ import annotations
@@ -146,9 +161,7 @@ class ParseErrorReporter:
         try:
             ai_builder = get_ai_builder()
         except RuntimeError:
-            logger.warning(
-                "ParseErrorReporter: OPENAI_API_KEY not set; skipping OpenAI analysis"
-            )
+            logger.warning("ParseErrorReporter: OPENAI_API_KEY not set; skipping OpenAI analysis")
             return
 
         group_items = list(new_groups.items())
@@ -260,9 +273,7 @@ def _format_issue_body(analysis, rep: ParseFailure, occurrence_count: int) -> st
     office_line = f"- **Office:** {rep.office_name}" if rep.office_name else ""
     date_line = f"- **Input string:** `{rep.date_str!r}`" if rep.date_str else ""
 
-    context_lines = "\n".join(
-        line for line in [url_line, office_line, date_line] if line
-    )
+    context_lines = "\n".join(line for line in [url_line, office_line, date_line] if line)
 
     return f"""## Root Cause
 
