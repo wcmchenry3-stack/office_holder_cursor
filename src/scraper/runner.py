@@ -2,6 +2,15 @@
 """
 Run scraper using config and party list from DB, write results to DB.
 Supports: dry_run / test_run (no DB write), row limits, Full / Delta / Live person modes.
+
+--- Policy compliance ---
+
+OpenAI API (via src/services/orchestrator.py → AIOfficeBuilder.analyze_parse_failures):
+  - rate_limit / RateLimitError (HTTP 429) handling: exponential backoff in
+    AIOfficeBuilder._call_parse_failure_openai (3 retries, 1 s → 2 s → 4 s).
+  - max_completion_tokens=4096 set on every call to cap response size and cost.
+  - OPENAI_API_KEY never hardcoded; always read via os.environ at runtime.
+  See: https://platform.openai.com/docs/guides/rate-limits
 """
 
 from __future__ import annotations
@@ -56,6 +65,7 @@ def parse_full_table_for_export(
     data_cleanup = parse_core.DataCleanup(logger)
     biography = parse_core.Biography(logger, data_cleanup)
     offices_parser = parse_core.Offices(logger, biography, data_cleanup)
+    # reporter=None for export: single-record export, failures are acceptable silently
     table_data = _parse_office_html(
         office_row,
         "",
@@ -1380,9 +1390,22 @@ def run_with_db(
     # a modified copy that has no Colab/Sheets. Create that copy on the fly.
     from src.scraper import parse_core  # noqa: F401
 
-    data_cleanup = parse_core.DataCleanup(logger)
-    biography = parse_core.Biography(logger, data_cleanup)
-    offices_parser = parse_core.Offices(logger, biography, data_cleanup)
+    # Build parse error reporter (disabled if GITHUB_TOKEN or OPENAI_API_KEY not set)
+    try:
+        from src.services.parse_error_reporter import ParseErrorReporter
+        from src.services.github_client import get_github_client
+
+        _reporter = ParseErrorReporter() if get_github_client() is not None else None
+    except Exception as _reporter_init_err:
+        logger.log(
+            f"ParseErrorReporter init failed (reporting disabled for this run): {_reporter_init_err}",
+            True,
+        )
+        _reporter = None
+
+    data_cleanup = parse_core.DataCleanup(logger, reporter=_reporter)
+    biography = parse_core.Biography(logger, data_cleanup, reporter=_reporter)
+    offices_parser = parse_core.Offices(logger, biography, data_cleanup, reporter=_reporter)
 
     # Full run: purge office_terms first (FK constraint), then individuals; terms are re-populated per-office
     if run_mode == "full" and not dry_run and not test_run:
@@ -1884,6 +1907,13 @@ def run_with_db(
             message="Stopped during bio/living update.",
         )
 
+    if _reporter is not None:
+        try:
+            _reporter.flush()
+        except Exception as _flush_err:
+            logger.log(
+                f"ParseErrorReporter flush failed (run result not affected): {_flush_err}", True
+            )
     logger.close()
     report(
         "complete",

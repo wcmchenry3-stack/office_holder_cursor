@@ -15,6 +15,10 @@ from urllib3.util.retry import Retry
 
 from src.scraper.logger import HTTP_USER_AGENT
 
+# Base URL constants — imported by table_parser.py to avoid hardcoded domain literals.
+WIKI_DOMAIN = "en.wikipedia.org"
+WIKI_BASE_URL = "https://" + WIKI_DOMAIN
+
 # Headers for all Wikipedia requests (User-Agent + gzip per Wikimedia policy).
 WIKIPEDIA_REQUEST_HEADERS = {
     "User-Agent": HTTP_USER_AGENT,

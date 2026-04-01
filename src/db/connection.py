@@ -313,6 +313,31 @@ def _run_pg_migrations(conn) -> None:
         "ALTER TABLE source_pages ADD CONSTRAINT source_pages_url_key UNIQUE (url)",
     )
 
+    # parse_error_reports: new table for ParseErrorReporter deduplication.
+    # Already created by SCHEMA_PG_SQL on fresh installs; this migration adds it
+    # to existing production databases that pre-date this table.
+    _apply(
+        "pg_create_parse_error_reports",
+        """
+        CREATE TABLE IF NOT EXISTS parse_error_reports (
+            id SERIAL PRIMARY KEY,
+            fingerprint TEXT NOT NULL UNIQUE,
+            function_name TEXT NOT NULL,
+            error_type TEXT NOT NULL,
+            wiki_url TEXT,
+            office_name TEXT,
+            github_issue_url TEXT,
+            github_issue_number INTEGER,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """,
+    )
+    _apply(
+        "pg_parse_error_reports_fingerprint_idx",
+        "CREATE INDEX IF NOT EXISTS idx_parse_error_reports_fingerprint"
+        " ON parse_error_reports(fingerprint)",
+    )
+
 
 def _init_sqlite(path: Path | None = None) -> None:
     """SQLite init for tests — applies the final schema directly (no migrations needed)."""
