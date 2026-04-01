@@ -2,6 +2,14 @@
 """
 Run scraper using config and party list from DB, write results to DB.
 Supports: dry_run / test_run (no DB write), row limits, Full / Delta / Live person modes.
+
+--- Policy compliance ---
+
+OpenAI API (via src/services/orchestrator.py → AIOfficeBuilder.analyze_parse_failures):
+  - rate_limit / RateLimitError (HTTP 429) handling: exponential backoff in
+    AIOfficeBuilder._call_parse_failure_openai (3 retries, 1 s → 2 s → 4 s).
+  - OPENAI_API_KEY never hardcoded; always read via os.environ at runtime.
+  See: https://platform.openai.com/docs/guides/rate-limits
 """
 
 from __future__ import annotations

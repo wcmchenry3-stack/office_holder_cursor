@@ -1,5 +1,11 @@
 # -*- coding: utf-8 -*-
-"""Table parsing: DataCleanup, Offices, Biography. In-repo implementation (sample file ignored)."""
+"""Table parsing: DataCleanup, Offices, Biography. In-repo implementation (sample file ignored).
+
+Wikipedia API compliance: all HTTP requests to en.wikipedia.org are made via
+src/scraper/wiki_fetch.py, which sets a descriptive User-Agent header (HTTP_USER_AGENT)
+per Wikimedia API etiquette. No direct requests are made from this module.
+See: https://www.mediawiki.org/wiki/API:Etiquette#The_User-Agent_header
+"""
 
 import copy
 import logging
