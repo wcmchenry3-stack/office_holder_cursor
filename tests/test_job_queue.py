@@ -196,7 +196,15 @@ def _run_api_run_in_thread(rs, **kwargs):
     unwrapped = getattr(rs.api_run, "__wrapped__", rs.api_run)
 
     def _thread_body():
-        return asyncio.run(unwrapped(request=mock_request, **defaults))
+        # Create a fresh event loop for this thread — asyncio.run() raises
+        # RuntimeError if called inside a running loop (e.g. pytest-anyio).
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            return loop.run_until_complete(unwrapped(request=mock_request, **defaults))
+        finally:
+            loop.close()
+            asyncio.set_event_loop(None)
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
         future = pool.submit(_thread_body)
