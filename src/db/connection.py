@@ -307,6 +307,73 @@ def _run_pg_migrations(conn) -> None:
         "ALTER TABLE office_terms DROP CONSTRAINT IF EXISTS office_terms_office_id_fkey",
     )
 
+    # source_pages.url must be unique — prevent duplicate pages from AI-driven inserts.
+    _apply(
+        "pg_source_pages_url_unique",
+        "ALTER TABLE source_pages ADD CONSTRAINT source_pages_url_key UNIQUE (url)",
+    )
+
+    # parse_error_reports: new table for ParseErrorReporter deduplication.
+    # Already created by SCHEMA_PG_SQL on fresh installs; this migration adds it
+    # to existing production databases that pre-date this table.
+    _apply(
+        "pg_create_parse_error_reports",
+        """
+        CREATE TABLE IF NOT EXISTS parse_error_reports (
+            id SERIAL PRIMARY KEY,
+            fingerprint TEXT NOT NULL UNIQUE,
+            function_name TEXT NOT NULL,
+            error_type TEXT NOT NULL,
+            wiki_url TEXT,
+            office_name TEXT,
+            github_issue_url TEXT,
+            github_issue_number INTEGER,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """,
+    )
+    _apply(
+        "pg_parse_error_reports_fingerprint_idx",
+        "CREATE INDEX IF NOT EXISTS idx_parse_error_reports_fingerprint"
+        " ON parse_error_reports(fingerprint)",
+    )
+    _apply(
+        "pg_scraper_jobs_queued_at",
+        "ALTER TABLE scraper_jobs ADD COLUMN IF NOT EXISTS queued_at TIMESTAMPTZ",
+    )
+    _apply(
+        "pg_scraper_jobs_job_params_json",
+        "ALTER TABLE scraper_jobs ADD COLUMN IF NOT EXISTS job_params_json TEXT",
+    )
+    _apply(
+        "pg_individuals_insufficient_vitals_checked_at",
+        "ALTER TABLE individuals ADD COLUMN IF NOT EXISTS insufficient_vitals_checked_at TIMESTAMPTZ",
+    )
+    _apply(
+        "pg_individuals_insuf_vitals_checked_at_idx",
+        "CREATE INDEX IF NOT EXISTS idx_individuals_insuf_vitals_checked_at"
+        " ON individuals(insufficient_vitals_checked_at)",
+    )
+
+
+def _sqlite_add_columns_if_missing(conn) -> None:
+    """Idempotently add new columns to pre-existing SQLite tables.
+
+    Required when an existing DB pre-dates a schema change — CREATE TABLE IF NOT EXISTS
+    won't add new columns, but the subsequent CREATE INDEX will fail if they are absent.
+    """
+    migrations = [
+        ("individuals", "insufficient_vitals_checked_at", "TEXT"),
+        ("scraper_jobs", "queued_at", "TEXT"),
+        ("scraper_jobs", "job_params_json", "TEXT"),
+    ]
+    for table, column, col_type in migrations:
+        try:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
+            conn.commit()
+        except Exception:
+            pass  # Column already exists — safe to ignore
+
 
 def _init_sqlite(path: Path | None = None) -> None:
     """SQLite init for tests — applies the final schema directly (no migrations needed)."""
@@ -316,6 +383,7 @@ def _init_sqlite(path: Path | None = None) -> None:
 
     conn = get_connection(path)
     try:
+        _sqlite_add_columns_if_missing(conn)
         conn.executescript(SCHEMA_SQL)
         conn.commit()
         seed_reference_data(conn=conn)

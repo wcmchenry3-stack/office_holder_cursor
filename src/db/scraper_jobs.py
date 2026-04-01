@@ -124,3 +124,84 @@ def delete_jobs_older_than(hours: int = 48, conn=None) -> int:
     finally:
         if own_conn:
             conn.close()
+
+
+def enqueue_job(job_id: str, job_type: str, job_params_json: str, conn=None) -> None:
+    """Insert a job with status='queued'. Called when a job arrives but one is already running."""
+    own_conn = conn is None
+    if own_conn:
+        conn = get_connection()
+    try:
+        now = _now_iso()
+        conn.execute(
+            "INSERT INTO scraper_jobs"
+            " (id, type, status, queued_at, job_params_json, created_at, updated_at)"
+            " VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            (job_id, job_type, "queued", now, job_params_json, now, now),
+        )
+        if own_conn:
+            conn.commit()
+    finally:
+        if own_conn:
+            conn.close()
+
+
+def pop_next_queued_job(conn=None) -> dict | None:
+    """Claim the oldest queued job atomically: set status='running', return its record.
+
+    Returns None if no queued jobs exist.
+    """
+    own_conn = conn is None
+    if own_conn:
+        conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT id, type, job_params_json FROM scraper_jobs"
+            " WHERE status = %s ORDER BY queued_at ASC LIMIT 1",
+            ("queued",),
+        ).fetchone()
+        if row is None:
+            return None
+        job_id = row[0]
+        conn.execute(
+            "UPDATE scraper_jobs SET status = %s, updated_at = NOW() WHERE id = %s",
+            ("running", job_id),
+        )
+        if own_conn:
+            conn.commit()
+        return {"id": row[0], "type": row[1], "job_params_json": row[2]}
+    finally:
+        if own_conn:
+            conn.close()
+
+
+def count_queued_jobs(conn=None) -> int:
+    """Return the number of jobs currently in the queue (status='queued')."""
+    own_conn = conn is None
+    if own_conn:
+        conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM scraper_jobs WHERE status = %s",
+            ("queued",),
+        ).fetchone()
+        return int(row[0]) if row else 0
+    finally:
+        if own_conn:
+            conn.close()
+
+
+def count_active_jobs(conn=None) -> int:
+    """Return the number of jobs with status 'running' or 'queued'."""
+    own_conn = conn is None
+    if own_conn:
+        conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM scraper_jobs WHERE status IN (%s, %s)",
+            ("running", "queued"),
+        ).fetchone()
+        return int(row[0]) if row else 0
+    finally:
+        if own_conn:
+            conn.close()

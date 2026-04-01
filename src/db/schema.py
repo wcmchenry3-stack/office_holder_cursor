@@ -105,6 +105,7 @@ CREATE TABLE IF NOT EXISTS individuals (
     is_living INTEGER NOT NULL DEFAULT 1,
     bio_batch INTEGER NOT NULL DEFAULT 0,
     bio_refreshed_at TEXT,
+    insufficient_vitals_checked_at TEXT,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
 );
@@ -117,7 +118,7 @@ CREATE TABLE IF NOT EXISTS source_pages (
     city_id INTEGER REFERENCES cities(id),
     level_id INTEGER REFERENCES levels(id),
     branch_id INTEGER REFERENCES branches(id),
-    url TEXT NOT NULL,
+    url TEXT NOT NULL UNIQUE,
     notes TEXT,
     enabled INTEGER NOT NULL DEFAULT 1,
     allow_reuse_tables INTEGER NOT NULL DEFAULT 0,
@@ -271,6 +272,7 @@ CREATE TABLE IF NOT EXISTS office_terms (
 CREATE INDEX IF NOT EXISTS idx_office_terms_office_id ON office_terms(office_id);
 CREATE INDEX IF NOT EXISTS idx_office_terms_individual_id ON office_terms(individual_id);
 CREATE INDEX IF NOT EXISTS idx_office_terms_wiki_url ON office_terms(wiki_url);
+CREATE INDEX IF NOT EXISTS idx_individuals_insuf_vitals_checked_at ON individuals(insufficient_vitals_checked_at);
 
 -- Parser test scripts
 CREATE TABLE IF NOT EXISTS parser_test_scripts (
@@ -292,12 +294,29 @@ CREATE TABLE IF NOT EXISTS scraper_jobs (
     id TEXT PRIMARY KEY,
     type TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'running',
+    queued_at TEXT,
+    job_params_json TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     result_json TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_scraper_jobs_status ON scraper_jobs(status);
 CREATE INDEX IF NOT EXISTS idx_scraper_jobs_created_at ON scraper_jobs(created_at);
+
+-- Parse error reports: one record per distinct (function, error_type, wiki_url) fingerprint.
+-- Used by ParseErrorReporter to deduplicate GitHub issue creation across runs.
+CREATE TABLE IF NOT EXISTS parse_error_reports (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    fingerprint TEXT NOT NULL UNIQUE,
+    function_name TEXT NOT NULL,
+    error_type TEXT NOT NULL,
+    wiki_url TEXT,
+    office_name TEXT,
+    github_issue_url TEXT,
+    github_issue_number INTEGER,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_parse_error_reports_fingerprint ON parse_error_reports(fingerprint);
 
 -- Indexes on offices/parties/office_terms FK columns
 CREATE INDEX IF NOT EXISTS idx_offices_country_id ON offices(country_id);
@@ -428,6 +447,7 @@ CREATE TABLE IF NOT EXISTS individuals (
     is_living INTEGER NOT NULL DEFAULT 1,
     bio_batch INTEGER NOT NULL DEFAULT 0,
     bio_refreshed_at TIMESTAMPTZ,
+    insufficient_vitals_checked_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -440,7 +460,7 @@ CREATE TABLE IF NOT EXISTS source_pages (
     city_id INTEGER REFERENCES cities(id),
     level_id INTEGER REFERENCES levels(id),
     branch_id INTEGER REFERENCES branches(id),
-    url TEXT NOT NULL,
+    url TEXT NOT NULL UNIQUE,
     notes TEXT,
     enabled INTEGER NOT NULL DEFAULT 1,
     allow_reuse_tables INTEGER NOT NULL DEFAULT 0,
@@ -594,6 +614,7 @@ CREATE TABLE IF NOT EXISTS office_terms (
 CREATE INDEX IF NOT EXISTS idx_office_terms_office_id ON office_terms(office_id);
 CREATE INDEX IF NOT EXISTS idx_office_terms_individual_id ON office_terms(individual_id);
 CREATE INDEX IF NOT EXISTS idx_office_terms_wiki_url ON office_terms(wiki_url);
+CREATE INDEX IF NOT EXISTS idx_individuals_insuf_vitals_checked_at ON individuals(insufficient_vitals_checked_at);
 
 -- Parser test scripts
 CREATE TABLE IF NOT EXISTS parser_test_scripts (
@@ -615,12 +636,29 @@ CREATE TABLE IF NOT EXISTS scraper_jobs (
     id TEXT PRIMARY KEY,
     type TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'running',
+    queued_at TIMESTAMPTZ,
+    job_params_json TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     result_json TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_scraper_jobs_status ON scraper_jobs(status);
-CREATE INDEX IF NOT EXISTS idx_scraper_jobs_created_at ON scraper_jobs(created_at)
+CREATE INDEX IF NOT EXISTS idx_scraper_jobs_created_at ON scraper_jobs(created_at);
+
+-- Parse error reports: one record per distinct (function, error_type, wiki_url) fingerprint.
+-- Used by ParseErrorReporter to deduplicate GitHub issue creation across runs.
+CREATE TABLE IF NOT EXISTS parse_error_reports (
+    id SERIAL PRIMARY KEY,
+    fingerprint TEXT NOT NULL UNIQUE,
+    function_name TEXT NOT NULL,
+    error_type TEXT NOT NULL,
+    wiki_url TEXT,
+    office_name TEXT,
+    github_issue_url TEXT,
+    github_issue_number INTEGER,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_parse_error_reports_fingerprint ON parse_error_reports(fingerprint)
 """
 
 # Same index SQL works for both backends (standard SQL).

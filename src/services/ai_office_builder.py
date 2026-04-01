@@ -64,6 +64,24 @@ class AIOfficePageResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Parse failure analysis schema
+# ---------------------------------------------------------------------------
+
+
+class ParseGroupAnalysis(BaseModel):
+    group_id: str  # fingerprint from ParseErrorReporter
+    title: str  # short GitHub issue title (≤72 chars)
+    root_cause: str  # why the parser fails on this HTML pattern
+    suggested_fix: str  # code-level fix for the parser (not a data patch)
+    suggested_tests: str  # unit tests + integration tests to write for the fix
+    reproduction_steps: str  # how to reproduce: URL, function, input string
+
+
+class ParseFailureAnalysisResponse(BaseModel):
+    analyses: list[ParseGroupAnalysis]
+
+
+# ---------------------------------------------------------------------------
 # System prompt
 # ---------------------------------------------------------------------------
 
@@ -608,3 +626,91 @@ class AIOfficeBuilder:
             "Return corrected AIOfficePageResponse with updated table_no entries.",
         ]
         return "\n".join(lines)
+
+    # ------------------------------------------------------------------
+    # Parse failure analysis
+    # ------------------------------------------------------------------
+
+    def analyze_parse_failures(self, groups_data: list[dict]) -> list[ParseGroupAnalysis]:
+        """Analyze parser failure groups and return structured analysis for GitHub issues.
+
+        Each entry in groups_data represents one distinct failure group (same
+        function + error type). One representative HTML snippet is included per
+        group to keep token usage low.
+
+        Rate limit / retry / backoff: exponential backoff on HTTP 429
+        (3 retries, 1 s → 2 s → 4 s) via _call_parse_failure_openai.
+        max_completion_tokens: 4096 (same cap as all other calls).
+        """
+        if not groups_data:
+            return []
+
+        lines = [
+            f"You are analyzing {len(groups_data)} distinct parser failure group(s) from a "
+            "Wikipedia scraper. Each group represents a unique (function, error_type) "
+            "combination that silently failed. Your job is to:\n"
+            "1. Identify the ROOT CAUSE in the parser code (not in the data).\n"
+            "2. Suggest a SPECIFIC CODE-LEVEL FIX to the parser function.\n"
+            "3. Describe TESTS to write (unit + integration) that cover the fix.\n"
+            "4. Provide REPRODUCTION STEPS (Wikipedia URL, function name, input string).\n\n"
+            "The goal is improving the parser for all future pages, not patching individual records.\n\n"
+            "--- FAILURE GROUPS ---\n",
+        ]
+
+        for i, g in enumerate(groups_data, 1):
+            lines.append(f"### Group {i} (id: {g['group_id']})")
+            lines.append(f"Function: {g['function_name']}")
+            lines.append(f"Error type: {g['error_type']}")
+            lines.append(f"Occurrences this run: {g.get('occurrence_count', 1)}")
+            if g.get("wiki_url"):
+                lines.append(f"Wikipedia URL: {g['wiki_url']}")
+            if g.get("office_name"):
+                lines.append(f"Office: {g['office_name']}")
+            if g.get("date_str"):
+                lines.append(f"Input string that failed: {g['date_str']!r}")
+            lines.append(f"Traceback (last 1000 chars):\n{g.get('traceback', '')}")
+            lines.append(f"HTML snippet (up to 2000 chars):\n{g.get('html_snippet', '')}")
+            lines.append("")
+
+        user_content = "\n".join(lines)
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are a senior Python developer specializing in HTML parsing and "
+                    "Wikipedia data extraction. Analyze parser failures and produce actionable "
+                    "GitHub issues with code-level fixes and test specifications."
+                ),
+            },
+            {"role": "user", "content": user_content},
+        ]
+        response = self._call_parse_failure_openai(messages)
+        return response.analyses
+
+    def _call_parse_failure_openai(self, messages: list[dict]) -> ParseFailureAnalysisResponse:
+        """Call OpenAI with structured output for parse failure analysis.
+
+        Rate limit / retry / backoff: exponential backoff on HTTP 429
+        (3 retries, 1 s → 2 s → 4 s).
+        """
+        backoff = 1.0
+        for attempt in range(3):
+            try:
+                completion = self._client.beta.chat.completions.parse(
+                    model=self._model,
+                    messages=messages,
+                    response_format=ParseFailureAnalysisResponse,
+                    max_completion_tokens=4096,
+                )
+                return completion.choices[0].message.parsed  # type: ignore[return-value]
+            except openai.RateLimitError:
+                if attempt == 2:
+                    raise
+                logger.warning(
+                    "_call_parse_failure_openai: RateLimitError; retrying in %.0f s (attempt %d/3)",
+                    backoff,
+                    attempt + 1,
+                )
+                time.sleep(backoff)
+                backoff *= 2
+        raise RuntimeError("unreachable")

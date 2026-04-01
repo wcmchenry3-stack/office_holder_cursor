@@ -2,6 +2,21 @@
 """
 Run scraper using config and party list from DB, write results to DB.
 Supports: dry_run / test_run (no DB write), row limits, Full / Delta / Live person modes.
+
+--- Policy compliance ---
+
+OpenAI API (via src/services/orchestrator.py → AIOfficeBuilder.analyze_parse_failures):
+  - rate_limit / RateLimitError (HTTP 429) handling: exponential backoff in
+    AIOfficeBuilder._call_parse_failure_openai (3 retries, 1 s → 2 s → 4 s).
+  - max_completion_tokens=4096 set on every call to cap response size and cost.
+  - OPENAI_API_KEY never hardcoded; always read via os.environ at runtime.
+  See: https://platform.openai.com/docs/guides/rate-limits
+
+Wikimedia REST API (via src/scraper/wiki_fetch.py):
+  - User-Agent header set on every request (app name + contact) per Wikimedia etiquette.
+  - rate_limit / throttle: wiki_throttle() enforces per-request delay so combined
+    throughput never exceeds Wikipedia's policy limit.
+  See: https://www.mediawiki.org/wiki/API:Etiquette
 """
 
 from __future__ import annotations
@@ -56,6 +71,7 @@ def parse_full_table_for_export(
     data_cleanup = parse_core.DataCleanup(logger)
     biography = parse_core.Biography(logger, data_cleanup)
     offices_parser = parse_core.Offices(logger, biography, data_cleanup)
+    # reporter=None for export: single-record export, failures are acceptable silently
     table_data = _parse_office_html(
         office_row,
         "",
@@ -1304,6 +1320,82 @@ def _run_bios_only(ctx: _RunContext, logger: Logger, report: Callable) -> dict[s
     }
 
 
+def _run_insufficient_vitals(ctx: _RunContext, logger: Logger, report: Callable) -> dict[str, Any]:
+    """Fetch bios for today's 1/30 slice of individuals missing birth/death dates.
+
+    Batch assignment: id % 30 (computed in DB; never stored).
+    Daily pick: date.today().day % 30  (or ctx.bio_batch if explicitly set).
+
+    Each processed individual gets insufficient_vitals_checked_at stamped so it is
+    skipped for the next 30 days — whether the bio fetch succeeded or failed.
+    """
+    from datetime import date
+    from src.scraper import parse_core
+
+    today_batch = ctx.bio_batch if ctx.bio_batch is not None else date.today().day % 30
+    to_fetch_rows = db_individuals.get_insufficient_vitals_individuals_for_batch(today_batch)
+    url_to_id = {r["wiki_url"]: r["id"] for r in to_fetch_rows}
+    unique_to_fetch = list(dict.fromkeys(r["wiki_url"] for r in to_fetch_rows if r.get("wiki_url")))
+    total = len(unique_to_fetch)
+    bio_errors: list[dict[str, str]] = []
+    _counts = [0, 0]  # [success, error]
+
+    data_cleanup = parse_core.DataCleanup(logger)
+    biography = parse_core.Biography(logger, data_cleanup)
+
+    def _success(wiki_url: str, bio_info: dict) -> None:
+        bio_info["wiki_url"] = wiki_url
+        bd, bd_imp = normalize_date(bio_info.get("birth_date"))
+        dd, dd_imp = normalize_date(bio_info.get("death_date"))
+        bio_info["birth_date"] = bd
+        bio_info["death_date"] = dd
+        bio_info["birth_date_imprecise"] = bd_imp
+        bio_info["death_date_imprecise"] = dd_imp
+        db_individuals.upsert_individual(bio_info)
+        ind_id = url_to_id.get(wiki_url)
+        if ind_id:
+            db_individuals.mark_insufficient_vitals_checked(ind_id)
+        _counts[0] += 1
+
+    def _error(wiki_url: str, err: str) -> None:
+        _counts[1] += 1
+        bio_errors.append({"url": wiki_url, "error": err})
+        ind_id = url_to_id.get(wiki_url)
+        if ind_id:
+            db_individuals.mark_insufficient_vitals_checked(ind_id)
+
+    def _progress(done: int, total: int) -> None:
+        report(
+            "bio",
+            done,
+            total,
+            f"Checking insufficient vitals batch {today_batch}…",
+            {"batch": today_batch, "current": done, "total": total},
+        )
+
+    report("bio", 0, total, f"Insufficient vitals batch {today_batch}: {total} to check", {})
+    if _fetch_bio_batch(unique_to_fetch, biography, ctx.cancel_check, _progress, _success, _error):
+        logger.log("Insufficient vitals run cancelled.", True)
+    logger.close()
+    return {
+        "office_count": 0,
+        "terms_parsed": 0,
+        "unique_wiki_urls": 0,
+        "bio_success_count": _counts[0],
+        "bio_error_count": _counts[1],
+        "bio_errors": bio_errors,
+        "bio_skipped_count": 0,
+        "living_success_count": 0,
+        "living_error_count": 0,
+        "living_errors": [],
+        "insufficient_vitals_batch": today_batch,
+        "insufficient_vitals_checked": total,
+        "dry_run": False,
+        "test_run": False,
+        "preview_rows": None,
+    }
+
+
 def run_with_db(
     run_mode: str = "delta",  # full | delta | live_person | single_bio | bios_only
     run_bio: bool = False,
@@ -1361,6 +1453,8 @@ def run_with_db(
         return _run_selected_bios(ctx, logger, report)
     if run_mode == "bios_only":
         return _run_bios_only(ctx, logger, report)
+    if run_mode == "delta_insufficient_vitals":
+        return _run_insufficient_vitals(ctx, logger, report)
 
     # Main loop modes (full | delta | live_person): load offices and dispatch.
     party_list = db_parties.get_party_list_for_scraper()
@@ -1380,9 +1474,22 @@ def run_with_db(
     # a modified copy that has no Colab/Sheets. Create that copy on the fly.
     from src.scraper import parse_core  # noqa: F401
 
-    data_cleanup = parse_core.DataCleanup(logger)
-    biography = parse_core.Biography(logger, data_cleanup)
-    offices_parser = parse_core.Offices(logger, biography, data_cleanup)
+    # Build parse error reporter (disabled if GITHUB_TOKEN or OPENAI_API_KEY not set)
+    try:
+        from src.services.parse_error_reporter import ParseErrorReporter
+        from src.services.github_client import get_github_client
+
+        _reporter = ParseErrorReporter() if get_github_client() is not None else None
+    except Exception as _reporter_init_err:
+        logger.log(
+            f"ParseErrorReporter init failed (reporting disabled for this run): {_reporter_init_err}",
+            True,
+        )
+        _reporter = None
+
+    data_cleanup = parse_core.DataCleanup(logger, reporter=_reporter)
+    biography = parse_core.Biography(logger, data_cleanup, reporter=_reporter)
+    offices_parser = parse_core.Offices(logger, biography, data_cleanup, reporter=_reporter)
 
     # Full run: purge office_terms first (FK constraint), then individuals; terms are re-populated per-office
     if run_mode == "full" and not dry_run and not test_run:
@@ -1884,6 +1991,13 @@ def run_with_db(
             message="Stopped during bio/living update.",
         )
 
+    if _reporter is not None:
+        try:
+            _reporter.flush()
+        except Exception as _flush_err:
+            logger.log(
+                f"ParseErrorReporter flush failed (run result not affected): {_flush_err}", True
+            )
     logger.close()
     report(
         "complete",

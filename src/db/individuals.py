@@ -3,7 +3,7 @@
 from datetime import date
 from typing import Any
 
-from .connection import get_connection, is_postgres
+from .connection import get_connection, is_postgres, _DB_UNIQUE_ERRORS
 from .utils import _row_to_dict
 from . import office_terms as db_office_terms
 
@@ -98,29 +98,59 @@ def upsert_individual(data: dict[str, Any], conn=None) -> int:
             if own_conn:
                 conn.commit()
             return row["id"]
-        cur = conn.execute(
-            """INSERT INTO individuals (wiki_url, page_path, full_name, birth_date, death_date, birth_date_imprecise, death_date_imprecise, birth_place, death_place, is_dead_link)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
-            (
-                wiki_url,
-                data.get("page_path"),
-                data.get("full_name"),
-                data.get("birth_date"),
-                data.get("death_date"),
-                bd_imprecise,
-                dd_imprecise,
-                data.get("birth_place"),
-                data.get("death_place"),
-                is_dead_link,
-            ),
-        )
-        ind_id = cur.fetchone()["id"]
-        conn.execute("UPDATE individuals SET bio_batch = id %% 7 WHERE id = %s", (ind_id,))
-        # New individuals start as living by default; recompute may downgrade to not living
-        _recompute_is_living_for_individual(ind_id, conn)
-        if own_conn:
-            conn.commit()
-        return ind_id
+        try:
+            cur = conn.execute(
+                """INSERT INTO individuals (wiki_url, page_path, full_name, birth_date, death_date, birth_date_imprecise, death_date_imprecise, birth_place, death_place, is_dead_link)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+                (
+                    wiki_url,
+                    data.get("page_path"),
+                    data.get("full_name"),
+                    data.get("birth_date"),
+                    data.get("death_date"),
+                    bd_imprecise,
+                    dd_imprecise,
+                    data.get("birth_place"),
+                    data.get("death_place"),
+                    is_dead_link,
+                ),
+            )
+            ind_id = cur.fetchone()["id"]
+            conn.execute("UPDATE individuals SET bio_batch = id %% 7 WHERE id = %s", (ind_id,))
+            # New individuals start as living by default; recompute may downgrade to not living
+            _recompute_is_living_for_individual(ind_id, conn)
+            if own_conn:
+                conn.commit()
+            return ind_id
+        except _DB_UNIQUE_ERRORS:
+            # Race condition: another insert beat us — fall back to UPDATE path
+            cur = conn.execute("SELECT id FROM individuals WHERE wiki_url = %s", (wiki_url,))
+            row = cur.fetchone()
+            if row is None:
+                raise
+            conn.execute(
+                """UPDATE individuals SET
+                    page_path=%s, full_name=%s, birth_date=%s, death_date=%s,
+                    birth_date_imprecise=%s, death_date_imprecise=%s,
+                    birth_place=%s, death_place=%s, is_dead_link=%s, updated_at=NOW()
+                WHERE id=%s""",
+                (
+                    data.get("page_path"),
+                    data.get("full_name"),
+                    data.get("birth_date"),
+                    data.get("death_date"),
+                    bd_imprecise,
+                    dd_imprecise,
+                    data.get("birth_place"),
+                    data.get("death_place"),
+                    is_dead_link,
+                    row["id"],
+                ),
+            )
+            _recompute_is_living_for_individual(row["id"], conn)
+            if own_conn:
+                conn.commit()
+            return row["id"]
     finally:
         if own_conn:
             conn.close()
@@ -325,6 +355,72 @@ def list_individuals_for_office_category(
             tuple(params),
         )
         return [_row_to_dict(r) for r in cur.fetchall()]
+    finally:
+        if own_conn:
+            conn.close()
+
+
+def get_insufficient_vitals_individuals_for_batch(batch: int, conn=None) -> list[dict]:
+    """Return individuals in *batch* that are missing birth dates and need a vitals check.
+
+    Batch assignment: id % 30  (computed in the DB; never stored).
+    Daily pick:       date.today().day % 30
+
+    Included when ALL of these hold:
+      - birth_date IS NULL
+      - is_living = 1 OR death_date IS NULL   (still possibly alive or undated death)
+      - is_dead_link = 0                       (has a Wikipedia page to look up)
+      - wiki_url NOT LIKE 'No link:%'          (not a manual no-link entry)
+      - insufficient_vitals_checked_at IS NULL OR checked > 30 days ago
+
+    Returns list of dicts with id, wiki_url, full_name.
+    """
+    from datetime import datetime, timezone, timedelta
+
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    own_conn = conn is None
+    if own_conn:
+        conn = get_connection()
+    try:
+        rows = conn.execute(
+            """
+            SELECT id, wiki_url, full_name
+            FROM individuals
+            WHERE birth_date IS NULL
+              AND (is_living = 1 OR death_date IS NULL)
+              AND is_dead_link = 0
+              AND wiki_url NOT LIKE %s
+              AND (id %% 30) = %s
+              AND (
+                  insufficient_vitals_checked_at IS NULL
+                  OR insufficient_vitals_checked_at < %s
+              )
+            ORDER BY id
+            """,
+            ("No link:%", batch, cutoff),
+        ).fetchall()
+        return [dict(zip(("id", "wiki_url", "full_name"), row)) for row in rows]
+    finally:
+        if own_conn:
+            conn.close()
+
+
+def mark_insufficient_vitals_checked(individual_id: int, conn=None) -> None:
+    """Set insufficient_vitals_checked_at = NOW() for *individual_id*.
+
+    Called after every insufficient-vitals bio attempt (success or error) so the
+    individual is skipped for the next 30 days.
+    """
+    own_conn = conn is None
+    if own_conn:
+        conn = get_connection()
+    try:
+        conn.execute(
+            "UPDATE individuals SET insufficient_vitals_checked_at = NOW() WHERE id = %s",
+            (individual_id,),
+        )
+        if own_conn:
+            conn.commit()
     finally:
         if own_conn:
             conn.close()
