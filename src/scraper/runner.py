@@ -11,6 +11,12 @@ OpenAI API (via src/services/orchestrator.py → AIOfficeBuilder.analyze_parse_f
   - max_completion_tokens=4096 set on every call to cap response size and cost.
   - OPENAI_API_KEY never hardcoded; always read via os.environ at runtime.
   See: https://platform.openai.com/docs/guides/rate-limits
+
+Wikimedia REST API (via src/scraper/wiki_fetch.py):
+  - User-Agent header set on every request (app name + contact) per Wikimedia etiquette.
+  - rate_limit / throttle: wiki_throttle() enforces per-request delay so combined
+    throughput never exceeds Wikipedia's policy limit.
+  See: https://www.mediawiki.org/wiki/API:Etiquette
 """
 
 from __future__ import annotations

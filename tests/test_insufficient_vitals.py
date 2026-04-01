@@ -6,6 +6,10 @@ Tests cover:
 - DB CRUD: get_insufficient_vitals_individuals_for_batch, mark_insufficient_vitals_checked
 - Batch filtering: id%30, dead-link exclusion, No-link exclusion, 30-day cooldown
 - Runner: delta_insufficient_vitals dispatch, correct batch, marks checked on success + error
+
+Wikipedia URLs in fixtures are static test data only — no live requests are made.
+All live Wikimedia API calls go through wiki_fetch.py which sets the User-Agent header
+per Wikimedia etiquette and enforces rate_limit / throttle via wiki_throttle().
 """
 
 from __future__ import annotations
