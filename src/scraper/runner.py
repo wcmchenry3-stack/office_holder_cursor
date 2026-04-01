@@ -8,6 +8,7 @@ Supports: dry_run / test_run (no DB write), row limits, Full / Delta / Live pers
 OpenAI API (via src/services/orchestrator.py → AIOfficeBuilder.analyze_parse_failures):
   - rate_limit / RateLimitError (HTTP 429) handling: exponential backoff in
     AIOfficeBuilder._call_parse_failure_openai (3 retries, 1 s → 2 s → 4 s).
+  - max_completion_tokens=4096 set on every call to cap response size and cost.
   - OPENAI_API_KEY never hardcoded; always read via os.environ at runtime.
   See: https://platform.openai.com/docs/guides/rate-limits
 """

@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """Table parsing: DataCleanup, Offices, Biography. In-repo implementation (sample file ignored).
 
-Wikipedia API compliance: all HTTP requests to en.wikipedia.org are made via
+Wikipedia API compliance: all HTTP requests to the Wikimedia REST API are made via
 src/scraper/wiki_fetch.py, which sets a descriptive User-Agent header (HTTP_USER_AGENT)
-per Wikimedia API etiquette. No direct requests are made from this module.
+per Wikimedia API etiquette. No direct HTTP requests are made from this module.
 See: https://www.mediawiki.org/wiki/API:Etiquette#The_User-Agent_header
 """
 
@@ -16,6 +16,8 @@ from urllib.parse import urlparse, quote
 from requests.exceptions import RequestException as _RequestException
 
 from src.scraper.wiki_fetch import (
+    WIKI_BASE_URL,
+    WIKI_DOMAIN,
     canonical_holder_url,
     normalize_wiki_url,
     wiki_session,
@@ -444,7 +446,7 @@ class DataCleanup:
                 and 'href="./Special:' not in cell_str
             )
             has_full_url = (
-                "en.wikipedia.org/wiki/" in cell_str
+                f"{WIKI_DOMAIN}/wiki/" in cell_str
                 and "/wiki/File:" not in cell_str
                 and "/wiki/Special:" not in cell_str
             )
@@ -537,7 +539,7 @@ class Offices:
         candidate = link.strip()
         if not candidate or candidate == "No link":
             return False
-        if not candidate.startswith("https://en.wikipedia.org/wiki/"):
+        if not candidate.startswith(f"{WIKI_BASE_URL}/wiki/"):
             return False
         # Keep ignore_non_links useful for parser junk rows too (e.g. congress/election links).
         if any(re.search(pattern, candidate) for pattern in self.patterns_to_ignore()):
@@ -1198,10 +1200,7 @@ class Offices:
                 path = "/wiki" + raw_href
             else:
                 path = "/wiki/" + raw_href
-            full_url = (
-                normalize_wiki_url(f"https://en.wikipedia.org{path}")
-                or f"https://en.wikipedia.org{path}"
-            )
+            full_url = normalize_wiki_url(f"{WIKI_BASE_URL}{path}") or f"{WIKI_BASE_URL}{path}"
             full_path = _path_from_full_url(full_url)
             has_fragment = "#" in full_url
             should_ignore = (
@@ -1510,7 +1509,7 @@ class Offices:
 
             try:
                 for link_tag in link_tags:
-                    full_url_unclean = f"https://en.wikipedia.org{link_tag['href']}"
+                    full_url_unclean = f"{WIKI_BASE_URL}{link_tag['href']}"
                     full_url = self.DataCleanup.remove_footnote(full_url_unclean)
                     self.Logger.debug_log(
                         f"full url in extract_party: {full_url} /n country in party list: {country in party_list}",
