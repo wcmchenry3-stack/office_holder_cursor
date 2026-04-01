@@ -337,6 +337,14 @@ def _run_pg_migrations(conn) -> None:
         "CREATE INDEX IF NOT EXISTS idx_parse_error_reports_fingerprint"
         " ON parse_error_reports(fingerprint)",
     )
+    _apply(
+        "pg_scraper_jobs_queued_at",
+        "ALTER TABLE scraper_jobs ADD COLUMN IF NOT EXISTS queued_at TIMESTAMPTZ",
+    )
+    _apply(
+        "pg_scraper_jobs_job_params_json",
+        "ALTER TABLE scraper_jobs ADD COLUMN IF NOT EXISTS job_params_json TEXT",
+    )
 
 
 def _init_sqlite(path: Path | None = None) -> None:

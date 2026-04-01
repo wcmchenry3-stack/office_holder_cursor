@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Router: Main scraper run — start, status, cancel, and table-cache refresh."""
 
+import json
 import time
 import threading
 import uuid
@@ -41,6 +42,65 @@ def _evict_old_jobs() -> None:
         ]
         for jid in stale:
             del _run_job_store[jid]
+
+
+def _maybe_start_next_queued_job() -> None:
+    """Pop the oldest queued job from DB and start its worker thread.
+
+    Called at the end of every _run_job_worker invocation (success or error)
+    so the queue drains automatically.
+    """
+    try:
+        next_job = db_scraper_jobs.pop_next_queued_job()
+        if next_job is None:
+            return
+        job_id = next_job["id"]
+        try:
+            params = json.loads(next_job.get("job_params_json") or "{}")
+        except (ValueError, TypeError):
+            params = {}
+        with _run_job_lock:
+            _run_job_store[job_id] = {
+                "status": "running",
+                "_created_at": time.monotonic(),
+                "progress": {
+                    "office": {"current": 0, "total": 1, "message": "Starting…"},
+                    "table": {"current": 0, "total": 0, "message": ""},
+                    "infobox": {"current": 0, "total": 0, "message": ""},
+                    "bio": {"current": 0, "total": 0, "message": ""},
+                },
+                "phase": "init",
+                "current": 0,
+                "total": 1,
+                "message": "Starting…",
+                "extra": {},
+                "result": None,
+                "error": None,
+                "cancelled": False,
+            }
+        thread = threading.Thread(
+            target=_run_job_worker,
+            args=(
+                job_id,
+                params.get("mode", "delta"),
+                params.get("run_bio", False),
+                params.get("run_office_bio", True),
+                params.get("refresh_table_cache", False),
+                False,
+                False,
+                params.get("max_rows_per_table"),
+                params.get("office_id_list"),
+                params.get("individual_ref"),
+                params.get("individual_id_list"),
+                params.get("force_overwrite", False),
+            ),
+            daemon=True,
+        )
+        thread.start()
+    except Exception:
+        import logging as _logging
+
+        _logging.getLogger(__name__).exception("_maybe_start_next_queued_job failed")
 
 
 # ---------------------------------------------------------------------------
@@ -162,6 +222,8 @@ def _run_job_worker(
             db_scraper_jobs.update_job(job_id, "error", {"error": str(e)})
         except Exception:
             pass
+    finally:
+        _maybe_start_next_queued_job()
 
 
 @router.post("/api/run")
@@ -247,9 +309,32 @@ async def api_run(
         refresh_table_cache = False
     _evict_old_jobs()
     with _run_job_lock:
-        for job in _run_job_store.values():
-            if job.get("status") == "running":
-                raise HTTPException(status_code=409, detail="A job is already running.")
+        has_running = any(job.get("status") == "running" for job in _run_job_store.values())
+
+    if has_running:
+        queue_depth = db_scraper_jobs.count_queued_jobs()
+        if queue_depth >= 1:
+            return JSONResponse({"queued": False, "reason": "queue_full"}, status_code=202)
+        job_id = str(uuid.uuid4())
+        job_params = json.dumps(
+            {
+                "mode": mode,
+                "run_bio": run_bio,
+                "run_office_bio": run_office_bio,
+                "refresh_table_cache": refresh_table_cache,
+                "max_rows_per_table": None,
+                "office_id_list": office_id_list,
+                "individual_ref": individual_ref.strip() or None,
+                "individual_id_list": individual_id_list,
+                "force_overwrite": force_overwrite_bool,
+            }
+        )
+        try:
+            db_scraper_jobs.enqueue_job(job_id, mode, job_params)
+        except Exception:
+            pass
+        return JSONResponse({"queued": True, "job_id": job_id}, status_code=202)
+
     job_id = str(uuid.uuid4())
     try:
         db_scraper_jobs.create_job(job_id, mode)
@@ -292,7 +377,7 @@ async def api_run(
         ),
     )
     thread.start()
-    return JSONResponse({"job_id": job_id}, status_code=202)
+    return JSONResponse({"job_id": job_id, "queued": False}, status_code=202)
 
 
 @router.get("/api/run/matching-individuals")

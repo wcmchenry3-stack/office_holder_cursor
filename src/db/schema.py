@@ -292,6 +292,8 @@ CREATE TABLE IF NOT EXISTS scraper_jobs (
     id TEXT PRIMARY KEY,
     type TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'running',
+    queued_at TEXT,
+    job_params_json TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     result_json TEXT
@@ -630,6 +632,8 @@ CREATE TABLE IF NOT EXISTS scraper_jobs (
     id TEXT PRIMARY KEY,
     type TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'running',
+    queued_at TIMESTAMPTZ,
+    job_params_json TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     result_json TEXT

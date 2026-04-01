@@ -80,6 +80,18 @@ def run_daily_delta() -> None:
         print("[scheduler] Daily delta run skipped because DAILY_DELTA_ENABLED is disabled")
         return
 
+    try:
+        from src.db.scraper_jobs import count_active_jobs
+
+        active = count_active_jobs()
+        if active > 0:
+            print(
+                f"[scheduler] Daily delta run skipped: {active} job(s) already running or queued."
+            )
+            return
+    except Exception as e:
+        print(f"[scheduler] Could not check active jobs (non-fatal): {e}")
+
     from src.scraper.runner import _cleanup_disk_cache
 
     run_start = datetime.now(timezone.utc)
