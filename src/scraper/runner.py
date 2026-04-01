@@ -56,6 +56,7 @@ def parse_full_table_for_export(
     data_cleanup = parse_core.DataCleanup(logger)
     biography = parse_core.Biography(logger, data_cleanup)
     offices_parser = parse_core.Offices(logger, biography, data_cleanup)
+    # reporter=None for export: single-record export, failures are acceptable silently
     table_data = _parse_office_html(
         office_row,
         "",
@@ -1380,9 +1381,17 @@ def run_with_db(
     # a modified copy that has no Colab/Sheets. Create that copy on the fly.
     from src.scraper import parse_core  # noqa: F401
 
-    data_cleanup = parse_core.DataCleanup(logger)
-    biography = parse_core.Biography(logger, data_cleanup)
-    offices_parser = parse_core.Offices(logger, biography, data_cleanup)
+    # Build parse error reporter (disabled if GITHUB_TOKEN or OPENAI_API_KEY not set)
+    try:
+        from src.services.parse_error_reporter import ParseErrorReporter
+        from src.services.github_client import get_github_client
+        _reporter = ParseErrorReporter() if get_github_client() is not None else None
+    except Exception:
+        _reporter = None
+
+    data_cleanup = parse_core.DataCleanup(logger, reporter=_reporter)
+    biography = parse_core.Biography(logger, data_cleanup, reporter=_reporter)
+    offices_parser = parse_core.Offices(logger, biography, data_cleanup, reporter=_reporter)
 
     # Full run: purge office_terms first (FK constraint), then individuals; terms are re-populated per-office
     if run_mode == "full" and not dry_run and not test_run:
@@ -1884,6 +1893,8 @@ def run_with_db(
             message="Stopped during bio/living update.",
         )
 
+    if _reporter is not None:
+        _reporter.flush()
     logger.close()
     report(
         "complete",

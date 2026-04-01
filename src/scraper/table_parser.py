@@ -142,11 +142,49 @@ def _emit_merged_run(run, years_only, out):
     out.append(merged)
 
 
+def _emit_parse_failure(
+    reporter,
+    function_name: str,
+    exc: Exception,
+    html_snippet: str = "",
+    wiki_url: str | None = None,
+    office_name: str | None = None,
+    date_str: str | None = None,
+) -> None:
+    """Collect one parser failure into the reporter's buffer (fire-and-forget).
+
+    This helper is called from inside except-blocks. It wraps the reporter call
+    in its own try/except so that a broken reporter never propagates an error
+    into the parser. If reporter is None (tests / no env vars), this is a no-op.
+    """
+    if reporter is None:
+        return
+    import traceback as _tb
+
+    # Lazy import avoids circular dependency (table_parser ← runner ← ai_office_builder ← runner)
+    from src.services.parse_error_reporter import ParseFailure
+
+    failure = ParseFailure(
+        function_name=function_name,
+        error_type=type(exc).__name__,
+        traceback_str=_tb.format_exc(),
+        wiki_url=wiki_url,
+        office_name=office_name,
+        html_snippet=(str(html_snippet) or "")[:2000],
+        date_str=date_str,
+    )
+    try:
+        reporter.collect(failure)
+    except Exception:
+        pass  # Reporter must never crash the parser
+
+
 class DataCleanup:
 
-    def __init__(self, logger):
+    def __init__(self, logger, reporter=None):
 
         self.Logger = logger
+        self._reporter = reporter
 
     def format_date(self, date_str):
 
@@ -209,8 +247,14 @@ class DataCleanup:
             parsed = parse(s, default=_parse_default)
             if parsed:
                 return parsed.strftime("%Y-%m-%d")
-        except (ValueError, TypeError):
-            pass
+        except (ValueError, TypeError) as e:
+            _emit_parse_failure(
+                self._reporter,
+                "DataCleanup.format_date",
+                e,
+                html_snippet=s,
+                date_str=s,
+            )
 
         # If no date is found or if it cannot be parsed, return a default value
         self.Logger.debug_log(f"invalid date in {date_str}", True)
@@ -473,11 +517,12 @@ class DataCleanup:
 
 class Offices:
 
-    def __init__(self, logger, biography, data_cleanup):
+    def __init__(self, logger, biography, data_cleanup, reporter=None):
 
         self.Logger = logger
         self.DataCleanup = data_cleanup
         self.Biography = biography
+        self._reporter = reporter
 
     def _is_valid_wiki_link(self, link):
         if not isinstance(link, str):
@@ -1117,11 +1162,19 @@ class Offices:
         country = office_details["office_country"]
         alt_links = set((table_config_to_parse.get("alt_links") or []))
 
+        _reporter = self._reporter  # capture for closure
+
         def _path_from_full_url(full_url: str) -> str:
             try:
                 parsed = urlparse(full_url or "")
                 return parsed.path or ""
-            except Exception:
+            except Exception as e:
+                _emit_parse_failure(
+                    _reporter,
+                    "Offices._path_from_full_url",
+                    e,
+                    html_snippet=full_url or "",
+                )
                 return ""
 
         def _candidate_from_link_tag(link_tag):
@@ -1486,8 +1539,13 @@ class Offices:
                                     True,
                                 )
                                 return party_info["name"]
-                    except (ValueError, TypeError, IndexError):
-                        pass
+                    except (ValueError, TypeError, IndexError) as e:
+                        _emit_parse_failure(
+                            self._reporter,
+                            "Offices.find_link.party_text_fallback",
+                            e,
+                            html_snippet=party_text or "",
+                        )
 
         if use_party_link != True and country in party_list:
             party_text = cells[party_column].get_text(strip=True)
@@ -1752,10 +1810,11 @@ class Offices:
 
 class Biography:
 
-    def __init__(self, logger, data_cleanup):
+    def __init__(self, logger, data_cleanup, reporter=None):
 
         self.Logger = logger
         self.DataCleanup = data_cleanup
+        self._reporter = reporter
 
     def parse_infobox(self, infobox):
         """
@@ -2101,8 +2160,15 @@ class Biography:
                                             if isinstance(_res, (tuple, list)) and len(_res) >= 2
                                             else "present"
                                         )
-                                    except (ValueError, TypeError, IndexError):
+                                    except (ValueError, TypeError, IndexError) as e:
                                         start_date, end_date = "Invalid date", "Invalid date"
+                                        _emit_parse_failure(
+                                            self._reporter,
+                                            "Biography.find_term_dates.parse_date_info_both",
+                                            e,
+                                            html_snippet=str(tr_cur)[:2000] if tr_cur else "",
+                                            date_str=date_text,
+                                        )
                                     if (
                                         start_date
                                         and end_date
@@ -2127,8 +2193,15 @@ class Biography:
                                             start_date, end_date = _res[0], "present"
                                         else:
                                             start_date, end_date = _res, "present"
-                                    except (ValueError, TypeError, IndexError):
+                                    except (ValueError, TypeError, IndexError) as e:
                                         start_date, end_date = "Invalid date", "Invalid date"
+                                        _emit_parse_failure(
+                                            self._reporter,
+                                            "Biography.find_term_dates.parse_date_info_start",
+                                            e,
+                                            html_snippet=str(tr_cur)[:2000] if tr_cur else "",
+                                            date_str=date_text,
+                                        )
                                     if (
                                         start_date
                                         and start_date.lower() not in current_office_holder

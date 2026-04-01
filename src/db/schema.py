@@ -299,6 +299,21 @@ CREATE TABLE IF NOT EXISTS scraper_jobs (
 CREATE INDEX IF NOT EXISTS idx_scraper_jobs_status ON scraper_jobs(status);
 CREATE INDEX IF NOT EXISTS idx_scraper_jobs_created_at ON scraper_jobs(created_at);
 
+-- Parse error reports: one record per distinct (function, error_type, wiki_url) fingerprint.
+-- Used by ParseErrorReporter to deduplicate GitHub issue creation across runs.
+CREATE TABLE IF NOT EXISTS parse_error_reports (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    fingerprint TEXT NOT NULL UNIQUE,
+    function_name TEXT NOT NULL,
+    error_type TEXT NOT NULL,
+    wiki_url TEXT,
+    office_name TEXT,
+    github_issue_url TEXT,
+    github_issue_number INTEGER,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_parse_error_reports_fingerprint ON parse_error_reports(fingerprint);
+
 -- Indexes on offices/parties/office_terms FK columns
 CREATE INDEX IF NOT EXISTS idx_offices_country_id ON offices(country_id);
 CREATE INDEX IF NOT EXISTS idx_offices_state_id ON offices(state_id);
@@ -620,7 +635,22 @@ CREATE TABLE IF NOT EXISTS scraper_jobs (
     result_json TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_scraper_jobs_status ON scraper_jobs(status);
-CREATE INDEX IF NOT EXISTS idx_scraper_jobs_created_at ON scraper_jobs(created_at)
+CREATE INDEX IF NOT EXISTS idx_scraper_jobs_created_at ON scraper_jobs(created_at);
+
+-- Parse error reports: one record per distinct (function, error_type, wiki_url) fingerprint.
+-- Used by ParseErrorReporter to deduplicate GitHub issue creation across runs.
+CREATE TABLE IF NOT EXISTS parse_error_reports (
+    id SERIAL PRIMARY KEY,
+    fingerprint TEXT NOT NULL UNIQUE,
+    function_name TEXT NOT NULL,
+    error_type TEXT NOT NULL,
+    wiki_url TEXT,
+    office_name TEXT,
+    github_issue_url TEXT,
+    github_issue_number INTEGER,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_parse_error_reports_fingerprint ON parse_error_reports(fingerprint)
 """
 
 # Same index SQL works for both backends (standard SQL).
