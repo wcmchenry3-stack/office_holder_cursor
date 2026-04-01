@@ -345,6 +345,34 @@ def _run_pg_migrations(conn) -> None:
         "pg_scraper_jobs_job_params_json",
         "ALTER TABLE scraper_jobs ADD COLUMN IF NOT EXISTS job_params_json TEXT",
     )
+    _apply(
+        "pg_individuals_insufficient_vitals_checked_at",
+        "ALTER TABLE individuals ADD COLUMN IF NOT EXISTS insufficient_vitals_checked_at TIMESTAMPTZ",
+    )
+    _apply(
+        "pg_individuals_insuf_vitals_checked_at_idx",
+        "CREATE INDEX IF NOT EXISTS idx_individuals_insuf_vitals_checked_at"
+        " ON individuals(insufficient_vitals_checked_at)",
+    )
+
+
+def _sqlite_add_columns_if_missing(conn) -> None:
+    """Idempotently add new columns to pre-existing SQLite tables.
+
+    Required when an existing DB pre-dates a schema change — CREATE TABLE IF NOT EXISTS
+    won't add new columns, but the subsequent CREATE INDEX will fail if they are absent.
+    """
+    migrations = [
+        ("individuals", "insufficient_vitals_checked_at", "TEXT"),
+        ("scraper_jobs", "queued_at", "TEXT"),
+        ("scraper_jobs", "job_params_json", "TEXT"),
+    ]
+    for table, column, col_type in migrations:
+        try:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
+            conn.commit()
+        except Exception:
+            pass  # Column already exists — safe to ignore
 
 
 def _init_sqlite(path: Path | None = None) -> None:
@@ -355,6 +383,7 @@ def _init_sqlite(path: Path | None = None) -> None:
 
     conn = get_connection(path)
     try:
+        _sqlite_add_columns_if_missing(conn)
         conn.executescript(SCHEMA_SQL)
         conn.commit()
         seed_reference_data(conn=conn)

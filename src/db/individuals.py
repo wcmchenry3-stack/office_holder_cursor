@@ -358,3 +358,69 @@ def list_individuals_for_office_category(
     finally:
         if own_conn:
             conn.close()
+
+
+def get_insufficient_vitals_individuals_for_batch(batch: int, conn=None) -> list[dict]:
+    """Return individuals in *batch* that are missing birth dates and need a vitals check.
+
+    Batch assignment: id % 30  (computed in the DB; never stored).
+    Daily pick:       date.today().day % 30
+
+    Included when ALL of these hold:
+      - birth_date IS NULL
+      - is_living = 1 OR death_date IS NULL   (still possibly alive or undated death)
+      - is_dead_link = 0                       (has a Wikipedia page to look up)
+      - wiki_url NOT LIKE 'No link:%'          (not a manual no-link entry)
+      - insufficient_vitals_checked_at IS NULL OR checked > 30 days ago
+
+    Returns list of dicts with id, wiki_url, full_name.
+    """
+    from datetime import datetime, timezone, timedelta
+
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    own_conn = conn is None
+    if own_conn:
+        conn = get_connection()
+    try:
+        rows = conn.execute(
+            """
+            SELECT id, wiki_url, full_name
+            FROM individuals
+            WHERE birth_date IS NULL
+              AND (is_living = 1 OR death_date IS NULL)
+              AND is_dead_link = 0
+              AND wiki_url NOT LIKE %s
+              AND (id %% 30) = %s
+              AND (
+                  insufficient_vitals_checked_at IS NULL
+                  OR insufficient_vitals_checked_at < %s
+              )
+            ORDER BY id
+            """,
+            ("No link:%", batch, cutoff),
+        ).fetchall()
+        return [dict(zip(("id", "wiki_url", "full_name"), row)) for row in rows]
+    finally:
+        if own_conn:
+            conn.close()
+
+
+def mark_insufficient_vitals_checked(individual_id: int, conn=None) -> None:
+    """Set insufficient_vitals_checked_at = NOW() for *individual_id*.
+
+    Called after every insufficient-vitals bio attempt (success or error) so the
+    individual is skipped for the next 30 days.
+    """
+    own_conn = conn is None
+    if own_conn:
+        conn = get_connection()
+    try:
+        conn.execute(
+            "UPDATE individuals SET insufficient_vitals_checked_at = NOW() WHERE id = %s",
+            (individual_id,),
+        )
+        if own_conn:
+            conn.commit()
+    finally:
+        if own_conn:
+            conn.close()

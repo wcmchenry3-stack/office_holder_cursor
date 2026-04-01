@@ -105,6 +105,7 @@ CREATE TABLE IF NOT EXISTS individuals (
     is_living INTEGER NOT NULL DEFAULT 1,
     bio_batch INTEGER NOT NULL DEFAULT 0,
     bio_refreshed_at TEXT,
+    insufficient_vitals_checked_at TEXT,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
 );
@@ -271,6 +272,7 @@ CREATE TABLE IF NOT EXISTS office_terms (
 CREATE INDEX IF NOT EXISTS idx_office_terms_office_id ON office_terms(office_id);
 CREATE INDEX IF NOT EXISTS idx_office_terms_individual_id ON office_terms(individual_id);
 CREATE INDEX IF NOT EXISTS idx_office_terms_wiki_url ON office_terms(wiki_url);
+CREATE INDEX IF NOT EXISTS idx_individuals_insuf_vitals_checked_at ON individuals(insufficient_vitals_checked_at);
 
 -- Parser test scripts
 CREATE TABLE IF NOT EXISTS parser_test_scripts (
@@ -445,6 +447,7 @@ CREATE TABLE IF NOT EXISTS individuals (
     is_living INTEGER NOT NULL DEFAULT 1,
     bio_batch INTEGER NOT NULL DEFAULT 0,
     bio_refreshed_at TIMESTAMPTZ,
+    insufficient_vitals_checked_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -611,6 +614,7 @@ CREATE TABLE IF NOT EXISTS office_terms (
 CREATE INDEX IF NOT EXISTS idx_office_terms_office_id ON office_terms(office_id);
 CREATE INDEX IF NOT EXISTS idx_office_terms_individual_id ON office_terms(individual_id);
 CREATE INDEX IF NOT EXISTS idx_office_terms_wiki_url ON office_terms(wiki_url);
+CREATE INDEX IF NOT EXISTS idx_individuals_insuf_vitals_checked_at ON individuals(insufficient_vitals_checked_at);
 
 -- Parser test scripts
 CREATE TABLE IF NOT EXISTS parser_test_scripts (
