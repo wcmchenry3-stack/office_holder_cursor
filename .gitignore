@@ -34,3 +34,6 @@ migration_output.sql
 # Generated debug/test artifacts
 test_scripts/**/*.html
 !test_scripts/fixtures/**/*.html
+
+# Claude Code local overrides (personal, not shared)
+.claude/settings.local.json
