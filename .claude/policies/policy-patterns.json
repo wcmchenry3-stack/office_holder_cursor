@@ -1,0 +1,15 @@
+{
+  "_note": "Detection patterns for CI policy scanners. Rate-limit retry/backoff, max_completion_tokens, and User-Agent compliance are enforced in the service layer — see ai_office_builder.py, gemini_vitals_researcher.py, and wiki_fetch.py.",
+  "openai": {
+    "detect": "from openai|import openai|openai\\.com|OpenAI\\(|client\\.chat\\.completions|client\\.completions\\.create|OPENAI_API_KEY",
+    "skip": "^\\.env"
+  },
+  "wikipedia": {
+    "detect": "wikipedia\\.org|mediawiki|wikimedia",
+    "skip": null
+  },
+  "gemini": {
+    "detect": "google\\.generativeai|from google.*generativeai|genai\\.|GenerativeModel|GEMINI_API_KEY|GOOGLE_AI_API_KEY",
+    "skip": "^\\.env"
+  }
+}
