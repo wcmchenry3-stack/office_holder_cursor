@@ -131,6 +131,48 @@ All modes are triggered via `run_with_db(run_mode=..., ...)` in `src/scraper/run
 
 ---
 
+## `delta_insufficient_vitals`
+
+**Trigger:** Scheduled daily at 07:00 UTC (APScheduler).
+
+**Behavior:**
+1. Calculate today's batch: `date.today().day % 30`
+2. Query individuals with insufficient vitals in that batch (broadened criteria: `birth_date IS NULL` OR `death_date IS NULL AND is_living = 0`)
+3. For each individual: fetch Wikipedia bio to find vitals
+4. Mark `insufficient_vitals_checked_at = NOW()` (30-day cooldown)
+
+**DB writes:** UPDATE `individuals` with found vitals.
+
+---
+
+## `gemini_vitals_research`
+
+**Trigger:** Scheduled daily at 08:00 UTC (APScheduler), or manual via `run_mode="gemini_vitals_research"`.
+
+**Behavior:**
+1. Calculate today's batch: `date.today().day % 30`
+2. Query individuals with insufficient vitals in that batch (same broadened criteria as above) but with **90-day** cooldown via `gemini_research_checked_at`
+3. For each individual:
+   a. **Gemini API** researches vitals from government, academic, genealogical sources
+   b. If vitals found → `upsert_individual()` immediately (individual drops out of future batches)
+   c. Store research sources in `individual_research_sources`
+   d. **OpenAI** polishes Gemini's findings into a wikitext Wikipedia article
+   e. Store article draft in `wiki_draft_proposals` (status: pending)
+   f. Mark `gemini_research_checked_at = NOW()`
+
+**DB writes:**
+- `individuals`: UPDATE with found vitals (birth/death dates, places)
+- `individual_research_sources`: INSERT found sources
+- `wiki_draft_proposals`: INSERT article drafts
+
+**Two-stage AI pipeline:** Gemini does research → OpenAI writes the article. OpenAI uses ONLY Gemini's findings (no independent research). Sources flow through as `<ref>` tags.
+
+**Env var:** `GEMINI_OFFICE_HOLDER` — if not set, feature is silently disabled.
+
+**Policy:** See runner.py docstring for full Gemini API policy compliance details.
+
+---
+
 ## Auto-Table-Update Algorithm
 
 When a delta (or full) run parses a table and finds that some existing `office_terms` holders are **missing** from the new parse, the runner checks whether the table numbering has changed on the Wikipedia page (this happens when Wikipedia editors add or remove tables).

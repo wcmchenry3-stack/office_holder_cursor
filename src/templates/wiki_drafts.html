@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Wiki Draft Proposals – Office Holder{% endblock %}
+{% block content %}
+<h1>Wiki Draft Proposals</h1>
+
+<div style="margin-bottom:1em">
+  <strong>Filter:</strong>
+  <a href="/data/wiki-drafts"{% if not status_filter %} style="font-weight:bold"{% endif %}>All</a> |
+  <a href="/data/wiki-drafts?status=pending"{% if status_filter == 'pending' %} style="font-weight:bold"{% endif %}>Pending</a> |
+  <a href="/data/wiki-drafts?status=submitted"{% if status_filter == 'submitted' %} style="font-weight:bold"{% endif %}>Submitted</a> |
+  <a href="/data/wiki-drafts?status=published"{% if status_filter == 'published' %} style="font-weight:bold"{% endif %}>Published</a> |
+  <a href="/data/wiki-drafts?status=rejected"{% if status_filter == 'rejected' %} style="font-weight:bold"{% endif %}>Rejected</a>
+</div>
+
+{% if drafts %}
+<table>
+  <thead>
+    <tr><th>ID</th><th>Individual</th><th>Wiki URL</th><th>Status</th><th>Created</th><th></th></tr>
+  </thead>
+  <tbody>
+    {% for d in drafts %}
+    <tr>
+      <td>{{ d.id }}</td>
+      <td>{{ d.full_name or '(unknown)' }}</td>
+      <td>{% if d.wiki_url %}<a href="{{ d.wiki_url }}" target="_blank" rel="noopener">{{ d.wiki_url[:40] }}</a>{% else %}—{% endif %}</td>
+      <td><span class="badge badge-{{ d.status }}">{{ d.status }}</span></td>
+      <td>{{ d.created_at or '—' }}</td>
+      <td><a href="/data/wiki-drafts/{{ d.id }}">View</a></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>No draft proposals found{% if status_filter %} with status "{{ status_filter }}"{% endif %}.</p>
+{% endif %}
+{% endblock %}

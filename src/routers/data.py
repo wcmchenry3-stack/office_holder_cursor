@@ -1,4 +1,4 @@
-"""Data view routes (individuals, office terms, milestones)."""
+"""Data view routes (individuals, office terms, milestones, wiki drafts)."""
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse
@@ -7,6 +7,7 @@ from src.db import individuals as db_individuals
 from src.db import offices as db_offices
 from src.db import office_terms as db_office_terms
 from src.db import reports as db_reports
+from src.db import individual_research_sources as db_research
 from src.routers._deps import templates
 
 router = APIRouter()
@@ -31,6 +32,30 @@ async def data_office_terms(
     offices = db_offices.list_offices()
     return templates.TemplateResponse(
         request, "office_terms.html", {"terms": terms, "offices": offices}
+    )
+
+
+@router.get("/data/wiki-drafts", response_class=HTMLResponse)
+async def data_wiki_drafts(
+    request: Request,
+    status: str = Query(None),
+):
+    drafts = db_research.list_wiki_draft_proposals(status=status)
+    return templates.TemplateResponse(
+        request, "wiki_drafts.html", {"drafts": drafts, "status_filter": status}
+    )
+
+
+@router.get("/data/wiki-drafts/{proposal_id}", response_class=HTMLResponse)
+async def data_wiki_draft_detail(request: Request, proposal_id: int):
+    draft = db_research.get_wiki_draft_proposal(proposal_id)
+    if draft is None:
+        from fastapi.responses import RedirectResponse
+
+        return RedirectResponse("/data/wiki-drafts")
+    sources = db_research.list_sources_for_individual(draft["individual_id"])
+    return templates.TemplateResponse(
+        request, "wiki_draft_detail.html", {"draft": draft, "sources": sources}
     )
 
 

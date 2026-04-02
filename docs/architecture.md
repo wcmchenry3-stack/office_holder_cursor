@@ -18,7 +18,7 @@ src/scraper/             src/db/
   ↓                          ↓
 Wikipedia REST API      SQLite file
 (en.wikipedia.org)      data/office_holder.db
-← rate-limited; retry + backoff on 429/503
+← User-Agent header set per Wikimedia etiquette; rate-limited; retry + backoff on 429/503
 ```
 
 **Auth:** Google OAuth via `authlib`. `require_login()` middleware gates all routes except `/login`, `/auth/google*`, `/static`. When `GOOGLE_CLIENT_ID` is not set, auth is fully bypassed (local dev).
@@ -110,6 +110,7 @@ Auth is bypassed locally when `GOOGLE_CLIENT_ID` is not set. Database is created
 | `EMAIL_APP_PASSWORD` | For email | — | Gmail App Password for daily run summary email (myaccount.google.com/apppasswords) |
 | `EMAIL_FROM` | No | `wcmchenry3@gmail.com` | Sender address for summary email |
 | `EMAIL_TO` | No | `wcmchenry3@gmail.com` | Recipient address for summary email |
+| `GEMINI_OFFICE_HOLDER` | For Gemini | — | Google Gemini API key for deep vitals research (Feature C). If unset, Gemini research is silently disabled. |
 | `PLAYWRIGHT_BASE_URL` | Testing | `http://127.0.0.1:8000` | Base URL for Playwright tests |
 | `PLAYWRIGHT_EDIT_OFFICE_ID` | Testing | — | Office ID used in Playwright UI tests |
 | `PLAYWRIGHT_OFFICE_A_ID` | Testing | — | Office ID A for comparison tests |

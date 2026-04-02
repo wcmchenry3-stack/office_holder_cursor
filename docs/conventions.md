@@ -8,6 +8,7 @@
 - **Office row helpers:** Always use `db_offices.office_row_to_table_config()` and `office_row_to_office_details()` to convert a flat `offices` row into structured dicts for the parser. Don't build config dicts manually.
 - **Progress callbacks:** `run_with_db()` accepts an optional `progress_callback(phase, current, total, message, extra_dict)` for streaming progress to the UI.
 - **Wikipedia requests:** Always use `WIKIPEDIA_REQUEST_HEADERS` from `wiki_fetch.py` (includes User-Agent + gzip per Wikimedia policy).
+- **Gemini API:** All calls go through `src/services/gemini_vitals_researcher.py`. API key from `GEMINI_OFFICE_HOLDER` env var (never hardcoded). Exponential backoff on HTTP 429 (`RESOURCE_EXHAUSTED`). `max_output_tokens` set on every call. See runner.py docstring for full policy details.
 - **No DB write in dry_run/test_run:** `run_with_db(dry_run=True)` or `test_run=True` skips all DB writes.
 
 ---

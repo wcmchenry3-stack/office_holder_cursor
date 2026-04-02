@@ -360,15 +360,26 @@ def list_individuals_for_office_category(
             conn.close()
 
 
+def _insufficient_vitals_where_clause() -> str:
+    """Return the WHERE fragment identifying individuals with incomplete vital data.
+
+    Currently flags:
+      - birth_date IS NULL  (missing birth date)
+      - death_date IS NULL AND is_living = 0  (confirmed dead but no death date)
+
+    Extend this function when additional vitals fields are tracked (e.g. birth/death place).
+    """
+    return "(birth_date IS NULL OR (death_date IS NULL AND is_living = 0))"
+
+
 def get_insufficient_vitals_individuals_for_batch(batch: int, conn=None) -> list[dict]:
-    """Return individuals in *batch* that are missing birth dates and need a vitals check.
+    """Return individuals in *batch* with insufficient vitals that need a recheck.
 
     Batch assignment: id % 30  (computed in the DB; never stored).
     Daily pick:       date.today().day % 30
 
     Included when ALL of these hold:
-      - birth_date IS NULL
-      - is_living = 1 OR death_date IS NULL   (still possibly alive or undated death)
+      - insufficient vitals (see _insufficient_vitals_where_clause)
       - is_dead_link = 0                       (has a Wikipedia page to look up)
       - wiki_url NOT LIKE 'No link:%'          (not a manual no-link entry)
       - insufficient_vitals_checked_at IS NULL OR checked > 30 days ago
@@ -383,11 +394,10 @@ def get_insufficient_vitals_individuals_for_batch(batch: int, conn=None) -> list
         conn = get_connection()
     try:
         rows = conn.execute(
-            """
+            f"""
             SELECT id, wiki_url, full_name
             FROM individuals
-            WHERE birth_date IS NULL
-              AND (is_living = 1 OR death_date IS NULL)
+            WHERE {_insufficient_vitals_where_clause()}
               AND is_dead_link = 0
               AND wiki_url NOT LIKE %s
               AND (id %% 30) = %s
@@ -417,6 +427,67 @@ def mark_insufficient_vitals_checked(individual_id: int, conn=None) -> None:
     try:
         conn.execute(
             "UPDATE individuals SET insufficient_vitals_checked_at = NOW() WHERE id = %s",
+            (individual_id,),
+        )
+        if own_conn:
+            conn.commit()
+    finally:
+        if own_conn:
+            conn.close()
+
+
+def get_gemini_research_candidates_for_batch(batch: int, conn=None) -> list[dict]:
+    """Return individuals in *batch* eligible for Gemini deep research.
+
+    Same bucketing as insufficient-vitals (id % 30) but with a **90-day** cooldown
+    via gemini_research_checked_at, reflecting the higher cost of API research.
+
+    Uses _insufficient_vitals_where_clause() for the vitals criteria so both
+    the Wikipedia recheck and Gemini research stay in sync.
+
+    Returns list of dicts with id, wiki_url, full_name.
+    """
+    from datetime import datetime, timezone, timedelta
+
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=90)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    own_conn = conn is None
+    if own_conn:
+        conn = get_connection()
+    try:
+        rows = conn.execute(
+            f"""
+            SELECT id, wiki_url, full_name
+            FROM individuals
+            WHERE {_insufficient_vitals_where_clause()}
+              AND is_dead_link = 0
+              AND wiki_url NOT LIKE %s
+              AND (id %% 30) = %s
+              AND (
+                  gemini_research_checked_at IS NULL
+                  OR gemini_research_checked_at < %s
+              )
+            ORDER BY id
+            """,
+            ("No link:%", batch, cutoff),
+        ).fetchall()
+        return [dict(zip(("id", "wiki_url", "full_name"), row)) for row in rows]
+    finally:
+        if own_conn:
+            conn.close()
+
+
+def mark_gemini_research_checked(individual_id: int, conn=None) -> None:
+    """Set gemini_research_checked_at = NOW() for *individual_id*.
+
+    Called after every Gemini research attempt (success or failure) so the
+    individual is skipped for the next 90 days.
+    """
+    own_conn = conn is None
+    if own_conn:
+        conn = get_connection()
+    try:
+        conn.execute(
+            "UPDATE individuals SET gemini_research_checked_at = NOW() WHERE id = %s",
             (individual_id,),
         )
         if own_conn:

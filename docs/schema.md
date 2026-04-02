@@ -195,6 +195,44 @@ Each filter can be scoped to specific countries/levels/branches via `infobox_rol
 
 ---
 
+## Feature C Tables (Gemini Vitals Research)
+
+### `individual_research_sources`
+| Column | Type | Notes |
+|---|---|---|
+| `id` | INTEGER PK | |
+| `individual_id` | INTEGER FK → individuals | |
+| `source_url` | TEXT NOT NULL | URL of the research source |
+| `source_type` | TEXT | government, academic, genealogical, news, other |
+| `found_data_json` | TEXT | JSON with birth_date, death_date, notes |
+| `created_at` | TIMESTAMP | |
+
+### `wiki_draft_proposals`
+| Column | Type | Notes |
+|---|---|---|
+| `id` | INTEGER PK | |
+| `individual_id` | INTEGER FK → individuals | |
+| `proposal_text` | TEXT NOT NULL | Wikitext article draft |
+| `status` | TEXT DEFAULT 'pending' | pending, submitted, published, rejected |
+| `created_at` | TIMESTAMP | |
+
+### `reference_documents`
+| Column | Type | Notes |
+|---|---|---|
+| `id` | INTEGER PK | |
+| `doc_key` | TEXT UNIQUE | e.g. 'wikipedia_mos' |
+| `content` | TEXT NOT NULL | Cached document content |
+| `fetched_at` | TIMESTAMP | When content was last fetched/refreshed |
+| `created_at` | TIMESTAMP | |
+| `updated_at` | TIMESTAMP | |
+
+### Column added to `individuals`
+| Column | Type | Notes |
+|---|---|---|
+| `gemini_research_checked_at` | TIMESTAMP | 90-day cooldown for Gemini deep research |
+
+---
+
 ## Migration History
 
 All migrations are in `src/db/migrate.py`, called via `migrate_to_fk()` at startup. They run in sequence and are idempotent.
