@@ -193,7 +193,7 @@ class GeminiVitalsResearcher:
         known_death_place: str,
     ) -> str:
         lines = [
-            f"Research this individual:",
+            "Research this individual:",
             f"  Name: {full_name}",
         ]
         if office_name:

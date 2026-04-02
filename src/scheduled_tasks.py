@@ -277,7 +277,7 @@ def _send_job_summary_email(
             f"Run date  : {date_str}",
             f"Started   : {started_str}",
             f"Duration  : {_format_duration(duration_s)}",
-            f"Status    : Complete",
+            "Status    : Complete",
             "",
             "RESULTS",
             "-------",
