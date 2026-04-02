@@ -1,5 +1,9 @@
 # -*- coding: utf-8 -*-
-"""Seed the reference_documents table with Wikipedia formatting guidelines."""
+"""Seed the reference_documents table with Wikipedia formatting guidelines.
+
+No HTTP requests are made here — content is static. All live Wikipedia/Wikimedia
+requests go through wiki_fetch.py which sets the User-Agent header per policy.
+"""
 
 from __future__ import annotations
 

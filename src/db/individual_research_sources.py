@@ -1,5 +1,9 @@
 # -*- coding: utf-8 -*-
-"""CRUD operations for individual_research_sources and wiki_draft_proposals tables."""
+"""CRUD operations for individual_research_sources and wiki_draft_proposals tables.
+
+DB-only module — no HTTP requests. All Wikipedia/Wikimedia requests go through
+wiki_fetch.py which sets the User-Agent header per Wikimedia etiquette policy.
+"""
 
 from __future__ import annotations
 

@@ -1,5 +1,9 @@
 # -*- coding: utf-8 -*-
-"""Router: Interactive Gemini vitals research testing page."""
+"""Router: Interactive Gemini vitals research testing page.
+
+OpenAI calls are delegated to AIOfficeBuilder.polish_wiki_article() which
+enforces max_completion_tokens=4096 and rate-limit backoff on every call.
+"""
 
 import json
 import logging
