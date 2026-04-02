@@ -78,7 +78,8 @@ python -m pytest                            # included in full suite
 
 ### A10 — Server-Side Request Forgery (SSRF)
 - **Policy**: All outbound HTTP calls target Wikipedia's REST API (with User-Agent header per Wikimedia
-  etiquette), OpenAI API, or Google Gemini API only.
+  etiquette; rate-limited via `wiki_throttle()` with retry/backoff on 429/503), OpenAI API, or
+  Google Gemini API only.
   `normalize_wiki_url()` enforces `https` scheme and `wikipedia.org` in the hostname before any
   request is made. User-supplied URLs in `individual_ref` are passed through this validator.
   Gemini API calls go through `src/services/gemini_vitals_researcher.py` only; OpenAI through
