@@ -256,6 +256,7 @@ def _init_postgres() -> None:
     """Apply schema and seed data to a fresh or existing PostgreSQL database."""
     from .schema import SCHEMA_PG_SQL, OFFICES_PARTIES_INDEX_PG_SQL
     from .seed import seed_reference_data
+    from .seed_reference_docs import seed_wikipedia_mos
     from . import test_scripts as db_test_scripts
 
     conn = get_connection()
@@ -268,6 +269,7 @@ def _init_postgres() -> None:
         conn.commit()
 
         seed_reference_data(conn=conn)
+        seed_wikipedia_mos(conn=conn)
         conn.commit()
 
         db_test_scripts.seed_db_from_manifest_if_empty(conn=conn)
@@ -372,6 +374,59 @@ def _run_pg_migrations(conn) -> None:
         "CREATE INDEX IF NOT EXISTS idx_individuals_insuf_vitals_checked_at"
         " ON individuals(insufficient_vitals_checked_at)",
     )
+    _apply(
+        "pg_individuals_gemini_research_checked_at",
+        "ALTER TABLE individuals ADD COLUMN IF NOT EXISTS gemini_research_checked_at TIMESTAMPTZ",
+    )
+    _apply(
+        "pg_individuals_gemini_research_checked_at_idx",
+        "CREATE INDEX IF NOT EXISTS idx_individuals_gemini_research_checked_at"
+        " ON individuals(gemini_research_checked_at)",
+    )
+    _apply(
+        "pg_create_individual_research_sources",
+        "CREATE TABLE IF NOT EXISTS individual_research_sources ("
+        " id SERIAL PRIMARY KEY,"
+        " individual_id INTEGER NOT NULL REFERENCES individuals(id),"
+        " source_url TEXT NOT NULL,"
+        " source_type TEXT,"
+        " found_data_json TEXT,"
+        " created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())",
+    )
+    _apply(
+        "pg_create_individual_research_sources_idx",
+        "CREATE INDEX IF NOT EXISTS idx_individual_research_sources_individual_id"
+        " ON individual_research_sources(individual_id)",
+    )
+    _apply(
+        "pg_create_wiki_draft_proposals",
+        "CREATE TABLE IF NOT EXISTS wiki_draft_proposals ("
+        " id SERIAL PRIMARY KEY,"
+        " individual_id INTEGER NOT NULL REFERENCES individuals(id),"
+        " proposal_text TEXT NOT NULL,"
+        " status TEXT NOT NULL DEFAULT 'pending',"
+        " created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())",
+    )
+    _apply(
+        "pg_create_wiki_draft_proposals_individual_idx",
+        "CREATE INDEX IF NOT EXISTS idx_wiki_draft_proposals_individual_id"
+        " ON wiki_draft_proposals(individual_id)",
+    )
+    _apply(
+        "pg_create_wiki_draft_proposals_status_idx",
+        "CREATE INDEX IF NOT EXISTS idx_wiki_draft_proposals_status"
+        " ON wiki_draft_proposals(status)",
+    )
+    _apply(
+        "pg_create_reference_documents",
+        "CREATE TABLE IF NOT EXISTS reference_documents ("
+        " id SERIAL PRIMARY KEY,"
+        " doc_key TEXT NOT NULL UNIQUE,"
+        " content TEXT NOT NULL,"
+        " fetched_at TIMESTAMPTZ,"
+        " created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),"
+        " updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())",
+    )
 
 
 def _sqlite_add_columns_if_missing(conn) -> None:
@@ -382,6 +437,7 @@ def _sqlite_add_columns_if_missing(conn) -> None:
     """
     migrations = [
         ("individuals", "insufficient_vitals_checked_at", "TEXT"),
+        ("individuals", "gemini_research_checked_at", "TEXT"),
         ("scraper_jobs", "queued_at", "TEXT"),
         ("scraper_jobs", "job_params_json", "TEXT"),
     ]
@@ -397,6 +453,7 @@ def _init_sqlite(path: Path | None = None) -> None:
     """SQLite init for tests — applies the final schema directly (no migrations needed)."""
     from .schema import SCHEMA_SQL
     from .seed import seed_reference_data
+    from .seed_reference_docs import seed_wikipedia_mos
     from . import test_scripts as db_test_scripts
 
     conn = get_connection(path)
@@ -405,6 +462,7 @@ def _init_sqlite(path: Path | None = None) -> None:
         conn.executescript(SCHEMA_SQL)
         conn.commit()
         seed_reference_data(conn=conn)
+        seed_wikipedia_mos(conn=conn)
         db_test_scripts.seed_db_from_manifest_if_empty(conn=conn)
         conn.commit()
     finally:

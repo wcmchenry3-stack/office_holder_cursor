@@ -64,3 +64,7 @@ jobs:
     with:
       allowed-repo: wcmchenry3-stack/office_holder_cursor
     secrets: inherit
+
+  gemini-policy:
+    uses: wcmchenry3-stack/.github/.github/workflows/called-gemini-policy.yml@main
+    secrets: inherit

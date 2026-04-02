@@ -82,9 +82,15 @@ from src.routers import preview as preview_router
 from src.routers import offices as offices_router
 from src.routers import ai_offices as ai_offices_router
 from src.routers import db_explorer as db_explorer_router
+from src.routers import gemini_research as gemini_research_router
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from src.routers._deps import templates, limiter
-from src.scheduled_tasks import is_daily_delta_enabled, run_daily_delta
+from src.scheduled_tasks import (
+    is_daily_delta_enabled,
+    run_daily_delta,
+    run_daily_insufficient_vitals,
+    run_daily_gemini_research,
+)
 
 
 @asynccontextmanager
@@ -100,6 +106,14 @@ async def lifespan(app: FastAPI):
     if is_daily_delta_enabled():
         scheduler.add_job(run_daily_delta, "cron", hour=6, minute=0, id="daily_delta")
         print("[scheduler] Daily delta run scheduled at 06:00 UTC")
+        scheduler.add_job(
+            run_daily_insufficient_vitals, "cron", hour=7, minute=0, id="daily_insufficient_vitals"
+        )
+        print("[scheduler] Insufficient vitals recheck scheduled at 07:00 UTC")
+        scheduler.add_job(
+            run_daily_gemini_research, "cron", hour=8, minute=0, id="daily_gemini_research"
+        )
+        print("[scheduler] Gemini deep research scheduled at 08:00 UTC")
     else:
         print("[scheduler] Daily delta job is paused (DAILY_DELTA_ENABLED is disabled)")
     scheduler.start()
@@ -240,6 +254,7 @@ app.include_router(preview_router.router)
 app.include_router(offices_router.router)
 app.include_router(ai_offices_router.router)
 app.include_router(db_explorer_router.router)
+app.include_router(gemini_research_router.router)
 
 # Stoppable process types: server-side (e.g. "run") have a cancel endpoint and job store with cancelled flag;
 # client-side (e.g. "preview_all") use a Stop button and a running/stopped flag (optional AbortController).

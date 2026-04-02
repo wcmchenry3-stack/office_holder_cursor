@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Wiki Draft #{{ draft.id }} – Office Holder{% endblock %}
+{% block content %}
+<p><a href="/data/wiki-drafts">&larr; Back to drafts</a></p>
+
+<h1>Wiki Draft #{{ draft.id }}</h1>
+
+<table>
+  <tr><th>Individual</th><td>{{ draft.full_name or '(unknown)' }}</td></tr>
+  <tr><th>Wiki URL</th><td>{% if draft.wiki_url %}<a href="{{ draft.wiki_url }}" target="_blank" rel="noopener">{{ draft.wiki_url }}</a>{% else %}—{% endif %}</td></tr>
+  <tr><th>Status</th><td><span class="badge badge-{{ draft.status }}">{{ draft.status }}</span></td></tr>
+  <tr><th>Created</th><td>{{ draft.created_at or '—' }}</td></tr>
+</table>
+
+<h2>Research Sources</h2>
+{% if sources %}
+<table>
+  <thead>
+    <tr><th>Source URL</th><th>Type</th><th>Data</th><th>Date</th></tr>
+  </thead>
+  <tbody>
+    {% for s in sources %}
+    <tr>
+      <td><a href="{{ s.source_url }}" target="_blank" rel="noopener">{{ s.source_url[:60] }}</a></td>
+      <td>{{ s.source_type or '—' }}</td>
+      <td>{{ (s.found_data_json or '—')[:80] }}</td>
+      <td>{{ s.created_at or '—' }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>No research sources recorded.</p>
+{% endif %}
+
+<h2>Article Draft (Wikitext)</h2>
+<pre style="background:#f5f5f5; padding:1em; overflow-x:auto; white-space:pre-wrap; border:1px solid #ddd;">{{ draft.proposal_text }}</pre>
+
+{% endblock %}

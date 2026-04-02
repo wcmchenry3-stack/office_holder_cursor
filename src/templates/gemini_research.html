@@ -1,0 +1,230 @@
+{% extends "base.html" %}
+{% block title %}Gemini Research – Office Holder{% endblock %}
+{% block content %}
+<h1>Gemini Vitals Research</h1>
+<p>Search for an individual, then run Gemini deep research + OpenAI article polish.</p>
+
+<div style="margin-bottom:1.5em">
+  <label for="searchInput"><strong>Search individual:</strong></label>
+  <input type="text" id="searchInput" placeholder="Name or wiki URL..." style="width:400px; padding:0.4em">
+  <div id="searchResults" style="border:1px solid #ddd; max-height:200px; overflow-y:auto; display:none; background:#fff; position:absolute; z-index:10; width:420px;"></div>
+</div>
+
+<div id="selectedPanel" style="display:none; margin-bottom:1.5em; padding:1em; border:1px solid #ccc; background:#f9f9f9;">
+  <h3 style="margin-top:0">Selected Individual</h3>
+  <table>
+    <tr><th>ID</th><td id="selId"></td></tr>
+    <tr><th>Name</th><td id="selName"></td></tr>
+    <tr><th>Wiki URL</th><td id="selUrl"></td></tr>
+    <tr><th>Birth date</th><td id="selBirth"></td></tr>
+    <tr><th>Death date</th><td id="selDeath"></td></tr>
+    <tr><th>Living</th><td id="selLiving"></td></tr>
+  </table>
+  <button id="runBtn" style="margin-top:0.5em; padding:0.5em 1.5em; font-size:1em; cursor:pointer;">
+    Run Gemini Research
+  </button>
+</div>
+
+<div id="progressPanel" style="display:none; margin-bottom:1.5em; padding:1em; border:1px solid #2196f3; background:#e3f2fd;">
+  <span class="spinner" aria-hidden="true" style="margin-right:0.5em;"></span>
+  <strong id="progressPhase">Starting...</strong>
+</div>
+
+<div id="errorPanel" style="display:none; margin-bottom:1.5em;" class="alert alert-error"></div>
+
+<div id="resultsPanel" style="display:none;">
+  <h2>Gemini Research Results</h2>
+  <table id="vitalsTable">
+    <tr><th>Birth date</th><td id="resBirth"></td></tr>
+    <tr><th>Death date</th><td id="resDeath"></td></tr>
+    <tr><th>Birth place</th><td id="resBirthPlace"></td></tr>
+    <tr><th>Death place</th><td id="resDeathPlace"></td></tr>
+    <tr><th>Confidence</th><td id="resConfidence"></td></tr>
+  </table>
+
+  <h3>Sources</h3>
+  <table id="sourcesTable">
+    <thead><tr><th>URL</th><th>Type</th><th>Notes</th></tr></thead>
+    <tbody id="sourcesBody"></tbody>
+  </table>
+
+  <h3>Biographical Notes</h3>
+  <pre id="resBioNotes" style="background:#f5f5f5; padding:1em; white-space:pre-wrap; border:1px solid #ddd; max-height:300px; overflow-y:auto;"></pre>
+
+  <div id="articlePanel" style="display:none;">
+    <h2>Wikipedia Article Draft</h2>
+    <pre id="resArticle" style="background:#f5f5f5; padding:1em; white-space:pre-wrap; border:1px solid #ddd; max-height:500px; overflow-y:auto;"></pre>
+  </div>
+</div>
+
+<style>
+  .spinner {
+    display: inline-block;
+    width: 14px; height: 14px;
+    border: 2px solid #ccc;
+    border-top-color: #2196f3;
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+    vertical-align: middle;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #searchResults div { padding: 0.4em 0.6em; cursor: pointer; border-bottom: 1px solid #eee; }
+  #searchResults div:hover { background: #e3f2fd; }
+  #vitalsTable th, #sourcesTable th { text-align: left; padding-right: 1em; }
+</style>
+
+<script>
+(function() {
+  const searchInput = document.getElementById('searchInput');
+  const searchResults = document.getElementById('searchResults');
+  const selectedPanel = document.getElementById('selectedPanel');
+  const runBtn = document.getElementById('runBtn');
+  const progressPanel = document.getElementById('progressPanel');
+  const progressPhase = document.getElementById('progressPhase');
+  const errorPanel = document.getElementById('errorPanel');
+  const resultsPanel = document.getElementById('resultsPanel');
+  const articlePanel = document.getElementById('articlePanel');
+
+  let selectedId = null;
+  let debounceTimer = null;
+
+  // --- Search ---
+  searchInput.addEventListener('input', () => {
+    clearTimeout(debounceTimer);
+    const q = searchInput.value.trim();
+    if (q.length < 2) { searchResults.style.display = 'none'; return; }
+    debounceTimer = setTimeout(async () => {
+      try {
+        const r = await fetch('/api/gemini-research/search?q=' + encodeURIComponent(q));
+        const data = await r.json();
+        if (!data.length) { searchResults.style.display = 'none'; return; }
+        searchResults.innerHTML = data.map(d =>
+          `<div data-id="${d.id}" data-json='${JSON.stringify(d).replace(/'/g,"&#39;")}'>`
+          + `<strong>${window.esc(d.full_name || '(no name)')}</strong> `
+          + `<small>(ID: ${d.id})</small> `
+          + `<small style="color:#666">${window.esc((d.wiki_url || '').substring(0,50))}</small>`
+          + `</div>`
+        ).join('');
+        searchResults.style.display = 'block';
+      } catch(e) { console.error(e); }
+    }, 300);
+  });
+
+  searchResults.addEventListener('click', (e) => {
+    const div = e.target.closest('div[data-id]');
+    if (!div) return;
+    const d = JSON.parse(div.dataset.json);
+    selectedId = d.id;
+    document.getElementById('selId').textContent = d.id;
+    document.getElementById('selName').textContent = d.full_name || '(no name)';
+    document.getElementById('selUrl').innerHTML = d.wiki_url
+      ? `<a href="${window.esc(d.wiki_url)}" target="_blank">${window.esc(d.wiki_url)}</a>` : '—';
+    document.getElementById('selBirth').textContent = d.birth_date || '—';
+    document.getElementById('selDeath').textContent = d.death_date || '—';
+    document.getElementById('selLiving').textContent = d.is_living ? 'Yes' : 'No';
+    selectedPanel.style.display = 'block';
+    searchResults.style.display = 'none';
+    searchInput.value = d.full_name || '';
+    resultsPanel.style.display = 'none';
+    errorPanel.style.display = 'none';
+    articlePanel.style.display = 'none';
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!searchResults.contains(e.target) && e.target !== searchInput) {
+      searchResults.style.display = 'none';
+    }
+  });
+
+  // --- Run research ---
+  runBtn.addEventListener('click', async () => {
+    if (!selectedId) return;
+    runBtn.disabled = true;
+    progressPanel.style.display = 'block';
+    progressPhase.textContent = 'Starting...';
+    resultsPanel.style.display = 'none';
+    errorPanel.style.display = 'none';
+    articlePanel.style.display = 'none';
+
+    let jobId;
+    try {
+      const r = await fetch('/api/gemini-research/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ individual_id: selectedId }),
+      });
+      const data = await r.json();
+      if (!r.ok || !data.job_id) throw new Error(data.detail || 'Failed to start');
+      jobId = data.job_id;
+    } catch(err) {
+      errorPanel.textContent = 'Error: ' + err.message;
+      errorPanel.style.display = 'block';
+      progressPanel.style.display = 'none';
+      runBtn.disabled = false;
+      return;
+    }
+    poll(jobId);
+  });
+
+  async function poll(jobId) {
+    try {
+      const r = await fetch('/api/gemini-research/status/' + jobId);
+      const data = await r.json();
+
+      progressPhase.textContent = data.phase || 'Running...';
+
+      // Show Gemini results as they come in
+      if (data.gemini_result) {
+        showGeminiResult(data.gemini_result);
+        resultsPanel.style.display = 'block';
+      }
+
+      // Show article if available
+      if (data.article) {
+        document.getElementById('resArticle').textContent = data.article;
+        articlePanel.style.display = 'block';
+      }
+
+      if (data.status === 'complete') {
+        progressPanel.style.display = 'none';
+        runBtn.disabled = false;
+        try { window.playJobCompleteSound(); } catch(e) {}
+        return;
+      }
+      if (data.status === 'error') {
+        progressPanel.style.display = 'none';
+        errorPanel.textContent = 'Error: ' + (data.error || 'Unknown error');
+        errorPanel.style.display = 'block';
+        runBtn.disabled = false;
+        return;
+      }
+      setTimeout(() => poll(jobId), 1500);
+    } catch(err) {
+      progressPanel.style.display = 'none';
+      errorPanel.textContent = 'Poll error: ' + err.message;
+      errorPanel.style.display = 'block';
+      runBtn.disabled = false;
+    }
+  }
+
+  function showGeminiResult(g) {
+    document.getElementById('resBirth').textContent = g.birth_date || '—';
+    document.getElementById('resDeath').textContent = g.death_date || '—';
+    document.getElementById('resBirthPlace').textContent = g.birth_place || '—';
+    document.getElementById('resDeathPlace').textContent = g.death_place || '—';
+    document.getElementById('resConfidence').textContent = g.confidence || '—';
+    document.getElementById('resBioNotes').textContent = g.biographical_notes || '(none)';
+
+    const tbody = document.getElementById('sourcesBody');
+    tbody.innerHTML = '';
+    (g.sources || []).forEach(s => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td><a href="${window.esc(s.url)}" target="_blank" rel="noopener">${window.esc(s.url)}</a></td>`
+        + `<td>${window.esc(s.source_type)}</td>`
+        + `<td>${window.esc(s.notes)}</td>`;
+      tbody.appendChild(tr);
+    });
+  }
+})();
+</script>
+{% endblock %}
