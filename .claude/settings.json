@@ -7,6 +7,10 @@
           {
             "type": "command",
             "command": "bash .claude/hooks/lint-gate.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/policy-gate.sh"
           }
         ]
       }
