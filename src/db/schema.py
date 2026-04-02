@@ -106,6 +106,7 @@ CREATE TABLE IF NOT EXISTS individuals (
     bio_batch INTEGER NOT NULL DEFAULT 0,
     bio_refreshed_at TEXT,
     insufficient_vitals_checked_at TEXT,
+    gemini_research_checked_at TEXT,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
 );
@@ -318,6 +319,38 @@ CREATE TABLE IF NOT EXISTS parse_error_reports (
 );
 CREATE INDEX IF NOT EXISTS idx_parse_error_reports_fingerprint ON parse_error_reports(fingerprint);
 
+-- Research sources found by Gemini vitals research
+CREATE TABLE IF NOT EXISTS individual_research_sources (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    individual_id INTEGER NOT NULL REFERENCES individuals(id),
+    source_url TEXT NOT NULL,
+    source_type TEXT,
+    found_data_json TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_individual_research_sources_individual_id ON individual_research_sources(individual_id);
+
+-- Wiki draft proposals for human review
+CREATE TABLE IF NOT EXISTS wiki_draft_proposals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    individual_id INTEGER NOT NULL REFERENCES individuals(id),
+    proposal_text TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_wiki_draft_proposals_individual_id ON wiki_draft_proposals(individual_id);
+CREATE INDEX IF NOT EXISTS idx_wiki_draft_proposals_status ON wiki_draft_proposals(status);
+
+-- Reference documents: cached external content (e.g. Wikipedia Manual of Style)
+CREATE TABLE IF NOT EXISTS reference_documents (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    doc_key TEXT NOT NULL UNIQUE,
+    content TEXT NOT NULL,
+    fetched_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Indexes on offices/parties/office_terms FK columns
 CREATE INDEX IF NOT EXISTS idx_offices_country_id ON offices(country_id);
 CREATE INDEX IF NOT EXISTS idx_offices_state_id ON offices(state_id);
@@ -448,6 +481,7 @@ CREATE TABLE IF NOT EXISTS individuals (
     bio_batch INTEGER NOT NULL DEFAULT 0,
     bio_refreshed_at TIMESTAMPTZ,
     insufficient_vitals_checked_at TIMESTAMPTZ,
+    gemini_research_checked_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -659,7 +693,39 @@ CREATE TABLE IF NOT EXISTS parse_error_reports (
     github_issue_number INTEGER,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-CREATE INDEX IF NOT EXISTS idx_parse_error_reports_fingerprint ON parse_error_reports(fingerprint)
+CREATE INDEX IF NOT EXISTS idx_parse_error_reports_fingerprint ON parse_error_reports(fingerprint);
+
+-- Research sources found by Gemini vitals research
+CREATE TABLE IF NOT EXISTS individual_research_sources (
+    id SERIAL PRIMARY KEY,
+    individual_id INTEGER NOT NULL REFERENCES individuals(id),
+    source_url TEXT NOT NULL,
+    source_type TEXT,
+    found_data_json TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_individual_research_sources_individual_id ON individual_research_sources(individual_id);
+
+-- Wiki draft proposals for human review
+CREATE TABLE IF NOT EXISTS wiki_draft_proposals (
+    id SERIAL PRIMARY KEY,
+    individual_id INTEGER NOT NULL REFERENCES individuals(id),
+    proposal_text TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_wiki_draft_proposals_individual_id ON wiki_draft_proposals(individual_id);
+CREATE INDEX IF NOT EXISTS idx_wiki_draft_proposals_status ON wiki_draft_proposals(status);
+
+-- Reference documents: cached external content (e.g. Wikipedia Manual of Style)
+CREATE TABLE IF NOT EXISTS reference_documents (
+    id SERIAL PRIMARY KEY,
+    doc_key TEXT NOT NULL UNIQUE,
+    content TEXT NOT NULL,
+    fetched_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 """
 
 # Same index SQL works for both backends (standard SQL).

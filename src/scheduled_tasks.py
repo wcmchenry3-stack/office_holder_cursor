@@ -129,6 +129,102 @@ def run_daily_delta() -> None:
     _send_summary_email(result, duration_s, run_start)
 
 
+def _run_mode_in_subprocess(run_mode: str, today_batch: int) -> dict:
+    """Run a specific scraper mode in a child process so memory is fully released."""
+    payload = f"""
+import json
+from src.scraper.runner import run_with_db
+
+result = run_with_db(
+    run_mode="{run_mode}",
+    bio_batch={today_batch},
+)
+print(json.dumps(result))
+"""
+    completed = subprocess.run(
+        [sys.executable, "-c", payload],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        stderr = (completed.stderr or "").strip()
+        stdout = (completed.stdout or "").strip()
+        details = stderr or stdout or "subprocess exited with non-zero status"
+        raise RuntimeError(details)
+    stdout = (completed.stdout or "").strip()
+    if not stdout:
+        raise RuntimeError("subprocess returned no output")
+    last_line = stdout.splitlines()[-1]
+    try:
+        parsed = json.loads(last_line)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"invalid subprocess JSON output: {last_line[:300]}") from exc
+    if not isinstance(parsed, dict):
+        raise RuntimeError("subprocess result was not a dict")
+    return parsed
+
+
+def run_daily_insufficient_vitals() -> None:
+    """Entry point called by APScheduler at 07:00 UTC each day."""
+    try:
+        from src.db.scraper_jobs import count_active_jobs
+
+        if count_active_jobs() > 0:
+            print("[scheduler] Insufficient vitals run skipped: jobs already active.")
+            return
+    except Exception as e:
+        print(f"[scheduler] Could not check active jobs (non-fatal): {e}")
+
+    run_start = datetime.now(timezone.utc)
+    today_batch = run_start.day % 30
+    print(
+        f"[scheduler] Insufficient vitals run starting at {run_start.strftime('%Y-%m-%d %H:%M:%S')} UTC (batch={today_batch})"
+    )
+
+    try:
+        result = _run_mode_in_subprocess("delta_insufficient_vitals", today_batch)
+    except Exception:
+        tb = traceback.format_exc()
+        print(f"[scheduler] Insufficient vitals run crashed:\n{tb}")
+        _send_job_summary_email("Insufficient Vitals", None, 0.0, run_start, error=tb)
+        return
+
+    duration_s = (datetime.now(timezone.utc) - run_start).total_seconds()
+    print(f"[scheduler] Insufficient vitals run complete in {duration_s:.0f}s")
+    _send_job_summary_email("Insufficient Vitals", result, duration_s, run_start)
+
+
+def run_daily_gemini_research() -> None:
+    """Entry point called by APScheduler at 08:00 UTC each day."""
+    try:
+        from src.db.scraper_jobs import count_active_jobs
+
+        if count_active_jobs() > 0:
+            print("[scheduler] Gemini research run skipped: jobs already active.")
+            return
+    except Exception as e:
+        print(f"[scheduler] Could not check active jobs (non-fatal): {e}")
+
+    run_start = datetime.now(timezone.utc)
+    today_batch = run_start.day % 30
+    print(
+        f"[scheduler] Gemini research run starting at {run_start.strftime('%Y-%m-%d %H:%M:%S')} UTC (batch={today_batch})"
+    )
+
+    try:
+        result = _run_mode_in_subprocess("gemini_vitals_research", today_batch)
+    except Exception:
+        tb = traceback.format_exc()
+        print(f"[scheduler] Gemini research run crashed:\n{tb}")
+        _send_job_summary_email("Gemini Research", None, 0.0, run_start, error=tb)
+        return
+
+    duration_s = (datetime.now(timezone.utc) - run_start).total_seconds()
+    print(f"[scheduler] Gemini research run complete in {duration_s:.0f}s")
+    _send_job_summary_email("Gemini Research", result, duration_s, run_start)
+
+
 def _format_duration(seconds: float) -> str:
     minutes, secs = divmod(int(seconds), 60)
     if minutes:
@@ -145,6 +241,74 @@ def _format_errors(errors: list[dict]) -> str:
         msg = e.get("error") or e.get("message") or "unknown error"
         lines.append(f"  {url}\n    {msg}")
     return "\n".join(lines)
+
+
+def _send_job_summary_email(
+    job_name: str,
+    result: dict | None,
+    duration_s: float,
+    run_start: datetime,
+    error: str | None = None,
+) -> None:
+    """Generic job summary email for scheduled tasks (vitals recheck, Gemini research, etc.)."""
+    app_password = os.environ.get("EMAIL_APP_PASSWORD", "")
+    if not app_password:
+        print(f"[scheduler] EMAIL_APP_PASSWORD not set — skipping {job_name} email")
+        return
+
+    email_from = os.environ.get("EMAIL_FROM", _DEFAULT_EMAIL)
+    email_to = os.environ.get("EMAIL_TO", _DEFAULT_EMAIL)
+    date_str = run_start.strftime("%Y-%m-%d")
+    started_str = run_start.strftime("%H:%M:%S UTC")
+
+    if error or result is None:
+        status = "FAILED"
+        body = (
+            f"Job       : {job_name}\n"
+            f"Run date  : {date_str}\n"
+            f"Started   : {started_str}\n"
+            f"Status    : FAILED\n\n"
+            f"Error:\n{error or 'Unknown error'}\n"
+        )
+    else:
+        status = "Complete"
+        lines = [
+            f"Job       : {job_name}",
+            f"Run date  : {date_str}",
+            f"Started   : {started_str}",
+            f"Duration  : {_format_duration(duration_s)}",
+            f"Status    : Complete",
+            "",
+            "RESULTS",
+            "-------",
+        ]
+        # Include relevant result keys
+        for key, val in sorted(result.items()):
+            if key in ("preview_rows", "dry_run", "test_run"):
+                continue
+            lines.append(f"  {key}: {val}")
+
+        all_errors = result.get("bio_errors") or []
+        all_errors += result.get("living_errors") or []
+        lines.append("")
+        lines.append("ERRORS")
+        lines.append("------")
+        lines.append(_format_errors(all_errors))
+        body = "\n".join(lines)
+
+    subject = f"Office Holder {job_name} — {date_str} — {status}"
+    msg = MIMEText(body, "plain", "utf-8")
+    msg["Subject"] = subject
+    msg["From"] = email_from
+    msg["To"] = email_to
+
+    try:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
+            smtp.login(email_from, app_password)
+            smtp.sendmail(email_from, [email_to], msg.as_string())
+        print(f"[scheduler] {job_name} email sent to {email_to}")
+    except Exception as exc:
+        print(f"[scheduler] Failed to send {job_name} email: {exc}")
 
 
 def _send_summary_email(

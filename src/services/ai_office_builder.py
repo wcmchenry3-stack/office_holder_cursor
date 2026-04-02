@@ -714,3 +714,112 @@ class AIOfficeBuilder:
                 time.sleep(backoff)
                 backoff *= 2
         raise RuntimeError("unreachable")
+
+    # ------------------------------------------------------------------
+    # Wikipedia article polish (Gemini research → OpenAI wikitext)
+    # ------------------------------------------------------------------
+
+    def polish_wiki_article(
+        self,
+        full_name: str,
+        office_name: str,
+        term_dates: str,
+        party: str,
+        location: str,
+        research_result,
+        formatting_guidelines: str = "",
+    ) -> str | None:
+        """Take Gemini research output and produce a wikitext Wikipedia article.
+
+        Returns the wikitext string, or None if the research data is too thin
+        for even a stub article.  OpenAI is instructed to use ONLY the provided
+        research data — no independent knowledge.
+        """
+        from src.services.gemini_vitals_researcher import VitalsResearchResult
+
+        if not isinstance(research_result, VitalsResearchResult):
+            return None
+
+        # Skip if there's nothing meaningful to write about
+        if not research_result.biographical_notes and not research_result.birth_date:
+            return None
+
+        sources_text = ""
+        for i, src in enumerate(research_result.sources, 1):
+            sources_text += f"  {i}. [{src.source_type}] {src.url}\n"
+            if src.notes:
+                sources_text += f"     Notes: {src.notes}\n"
+
+        guidelines_block = ""
+        if formatting_guidelines:
+            guidelines_block = (
+                f"\nWIKIPEDIA FORMATTING RULES:\n{formatting_guidelines}\n"
+            )
+
+        system_prompt = (
+            "You are a Wikipedia editor. You write articles that strictly conform to "
+            "Wikipedia's Manual of Style. You MUST NOT add any facts, dates, claims, or "
+            "information beyond what is provided in the RESEARCH DATA section below. "
+            "You are a formatter and writer, not a researcher. Every factual claim must "
+            "cite one of the provided sources."
+            f"{guidelines_block}\n"
+            "RULES:\n"
+            "1. Use ONLY the sources and facts from the RESEARCH DATA — no independent knowledge.\n"
+            "2. Every date, name, and factual claim must have a <ref> tag citing a provided source.\n"
+            "3. Format as complete wikitext: {{Infobox officeholder}}, lead paragraph, body sections "
+            "(Early life, Political career, Office tenure, etc.), Categories.\n"
+            "4. Sources become <ref> tags inline and entries in a ==References== section with {{reflist}}.\n"
+            "5. If data is insufficient for a full article, produce what you can and add {{stub}}.\n"
+            "6. Do NOT fabricate sources, URLs, or facts. If the research data doesn't support a "
+            "section, omit it entirely rather than guessing.\n"
+        )
+
+        user_prompt = (
+            f"Individual: {full_name}\n"
+            f"Office: {office_name}, {term_dates}\n"
+            f"Party: {party}\n"
+            f"Location: {location}\n\n"
+            "RESEARCH DATA (from external research — use ONLY this data):\n"
+            f"  Birth date: {research_result.birth_date or 'Unknown'}\n"
+            f"  Death date: {research_result.death_date or 'Unknown'}\n"
+            f"  Birth place: {research_result.birth_place or 'Unknown'}\n"
+            f"  Death place: {research_result.death_place or 'Unknown'}\n"
+            f"  Confidence: {research_result.confidence}\n"
+            f"  Sources:\n{sources_text}\n"
+            f"  Biographical notes:\n{research_result.biographical_notes}\n\n"
+            "Write a complete Wikipedia article in wikitext format."
+        )
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
+
+        return self._call_wiki_polish_openai(messages)
+
+    def _call_wiki_polish_openai(self, messages: list[dict]) -> str | None:
+        """Call OpenAI for wiki article polish with exponential backoff on RateLimitError.
+
+        Rate limit / retry / backoff: exponential backoff on HTTP 429
+        (3 retries, 1 s → 2 s → 4 s). max_completion_tokens: 4096.
+        """
+        backoff = 1.0
+        for attempt in range(3):
+            try:
+                completion = self._client.chat.completions.create(
+                    model=self._model,
+                    messages=messages,
+                    max_completion_tokens=4096,
+                )
+                return completion.choices[0].message.content or ""
+            except openai.RateLimitError:
+                if attempt == 2:
+                    raise
+                logger.warning(
+                    "_call_wiki_polish_openai: RateLimitError (HTTP 429); retrying in %.0f s (attempt %d/3)",
+                    backoff,
+                    attempt + 1,
+                )
+                time.sleep(backoff)
+                backoff *= 2
+        raise RuntimeError("unreachable")

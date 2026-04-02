@@ -17,6 +17,18 @@ Wikimedia REST API (via src/scraper/wiki_fetch.py):
   - rate_limit / throttle: wiki_throttle() enforces per-request delay so combined
     throughput never exceeds Wikipedia's policy limit.
   See: https://www.mediawiki.org/wiki/API:Etiquette
+
+Google Gemini API (via src/services/gemini_vitals_researcher.py):
+  - SDK: google-genai (unified GenAI SDK).
+  - rate_limit / RESOURCE_EXHAUSTED (HTTP 429) handling: exponential backoff
+    (3 retries, 1 s → 2 s → 4 s).
+  - max_output_tokens set on every generate_content call.
+  - GEMINI_OFFICE_HOLDER never hardcoded; always read via os.environ at runtime.
+  - Unpaid tier: prompts/responses may be used by Google per ToS.
+  - 55-day data retention by Google for abuse monitoring.
+  See: https://ai.google.dev/gemini-api/terms
+  See: https://ai.google.dev/gemini-api/docs/rate-limits
+  See: https://ai.google.dev/gemini-api/docs/usage-policies
 """
 
 from __future__ import annotations
@@ -1396,6 +1408,249 @@ def _run_insufficient_vitals(ctx: _RunContext, logger: Logger, report: Callable)
     }
 
 
+def _run_gemini_vitals_research(ctx: _RunContext, logger, report: Callable) -> dict[str, Any]:
+    """Use Gemini API to research vitals for today's batch of individuals.
+
+    Batch assignment: id % 30 (computed in DB). 90-day cooldown per individual.
+    For each candidate: Gemini researches → vitals saved → OpenAI polishes article.
+    """
+    from datetime import date
+
+    from src.services.gemini_vitals_researcher import get_gemini_researcher
+    from src.db import individual_research_sources as db_research
+    from src.db import reference_documents as db_ref_docs
+
+    researcher = get_gemini_researcher()
+    if researcher is None:
+        logger.log("Gemini research skipped: GEMINI_OFFICE_HOLDER not configured.", True)
+        logger.close()
+        return {
+            "office_count": 0,
+            "terms_parsed": 0,
+            "unique_wiki_urls": 0,
+            "bio_success_count": 0,
+            "bio_error_count": 0,
+            "bio_errors": [],
+            "bio_skipped_count": 0,
+            "living_success_count": 0,
+            "living_error_count": 0,
+            "living_errors": [],
+            "gemini_research_batch": -1,
+            "gemini_research_checked": 0,
+            "gemini_research_found": 0,
+            "gemini_articles_generated": 0,
+            "dry_run": False,
+            "test_run": False,
+            "preview_rows": None,
+        }
+
+    today_batch = ctx.bio_batch if ctx.bio_batch is not None else date.today().day % 30
+    candidates = db_individuals.get_gemini_research_candidates_for_batch(today_batch)
+    total = len(candidates)
+    report("gemini", 0, total, f"Gemini research batch {today_batch}: {total} candidates", {})
+
+    found_count = 0
+    articles_count = 0
+    errors: list[dict[str, str]] = []
+
+    # Load cached Wikipedia formatting guidelines (if available)
+    ref_doc = db_ref_docs.get_reference_document("wikipedia_mos")
+    formatting_guidelines = ref_doc["content"] if ref_doc else ""
+
+    for i, row in enumerate(candidates):
+        if ctx.cancel_check and ctx.cancel_check():
+            logger.log("Gemini research cancelled.", True)
+            break
+
+        ind_id = row["id"]
+        full_name = row.get("full_name") or ""
+        wiki_url = row.get("wiki_url") or ""
+
+        # Fetch office context for richer prompts
+        office_context = _get_office_context_for_individual(ind_id)
+
+        result = researcher.research_individual(
+            individual_id=ind_id,
+            full_name=full_name,
+            office_name=office_context.get("office_name", ""),
+            term_dates=office_context.get("term_dates", ""),
+            party=office_context.get("party", ""),
+            district=office_context.get("district", ""),
+            location=office_context.get("location", ""),
+            level=office_context.get("level", ""),
+            branch=office_context.get("branch", ""),
+            wiki_url=wiki_url,
+            known_birth_date=office_context.get("birth_date", ""),
+            known_death_date=office_context.get("death_date", ""),
+            known_birth_place=office_context.get("birth_place", ""),
+            known_death_place=office_context.get("death_place", ""),
+        )
+
+        # Save vitals if found (individual drops out of future batches)
+        vitals_found = False
+        if result.birth_date or result.death_date:
+            vitals_found = True
+            found_count += 1
+            update_data = {"wiki_url": wiki_url}
+            if result.birth_date:
+                update_data["birth_date"] = result.birth_date
+            if result.death_date:
+                update_data["death_date"] = result.death_date
+            if result.birth_place:
+                update_data["birth_place"] = result.birth_place
+            if result.death_place:
+                update_data["death_place"] = result.death_place
+            try:
+                db_individuals.upsert_individual(update_data)
+            except Exception as exc:
+                errors.append({"url": wiki_url, "error": f"upsert failed: {exc}"})
+
+        # Store sources
+        import json as _json
+
+        for src in result.sources:
+            try:
+                db_research.insert_research_source(
+                    individual_id=ind_id,
+                    source_url=src.url,
+                    source_type=src.source_type,
+                    found_data_json=_json.dumps({
+                        "birth_date": result.birth_date,
+                        "death_date": result.death_date,
+                        "notes": src.notes,
+                    }),
+                )
+            except Exception as exc:
+                errors.append({"url": wiki_url, "error": f"source insert failed: {exc}"})
+
+        # OpenAI polish → wiki draft (only if enough data)
+        if result.biographical_notes or vitals_found:
+            try:
+                from src.services.orchestrator import get_ai_builder
+
+                builder = get_ai_builder()
+                article = builder.polish_wiki_article(
+                    full_name=full_name,
+                    office_name=office_context.get("office_name", ""),
+                    term_dates=office_context.get("term_dates", ""),
+                    party=office_context.get("party", ""),
+                    location=office_context.get("location", ""),
+                    research_result=result,
+                    formatting_guidelines=formatting_guidelines,
+                )
+                if article:
+                    db_research.insert_wiki_draft_proposal(
+                        individual_id=ind_id,
+                        proposal_text=article,
+                    )
+                    articles_count += 1
+            except Exception as exc:
+                errors.append({"url": wiki_url, "error": f"OpenAI polish failed: {exc}"})
+
+        # Mark checked regardless of outcome
+        db_individuals.mark_gemini_research_checked(ind_id)
+
+        report(
+            "gemini", i + 1, total,
+            f"Gemini research batch {today_batch}: {i + 1}/{total}",
+            {"batch": today_batch, "current": i + 1, "total": total},
+        )
+
+    logger.close()
+    return {
+        "office_count": 0,
+        "terms_parsed": 0,
+        "unique_wiki_urls": 0,
+        "bio_success_count": 0,
+        "bio_error_count": len(errors),
+        "bio_errors": errors,
+        "bio_skipped_count": 0,
+        "living_success_count": 0,
+        "living_error_count": 0,
+        "living_errors": [],
+        "gemini_research_batch": today_batch,
+        "gemini_research_checked": total,
+        "gemini_research_found": found_count,
+        "gemini_articles_generated": articles_count,
+        "dry_run": False,
+        "test_run": False,
+        "preview_rows": None,
+    }
+
+
+def _get_office_context_for_individual(individual_id: int) -> dict[str, str]:
+    """Fetch office/location context for an individual to enrich Gemini prompts."""
+    from src.db import office_terms as db_office_terms
+    from src.db import offices as db_offices
+    from src.db import refs as db_refs
+
+    context: dict[str, str] = {}
+    try:
+        from src.db.connection import get_connection
+
+        conn = get_connection()
+        try:
+            # Get individual's existing data
+            cur = conn.execute(
+                "SELECT birth_date, death_date, birth_place, death_place"
+                " FROM individuals WHERE id = %s",
+                (individual_id,),
+            )
+            row = cur.fetchone()
+            if row:
+                context["birth_date"] = row["birth_date"] or ""
+                context["death_date"] = row["death_date"] or ""
+                context["birth_place"] = row["birth_place"] or ""
+                context["death_place"] = row["death_place"] or ""
+
+            # Get first office term with location context
+            cur = conn.execute(
+                """SELECT od.name AS office_name,
+                          ot.term_start, ot.term_end,
+                          ot.district,
+                          p.party_name,
+                          c.name AS country, s.name AS state, ci.name AS city,
+                          l.name AS level, b.name AS branch
+                   FROM office_terms ot
+                   JOIN office_details od ON od.id = ot.office_details_id
+                   JOIN source_pages sp ON sp.id = od.source_page_id
+                   LEFT JOIN countries c ON c.id = sp.country_id
+                   LEFT JOIN states s ON s.id = sp.state_id
+                   LEFT JOIN cities ci ON ci.id = sp.city_id
+                   LEFT JOIN levels l ON l.id = sp.level_id
+                   LEFT JOIN branches b ON b.id = sp.branch_id
+                   LEFT JOIN parties p ON p.id = ot.party_id
+                   WHERE ot.individual_id = %s
+                   ORDER BY ot.term_start
+                   LIMIT 1""",
+                (individual_id,),
+            )
+            term_row = cur.fetchone()
+            if term_row:
+                context["office_name"] = term_row["office_name"] or ""
+                start = term_row["term_start"] or ""
+                end = term_row["term_end"] or ""
+                context["term_dates"] = f"{start} – {end}" if start else ""
+                context["party"] = term_row["party_name"] or ""
+                context["district"] = term_row["district"] or ""
+                context["level"] = term_row["level"] or ""
+                context["branch"] = term_row["branch"] or ""
+
+                loc_parts = []
+                if term_row["city"]:
+                    loc_parts.append(term_row["city"])
+                if term_row["state"]:
+                    loc_parts.append(term_row["state"])
+                if term_row["country"]:
+                    loc_parts.append(term_row["country"])
+                context["location"] = ", ".join(loc_parts)
+        finally:
+            conn.close()
+    except Exception:
+        pass  # Best-effort — empty context is fine
+    return context
+
+
 def run_with_db(
     run_mode: str = "delta",  # full | delta | live_person | single_bio | bios_only
     run_bio: bool = False,
@@ -1455,6 +1710,8 @@ def run_with_db(
         return _run_bios_only(ctx, logger, report)
     if run_mode == "delta_insufficient_vitals":
         return _run_insufficient_vitals(ctx, logger, report)
+    if run_mode == "gemini_vitals_research":
+        return _run_gemini_vitals_research(ctx, logger, report)
 
     # Main loop modes (full | delta | live_person): load offices and dispatch.
     party_list = db_parties.get_party_list_for_scraper()
