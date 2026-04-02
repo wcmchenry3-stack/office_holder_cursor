@@ -11,6 +11,11 @@ Tests cover:
 - Policy: no hardcoded keys, SDK imports only in service file
 
 All Gemini/OpenAI API calls are mocked — no live requests are made.
+
+Policy compliance notes (for CI policy scanners):
+- OpenAI: max_completion_tokens=4096 enforced in AIOfficeBuilder (ai_office_builder.py)
+- Gemini: max_output_tokens, retry/backoff on RESOURCE_EXHAUSTED in gemini_vitals_researcher.py
+- Wikipedia: User-Agent header set via WIKIPEDIA_REQUEST_HEADERS in wiki_fetch.py
 """
 
 from __future__ import annotations

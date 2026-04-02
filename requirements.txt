@@ -20,7 +20,7 @@ apscheduler>=3.10.0
 # Database
 psycopg2-binary>=2.9.0
 
-# AI integration
+# AI integration (rate-limit retry/backoff handled in service layer)
 openai>=1.40.0
 google-genai>=1.0.0
 slowapi>=0.1.9
