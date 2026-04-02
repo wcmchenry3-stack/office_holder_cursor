@@ -392,9 +392,9 @@ class TestExpireStaleJobs:
         from datetime import timedelta
 
         # 10 hours ago — would expire a normal job but not a full run
-        ten_hours_ago = (
-            datetime.now(timezone.utc) - timedelta(hours=10)
-        ).strftime("%Y-%m-%dT%H:%M:%SZ")
+        ten_hours_ago = (datetime.now(timezone.utc) - timedelta(hours=10)).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
         self._insert_job(conn, "f1", "full", "running", ten_hours_ago)
         expired = db_scraper_jobs.expire_stale_jobs(conn=conn)
         assert len(expired) == 0
