@@ -74,11 +74,60 @@ print(json.dumps(result))
     return parsed
 
 
+def _expire_stale_jobs_with_email() -> None:
+    """Expire stale jobs and send an email notification for each expired job."""
+    try:
+        from src.db.scraper_jobs import expire_stale_jobs
+
+        expired = expire_stale_jobs()
+        for job in expired:
+            print(f"[scheduler] Expired stale job: {job}")
+            _send_expiry_email(job)
+    except Exception as e:
+        print(f"[scheduler] Stale job expiry check failed (non-fatal): {e}")
+
+
+def _send_expiry_email(job: dict) -> None:
+    """Send an email notification when a job is expired."""
+    app_password = os.environ.get("EMAIL_APP_PASSWORD", "")
+    if not app_password:
+        return
+
+    email_from = os.environ.get("EMAIL_FROM", _DEFAULT_EMAIL)
+    email_to = os.environ.get("EMAIL_TO", _DEFAULT_EMAIL)
+    date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+    body = (
+        f"A scraper job was automatically expired.\n\n"
+        f"  Job ID   : {job.get('id', 'unknown')}\n"
+        f"  Type     : {job.get('type', 'unknown')}\n"
+        f"  Status   : {job.get('status', 'unknown')} → error\n"
+        f"  Reason   : {job.get('reason', 'unknown')}\n"
+        f"  Expired  : {date_str}\n"
+    )
+
+    subject = f"Office Holder — Job Expired — {job.get('type', 'unknown')} ({date_str})"
+    msg = MIMEText(body, "plain", "utf-8")
+    msg["Subject"] = subject
+    msg["From"] = email_from
+    msg["To"] = email_to
+
+    try:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
+            smtp.login(email_from, app_password)
+            smtp.sendmail(email_from, [email_to], msg.as_string())
+        print(f"[scheduler] Expiry email sent for job {job.get('id')}")
+    except Exception as exc:
+        print(f"[scheduler] Failed to send expiry email: {exc}")
+
+
 def run_daily_delta() -> None:
     """Entry point called by APScheduler at 06:00 UTC each day."""
     if not is_daily_delta_enabled():
         print("[scheduler] Daily delta run skipped because DAILY_DELTA_ENABLED is disabled")
         return
+
+    _expire_stale_jobs_with_email()
 
     try:
         from src.db.scraper_jobs import count_active_jobs
@@ -167,6 +216,8 @@ print(json.dumps(result))
 
 def run_daily_insufficient_vitals() -> None:
     """Entry point called by APScheduler at 07:00 UTC each day."""
+    _expire_stale_jobs_with_email()
+
     try:
         from src.db.scraper_jobs import count_active_jobs
 
@@ -197,6 +248,8 @@ def run_daily_insufficient_vitals() -> None:
 
 def run_daily_gemini_research() -> None:
     """Entry point called by APScheduler at 08:00 UTC each day."""
+    _expire_stale_jobs_with_email()
+
     try:
         from src.db.scraper_jobs import count_active_jobs
 
