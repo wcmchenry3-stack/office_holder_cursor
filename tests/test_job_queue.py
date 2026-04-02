@@ -6,6 +6,7 @@ Tests cover:
 - DB CRUD: enqueue_job, pop_next_queued_job, count_queued_jobs, count_active_jobs
 - Router: api_run queues when busy, rejects when queue full, starts immediately when idle
 - Worker: _maybe_start_next_queued_job drains queue on job completion
+- Expiry: expire_stale_jobs marks stale running/queued jobs as error
 - Scheduler: run_daily_delta skips when active jobs exist
 """
 
@@ -17,6 +18,7 @@ import tempfile
 import threading
 import time
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -333,6 +335,84 @@ class TestMaybeStartNextQueuedJob:
             # Should not raise
             _maybe_start_next_queued_job()
             mock_thread.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Expiry tests
+# ---------------------------------------------------------------------------
+
+
+class TestExpireStaleJobs:
+    def _insert_job(self, conn, job_id, job_type, status, created_at_str):
+        now = db_scraper_jobs._now_iso()
+        conn.execute(
+            "INSERT INTO scraper_jobs (id, type, status, created_at, updated_at)"
+            " VALUES (?, ?, ?, ?, ?)",
+            (job_id, job_type, status, created_at_str, now),
+        )
+        conn.commit()
+
+    def test_expires_queued_job_older_than_12h(self, tmp_path):
+        conn = _make_conn(tmp_path)
+        old = "2000-01-01T00:00:00Z"
+        self._insert_job(conn, "q1", "delta", "queued", old)
+        expired = db_scraper_jobs.expire_stale_jobs(conn=conn)
+        assert len(expired) == 1
+        assert expired[0]["id"] == "q1"
+        assert "Queued" in expired[0]["reason"]
+        row = conn.execute("SELECT status FROM scraper_jobs WHERE id = ?", ("q1",)).fetchone()
+        assert row["status"] == "error"
+
+    def test_does_not_expire_recent_queued_job(self, tmp_path):
+        conn = _make_conn(tmp_path)
+        recent = db_scraper_jobs._now_iso()
+        self._insert_job(conn, "q1", "delta", "queued", recent)
+        expired = db_scraper_jobs.expire_stale_jobs(conn=conn)
+        assert len(expired) == 0
+
+    def test_expires_running_job_older_than_8h(self, tmp_path):
+        conn = _make_conn(tmp_path)
+        old = "2000-01-01T00:00:00Z"
+        self._insert_job(conn, "r1", "delta", "running", old)
+        expired = db_scraper_jobs.expire_stale_jobs(conn=conn)
+        assert len(expired) == 1
+        assert expired[0]["id"] == "r1"
+        assert "Running" in expired[0]["reason"]
+
+    def test_does_not_expire_recent_running_job(self, tmp_path):
+        conn = _make_conn(tmp_path)
+        recent = db_scraper_jobs._now_iso()
+        self._insert_job(conn, "r1", "delta", "running", recent)
+        expired = db_scraper_jobs.expire_stale_jobs(conn=conn)
+        assert len(expired) == 0
+
+    def test_full_run_gets_24h_threshold(self, tmp_path):
+        """A 'full' run should only expire after 24 hours, not 8."""
+        conn = _make_conn(tmp_path)
+        from datetime import timedelta
+
+        # 10 hours ago — would expire a normal job but not a full run
+        ten_hours_ago = (
+            datetime.now(timezone.utc) - timedelta(hours=10)
+        ).strftime("%Y-%m-%dT%H:%M:%SZ")
+        self._insert_job(conn, "f1", "full", "running", ten_hours_ago)
+        expired = db_scraper_jobs.expire_stale_jobs(conn=conn)
+        assert len(expired) == 0
+
+    def test_full_run_expires_after_24h(self, tmp_path):
+        conn = _make_conn(tmp_path)
+        old = "2000-01-01T00:00:00Z"
+        self._insert_job(conn, "f1", "full", "running", old)
+        expired = db_scraper_jobs.expire_stale_jobs(conn=conn)
+        assert len(expired) == 1
+        assert "Full run" in expired[0]["reason"]
+
+    def test_does_not_expire_completed_jobs(self, tmp_path):
+        conn = _make_conn(tmp_path)
+        old = "2000-01-01T00:00:00Z"
+        self._insert_job(conn, "c1", "delta", "complete", old)
+        expired = db_scraper_jobs.expire_stale_jobs(conn=conn)
+        assert len(expired) == 0
 
 
 # ---------------------------------------------------------------------------
