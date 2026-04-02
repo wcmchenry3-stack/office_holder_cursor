@@ -191,6 +191,60 @@ def count_queued_jobs(conn=None) -> int:
             conn.close()
 
 
+def expire_stale_jobs(conn=None) -> list[dict]:
+    """Mark stale running/queued jobs as 'error' and return details of expired jobs.
+
+    Expiry rules:
+    - Queued jobs older than 12 hours → expired
+    - Running jobs older than 8 hours → expired (except type='full')
+    - Running 'full' jobs older than 24 hours → expired
+    """
+    own_conn = conn is None
+    if own_conn:
+        conn = get_connection()
+    try:
+        from datetime import timedelta
+
+        now = datetime.now(timezone.utc)
+        # Fetch all running/queued jobs
+        rows = conn.execute(
+            "SELECT id, type, status, created_at FROM scraper_jobs WHERE status IN (%s, %s)",
+            ("running", "queued"),
+        ).fetchall()
+
+        expired = []
+        for row in rows:
+            job_id, job_type, status, created_at_str = row[0], row[1], row[2], row[3]
+            try:
+                created_at = datetime.strptime(created_at_str, "%Y-%m-%dT%H:%M:%SZ").replace(
+                    tzinfo=timezone.utc
+                )
+            except (ValueError, TypeError):
+                continue
+            age = now - created_at
+            reason = None
+            if status == "queued" and age > timedelta(hours=12):
+                reason = f"Queued job expired after {age}"
+            elif status == "running" and job_type == "full" and age > timedelta(hours=24):
+                reason = f"Full run expired after {age}"
+            elif status == "running" and job_type != "full" and age > timedelta(hours=8):
+                reason = f"Running job expired after {age}"
+
+            if reason:
+                conn.execute(
+                    "UPDATE scraper_jobs SET status = %s, updated_at = %s WHERE id = %s",
+                    ("error", now.strftime("%Y-%m-%dT%H:%M:%SZ"), job_id),
+                )
+                expired.append({"id": job_id, "type": job_type, "status": status, "reason": reason})
+
+        if expired and own_conn:
+            conn.commit()
+        return expired
+    finally:
+        if own_conn:
+            conn.close()
+
+
 def count_active_jobs(conn=None) -> int:
     """Return the number of jobs with status 'running' or 'queued'."""
     own_conn = conn is None
