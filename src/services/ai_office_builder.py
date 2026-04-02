@@ -752,9 +752,7 @@ class AIOfficeBuilder:
 
         guidelines_block = ""
         if formatting_guidelines:
-            guidelines_block = (
-                f"\nWIKIPEDIA FORMATTING RULES:\n{formatting_guidelines}\n"
-            )
+            guidelines_block = f"\nWIKIPEDIA FORMATTING RULES:\n{formatting_guidelines}\n"
 
         system_prompt = (
             "You are a Wikipedia editor. You write articles that strictly conform to "

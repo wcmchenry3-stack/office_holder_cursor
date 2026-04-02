@@ -29,7 +29,6 @@ from src.db import individuals as db_individuals
 from src.db import individual_research_sources as db_research
 from src.db import reference_documents as db_ref_docs
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -108,7 +107,16 @@ def _insert(
         "INSERT INTO individuals (id, wiki_url, birth_date, death_date, is_living,"
         " is_dead_link, gemini_research_checked_at, full_name)"
         " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (id, wiki_url, birth_date, death_date, is_living, is_dead_link, gemini_checked_at, full_name),
+        (
+            id,
+            wiki_url,
+            birth_date,
+            death_date,
+            is_living,
+            is_dead_link,
+            gemini_checked_at,
+            full_name,
+        ),
     )
     conn.commit()
 
@@ -148,8 +156,14 @@ class TestGeminiResearchCandidates:
     def test_broadened_vitals_includes_dead_no_death_date(self, tmp_path):
         """Individual with is_living=0 and death_date=NULL should appear (broadened criteria)."""
         conn = _make_conn(tmp_path)
-        _insert(conn, 30, "https://en.wikipedia.org/wiki/A",
-                birth_date="1950-01-01", is_living=0, death_date=None)
+        _insert(
+            conn,
+            30,
+            "https://en.wikipedia.org/wiki/A",
+            birth_date="1950-01-01",
+            is_living=0,
+            death_date=None,
+        )
         rows = db_individuals.get_gemini_research_candidates_for_batch(0, conn=conn)
         assert len(rows) == 1
 
@@ -223,7 +237,9 @@ class TestWikiDraftProposalsCRUD:
         conn = _make_conn(tmp_path)
         _insert(conn, 1, "https://en.wikipedia.org/wiki/A", full_name="Test Person")
         pid = db_research.insert_wiki_draft_proposal(
-            individual_id=1, proposal_text="== Article ==", conn=conn,
+            individual_id=1,
+            proposal_text="== Article ==",
+            conn=conn,
         )
         assert pid >= 1
         draft = db_research.get_wiki_draft_proposal(pid, conn=conn)
@@ -309,18 +325,24 @@ class TestGeminiStructuredOutput:
         from src.services.gemini_vitals_researcher import GeminiVitalsResearcher
 
         mock_response = MagicMock()
-        mock_response.text = json.dumps({
-            "birth_date": "1920-03-15",
-            "death_date": "1990-07-22",
-            "birth_place": "Springfield, IL",
-            "death_place": "Chicago, IL",
-            "sources": [
-                {"url": "https://example.gov/record", "source_type": "government", "notes": "Census"},
-                {"url": "https://example.edu/bio", "source_type": "academic", "notes": ""},
-            ],
-            "confidence": "high",
-            "biographical_notes": "John Doe served as mayor.",
-        })
+        mock_response.text = json.dumps(
+            {
+                "birth_date": "1920-03-15",
+                "death_date": "1990-07-22",
+                "birth_place": "Springfield, IL",
+                "death_place": "Chicago, IL",
+                "sources": [
+                    {
+                        "url": "https://example.gov/record",
+                        "source_type": "government",
+                        "notes": "Census",
+                    },
+                    {"url": "https://example.edu/bio", "source_type": "academic", "notes": ""},
+                ],
+                "confidence": "high",
+                "biographical_notes": "John Doe served as mayor.",
+            }
+        )
 
         with patch("google.genai.Client") as mock_client_cls:
             mock_client = mock_client_cls.return_value
@@ -398,7 +420,9 @@ class TestOpenAIPolish:
 
         builder = self._make_builder()
         result = VitalsResearchResult()  # empty
-        article = builder.polish_wiki_article("Name", "Office", "2000-2010", "Party", "City", result)
+        article = builder.polish_wiki_article(
+            "Name", "Office", "2000-2010", "Party", "City", result
+        )
         assert article is None
 
     def test_includes_ref_tags_in_output(self):
@@ -421,8 +445,13 @@ class TestOpenAIPolish:
         with patch.object(builder, "_client") as mock_client:
             mock_client.chat.completions.create.return_value = mock_completion
             article = builder.polish_wiki_article(
-                "John Doe", "Mayor", "1960-1970", "Dem", "Springfield",
-                result, formatting_guidelines="Use MoS.",
+                "John Doe",
+                "Mayor",
+                "1960-1970",
+                "Dem",
+                "Springfield",
+                result,
+                formatting_guidelines="Use MoS.",
             )
 
         assert article is not None
@@ -457,9 +486,9 @@ class TestPolicyCompliance:
                 f"Direct google.genai import found in {py_file} — "
                 "all Gemini SDK usage should be in gemini_vitals_researcher.py"
             )
-            assert "from google.genai" not in content or "gemini_vitals_researcher" in py_file, (
-                f"Direct google.genai import found in {py_file}"
-            )
+            assert (
+                "from google.genai" not in content or "gemini_vitals_researcher" in py_file
+            ), f"Direct google.genai import found in {py_file}"
 
     def test_gemini_max_output_tokens_set(self):
         """Verify max_output_tokens is set in the Gemini service."""

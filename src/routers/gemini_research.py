@@ -138,8 +138,16 @@ def _research_worker(job_id: str, individual_id: int) -> None:
             _update_job(job_id, status="error", error=f"Individual {individual_id} not found")
             return
 
-        keys = ["id", "wiki_url", "full_name", "birth_date", "death_date",
-                "birth_place", "death_place", "is_living"]
+        keys = [
+            "id",
+            "wiki_url",
+            "full_name",
+            "birth_date",
+            "death_date",
+            "birth_place",
+            "death_place",
+            "is_living",
+        ]
         individual = dict(zip(keys, row))
 
         # Get office context
@@ -154,8 +162,11 @@ def _research_worker(job_id: str, individual_id: int) -> None:
 
         researcher = get_gemini_researcher()
         if researcher is None:
-            _update_job(job_id, status="error",
-                        error="GEMINI_OFFICE_HOLDER not set — Gemini research disabled")
+            _update_job(
+                job_id,
+                status="error",
+                error="GEMINI_OFFICE_HOLDER not set — Gemini research disabled",
+            )
             return
 
         result = researcher.research_individual(
@@ -208,11 +219,13 @@ def _research_worker(job_id: str, individual_id: int) -> None:
                 individual_id=individual_id,
                 source_url=src.url,
                 source_type=src.source_type,
-                found_data_json=json.dumps({
-                    "birth_date": result.birth_date,
-                    "death_date": result.death_date,
-                    "notes": src.notes,
-                }),
+                found_data_json=json.dumps(
+                    {
+                        "birth_date": result.birth_date,
+                        "death_date": result.death_date,
+                        "notes": src.notes,
+                    }
+                ),
             )
 
         # Step 3: OpenAI polish

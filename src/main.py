@@ -106,9 +106,13 @@ async def lifespan(app: FastAPI):
     if is_daily_delta_enabled():
         scheduler.add_job(run_daily_delta, "cron", hour=6, minute=0, id="daily_delta")
         print("[scheduler] Daily delta run scheduled at 06:00 UTC")
-        scheduler.add_job(run_daily_insufficient_vitals, "cron", hour=7, minute=0, id="daily_insufficient_vitals")
+        scheduler.add_job(
+            run_daily_insufficient_vitals, "cron", hour=7, minute=0, id="daily_insufficient_vitals"
+        )
         print("[scheduler] Insufficient vitals recheck scheduled at 07:00 UTC")
-        scheduler.add_job(run_daily_gemini_research, "cron", hour=8, minute=0, id="daily_gemini_research")
+        scheduler.add_job(
+            run_daily_gemini_research, "cron", hour=8, minute=0, id="daily_gemini_research"
+        )
         print("[scheduler] Gemini deep research scheduled at 08:00 UTC")
     else:
         print("[scheduler] Daily delta job is paused (DAILY_DELTA_ENABLED is disabled)")

@@ -152,8 +152,14 @@ class TestGetInsufficientVitalsBatch:
     def test_excludes_dead_with_complete_vitals(self, tmp_path):
         """is_living=0 with both birth_date and death_date set: no missing data, skip."""
         conn = _make_conn(tmp_path)
-        _insert(conn, 30, "https://en.wikipedia.org/wiki/A", is_living=0,
-                birth_date="1920-01-01", death_date="2000-01-01")
+        _insert(
+            conn,
+            30,
+            "https://en.wikipedia.org/wiki/A",
+            is_living=0,
+            birth_date="1920-01-01",
+            death_date="2000-01-01",
+        )
         rows = db_individuals.get_insufficient_vitals_individuals_for_batch(0, conn=conn)
         assert rows == []
 

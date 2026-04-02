@@ -1514,11 +1514,13 @@ def _run_gemini_vitals_research(ctx: _RunContext, logger, report: Callable) -> d
                     individual_id=ind_id,
                     source_url=src.url,
                     source_type=src.source_type,
-                    found_data_json=_json.dumps({
-                        "birth_date": result.birth_date,
-                        "death_date": result.death_date,
-                        "notes": src.notes,
-                    }),
+                    found_data_json=_json.dumps(
+                        {
+                            "birth_date": result.birth_date,
+                            "death_date": result.death_date,
+                            "notes": src.notes,
+                        }
+                    ),
                 )
             except Exception as exc:
                 errors.append({"url": wiki_url, "error": f"source insert failed: {exc}"})
@@ -1551,7 +1553,9 @@ def _run_gemini_vitals_research(ctx: _RunContext, logger, report: Callable) -> d
         db_individuals.mark_gemini_research_checked(ind_id)
 
         report(
-            "gemini", i + 1, total,
+            "gemini",
+            i + 1,
+            total,
             f"Gemini research batch {today_batch}: {i + 1}/{total}",
             {"batch": today_batch, "current": i + 1, "total": total},
         )

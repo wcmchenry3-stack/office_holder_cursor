@@ -7,10 +7,10 @@ from typing import Any
 
 from .connection import get_connection
 
-
 # ---------------------------------------------------------------------------
 # individual_research_sources
 # ---------------------------------------------------------------------------
+
 
 def insert_research_source(
     individual_id: int,
@@ -62,6 +62,7 @@ def list_sources_for_individual(individual_id: int, conn=None) -> list[dict]:
 # wiki_draft_proposals
 # ---------------------------------------------------------------------------
 
+
 def insert_wiki_draft_proposal(
     individual_id: int,
     proposal_text: str,
@@ -104,8 +105,15 @@ def get_wiki_draft_proposal(proposal_id: int, conn=None) -> dict | None:
         row = cur.fetchone()
         if row is None:
             return None
-        keys = ["id", "individual_id", "proposal_text", "status", "created_at",
-                "full_name", "wiki_url"]
+        keys = [
+            "id",
+            "individual_id",
+            "proposal_text",
+            "status",
+            "created_at",
+            "full_name",
+            "wiki_url",
+        ]
         return dict(zip(keys, row))
     finally:
         if own_conn:

@@ -272,11 +272,13 @@ class GeminiVitalsResearcher:
 
         sources = []
         for s in data.get("sources") or []:
-            sources.append(SourceRecord(
-                url=s.get("url", ""),
-                source_type=s.get("source_type", "other"),
-                notes=s.get("notes", ""),
-            ))
+            sources.append(
+                SourceRecord(
+                    url=s.get("url", ""),
+                    source_type=s.get("source_type", "other"),
+                    notes=s.get("notes", ""),
+                )
+            )
 
         return VitalsResearchResult(
             birth_date=data.get("birth_date"),
