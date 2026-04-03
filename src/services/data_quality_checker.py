@@ -56,13 +56,9 @@ def _check_suspicious_dates(record_data: dict) -> QualityCheckResult | None:
     term_end = record_data.get("term_end_year")
     if term_start and term_end:
         if term_end < term_start:
-            concerns.append(
-                f"term_end_year ({term_end}) is before term_start_year ({term_start})"
-            )
+            concerns.append(f"term_end_year ({term_end}) is before term_start_year ({term_start})")
         if term_end - term_start > 80:
-            concerns.append(
-                f"Term span ({term_end - term_start} years) exceeds 80 years"
-            )
+            concerns.append(f"Term span ({term_end - term_start} years) exceeds 80 years")
 
     if term_end and term_end > 2030:
         concerns.append(f"term_end_year ({term_end}) is in the far future")
@@ -303,9 +299,7 @@ class DataQualityChecker:
             if own_conn:
                 conn.close()
 
-    def _process_batch(
-        self, requests: list[QualityCheckRequest], conn
-    ) -> list[QualityCheckResult]:
+    def _process_batch(self, requests: list[QualityCheckRequest], conn) -> list[QualityCheckResult]:
         """Process a batch of requests through the pipeline."""
         results: list[QualityCheckResult] = []
 
@@ -352,9 +346,7 @@ class DataQualityChecker:
         # Phase 2: AI pipeline (only for checks that need it)
         check_type = self._infer_check_type(data)
         if check_type in ("missing_wiki_url", "incomplete_individual", "url_mismatch"):
-            ai_result = _run_ai_pipeline(
-                req.record_type, req.record_id, data, check_type
-            )
+            ai_result = _run_ai_pipeline(req.record_type, req.record_id, data, check_type)
             if ai_result:
                 return ai_result
 

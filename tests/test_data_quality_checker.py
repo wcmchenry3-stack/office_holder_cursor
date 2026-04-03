@@ -33,7 +33,6 @@ from src.services.data_quality_checker import (
     MAX_BATCH_SIZE,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -207,9 +206,7 @@ class TestPipelineShortCircuit:
     @patch("src.services.data_quality_checker._check_with_claude")
     @patch("src.services.data_quality_checker._check_with_gemini")
     @patch("src.services.data_quality_checker._check_with_openai")
-    def test_skips_missing_ai_client(
-        self, mock_openai, mock_gemini, mock_claude, tmp_path
-    ):
+    def test_skips_missing_ai_client(self, mock_openai, mock_gemini, mock_claude, tmp_path):
         """When all AI clients return None (not configured), no failure is raised."""
         mock_openai.return_value = None
         mock_gemini.return_value = None
@@ -269,9 +266,7 @@ class TestFlushDedup:
     @patch("src.services.data_quality_checker._check_with_claude")
     @patch("src.services.data_quality_checker._check_with_gemini")
     @patch("src.services.data_quality_checker._check_with_openai")
-    def test_deduplicates_against_db(
-        self, mock_openai, mock_gemini, mock_claude, tmp_path
-    ):
+    def test_deduplicates_against_db(self, mock_openai, mock_gemini, mock_claude, tmp_path):
         conn = _make_conn(tmp_path)
 
         # Pre-insert a report for record_id=1
@@ -347,9 +342,7 @@ class TestManualRun:
     @patch("src.services.data_quality_checker._check_with_claude")
     @patch("src.services.data_quality_checker._check_with_gemini")
     @patch("src.services.data_quality_checker._check_with_openai")
-    def test_queries_eligible_records(
-        self, mock_openai, mock_gemini, mock_claude, tmp_path
-    ):
+    def test_queries_eligible_records(self, mock_openai, mock_gemini, mock_claude, tmp_path):
         conn = _make_conn(tmp_path)
 
         # Insert individuals — one with missing URL, one valid
