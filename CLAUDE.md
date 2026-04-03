@@ -2,7 +2,7 @@
 <!-- Global standards: ~/.claude/CLAUDE.md and ~/.claude/standards/ -->
 <!-- Keep this file ≤ 50 lines. Move detail to docs/ rather than expanding here. -->
 
-Single-user FastAPI/PostgreSQL app that scrapes Wikipedia tables to build a political office holders database. Deployed on Render.com. See `docs/` for full references.
+Single-user FastAPI/PostgreSQL app that scrapes Wikipedia tables to build a political office holders database. Deployed at `rulersai.buffingchi.com` (prd) with a future dev environment at `dev-rulersai.buffingchi.com`. See `docs/` for full references.
 
 ## Quick Start (local dev)
 

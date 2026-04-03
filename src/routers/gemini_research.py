@@ -11,6 +11,8 @@ import threading
 import time
 import uuid
 
+import sentry_sdk
+
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
@@ -120,6 +122,7 @@ async def api_research_status(job_id: str):
 
 def _research_worker(job_id: str, individual_id: int) -> None:
     """Run Gemini research + OpenAI polish for one individual."""
+    sentry_sdk.set_context("research_job", {"job_id": job_id, "individual_id": individual_id})
     try:
         _update_job(job_id, phase="loading context")
 

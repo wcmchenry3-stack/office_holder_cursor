@@ -27,7 +27,7 @@ _DEFAULT_CACHE_DIR = DATA_DIR / "wiki_cache"
 
 
 def is_postgres() -> bool:
-    """Return True when DATABASE_URL is set (Render / local PG dev)."""
+    """Return True when DATABASE_URL is set (deployed PostgreSQL)."""
     return bool(os.environ.get("DATABASE_URL"))
 
 

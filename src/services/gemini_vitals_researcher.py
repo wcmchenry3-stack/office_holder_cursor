@@ -133,7 +133,7 @@ class GeminiVitalsResearcher:
         from google import genai
 
         self._client = genai.Client(api_key=api_key)
-        self._model = "gemini-2.5-flash"
+        self._model = "gemini-3.1-pro"
 
     def research_individual(
         self,
@@ -243,12 +243,19 @@ class GeminiVitalsResearcher:
                         system_instruction=_SYSTEM_PROMPT,
                         max_output_tokens=4096,
                         response_mime_type="application/json",
+                        tools=[types.Tool(google_search=types.GoogleSearch())],
+                        thinking_config=types.ThinkingConfig(thinking_budget=8192),
                     ),
                 )
                 return self._parse_response(response)
             except errors.ClientError as exc:
                 if getattr(exc, "code", 0) == 429 or "RESOURCE_EXHAUSTED" in str(exc):
                     if attempt == 2:
+                        import sentry_sdk
+
+                        sentry_sdk.add_breadcrumb(
+                            message="Gemini rate limit exhausted after 3 retries", level="error"
+                        )
                         raise
                     logger.warning(
                         "_call_gemini: RESOURCE_EXHAUSTED (HTTP 429); retrying in %.0f s (attempt %d/3)",

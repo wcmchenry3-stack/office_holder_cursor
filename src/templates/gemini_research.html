@@ -6,11 +6,11 @@
 
 <div style="margin-bottom:1.5em">
   <label for="searchInput"><strong>Search individual:</strong></label>
-  <input type="text" id="searchInput" placeholder="Name or wiki URL..." style="width:400px; padding:0.4em">
-  <div id="searchResults" style="border:1px solid #ddd; max-height:200px; overflow-y:auto; display:none; background:#fff; position:absolute; z-index:10; width:420px;"></div>
+  <input type="text" id="searchInput" placeholder="Name or wiki URL..." style="width:400px; padding:0.4em; background:var(--bg2); color:var(--text); border:1px solid var(--border);">
+  <div id="searchResults" style="border:1px solid var(--border); max-height:200px; overflow-y:auto; display:none; background:var(--bg2); color:var(--text); position:absolute; z-index:10; width:420px;"></div>
 </div>
 
-<div id="selectedPanel" style="display:none; margin-bottom:1.5em; padding:1em; border:1px solid #ccc; background:#f9f9f9;">
+<div id="selectedPanel" style="display:none; margin-bottom:1.5em; padding:1em; border:1px solid var(--border); background:var(--bg2);">
   <h3 style="margin-top:0">Selected Individual</h3>
   <table>
     <tr><th>ID</th><td id="selId"></td></tr>
@@ -25,7 +25,7 @@
   </button>
 </div>
 
-<div id="progressPanel" style="display:none; margin-bottom:1.5em; padding:1em; border:1px solid #2196f3; background:#e3f2fd;">
+<div id="progressPanel" style="display:none; margin-bottom:1.5em; padding:1em; border:1px solid var(--accent); background:var(--bg3);">
   <span class="spinner" aria-hidden="true" style="margin-right:0.5em;"></span>
   <strong id="progressPhase">Starting...</strong>
 </div>
@@ -49,11 +49,11 @@
   </table>
 
   <h3>Biographical Notes</h3>
-  <pre id="resBioNotes" style="background:#f5f5f5; padding:1em; white-space:pre-wrap; border:1px solid #ddd; max-height:300px; overflow-y:auto;"></pre>
+  <pre id="resBioNotes" style="background:var(--bg2); color:var(--text); padding:1em; white-space:pre-wrap; border:1px solid var(--border); max-height:300px; overflow-y:auto;"></pre>
 
   <div id="articlePanel" style="display:none;">
     <h2>Wikipedia Article Draft</h2>
-    <pre id="resArticle" style="background:#f5f5f5; padding:1em; white-space:pre-wrap; border:1px solid #ddd; max-height:500px; overflow-y:auto;"></pre>
+    <pre id="resArticle" style="background:var(--bg2); color:var(--text); padding:1em; white-space:pre-wrap; border:1px solid var(--border); max-height:500px; overflow-y:auto;"></pre>
   </div>
 </div>
 
@@ -68,8 +68,8 @@
     vertical-align: middle;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
-  #searchResults div { padding: 0.4em 0.6em; cursor: pointer; border-bottom: 1px solid #eee; }
-  #searchResults div:hover { background: #e3f2fd; }
+  #searchResults div { padding: 0.4em 0.6em; cursor: pointer; border-bottom: 1px solid var(--border); color: var(--text); }
+  #searchResults div:hover { background: var(--bg3); }
   #vitalsTable th, #sourcesTable th { text-align: left; padding-right: 1em; }
 </style>
 
@@ -102,7 +102,7 @@
           `<div data-id="${d.id}" data-json='${JSON.stringify(d).replace(/'/g,"&#39;")}'>`
           + `<strong>${window.esc(d.full_name || '(no name)')}</strong> `
           + `<small>(ID: ${d.id})</small> `
-          + `<small style="color:#666">${window.esc((d.wiki_url || '').substring(0,50))}</small>`
+          + `<small style="color:var(--text-muted)">${window.esc((d.wiki_url || '').substring(0,50))}</small>`
           + `</div>`
         ).join('');
         searchResults.style.display = 'block';

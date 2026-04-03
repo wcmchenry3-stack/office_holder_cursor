@@ -359,6 +359,11 @@ class AIOfficeBuilder:
                 return choice.message.parsed  # type: ignore[return-value]
             except openai.RateLimitError:
                 if attempt == 2:
+                    import sentry_sdk
+
+                    sentry_sdk.add_breadcrumb(
+                        message="OpenAI rate limit exhausted after 3 retries", level="error"
+                    )
                     raise
                 logger.warning(
                     "_call_openai: RateLimitError (HTTP 429); retrying in %.0f s (attempt %d/3)",

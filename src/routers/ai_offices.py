@@ -8,6 +8,7 @@ import time
 import uuid
 
 import openai
+import sentry_sdk
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
@@ -51,6 +52,7 @@ def _evict_old_batch_jobs() -> None:
 
 def _batch_job_worker(job_id: str, urls: list[str], batch_defaults: dict) -> None:
     """Processes URLs sequentially to avoid simultaneous Wikipedia + OpenAI rate limits."""
+    sentry_sdk.set_context("batch_job", {"job_id": job_id, "total_urls": len(urls)})
 
     def cancel_check() -> bool:
         with _batch_job_lock:
@@ -87,6 +89,7 @@ def _batch_job_worker(job_id: str, urls: list[str], batch_defaults: dict) -> Non
             )
         except openai.AuthenticationError as e:
             # Invalid API key — fail the entire batch immediately
+            sentry_sdk.capture_exception(e)
             with _batch_job_lock:
                 if job_id in _batch_job_store:
                     _batch_job_store[job_id]["results"][i]["status"] = "failed"
@@ -96,6 +99,7 @@ def _batch_job_worker(job_id: str, urls: list[str], batch_defaults: dict) -> Non
                     _batch_job_store[job_id]["status"] = "failed"
             return
         except Exception as e:
+            sentry_sdk.capture_exception(e)
             url_result = {
                 "url": url,
                 "status": "failed",

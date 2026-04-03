@@ -2,10 +2,13 @@
 """Router: Main scraper run — start, status, cancel, and table-cache refresh."""
 
 import json
+import logging
 import time
 import threading
 import uuid
 from pathlib import Path
+
+import sentry_sdk
 
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -212,8 +215,11 @@ def _run_job_worker(
         try:
             db_scraper_jobs.update_job(job_id, final_status, result)
         except Exception:
-            pass
+            logging.getLogger(__name__).warning(
+                "Failed to update scraper_jobs record for %s", job_id, exc_info=True
+            )
     except Exception as e:
+        sentry_sdk.capture_exception(e)
         with _run_job_lock:
             if job_id in _run_job_store:
                 _run_job_store[job_id]["status"] = "error"
@@ -221,7 +227,9 @@ def _run_job_worker(
         try:
             db_scraper_jobs.update_job(job_id, "error", {"error": str(e)})
         except Exception:
-            pass
+            logging.getLogger(__name__).warning(
+                "Failed to update scraper_jobs error record for %s", job_id, exc_info=True
+            )
     finally:
         _maybe_start_next_queued_job()
 
