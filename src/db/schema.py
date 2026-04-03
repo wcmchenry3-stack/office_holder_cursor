@@ -353,6 +353,22 @@ CREATE TABLE IF NOT EXISTS reference_documents (
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Data quality reports: one record per distinct quality check fingerprint.
+-- Used by the data quality pipeline to deduplicate checks and GitHub issues.
+CREATE TABLE IF NOT EXISTS data_quality_reports (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    fingerprint TEXT NOT NULL UNIQUE,
+    record_type TEXT NOT NULL,
+    record_id INTEGER NOT NULL,
+    check_type TEXT NOT NULL,
+    flagged_by TEXT NOT NULL,
+    concern_details TEXT,
+    github_issue_url TEXT,
+    github_issue_number INTEGER,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_data_quality_reports_fingerprint ON data_quality_reports(fingerprint);
+
 -- Indexes on offices/parties/office_terms FK columns
 CREATE INDEX IF NOT EXISTS idx_offices_country_id ON offices(country_id);
 CREATE INDEX IF NOT EXISTS idx_offices_state_id ON offices(state_id);
@@ -728,6 +744,22 @@ CREATE TABLE IF NOT EXISTS reference_documents (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Data quality reports: one record per distinct quality check fingerprint.
+-- Used by the data quality pipeline to deduplicate checks and GitHub issues.
+CREATE TABLE IF NOT EXISTS data_quality_reports (
+    id SERIAL PRIMARY KEY,
+    fingerprint TEXT NOT NULL UNIQUE,
+    record_type TEXT NOT NULL,
+    record_id INTEGER NOT NULL,
+    check_type TEXT NOT NULL,
+    flagged_by TEXT NOT NULL,
+    concern_details TEXT,
+    github_issue_url TEXT,
+    github_issue_number INTEGER,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_data_quality_reports_fingerprint ON data_quality_reports(fingerprint);
 """
 
 # Same index SQL works for both backends (standard SQL).
