@@ -1,7 +1,7 @@
 """Data view routes (individuals, office terms, milestones, wiki drafts)."""
 
-from fastapi import APIRouter, Query, Request
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.responses import HTMLResponse, JSONResponse
 
 from src.db import individuals as db_individuals
 from src.db import offices as db_offices
@@ -57,6 +57,23 @@ async def data_wiki_draft_detail(request: Request, proposal_id: int):
     return templates.TemplateResponse(
         request, "wiki_draft_detail.html", {"draft": draft, "sources": sources}
     )
+
+
+_VALID_DRAFT_STATUSES = {"pending", "submitted", "published", "rejected"}
+
+
+@router.post("/api/wiki-drafts/{proposal_id}/status")
+async def api_update_draft_status(request: Request, proposal_id: int):
+    """Update the status of a wiki draft proposal."""
+    body = await request.json()
+    new_status = (body.get("status") or "").strip().lower()
+    if new_status not in _VALID_DRAFT_STATUSES:
+        raise HTTPException(400, f"Invalid status. Must be one of: {_VALID_DRAFT_STATUSES}")
+    draft = db_research.get_wiki_draft_proposal(proposal_id)
+    if draft is None:
+        raise HTTPException(404, "Draft not found")
+    db_research.update_wiki_draft_proposal_status(proposal_id, new_status)
+    return JSONResponse({"ok": True, "status": new_status})
 
 
 @router.get("/report/milestones", response_class=HTMLResponse)

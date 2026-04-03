@@ -15,7 +15,7 @@
 {% if drafts %}
 <table>
   <thead>
-    <tr><th>ID</th><th>Individual</th><th>Wiki URL</th><th>Status</th><th>Created</th><th></th></tr>
+    <tr><th>ID</th><th>Individual</th><th>Wiki URL</th><th>Status</th><th>Origin</th><th>Created</th><th></th></tr>
   </thead>
   <tbody>
     {% for d in drafts %}
@@ -24,6 +24,7 @@
       <td>{{ d.full_name or '(unknown)' }}</td>
       <td>{% if d.wiki_url %}<a href="{{ d.wiki_url }}" target="_blank" rel="noopener">{{ d.wiki_url[:40] }}</a>{% else %}—{% endif %}</td>
       <td><span class="badge badge-{{ d.status }}">{{ d.status }}</span></td>
+      <td>{{ d.origin or 'manual' }}</td>
       <td>{{ d.created_at or '—' }}</td>
       <td><a href="/data/wiki-drafts/{{ d.id }}">View</a></td>
     </tr>

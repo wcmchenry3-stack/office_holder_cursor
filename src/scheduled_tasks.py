@@ -92,6 +92,42 @@ def _expire_stale_jobs_with_email() -> None:
         logger.warning("Stale job expiry check failed (non-fatal): %s", e)
 
 
+def _send_model_deprecated_email(model_name: str, error_msg: str) -> None:
+    """Send an urgent email when the Gemini model is deprecated/not found."""
+    app_password = os.environ.get("EMAIL_APP_PASSWORD", "")
+    if not app_password:
+        logger.warning("EMAIL_APP_PASSWORD not set — skipping model deprecated email")
+        return
+
+    email_from = os.environ.get("EMAIL_FROM", _DEFAULT_EMAIL)
+    email_to = os.environ.get("EMAIL_TO", _DEFAULT_EMAIL)
+    date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+    body = (
+        f"ACTION REQUIRED: The Gemini model used for vitals research is no longer available.\n\n"
+        f"  Model    : {model_name}\n"
+        f"  Error    : {error_msg}\n"
+        f"  Detected : {date_str}\n\n"
+        f"Gemini research (both nightly and manual) is disabled until the model is updated.\n"
+        f"Update the model in src/services/gemini_vitals_researcher.py and redeploy.\n\n"
+        f"Available models: https://ai.google.dev/gemini-api/docs/models/gemini\n"
+    )
+
+    subject = f"Office Holder — URGENT: Gemini model '{model_name}' deprecated ({date_str})"
+    msg = MIMEText(body, "plain", "utf-8")
+    msg["Subject"] = subject
+    msg["From"] = email_from
+    msg["To"] = email_to
+
+    try:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
+            smtp.login(email_from, app_password)
+            smtp.sendmail(email_from, [email_to], msg.as_string())
+        logger.info("Model deprecated email sent to %s", email_to)
+    except Exception as exc:
+        logger.warning("Failed to send model deprecated email: %s", exc)
+
+
 def _send_expiry_email(job: dict) -> None:
     """Send an email notification when a job is expired."""
     app_password = os.environ.get("EMAIL_APP_PASSWORD", "")
@@ -285,6 +321,9 @@ def run_daily_gemini_research() -> None:
         sentry_sdk.capture_exception()
         tb = traceback.format_exc()
         logger.error("Gemini research run crashed:\n%s", tb)
+        # Detect model deprecation from subprocess traceback
+        if "GeminiModelDeprecatedError" in tb:
+            _send_model_deprecated_email("gemini-3.1-pro", tb)
         _send_job_summary_email("Gemini Research", None, 0.0, run_start, error=tb)
         return
 

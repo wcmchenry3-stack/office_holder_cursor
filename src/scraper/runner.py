@@ -1416,7 +1416,7 @@ def _run_gemini_vitals_research(ctx: _RunContext, logger, report: Callable) -> d
     """
     from datetime import date
 
-    from src.services.gemini_vitals_researcher import get_gemini_researcher
+    from src.services.gemini_vitals_researcher import get_gemini_researcher, GeminiModelDeprecatedError
     from src.db import individual_research_sources as db_research
     from src.db import reference_documents as db_ref_docs
 
@@ -1469,22 +1469,26 @@ def _run_gemini_vitals_research(ctx: _RunContext, logger, report: Callable) -> d
         # Fetch office context for richer prompts
         office_context = _get_office_context_for_individual(ind_id)
 
-        result = researcher.research_individual(
-            individual_id=ind_id,
-            full_name=full_name,
-            office_name=office_context.get("office_name", ""),
-            term_dates=office_context.get("term_dates", ""),
-            party=office_context.get("party", ""),
-            district=office_context.get("district", ""),
-            location=office_context.get("location", ""),
-            level=office_context.get("level", ""),
-            branch=office_context.get("branch", ""),
-            wiki_url=wiki_url,
-            known_birth_date=office_context.get("birth_date", ""),
-            known_death_date=office_context.get("death_date", ""),
-            known_birth_place=office_context.get("birth_place", ""),
-            known_death_place=office_context.get("death_place", ""),
-        )
+        try:
+            result = researcher.research_individual(
+                individual_id=ind_id,
+                full_name=full_name,
+                office_name=office_context.get("office_name", ""),
+                term_dates=office_context.get("term_dates", ""),
+                party=office_context.get("party", ""),
+                district=office_context.get("district", ""),
+                location=office_context.get("location", ""),
+                level=office_context.get("level", ""),
+                branch=office_context.get("branch", ""),
+                wiki_url=wiki_url,
+                known_birth_date=office_context.get("birth_date", ""),
+                known_death_date=office_context.get("death_date", ""),
+                known_birth_place=office_context.get("birth_place", ""),
+                known_death_place=office_context.get("death_place", ""),
+            )
+        except GeminiModelDeprecatedError:
+            # Abort the entire batch — model needs manual update
+            raise
 
         # Save vitals if found (individual drops out of future batches)
         vitals_found = False
@@ -1521,6 +1525,7 @@ def _run_gemini_vitals_research(ctx: _RunContext, logger, report: Callable) -> d
                             "notes": src.notes,
                         }
                     ),
+                    origin="nightly",
                 )
             except Exception as exc:
                 errors.append({"url": wiki_url, "error": f"source insert failed: {exc}"})
@@ -1544,6 +1549,7 @@ def _run_gemini_vitals_research(ctx: _RunContext, logger, report: Callable) -> d
                     db_research.insert_wiki_draft_proposal(
                         individual_id=ind_id,
                         proposal_text=article,
+                        origin="nightly",
                     )
                     articles_count += 1
             except Exception as exc:

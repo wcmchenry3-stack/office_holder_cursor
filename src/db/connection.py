@@ -418,6 +418,16 @@ def _run_pg_migrations(conn) -> None:
         " ON wiki_draft_proposals(status)",
     )
     _apply(
+        "pg_research_sources_origin",
+        "ALTER TABLE individual_research_sources ADD COLUMN IF NOT EXISTS"
+        " origin TEXT NOT NULL DEFAULT 'manual'",
+    )
+    _apply(
+        "pg_wiki_drafts_origin",
+        "ALTER TABLE wiki_draft_proposals ADD COLUMN IF NOT EXISTS"
+        " origin TEXT NOT NULL DEFAULT 'manual'",
+    )
+    _apply(
         "pg_create_reference_documents",
         "CREATE TABLE IF NOT EXISTS reference_documents ("
         " id SERIAL PRIMARY KEY,"
@@ -440,6 +450,8 @@ def _sqlite_add_columns_if_missing(conn) -> None:
         ("individuals", "gemini_research_checked_at", "TEXT"),
         ("scraper_jobs", "queued_at", "TEXT"),
         ("scraper_jobs", "job_params_json", "TEXT"),
+        ("individual_research_sources", "origin", "TEXT DEFAULT 'manual'"),
+        ("wiki_draft_proposals", "origin", "TEXT DEFAULT 'manual'"),
     ]
     for table, column, col_type in migrations:
         try:

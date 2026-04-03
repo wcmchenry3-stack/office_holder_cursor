@@ -8,21 +8,32 @@
 <table>
   <tr><th>Individual</th><td>{{ draft.full_name or '(unknown)' }}</td></tr>
   <tr><th>Wiki URL</th><td>{% if draft.wiki_url %}<a href="{{ draft.wiki_url }}" target="_blank" rel="noopener">{{ draft.wiki_url }}</a>{% else %}—{% endif %}</td></tr>
-  <tr><th>Status</th><td><span class="badge badge-{{ draft.status }}">{{ draft.status }}</span></td></tr>
+  <tr><th>Status</th><td><span id="statusBadge" class="badge badge-{{ draft.status }}">{{ draft.status }}</span></td></tr>
+  <tr><th>Origin</th><td>{{ draft.origin or 'manual' }}</td></tr>
   <tr><th>Created</th><td>{{ draft.created_at or '—' }}</td></tr>
 </table>
+
+<div style="margin:1em 0;">
+  <strong>Change status:</strong>
+  <button class="btn btn-secondary status-btn" data-status="pending">Pending</button>
+  <button class="btn btn-secondary status-btn" data-status="submitted">Submitted</button>
+  <button class="btn status-btn" data-status="published" style="background:var(--success); color:#fff;">Published</button>
+  <button class="btn status-btn" data-status="rejected" style="background:var(--danger); color:#fff;">Rejected</button>
+  <span id="statusMsg" style="margin-left:0.5em;"></span>
+</div>
 
 <h2>Research Sources</h2>
 {% if sources %}
 <table>
   <thead>
-    <tr><th>Source URL</th><th>Type</th><th>Data</th><th>Date</th></tr>
+    <tr><th>Source URL</th><th>Type</th><th>Origin</th><th>Data</th><th>Date</th></tr>
   </thead>
   <tbody>
     {% for s in sources %}
     <tr>
       <td><a href="{{ s.source_url }}" target="_blank" rel="noopener">{{ s.source_url[:60] }}</a></td>
       <td>{{ s.source_type or '—' }}</td>
+      <td>{{ s.origin or 'manual' }}</td>
       <td>{{ (s.found_data_json or '—')[:80] }}</td>
       <td>{{ s.created_at or '—' }}</td>
     </tr>
@@ -34,6 +45,32 @@
 {% endif %}
 
 <h2>Article Draft (Wikitext)</h2>
-<pre style="background:#f5f5f5; padding:1em; overflow-x:auto; white-space:pre-wrap; border:1px solid #ddd;">{{ draft.proposal_text }}</pre>
+<pre style="background:var(--bg2); color:var(--text); padding:1em; overflow-x:auto; white-space:pre-wrap; border:1px solid var(--border);">{{ draft.proposal_text }}</pre>
 
+<script>
+(function() {
+  const proposalId = {{ draft.id }};
+  document.querySelectorAll('.status-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const newStatus = btn.dataset.status;
+      const msg = document.getElementById('statusMsg');
+      msg.textContent = 'Updating...';
+      try {
+        const r = await fetch('/api/wiki-drafts/' + proposalId + '/status', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({status: newStatus}),
+        });
+        if (!r.ok) { const d = await r.json(); throw new Error(d.detail || 'Failed'); }
+        document.getElementById('statusBadge').textContent = newStatus;
+        document.getElementById('statusBadge').className = 'badge badge-' + newStatus;
+        msg.textContent = 'Updated to ' + newStatus;
+        setTimeout(() => { msg.textContent = ''; }, 2000);
+      } catch(e) {
+        msg.textContent = 'Error: ' + e.message;
+      }
+    });
+  });
+})();
+</script>
 {% endblock %}
