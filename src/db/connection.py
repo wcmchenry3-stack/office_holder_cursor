@@ -437,6 +437,25 @@ def _run_pg_migrations(conn) -> None:
         " created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),"
         " updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())",
     )
+    _apply(
+        "pg_create_data_quality_reports",
+        "CREATE TABLE IF NOT EXISTS data_quality_reports ("
+        " id SERIAL PRIMARY KEY,"
+        " fingerprint TEXT NOT NULL UNIQUE,"
+        " record_type TEXT NOT NULL,"
+        " record_id INTEGER NOT NULL,"
+        " check_type TEXT NOT NULL,"
+        " flagged_by TEXT NOT NULL,"
+        " concern_details TEXT,"
+        " github_issue_url TEXT,"
+        " github_issue_number INTEGER,"
+        " created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())",
+    )
+    _apply(
+        "pg_data_quality_reports_fingerprint_idx",
+        "CREATE INDEX IF NOT EXISTS idx_data_quality_reports_fingerprint"
+        " ON data_quality_reports(fingerprint)",
+    )
 
 
 def _sqlite_add_columns_if_missing(conn) -> None:
