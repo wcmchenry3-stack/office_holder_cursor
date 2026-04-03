@@ -25,7 +25,7 @@ _key_locks_lock = threading.Lock()
 
 
 def _cache_dir() -> Path:
-    """Return the wiki cache directory, respecting WIKI_CACHE_DIR env var (for Render disk)."""
+    """Return the wiki cache directory, respecting WIKI_CACHE_DIR env var (for persistent disk storage)."""
     return get_cache_dir()
 
 

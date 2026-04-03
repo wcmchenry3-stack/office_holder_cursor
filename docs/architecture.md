@@ -70,7 +70,7 @@ office_holder_cursor/
 │   ├── test_run.db                # Test database (used by scenario runner)
 │   ├── logs/                      # Log files from scraper runs
 │   └── wiki_cache/                # Gzip cache of fetched Wikipedia HTML tables
-├── render.yaml                    # Render.com deployment config
+├── render.yaml                    # Deployment manifest (dev + prd services)
 ├── requirements.txt               # Python dependencies
 └── runner_head.py                 # UTF-16 encoded backup of runner.py — NOT used at runtime
 ```
@@ -111,6 +111,9 @@ Auth is bypassed locally when `GOOGLE_CLIENT_ID` is not set. Database is created
 | `EMAIL_FROM` | No | `wcmchenry3@gmail.com` | Sender address for summary email |
 | `EMAIL_TO` | No | `wcmchenry3@gmail.com` | Recipient address for summary email |
 | `GEMINI_OFFICE_HOLDER` | For Gemini | — | Google Gemini API key for deep vitals research (Feature C). If unset, Gemini research is silently disabled. |
+| `APP_ENVIRONMENT` | No | `dev` | Environment name (`dev` or `prd`). Used by Sentry and logging. |
+| `SENTRY_DSN` | For Sentry | — | Sentry DSN for error tracking. If unset, Sentry is disabled (local dev). |
+| `SENTRY_TRACES_SAMPLE_RATE` | No | `0.1` | Fraction of requests to trace for Sentry performance monitoring (0.0–1.0). |
 | `PLAYWRIGHT_BASE_URL` | Testing | `http://127.0.0.1:8000` | Base URL for Playwright tests |
 | `PLAYWRIGHT_EDIT_OFFICE_ID` | Testing | — | Office ID used in Playwright UI tests |
 | `PLAYWRIGHT_OFFICE_A_ID` | Testing | — | Office ID A for comparison tests |

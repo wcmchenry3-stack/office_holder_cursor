@@ -2,7 +2,7 @@
 
 Two schemas are maintained in sync:
   • SCHEMA_SQL      — SQLite syntax, used by test fixtures only
-  • SCHEMA_PG_SQL   — PostgreSQL syntax, used by the production Render app
+  • SCHEMA_PG_SQL   — PostgreSQL syntax, used by the production PostgreSQL deployment
 
 IMPORTANT: When adding a column or table, update BOTH constants and add a
 _run_pg_migrations() entry in connection.py for the live PostgreSQL database.

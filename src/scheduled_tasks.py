@@ -15,6 +15,7 @@ Optional env vars:
 
 from __future__ import annotations
 
+import logging
 import os
 import json
 import smtplib
@@ -26,6 +27,10 @@ from email import encoders
 from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+
+import sentry_sdk
+
+logger = logging.getLogger(__name__)
 
 _DEFAULT_EMAIL = "wcmchenry3@gmail.com"
 
@@ -81,10 +86,10 @@ def _expire_stale_jobs_with_email() -> None:
 
         expired = expire_stale_jobs()
         for job in expired:
-            print(f"[scheduler] Expired stale job: {job}")
+            logger.info("Expired stale job: %s", job)
             _send_expiry_email(job)
     except Exception as e:
-        print(f"[scheduler] Stale job expiry check failed (non-fatal): {e}")
+        logger.warning("Stale job expiry check failed (non-fatal): %s", e)
 
 
 def _send_expiry_email(job: dict) -> None:
@@ -116,15 +121,16 @@ def _send_expiry_email(job: dict) -> None:
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
             smtp.login(email_from, app_password)
             smtp.sendmail(email_from, [email_to], msg.as_string())
-        print(f"[scheduler] Expiry email sent for job {job.get('id')}")
+        logger.info("Expiry email sent for job %s", job.get("id"))
     except Exception as exc:
-        print(f"[scheduler] Failed to send expiry email: {exc}")
+        logger.warning("Failed to send expiry email: %s", exc)
 
 
 def run_daily_delta() -> None:
     """Entry point called by APScheduler at 06:00 UTC each day."""
+    sentry_sdk.set_tag("scheduled_task", "daily_delta")
     if not is_daily_delta_enabled():
-        print("[scheduler] Daily delta run skipped because DAILY_DELTA_ENABLED is disabled")
+        logger.info("Daily delta run skipped because DAILY_DELTA_ENABLED is disabled")
         return
 
     _expire_stale_jobs_with_email()
@@ -134,47 +140,48 @@ def run_daily_delta() -> None:
 
         active = count_active_jobs()
         if active > 0:
-            print(
-                f"[scheduler] Daily delta run skipped: {active} job(s) already running or queued."
-            )
+            logger.info("Daily delta run skipped: %d job(s) already running or queued.", active)
             return
     except Exception as e:
-        print(f"[scheduler] Could not check active jobs (non-fatal): {e}")
+        logger.warning("Could not check active jobs (non-fatal): %s", e)
 
     from src.scraper.runner import _cleanup_disk_cache
 
     run_start = datetime.now(timezone.utc)
     today_batch = run_start.weekday()  # 0=Mon … 6=Sun
-    print(
-        f"[scheduler] Daily delta run starting at {run_start.strftime('%Y-%m-%d %H:%M:%S')} UTC (bio_batch={today_batch})"
+    logger.info(
+        "Daily delta run starting at %s UTC (bio_batch=%d)",
+        run_start.strftime("%Y-%m-%d %H:%M:%S"),
+        today_batch,
     )
 
     try:
         cache_deleted = _cleanup_disk_cache(max_age_days=30)
     except Exception as e:
         cache_deleted = 0
-        print(f"[scheduler] Cache cleanup error (non-fatal): {e}")
+        logger.warning("Cache cleanup error (non-fatal): %s", e)
 
     try:
         from src.db.scraper_jobs import delete_jobs_older_than
 
         jobs_deleted = delete_jobs_older_than(hours=48)
         if jobs_deleted:
-            print(f"[scheduler] Deleted {jobs_deleted} stale scraper_jobs records.")
+            logger.info("Deleted %d stale scraper_jobs records.", jobs_deleted)
     except Exception as e:
-        print(f"[scheduler] scraper_jobs cleanup error (non-fatal): {e}")
+        logger.warning("scraper_jobs cleanup error (non-fatal): %s", e)
 
     try:
         result = _run_daily_delta_in_subprocess(today_batch=today_batch)
         result["cache_deleted"] = cache_deleted
     except Exception:
+        sentry_sdk.capture_exception()
         tb = traceback.format_exc()
-        print(f"[scheduler] Daily run crashed:\n{tb}")
+        logger.error("Daily run crashed:\n%s", tb)
         _send_summary_email(None, 0.0, run_start, error=tb, cache_deleted=cache_deleted)
         return
 
     duration_s = (datetime.now(timezone.utc) - run_start).total_seconds()
-    print(f"[scheduler] Daily run complete in {duration_s:.0f}s — sending summary email")
+    logger.info("Daily run complete in %.0fs — sending summary email", duration_s)
     _send_summary_email(result, duration_s, run_start)
 
 
@@ -216,65 +223,73 @@ print(json.dumps(result))
 
 def run_daily_insufficient_vitals() -> None:
     """Entry point called by APScheduler at 07:00 UTC each day."""
+    sentry_sdk.set_tag("scheduled_task", "insufficient_vitals")
     _expire_stale_jobs_with_email()
 
     try:
         from src.db.scraper_jobs import count_active_jobs
 
         if count_active_jobs() > 0:
-            print("[scheduler] Insufficient vitals run skipped: jobs already active.")
+            logger.info("Insufficient vitals run skipped: jobs already active.")
             return
     except Exception as e:
-        print(f"[scheduler] Could not check active jobs (non-fatal): {e}")
+        logger.warning("Could not check active jobs (non-fatal): %s", e)
 
     run_start = datetime.now(timezone.utc)
     today_batch = run_start.day % 30
-    print(
-        f"[scheduler] Insufficient vitals run starting at {run_start.strftime('%Y-%m-%d %H:%M:%S')} UTC (batch={today_batch})"
+    logger.info(
+        "Insufficient vitals run starting at %s UTC (batch=%d)",
+        run_start.strftime("%Y-%m-%d %H:%M:%S"),
+        today_batch,
     )
 
     try:
         result = _run_mode_in_subprocess("delta_insufficient_vitals", today_batch)
     except Exception:
+        sentry_sdk.capture_exception()
         tb = traceback.format_exc()
-        print(f"[scheduler] Insufficient vitals run crashed:\n{tb}")
+        logger.error("Insufficient vitals run crashed:\n%s", tb)
         _send_job_summary_email("Insufficient Vitals", None, 0.0, run_start, error=tb)
         return
 
     duration_s = (datetime.now(timezone.utc) - run_start).total_seconds()
-    print(f"[scheduler] Insufficient vitals run complete in {duration_s:.0f}s")
+    logger.info("Insufficient vitals run complete in %.0fs", duration_s)
     _send_job_summary_email("Insufficient Vitals", result, duration_s, run_start)
 
 
 def run_daily_gemini_research() -> None:
     """Entry point called by APScheduler at 08:00 UTC each day."""
+    sentry_sdk.set_tag("scheduled_task", "gemini_research")
     _expire_stale_jobs_with_email()
 
     try:
         from src.db.scraper_jobs import count_active_jobs
 
         if count_active_jobs() > 0:
-            print("[scheduler] Gemini research run skipped: jobs already active.")
+            logger.info("Gemini research run skipped: jobs already active.")
             return
     except Exception as e:
-        print(f"[scheduler] Could not check active jobs (non-fatal): {e}")
+        logger.warning("Could not check active jobs (non-fatal): %s", e)
 
     run_start = datetime.now(timezone.utc)
     today_batch = run_start.day % 30
-    print(
-        f"[scheduler] Gemini research run starting at {run_start.strftime('%Y-%m-%d %H:%M:%S')} UTC (batch={today_batch})"
+    logger.info(
+        "Gemini research run starting at %s UTC (batch=%d)",
+        run_start.strftime("%Y-%m-%d %H:%M:%S"),
+        today_batch,
     )
 
     try:
         result = _run_mode_in_subprocess("gemini_vitals_research", today_batch)
     except Exception:
+        sentry_sdk.capture_exception()
         tb = traceback.format_exc()
-        print(f"[scheduler] Gemini research run crashed:\n{tb}")
+        logger.error("Gemini research run crashed:\n%s", tb)
         _send_job_summary_email("Gemini Research", None, 0.0, run_start, error=tb)
         return
 
     duration_s = (datetime.now(timezone.utc) - run_start).total_seconds()
-    print(f"[scheduler] Gemini research run complete in {duration_s:.0f}s")
+    logger.info("Gemini research run complete in %.0fs", duration_s)
     _send_job_summary_email("Gemini Research", result, duration_s, run_start)
 
 
@@ -306,7 +321,7 @@ def _send_job_summary_email(
     """Generic job summary email for scheduled tasks (vitals recheck, Gemini research, etc.)."""
     app_password = os.environ.get("EMAIL_APP_PASSWORD", "")
     if not app_password:
-        print(f"[scheduler] EMAIL_APP_PASSWORD not set — skipping {job_name} email")
+        logger.info("EMAIL_APP_PASSWORD not set — skipping %s email", job_name)
         return
 
     email_from = os.environ.get("EMAIL_FROM", _DEFAULT_EMAIL)
@@ -359,9 +374,9 @@ def _send_job_summary_email(
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
             smtp.login(email_from, app_password)
             smtp.sendmail(email_from, [email_to], msg.as_string())
-        print(f"[scheduler] {job_name} email sent to {email_to}")
+        logger.info("%s email sent to %s", job_name, email_to)
     except Exception as exc:
-        print(f"[scheduler] Failed to send {job_name} email: {exc}")
+        logger.warning("Failed to send %s email: %s", job_name, exc)
 
 
 def _send_summary_email(
@@ -374,7 +389,7 @@ def _send_summary_email(
     """Format and send the daily run summary email via Gmail SMTP."""
     app_password = os.environ.get("EMAIL_APP_PASSWORD", "")
     if not app_password:
-        print("[scheduler] EMAIL_APP_PASSWORD not set — skipping summary email")
+        logger.info("EMAIL_APP_PASSWORD not set — skipping summary email")
         return
 
     email_from = os.environ.get("EMAIL_FROM", _DEFAULT_EMAIL)
@@ -468,6 +483,6 @@ ERRORS
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
             smtp.login(email_from, app_password)
             smtp.sendmail(email_from, [email_to], msg.as_string())
-        print(f"[scheduler] Summary email sent to {email_to}")
+        logger.info("Summary email sent to %s", email_to)
     except Exception as exc:
-        print(f"[scheduler] Failed to send summary email: {exc}")
+        logger.warning("Failed to send summary email: %s", exc)
