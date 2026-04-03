@@ -290,6 +290,44 @@ class GeminiVitalsResearcher:
                     raise
         raise RuntimeError("unreachable")
 
+    def check_data_quality(self, prompt: str) -> dict | None:
+        """Run a data quality check via Gemini. Returns parsed JSON dict or None."""
+        from google.genai import types, errors
+
+        backoff = 1.0
+        for attempt in range(3):
+            try:
+                response = self._client.models.generate_content(
+                    model=self._model,
+                    contents=[
+                        types.Content(
+                            role="user",
+                            parts=[types.Part(text=prompt)],
+                        ),
+                    ],
+                    config=types.GenerateContentConfig(
+                        system_instruction=(
+                            "You are a data quality analyst. Assess the record and return JSON: "
+                            '{"is_valid": bool, "concerns": [str], "confidence": "high"|"medium"|"low"}'
+                        ),
+                        max_output_tokens=512,
+                        response_mime_type="application/json",
+                    ),
+                )
+                import json
+
+                text = response.text or ""
+                return json.loads(text)
+            except errors.ClientError as exc:
+                if getattr(exc, "code", 0) == 429 or "RESOURCE_EXHAUSTED" in str(exc):
+                    if attempt == 2:
+                        raise
+                    time.sleep(backoff)
+                    backoff *= 2
+                else:
+                    raise
+        return None
+
     def _parse_response(self, response) -> VitalsResearchResult:
         """Parse Gemini JSON response into VitalsResearchResult."""
         text = response.text or ""
