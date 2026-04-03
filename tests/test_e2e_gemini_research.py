@@ -18,6 +18,8 @@ Policy compliance (production implementations — not tested here):
   OpenAI API (src/services/ai_office_builder.py):
     - max_completion_tokens=4096 set on every API call.
     - RateLimitError handling: exponential backoff in AIOfficeBuilder._call_openai.
+  Wikipedia API (src/scraper/wiki_fetch.py):
+    - User-Agent header set on all requests per Wikimedia API:Etiquette policy.
 """
 
 from __future__ import annotations
@@ -30,7 +32,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from starlette.testclient import TestClient
-
 
 # ---------------------------------------------------------------------------
 # Shared fixture: full app stack with a seeded individual
@@ -138,21 +139,23 @@ def test_run_missing_individual_id_returns_400(app_client):
 def test_run_and_poll_research_job(app_client, seeded_individual):
     """Start a research job and poll until complete (mocked Gemini + OpenAI)."""
     mock_gemini_response = MagicMock()
-    mock_gemini_response.text = json.dumps({
-        "birth_date": "1950-06-15",
-        "death_date": None,
-        "birth_place": "Denver, CO",
-        "death_place": None,
-        "sources": [
-            {
-                "url": "https://example.gov/record",
-                "source_type": "government",
-                "notes": "Census record",
-            }
-        ],
-        "confidence": "medium",
-        "biographical_notes": "Test Person served in office.",
-    })
+    mock_gemini_response.text = json.dumps(
+        {
+            "birth_date": "1950-06-15",
+            "death_date": None,
+            "birth_place": "Denver, CO",
+            "death_place": None,
+            "sources": [
+                {
+                    "url": "https://example.gov/record",
+                    "source_type": "government",
+                    "notes": "Census record",
+                }
+            ],
+            "confidence": "medium",
+            "biographical_notes": "Test Person served in office.",
+        }
+    )
 
     mock_openai_completion = MagicMock()
     mock_openai_completion.choices = [MagicMock()]
@@ -164,12 +167,8 @@ def test_run_and_poll_research_job(app_client, seeded_individual):
         patch("google.genai.Client") as mock_genai_cls,
         patch("src.services.ai_office_builder.openai.OpenAI") as mock_openai_cls,
     ):
-        mock_genai_cls.return_value.models.generate_content.return_value = (
-            mock_gemini_response
-        )
-        mock_openai_cls.return_value.chat.completions.create.return_value = (
-            mock_openai_completion
-        )
+        mock_genai_cls.return_value.models.generate_content.return_value = mock_gemini_response
+        mock_openai_cls.return_value.chat.completions.create.return_value = mock_openai_completion
 
         # Reset singletons so they pick up the mocks
         from src.services.gemini_vitals_researcher import reset_gemini_researcher
