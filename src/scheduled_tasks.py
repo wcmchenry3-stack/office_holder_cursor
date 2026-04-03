@@ -323,7 +323,7 @@ def run_daily_gemini_research() -> None:
         logger.error("Gemini research run crashed:\n%s", tb)
         # Detect model deprecation from subprocess traceback
         if "GeminiModelDeprecatedError" in tb:
-            _send_model_deprecated_email("gemini-3.1-pro", tb)
+            _send_model_deprecated_email("gemini-3.1-pro-preview", tb)
         _send_job_summary_email("Gemini Research", None, 0.0, run_start, error=tb)
         return
 
