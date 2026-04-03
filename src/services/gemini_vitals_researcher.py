@@ -133,7 +133,7 @@ class GeminiVitalsResearcher:
         from google import genai
 
         self._client = genai.Client(api_key=api_key)
-        self._model = "gemini-2.0-flash"
+        self._model = "gemini-2.5-flash"
 
     def research_individual(
         self,
