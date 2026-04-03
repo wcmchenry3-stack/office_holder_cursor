@@ -20,7 +20,6 @@ import pytest
 from src.db.connection import _SQLiteConnWrapper
 from src.db import data_quality_reports as dqr
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
