@@ -110,16 +110,36 @@ async def lifespan(app: FastAPI):
         sentry_sdk.capture_exception(e)
         traceback.print_exc()
         raise RuntimeError(f"Database startup failed: {e}") from e
+    # Allow up to 15 minutes of misfire grace so deploys near trigger time
+    # don't silently skip the job (APScheduler default is only 1 second).
+    _MISFIRE_GRACE = 15 * 60  # seconds
     scheduler = AsyncIOScheduler(timezone="UTC")
     if is_daily_delta_enabled():
-        scheduler.add_job(run_daily_delta, "cron", hour=6, minute=0, id="daily_delta")
+        scheduler.add_job(
+            run_daily_delta,
+            "cron",
+            hour=6,
+            minute=0,
+            id="daily_delta",
+            misfire_grace_time=_MISFIRE_GRACE,
+        )
         print("[scheduler] Daily delta run scheduled at 06:00 UTC")
         scheduler.add_job(
-            run_daily_insufficient_vitals, "cron", hour=7, minute=0, id="daily_insufficient_vitals"
+            run_daily_insufficient_vitals,
+            "cron",
+            hour=7,
+            minute=0,
+            id="daily_insufficient_vitals",
+            misfire_grace_time=_MISFIRE_GRACE,
         )
         print("[scheduler] Insufficient vitals recheck scheduled at 07:00 UTC")
         scheduler.add_job(
-            run_daily_gemini_research, "cron", hour=8, minute=0, id="daily_gemini_research"
+            run_daily_gemini_research,
+            "cron",
+            hour=8,
+            minute=0,
+            id="daily_gemini_research",
+            misfire_grace_time=_MISFIRE_GRACE,
         )
         print("[scheduler] Gemini deep research scheduled at 08:00 UTC")
     else:
