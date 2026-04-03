@@ -1416,7 +1416,10 @@ def _run_gemini_vitals_research(ctx: _RunContext, logger, report: Callable) -> d
     """
     from datetime import date
 
-    from src.services.gemini_vitals_researcher import get_gemini_researcher, GeminiModelDeprecatedError
+    from src.services.gemini_vitals_researcher import (
+        get_gemini_researcher,
+        GeminiModelDeprecatedError,
+    )
     from src.db import individual_research_sources as db_research
     from src.db import reference_documents as db_ref_docs
 

@@ -56,7 +56,15 @@ def list_sources_for_individual(individual_id: int, conn=None) -> list[dict]:
             " ORDER BY created_at DESC",
             (individual_id,),
         )
-        keys = ["id", "individual_id", "source_url", "source_type", "found_data_json", "origin", "created_at"]
+        keys = [
+            "id",
+            "individual_id",
+            "source_url",
+            "source_type",
+            "found_data_json",
+            "origin",
+            "created_at",
+        ]
         return [dict(zip(keys, row)) for row in cur.fetchall()]
     finally:
         if own_conn:
