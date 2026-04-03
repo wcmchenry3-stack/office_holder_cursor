@@ -176,7 +176,11 @@ def run_daily_delta() -> None:
 
         active = count_active_jobs()
         if active > 0:
-            logger.info("Daily delta run skipped: %d job(s) already running or queued.", active)
+            logger.warning("Daily delta run skipped: %d job(s) already running or queued.", active)
+            sentry_sdk.capture_message(
+                f"Daily delta skipped: {active} active job(s)",
+                level="warning",
+            )
             return
     except Exception as e:
         logger.warning("Could not check active jobs (non-fatal): %s", e)
@@ -265,8 +269,13 @@ def run_daily_insufficient_vitals() -> None:
     try:
         from src.db.scraper_jobs import count_active_jobs
 
-        if count_active_jobs() > 0:
-            logger.info("Insufficient vitals run skipped: jobs already active.")
+        active = count_active_jobs()
+        if active > 0:
+            logger.warning("Insufficient vitals run skipped: %d job(s) already active.", active)
+            sentry_sdk.capture_message(
+                f"Insufficient vitals skipped: {active} active job(s)",
+                level="warning",
+            )
             return
     except Exception as e:
         logger.warning("Could not check active jobs (non-fatal): %s", e)
@@ -301,8 +310,13 @@ def run_daily_gemini_research() -> None:
     try:
         from src.db.scraper_jobs import count_active_jobs
 
-        if count_active_jobs() > 0:
-            logger.info("Gemini research run skipped: jobs already active.")
+        active = count_active_jobs()
+        if active > 0:
+            logger.warning("Gemini research run skipped: %d job(s) already active.", active)
+            sentry_sdk.capture_message(
+                f"Gemini research skipped: {active} active job(s)",
+                level="warning",
+            )
             return
     except Exception as e:
         logger.warning("Could not check active jobs (non-fatal): %s", e)
