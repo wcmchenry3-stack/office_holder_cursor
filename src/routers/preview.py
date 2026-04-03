@@ -6,6 +6,8 @@ import re
 import time
 import threading
 import uuid
+
+import sentry_sdk
 from datetime import datetime
 from pathlib import Path
 
@@ -132,6 +134,7 @@ def _preview_job_worker(job_id: str, draft: dict, max_rows: "int | None"):
                 _preview_job_store[job_id]["status"] = "cancelled"
                 _preview_job_store[job_id]["result"] = {"cancelled": True, "message": "Stopped."}
     except Exception as e:
+        sentry_sdk.capture_exception(e)
         with _preview_job_lock:
             if job_id in _preview_job_store:
                 _preview_job_store[job_id]["status"] = "error"

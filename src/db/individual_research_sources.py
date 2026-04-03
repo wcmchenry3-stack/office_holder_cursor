@@ -21,6 +21,7 @@ def insert_research_source(
     source_url: str,
     source_type: str | None = None,
     found_data_json: str | None = None,
+    origin: str = "manual",
     conn=None,
 ) -> int:
     """Insert a research source and return its id."""
@@ -30,9 +31,9 @@ def insert_research_source(
     try:
         cur = conn.execute(
             "INSERT INTO individual_research_sources"
-            " (individual_id, source_url, source_type, found_data_json)"
-            " VALUES (%s, %s, %s, %s) RETURNING id",
-            (individual_id, source_url, source_type, found_data_json),
+            " (individual_id, source_url, source_type, found_data_json, origin)"
+            " VALUES (%s, %s, %s, %s, %s) RETURNING id",
+            (individual_id, source_url, source_type, found_data_json, origin),
         )
         if own_conn:
             conn.commit()
@@ -49,13 +50,21 @@ def list_sources_for_individual(individual_id: int, conn=None) -> list[dict]:
         conn = get_connection()
     try:
         cur = conn.execute(
-            "SELECT id, individual_id, source_url, source_type, found_data_json, created_at"
+            "SELECT id, individual_id, source_url, source_type, found_data_json, origin, created_at"
             " FROM individual_research_sources"
             " WHERE individual_id = %s"
             " ORDER BY created_at DESC",
             (individual_id,),
         )
-        keys = ["id", "individual_id", "source_url", "source_type", "found_data_json", "created_at"]
+        keys = [
+            "id",
+            "individual_id",
+            "source_url",
+            "source_type",
+            "found_data_json",
+            "origin",
+            "created_at",
+        ]
         return [dict(zip(keys, row)) for row in cur.fetchall()]
     finally:
         if own_conn:
@@ -71,6 +80,7 @@ def insert_wiki_draft_proposal(
     individual_id: int,
     proposal_text: str,
     status: str = "pending",
+    origin: str = "manual",
     conn=None,
 ) -> int:
     """Insert a wiki draft proposal and return its id."""
@@ -80,9 +90,9 @@ def insert_wiki_draft_proposal(
     try:
         cur = conn.execute(
             "INSERT INTO wiki_draft_proposals"
-            " (individual_id, proposal_text, status)"
-            " VALUES (%s, %s, %s) RETURNING id",
-            (individual_id, proposal_text, status),
+            " (individual_id, proposal_text, status, origin)"
+            " VALUES (%s, %s, %s, %s) RETURNING id",
+            (individual_id, proposal_text, status, origin),
         )
         if own_conn:
             conn.commit()
@@ -99,7 +109,7 @@ def get_wiki_draft_proposal(proposal_id: int, conn=None) -> dict | None:
         conn = get_connection()
     try:
         cur = conn.execute(
-            "SELECT wp.id, wp.individual_id, wp.proposal_text, wp.status, wp.created_at,"
+            "SELECT wp.id, wp.individual_id, wp.proposal_text, wp.status, wp.origin, wp.created_at,"
             " i.full_name, i.wiki_url"
             " FROM wiki_draft_proposals wp"
             " JOIN individuals i ON i.id = wp.individual_id"
@@ -114,6 +124,7 @@ def get_wiki_draft_proposal(proposal_id: int, conn=None) -> dict | None:
             "individual_id",
             "proposal_text",
             "status",
+            "origin",
             "created_at",
             "full_name",
             "wiki_url",
@@ -132,7 +143,7 @@ def list_wiki_draft_proposals(status: str | None = None, conn=None) -> list[dict
     try:
         if status:
             cur = conn.execute(
-                "SELECT wp.id, wp.individual_id, wp.status, wp.created_at,"
+                "SELECT wp.id, wp.individual_id, wp.status, wp.origin, wp.created_at,"
                 " i.full_name, i.wiki_url"
                 " FROM wiki_draft_proposals wp"
                 " JOIN individuals i ON i.id = wp.individual_id"
@@ -142,13 +153,13 @@ def list_wiki_draft_proposals(status: str | None = None, conn=None) -> list[dict
             )
         else:
             cur = conn.execute(
-                "SELECT wp.id, wp.individual_id, wp.status, wp.created_at,"
+                "SELECT wp.id, wp.individual_id, wp.status, wp.origin, wp.created_at,"
                 " i.full_name, i.wiki_url"
                 " FROM wiki_draft_proposals wp"
                 " JOIN individuals i ON i.id = wp.individual_id"
                 " ORDER BY wp.created_at DESC",
             )
-        keys = ["id", "individual_id", "status", "created_at", "full_name", "wiki_url"]
+        keys = ["id", "individual_id", "status", "origin", "created_at", "full_name", "wiki_url"]
         return [dict(zip(keys, row)) for row in cur.fetchall()]
     finally:
         if own_conn:

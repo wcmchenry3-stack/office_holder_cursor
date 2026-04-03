@@ -27,6 +27,13 @@ from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
+
+class GeminiModelDeprecatedError(Exception):
+    """Raised when the Gemini model is not found, retired, or deprecated."""
+
+    pass
+
+
 # ---------------------------------------------------------------------------
 # Pydantic models for structured output
 # ---------------------------------------------------------------------------
@@ -133,7 +140,7 @@ class GeminiVitalsResearcher:
         from google import genai
 
         self._client = genai.Client(api_key=api_key)
-        self._model = "gemini-2.5-flash"
+        self._model = "gemini-3.1-pro"
 
     def research_individual(
         self,
@@ -152,7 +159,11 @@ class GeminiVitalsResearcher:
         known_birth_place: str = "",
         known_death_place: str = "",
     ) -> VitalsResearchResult:
-        """Research one individual. Never raises — returns empty result on failure."""
+        """Research one individual. Returns empty result on failure.
+
+        Raises GeminiModelDeprecatedError if the model is retired/not-found
+        so callers can abort the batch and send an alert.
+        """
         try:
             prompt = self._build_prompt(
                 full_name=full_name,
@@ -170,6 +181,8 @@ class GeminiVitalsResearcher:
                 known_death_place=known_death_place,
             )
             return self._call_gemini(prompt)
+        except GeminiModelDeprecatedError:
+            raise
         except Exception:
             logger.exception(
                 "Gemini research failed for individual %d (%s)", individual_id, full_name
@@ -243,12 +256,28 @@ class GeminiVitalsResearcher:
                         system_instruction=_SYSTEM_PROMPT,
                         max_output_tokens=4096,
                         response_mime_type="application/json",
+                        tools=[types.Tool(google_search=types.GoogleSearch())],
+                        thinking_config=types.ThinkingConfig(thinking_budget=8192),
                     ),
                 )
                 return self._parse_response(response)
             except errors.ClientError as exc:
+                exc_str = str(exc).lower()
+                # Detect model deprecation / not-found errors
+                if any(
+                    kw in exc_str
+                    for kw in ("not found", "not_found", "retired", "deprecated", "decommissioned")
+                ):
+                    raise GeminiModelDeprecatedError(
+                        f"Gemini model '{self._model}' is no longer available: {exc}"
+                    ) from exc
                 if getattr(exc, "code", 0) == 429 or "RESOURCE_EXHAUSTED" in str(exc):
                     if attempt == 2:
+                        import sentry_sdk
+
+                        sentry_sdk.add_breadcrumb(
+                            message="Gemini rate limit exhausted after 3 retries", level="error"
+                        )
                         raise
                     logger.warning(
                         "_call_gemini: RESOURCE_EXHAUSTED (HTTP 429); retrying in %.0f s (attempt %d/3)",

@@ -96,7 +96,7 @@ class GitHubClient:
                 resp = httpx.get(url, headers=self._headers, params=params, timeout=15.0)
                 if resp.status_code == 429:
                     if attempt == 2:
-                        logger.warning("GitHub GET rate-limited after 3 attempts: %s", url)
+                        logger.error("GitHub GET rate-limited after 3 attempts: %s", url)
                         return None
                     logger.warning(
                         "GitHub GET rate-limited; retrying in %.0f s (attempt %d/3)",

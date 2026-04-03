@@ -67,6 +67,11 @@ from src.scraper.wiki_fetch import (
 from dotenv import load_dotenv
 
 load_dotenv(".env.local")  # loads OPENAI_API_KEY (and others) in dev; no-op if file absent
+
+from src.sentry_setup import init_sentry
+
+init_sentry()
+
 # OpenAI RateLimitError (HTTP 429) and retry backoff are handled by AIOfficeBuilder
 # (src/services/ai_office_builder.py). The router (_batch_job_worker) adds an additional
 # 30-second backoff sleep when a rate-limit failure is detected before continuing.
@@ -100,6 +105,9 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         import traceback
 
+        import sentry_sdk
+
+        sentry_sdk.capture_exception(e)
         traceback.print_exc()
         raise RuntimeError(f"Database startup failed: {e}") from e
     scheduler = AsyncIOScheduler(timezone="UTC")

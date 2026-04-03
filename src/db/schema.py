@@ -2,7 +2,7 @@
 
 Two schemas are maintained in sync:
   • SCHEMA_SQL      — SQLite syntax, used by test fixtures only
-  • SCHEMA_PG_SQL   — PostgreSQL syntax, used by the production Render app
+  • SCHEMA_PG_SQL   — PostgreSQL syntax, used by the production PostgreSQL deployment
 
 IMPORTANT: When adding a column or table, update BOTH constants and add a
 _run_pg_migrations() entry in connection.py for the live PostgreSQL database.
@@ -326,6 +326,7 @@ CREATE TABLE IF NOT EXISTS individual_research_sources (
     source_url TEXT NOT NULL,
     source_type TEXT,
     found_data_json TEXT,
+    origin TEXT NOT NULL DEFAULT 'manual',
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_individual_research_sources_individual_id ON individual_research_sources(individual_id);
@@ -336,6 +337,7 @@ CREATE TABLE IF NOT EXISTS wiki_draft_proposals (
     individual_id INTEGER NOT NULL REFERENCES individuals(id),
     proposal_text TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending',
+    origin TEXT NOT NULL DEFAULT 'manual',
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_wiki_draft_proposals_individual_id ON wiki_draft_proposals(individual_id);
