@@ -6,6 +6,10 @@ Short-circuits on the first step that flags a concern. Missing AI clients
 (key not set) are silently skipped.
 
 Uses the collect/flush pattern from ParseErrorReporter.
+
+Note: This module queries wikipedia.org URLs stored in the individuals table
+but does NOT make HTTP requests to Wikipedia. All Wikipedia HTTP requests go
+through wiki_fetch.py which sets the required User-Agent header.
 """
 
 from __future__ import annotations
@@ -173,38 +177,56 @@ def _build_quality_prompt(record_data: dict, check_type: str) -> str:
 
 
 def _check_with_openai(prompt: str, context: dict) -> dict | None:
-    """Check with OpenAI. Returns None if client not available."""
+    """Check with OpenAI. Returns None if client not available.
+
+    Rate-limit handling: exponential backoff (3 retries, 1s → 2s → 4s)
+    on openai.RateLimitError (HTTP 429).
+    """
     try:
         from src.services.orchestrator import get_ai_builder
 
         builder = get_ai_builder()
         if builder is None:
             return None
-        # Use a simple completion for quality checking
-        import openai
 
-        response = builder._client.chat.completions.create(
-            model="gpt-4o-mini",
-            max_completion_tokens=512,
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a data quality analyst. Assess the record and return JSON: "
-                        '{"is_valid": bool, "concerns": [str], "confidence": "high"|"medium"|"low"}'
-                    ),
-                },
-                {"role": "user", "content": prompt},
-            ],
-            response_format={"type": "json_object"},
-        )
         import json
+        import openai
+        import time
 
-        text = response.choices[0].message.content or ""
-        return json.loads(text)
+        backoff = 1.0
+        for attempt in range(3):
+            try:
+                response = builder._client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    max_completion_tokens=512,
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": (
+                                "You are a data quality analyst. Assess the record and return JSON: "
+                                '{"is_valid": bool, "concerns": [str], "confidence": "high"|"medium"|"low"}'
+                            ),
+                        },
+                        {"role": "user", "content": prompt},
+                    ],
+                    response_format={"type": "json_object"},
+                )
+                text = response.choices[0].message.content or ""
+                return json.loads(text)
+            except openai.RateLimitError:
+                if attempt == 2:
+                    raise
+                logger.warning(
+                    "_check_with_openai: rate limited (HTTP 429); retrying in %.0f s (attempt %d/3)",
+                    backoff,
+                    attempt + 1,
+                )
+                time.sleep(backoff)
+                backoff *= 2
     except Exception:
         logger.exception("OpenAI quality check failed")
         return None
+    return None
 
 
 def _check_with_gemini(prompt: str, context: dict) -> dict | None:

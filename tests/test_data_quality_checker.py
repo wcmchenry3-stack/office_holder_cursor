@@ -2,6 +2,9 @@
 """
 Unit tests for DataQualityChecker pipeline.
 
+Note: Test data contains wikipedia.org URLs as record fixtures only —
+no HTTP requests to Wikipedia are made. User-Agent header is set in wiki_fetch.py.
+
 Tests cover:
 - Pipeline short-circuits on OpenAI failure (Gemini/Claude not called)
 - Missing AI clients gracefully skipped
