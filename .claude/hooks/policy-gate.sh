@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
 # policy-gate.sh — PreToolUse hook for Claude Code
-# Blocks `gh pr create` when changed files match API policy detection
-# patterns, prompting the policy-compliance sub-agent to review.
+# Gates `gh pr create` when changed files match API policy detection patterns.
+#
+# Flow:
+#   1. First run: detects policy-relevant changes → writes .claude/policy-review.pending → BLOCKS
+#   2. Policy-compliance agent reviews → writes .claude/policy-review.passed (with commit SHA)
+#   3. Second run: sees .passed stamp matches HEAD → PASSES
+#
+# The .passed stamp is invalidated when HEAD changes (new commits).
 set -uo pipefail
 
 # ── Read tool input from stdin ───────────────────────────────────
@@ -16,12 +22,22 @@ fi
 # ── Locate policy-patterns.json ──────────────────────────────────
 PATTERNS_FILE=".claude/policies/policy-patterns.json"
 if [ ! -f "$PATTERNS_FILE" ]; then
-  # No policies configured — pass through
   exit 0
 fi
 
+STAMP_FILE=".claude/policy-review.passed"
+HEAD_SHA=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
+
+# ── Check if a valid review stamp exists ─────────────────────────
+if [ -f "$STAMP_FILE" ]; then
+  STAMP_SHA=$(head -1 "$STAMP_FILE" 2>/dev/null || echo "")
+  if [ "$STAMP_SHA" = "$HEAD_SHA" ]; then
+    # Review was done for this exact commit — allow through
+    exit 0
+  fi
+fi
+
 # ── Get changed files ────────────────────────────────────────────
-# Try PR context first (origin/main...HEAD), fall back to HEAD~1
 CHANGED_FILES=$(git diff --name-only origin/main...HEAD 2>/dev/null || \
                 git diff --name-only HEAD~1 HEAD 2>/dev/null || \
                 echo "")
@@ -38,7 +54,7 @@ for POLICY in $(jq -r 'keys[]' "$PATTERNS_FILE"); do
   SKIP=$(jq -r --arg p "$POLICY" '.[$p].skip // empty' "$PATTERNS_FILE")
 
   while IFS= read -r file; do
-    # Skip .claude/ directory (contains policy definitions with pattern strings)
+    # Skip .claude/ directory
     case "$file" in .claude/*) continue ;; esac
 
     # Skip files matching the skip pattern
@@ -49,20 +65,24 @@ for POLICY in $(jq -r 'keys[]' "$PATTERNS_FILE"); do
     # Check if file exists and matches detection pattern
     if [ -f "$file" ] && grep -qE "$DETECT" "$file" 2>/dev/null; then
       TRIGGERED+="  - $POLICY → $file\n"
-      break  # One match per policy is enough to trigger
+      break
     fi
   done <<< "$CHANGED_FILES"
 done
 
 # ── Verdict ──────────────────────────────────────────────────────
-if [ -n "$TRIGGERED" ]; then
-  {
-    echo "BLOCKED: Policy-relevant files changed. Invoke the policy-compliance agent to review."
-    echo ""
-    echo "Triggered policies:"
-    echo -e "$TRIGGERED"
-  } >&2
-  exit 2
+if [ -z "$TRIGGERED" ]; then
+  exit 0
 fi
 
-exit 0
+# Write pending file so the compliance agent knows what to review
+echo -e "$TRIGGERED" > .claude/policy-review.pending
+
+{
+  echo "BLOCKED: Policy-relevant files changed. Run the policy-compliance agent, then retry."
+  echo ""
+  echo "Triggered policies:"
+  echo -e "$TRIGGERED"
+  echo "After review, the agent should run:  echo '$HEAD_SHA' > .claude/policy-review.passed"
+} >&2
+exit 2

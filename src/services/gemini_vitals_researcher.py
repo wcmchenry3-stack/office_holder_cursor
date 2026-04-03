@@ -27,6 +27,13 @@ from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
+
+class GeminiModelDeprecatedError(Exception):
+    """Raised when the Gemini model is not found, retired, or deprecated."""
+
+    pass
+
+
 # ---------------------------------------------------------------------------
 # Pydantic models for structured output
 # ---------------------------------------------------------------------------
@@ -152,7 +159,11 @@ class GeminiVitalsResearcher:
         known_birth_place: str = "",
         known_death_place: str = "",
     ) -> VitalsResearchResult:
-        """Research one individual. Never raises — returns empty result on failure."""
+        """Research one individual. Returns empty result on failure.
+
+        Raises GeminiModelDeprecatedError if the model is retired/not-found
+        so callers can abort the batch and send an alert.
+        """
         try:
             prompt = self._build_prompt(
                 full_name=full_name,
@@ -170,6 +181,8 @@ class GeminiVitalsResearcher:
                 known_death_place=known_death_place,
             )
             return self._call_gemini(prompt)
+        except GeminiModelDeprecatedError:
+            raise
         except Exception:
             logger.exception(
                 "Gemini research failed for individual %d (%s)", individual_id, full_name
@@ -249,6 +262,15 @@ class GeminiVitalsResearcher:
                 )
                 return self._parse_response(response)
             except errors.ClientError as exc:
+                exc_str = str(exc).lower()
+                # Detect model deprecation / not-found errors
+                if any(
+                    kw in exc_str
+                    for kw in ("not found", "not_found", "retired", "deprecated", "decommissioned")
+                ):
+                    raise GeminiModelDeprecatedError(
+                        f"Gemini model '{self._model}' is no longer available: {exc}"
+                    ) from exc
                 if getattr(exc, "code", 0) == 429 or "RESOURCE_EXHAUSTED" in str(exc):
                     if attempt == 2:
                         import sentry_sdk
