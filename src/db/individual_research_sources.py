@@ -3,6 +3,7 @@
 
 DB-only module — no HTTP requests. All Wikipedia/Wikimedia requests go through
 wiki_fetch.py which sets the User-Agent header per Wikimedia etiquette policy.
+Rate-limit, retry, and backoff logic lives in wiki_fetch.py and wikipedia_submit.py.
 """
 
 from __future__ import annotations
