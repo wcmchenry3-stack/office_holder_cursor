@@ -166,6 +166,71 @@ def list_wiki_draft_proposals(status: str | None = None, conn=None) -> list[dict
             conn.close()
 
 
+# ---------------------------------------------------------------------------
+# Notability threshold (deterministic — no AI)
+# ---------------------------------------------------------------------------
+
+# Domains that are Wikipedia mirrors (not independent sources)
+_WIKIPEDIA_MIRROR_DOMAINS = frozenset(
+    {
+        "wikipedia.org",
+        "en.m.wikipedia.org",
+        "wikimedia.org",
+        "wikidata.org",
+        "wikiwand.com",
+        "dbpedia.org",
+        "wiki2.org",
+    }
+)
+
+_GOV_ACADEMIC_SOURCE_TYPES = frozenset({"government", "academic"})
+
+
+def _is_wikipedia_mirror(url: str) -> bool:
+    """Return True if *url* belongs to a known Wikipedia mirror domain."""
+    from urllib.parse import urlparse
+
+    try:
+        host = urlparse(url).hostname or ""
+    except Exception:
+        return False
+    host = host.lower()
+    for domain in _WIKIPEDIA_MIRROR_DOMAINS:
+        if host == domain or host.endswith("." + domain):
+            return True
+    return False
+
+
+def check_notability_threshold(
+    sources: list[dict],
+    term_dates: str | None = None,
+) -> bool:
+    """Deterministic notability gate — all three criteria must be true.
+
+    1. ≥ 2 independent source URLs (not Wikipedia mirrors)
+    2. ≥ 1 source from a government or academic domain
+    3. Verifiable term dates exist (non-empty string)
+
+    *sources* should be a list of dicts with at least ``url`` and ``source_type``
+    keys (matching individual_research_sources rows or SourceRecord dicts).
+    """
+    if not term_dates or not term_dates.strip():
+        return False
+
+    independent = []
+    has_gov_academic = False
+    for src in sources:
+        url = src.get("url") or src.get("source_url") or ""
+        if not url or _is_wikipedia_mirror(url):
+            continue
+        independent.append(url)
+        source_type = (src.get("source_type") or "").lower()
+        if source_type in _GOV_ACADEMIC_SOURCE_TYPES:
+            has_gov_academic = True
+
+    return len(independent) >= 2 and has_gov_academic
+
+
 def update_wiki_draft_proposal_status(proposal_id: int, status: str, conn=None) -> None:
     """Update the status of a wiki draft proposal."""
     own_conn = conn is None

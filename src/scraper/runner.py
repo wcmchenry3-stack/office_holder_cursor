@@ -1533,8 +1533,13 @@ def _run_gemini_vitals_research(ctx: _RunContext, logger, report: Callable) -> d
             except Exception as exc:
                 errors.append({"url": wiki_url, "error": f"source insert failed: {exc}"})
 
-        # OpenAI polish → wiki draft (only if enough data)
-        if result.biographical_notes or vitals_found:
+        # Notability gate → OpenAI polish → wiki draft
+        source_dicts = [{"url": s.url, "source_type": s.source_type} for s in result.sources]
+        notable = db_research.check_notability_threshold(
+            source_dicts, office_context.get("term_dates", "")
+        )
+
+        if notable and (result.biographical_notes or vitals_found):
             try:
                 from src.services.orchestrator import get_ai_builder
 
@@ -1585,6 +1590,194 @@ def _run_gemini_vitals_research(ctx: _RunContext, logger, report: Callable) -> d
         "gemini_research_checked": total,
         "gemini_research_found": found_count,
         "gemini_articles_generated": articles_count,
+        "dry_run": False,
+        "test_run": False,
+        "preview_rows": None,
+    }
+
+
+def _run_dead_link_research(ctx: _RunContext, logger, report: Callable) -> dict[str, Any]:
+    """Use Gemini API to research dead-link individuals (is_dead_link=1 or 'No link:').
+
+    Same two-stage pipeline as _run_gemini_vitals_research but targets individuals
+    whose Wikipedia links are red/missing. Uses id % 30 batching and 90-day cooldown.
+    """
+    from datetime import date
+
+    from src.services.gemini_vitals_researcher import (
+        get_gemini_researcher,
+        GeminiModelDeprecatedError,
+    )
+    from src.db import individual_research_sources as db_research
+    from src.db import reference_documents as db_ref_docs
+
+    researcher = get_gemini_researcher()
+    if researcher is None:
+        logger.log("Dead-link research skipped: GEMINI_OFFICE_HOLDER not configured.", True)
+        logger.close()
+        return {
+            "office_count": 0,
+            "terms_parsed": 0,
+            "unique_wiki_urls": 0,
+            "bio_success_count": 0,
+            "bio_error_count": 0,
+            "bio_errors": [],
+            "bio_skipped_count": 0,
+            "living_success_count": 0,
+            "living_error_count": 0,
+            "living_errors": [],
+            "dead_link_research_batch": -1,
+            "dead_link_research_checked": 0,
+            "dead_link_research_found": 0,
+            "dead_link_articles_generated": 0,
+            "dry_run": False,
+            "test_run": False,
+            "preview_rows": None,
+        }
+
+    today_batch = ctx.bio_batch if ctx.bio_batch is not None else date.today().day % 30
+    candidates = db_individuals.get_dead_link_research_candidates_for_batch(today_batch)
+    total = len(candidates)
+    report(
+        "dead_link",
+        0,
+        total,
+        f"Dead-link research batch {today_batch}: {total} candidates",
+        {},
+    )
+
+    found_count = 0
+    articles_count = 0
+    errors: list[dict[str, str]] = []
+
+    ref_doc = db_ref_docs.get_reference_document("wikipedia_mos")
+    formatting_guidelines = ref_doc["content"] if ref_doc else ""
+
+    for i, row in enumerate(candidates):
+        if ctx.cancel_check and ctx.cancel_check():
+            logger.log("Dead-link research cancelled.", True)
+            break
+
+        ind_id = row["id"]
+        full_name = row.get("full_name") or ""
+        wiki_url = row.get("wiki_url") or ""
+
+        office_context = _get_office_context_for_individual(ind_id)
+
+        try:
+            result = researcher.research_individual(
+                individual_id=ind_id,
+                full_name=full_name,
+                office_name=office_context.get("office_name", ""),
+                term_dates=office_context.get("term_dates", ""),
+                party=office_context.get("party", ""),
+                district=office_context.get("district", ""),
+                location=office_context.get("location", ""),
+                level=office_context.get("level", ""),
+                branch=office_context.get("branch", ""),
+                wiki_url=wiki_url,
+                known_birth_date=office_context.get("birth_date", ""),
+                known_death_date=office_context.get("death_date", ""),
+                known_birth_place=office_context.get("birth_place", ""),
+                known_death_place=office_context.get("death_place", ""),
+            )
+        except GeminiModelDeprecatedError:
+            raise
+
+        vitals_found = False
+        if result.birth_date or result.death_date:
+            vitals_found = True
+            found_count += 1
+            update_data = {"wiki_url": wiki_url}
+            if result.birth_date:
+                update_data["birth_date"] = result.birth_date
+            if result.death_date:
+                update_data["death_date"] = result.death_date
+            if result.birth_place:
+                update_data["birth_place"] = result.birth_place
+            if result.death_place:
+                update_data["death_place"] = result.death_place
+            try:
+                db_individuals.upsert_individual(update_data)
+            except Exception as exc:
+                errors.append({"url": wiki_url, "error": f"upsert failed: {exc}"})
+
+        import json as _json
+
+        for src in result.sources:
+            try:
+                db_research.insert_research_source(
+                    individual_id=ind_id,
+                    source_url=src.url,
+                    source_type=src.source_type,
+                    found_data_json=_json.dumps(
+                        {
+                            "birth_date": result.birth_date,
+                            "death_date": result.death_date,
+                            "notes": src.notes,
+                        }
+                    ),
+                    origin="nightly",
+                )
+            except Exception as exc:
+                errors.append({"url": wiki_url, "error": f"source insert failed: {exc}"})
+
+        # Notability gate → OpenAI polish → wiki draft
+        source_dicts = [{"url": s.url, "source_type": s.source_type} for s in result.sources]
+        notable = db_research.check_notability_threshold(
+            source_dicts, office_context.get("term_dates", "")
+        )
+
+        if notable and (result.biographical_notes or vitals_found):
+            try:
+                from src.services.orchestrator import get_ai_builder
+
+                builder = get_ai_builder()
+                article = builder.polish_wiki_article(
+                    full_name=full_name,
+                    office_name=office_context.get("office_name", ""),
+                    term_dates=office_context.get("term_dates", ""),
+                    party=office_context.get("party", ""),
+                    location=office_context.get("location", ""),
+                    research_result=result,
+                    formatting_guidelines=formatting_guidelines,
+                )
+                if article:
+                    db_research.insert_wiki_draft_proposal(
+                        individual_id=ind_id,
+                        proposal_text=article,
+                        origin="nightly",
+                    )
+                    articles_count += 1
+            except Exception as exc:
+                errors.append({"url": wiki_url, "error": f"OpenAI polish failed: {exc}"})
+
+        db_individuals.mark_gemini_research_checked(ind_id)
+
+        report(
+            "dead_link",
+            i + 1,
+            total,
+            f"Dead-link research batch {today_batch}: {i + 1}/{total}",
+            {"batch": today_batch, "current": i + 1, "total": total},
+        )
+
+    logger.close()
+    return {
+        "office_count": 0,
+        "terms_parsed": 0,
+        "unique_wiki_urls": 0,
+        "bio_success_count": 0,
+        "bio_error_count": len(errors),
+        "bio_errors": errors,
+        "bio_skipped_count": 0,
+        "living_success_count": 0,
+        "living_error_count": 0,
+        "living_errors": [],
+        "dead_link_research_batch": today_batch,
+        "dead_link_research_checked": total,
+        "dead_link_research_found": found_count,
+        "dead_link_articles_generated": articles_count,
         "dry_run": False,
         "test_run": False,
         "preview_rows": None,
@@ -1800,6 +1993,8 @@ def run_with_db(
         return _run_insufficient_vitals(ctx, logger, report)
     if run_mode == "gemini_vitals_research":
         return _run_gemini_vitals_research(ctx, logger, report)
+    if run_mode == "dead_link_research":
+        return _run_dead_link_research(ctx, logger, report)
     if run_mode == "data_quality":
         return _run_data_quality(ctx, logger, report)
 
