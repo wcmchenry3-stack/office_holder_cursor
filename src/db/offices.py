@@ -479,7 +479,7 @@ def list_runnable_units(conn: Any | None = None) -> list[dict[str, Any]]:
                       tc.term_start_column, tc.term_end_column, tc.district_column, tc.filter_column, tc.filter_criteria, tc.dynamic_parse, tc.read_right_to_left,
                       tc.find_date_in_infobox, tc.parse_rowspan, tc.rep_link, tc.party_link, tc.enabled AS tc_enabled,
                       tc.use_full_page_for_table, tc.years_only, tc.term_dates_merged, tc.party_ignore, tc.district_ignore, tc.district_at_large, tc.ignore_non_links, tc.remove_duplicates,
-                      tc.consolidate_rowspan_terms, tc.infobox_role_key_filter_id, COALESCE(rkf.role_key, '') AS infobox_role_key, tc.notes AS tc_notes, tc.created_at, tc.last_html_hash
+                      tc.consolidate_rowspan_terms, tc.infobox_role_key_filter_id, COALESCE(rkf.role_key, '') AS infobox_role_key, tc.notes AS tc_notes, tc.created_at, tc.last_html_hash, tc.last_link_fill_rate
                FROM source_pages p
                JOIN office_details od ON od.source_page_id = p.id AND od.enabled = 1
                JOIN office_table_config tc ON tc.office_details_id = od.id AND tc.enabled = 1
@@ -556,6 +556,7 @@ def list_runnable_units(conn: Any | None = None) -> list[dict[str, Any]]:
                 "notes": rd.get("tc_notes"),
                 "created_at": rd.get("created_at"),
                 "last_html_hash": rd.get("last_html_hash"),
+                "last_link_fill_rate": rd.get("last_link_fill_rate"),
             }
             flat = _flatten_hierarchy_row(p, od, tc, c, s, lv, b, alt_links)
             flat["id"] = rd["office_table_config_id"]
@@ -564,6 +565,7 @@ def list_runnable_units(conn: Any | None = None) -> list[dict[str, Any]]:
             flat["country_id"] = rd.get("country_id")
             flat["disable_auto_table_update"] = bool(rd.get("disable_auto_table_update"))
             flat["last_html_hash"] = rd.get("last_html_hash")
+            flat["last_link_fill_rate"] = rd.get("last_link_fill_rate")
             out.append(flat)
         return out
     finally:
@@ -580,6 +582,23 @@ def update_html_hash(tc_id: int, html_hash: str, conn: Any | None = None) -> Non
         conn.execute(
             "UPDATE office_table_config SET last_html_hash = %s WHERE id = %s",
             (html_hash, tc_id),
+        )
+        if own_conn:
+            conn.commit()
+    finally:
+        if own_conn:
+            conn.close()
+
+
+def update_link_fill_rate(tc_id: int, fill_rate: float, conn: Any | None = None) -> None:
+    """Store the link fill rate (0.0–1.0) for an office_table_config row."""
+    own_conn = conn is None
+    if own_conn:
+        conn = get_connection()
+    try:
+        conn.execute(
+            "UPDATE office_table_config SET last_link_fill_rate = %s WHERE id = %s",
+            (fill_rate, tc_id),
         )
         if own_conn:
             conn.commit()

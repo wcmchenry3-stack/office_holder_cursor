@@ -184,6 +184,7 @@ CREATE TABLE IF NOT EXISTS office_table_config (
     notes TEXT,
     name TEXT,
     last_html_hash TEXT,
+    last_link_fill_rate REAL,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
 );
@@ -622,6 +623,7 @@ CREATE TABLE IF NOT EXISTS office_table_config (
     notes TEXT,
     name TEXT,
     last_html_hash TEXT,
+    last_link_fill_rate REAL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );

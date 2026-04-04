@@ -488,6 +488,10 @@ def _run_pg_migrations(conn) -> None:
         " created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())",
     )
     _apply(
+        "pg_office_table_config_last_link_fill_rate",
+        "ALTER TABLE office_table_config ADD COLUMN IF NOT EXISTS last_link_fill_rate REAL",
+    )
+    _apply(
         "pg_individuals_superseded_by_individual_id",
         "ALTER TABLE individuals ADD COLUMN IF NOT EXISTS"
         " superseded_by_individual_id INTEGER REFERENCES individuals(id)",
@@ -521,6 +525,7 @@ def _sqlite_add_columns_if_missing(conn) -> None:
         ("wiki_draft_proposals", "origin", "TEXT DEFAULT 'manual'"),
         ("individuals", "superseded_by_individual_id", "INTEGER"),
         ("source_pages", "last_quality_checked_at", "TEXT"),
+        ("office_table_config", "last_link_fill_rate", "REAL"),
     ]
     for table, column, col_type in migrations:
         try:
