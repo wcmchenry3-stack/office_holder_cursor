@@ -173,6 +173,35 @@ All modes are triggered via `run_with_db(run_mode=..., ...)` in `src/scraper/run
 
 ---
 
+## `dead_link_research`
+
+**Trigger:** Manual via `run_mode="dead_link_research"`, or schedulable via APScheduler.
+
+**Behavior:**
+1. Calculate today's batch: `date.today().day % 30`
+2. Query individuals where `is_dead_link = 1` OR `wiki_url LIKE 'No link:%'` in that batch, with **90-day** cooldown via `gemini_research_checked_at`
+3. For each individual:
+   a. **Gemini API** researches vitals and biographical data from external sources
+   b. If vitals found → `upsert_individual()` immediately
+   c. Store research sources in `individual_research_sources`
+   d. **Notability threshold** (deterministic, no AI): requires ≥2 independent sources (Wikipedia mirrors excluded), ≥1 government/academic source, and verifiable term dates
+   e. If notable AND enough data → **OpenAI** polishes findings into a wikitext Wikipedia article
+   f. Store article draft in `wiki_draft_proposals` (status: pending)
+   g. Mark `gemini_research_checked_at = NOW()`
+
+**DB writes:**
+- `individuals`: UPDATE with found vitals (birth/death dates, places)
+- `individual_research_sources`: INSERT found sources
+- `wiki_draft_proposals`: INSERT article drafts (only if notability threshold met)
+
+**Notability gate:** Articles are only generated when the deterministic threshold passes. This prevents low-quality drafts from individuals with insufficient sourcing.
+
+**Env var:** `GEMINI_OFFICE_HOLDER` — if not set, feature is silently disabled.
+
+**Policy:** Same Gemini/OpenAI policy compliance as `gemini_vitals_research`. Wikipedia submit (when used) sets User-Agent per Wikimedia API:Etiquette and respects rate limits.
+
+---
+
 ## `data_quality`
 
 **Trigger:** Manual via `run_mode="data_quality"`.

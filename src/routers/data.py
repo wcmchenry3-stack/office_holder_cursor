@@ -76,6 +76,55 @@ async def api_update_draft_status(request: Request, proposal_id: int):
     return JSONResponse({"ok": True, "status": new_status})
 
 
+@router.get("/api/research/drafts")
+async def api_research_drafts(status: str = Query(None)):
+    """List wiki draft proposals as JSON, optionally filtered by status."""
+    drafts = db_research.list_wiki_draft_proposals(status=status)
+    return JSONResponse([dict(d) for d in drafts])
+
+
+@router.post("/api/research/submit/{individual_id}")
+async def api_research_submit(individual_id: int):
+    """Submit a reviewed wiki draft to Wikipedia via the MediaWiki Action API.
+
+    Requires WIKIPEDIA_BOT_USERNAME + WIKIPEDIA_BOT_PASSWORD env vars.
+    Returns 503 if credentials are not configured.
+    """
+    from src.services.wikipedia_submit import get_submitter, WikipediaSubmitError
+
+    submitter = get_submitter()
+    if submitter is None:
+        raise HTTPException(503, "Wikipedia submit disabled — bot credentials not configured")
+
+    # Find the latest pending draft for this individual
+    drafts = db_research.list_wiki_draft_proposals(status="pending")
+    draft = next((d for d in drafts if d["individual_id"] == individual_id), None)
+    if draft is None:
+        raise HTTPException(404, "No pending draft found for this individual")
+
+    # Get the full draft text
+    full_draft = db_research.get_wiki_draft_proposal(draft["id"])
+    if full_draft is None:
+        raise HTTPException(404, "Draft not found")
+
+    # Derive article title from individual name
+    title = full_draft.get("full_name", "")
+    if not title:
+        raise HTTPException(400, "Cannot determine article title — individual has no name")
+
+    try:
+        result = submitter.submit_article(
+            title=title,
+            wikitext=full_draft["proposal_text"],
+            summary=f"New article: {title} — created from researched sources",
+        )
+        db_research.update_wiki_draft_proposal_status(draft["id"], "submitted")
+        return JSONResponse({"ok": True, "status": "submitted", "edit": result})
+    except WikipediaSubmitError as exc:
+        db_research.update_wiki_draft_proposal_status(draft["id"], "rejected")
+        raise HTTPException(502, f"Wikipedia submission failed: {exc}")
+
+
 @router.get("/report/milestones", response_class=HTMLResponse)
 async def report_milestones(request: Request):
     recent_deaths = db_reports.get_recent_deaths()

@@ -83,7 +83,9 @@ python -m pytest                            # included in full suite
   `normalize_wiki_url()` enforces `https` scheme and `wikipedia.org` in the hostname before any
   request is made. User-supplied URLs in `individual_ref` are passed through this validator.
   Gemini API calls go through `src/services/gemini_vitals_researcher.py` only; OpenAI through
-  `src/services/ai_office_builder.py` only.
+  `src/services/ai_office_builder.py` only; Wikipedia submit through
+  `src/services/wikipedia_submit.py` only (User-Agent set per Wikimedia etiquette, rate-limited,
+  `WIKIPEDIA_BOT_USERNAME`/`WIKIPEDIA_BOT_PASSWORD` never hardcoded).
 - **Test**: `test_run_api_requires_individual_ref_for_single_bio_mode` (boundary check);
   full URL validation tested in `src/scraper/test_wiki_fetch.py` if present.
 - **Gemini API note**: Google retains prompts and responses for 55 days for abuse monitoring.
