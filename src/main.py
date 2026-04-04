@@ -88,6 +88,7 @@ from src.routers import offices as offices_router
 from src.routers import ai_offices as ai_offices_router
 from src.routers import db_explorer as db_explorer_router
 from src.routers import gemini_research as gemini_research_router
+from src.routers import ai_decisions as ai_decisions_router
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from src.routers._deps import templates, limiter
 from src.scheduled_tasks import (
@@ -293,6 +294,7 @@ app.include_router(offices_router.router)
 app.include_router(ai_offices_router.router)
 app.include_router(db_explorer_router.router)
 app.include_router(gemini_research_router.router)
+app.include_router(ai_decisions_router.router)
 
 # Stoppable process types: server-side (e.g. "run") have a cancel endpoint and job store with cancelled flag;
 # client-side (e.g. "preview_all") use a Stop button and a running/stopped flag (optional AbortController).
