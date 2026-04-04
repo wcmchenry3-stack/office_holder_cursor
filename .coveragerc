@@ -5,3 +5,4 @@ omit =
     src/routers/test_scripts.py
     tests/test_playwright.py
     runner_head.py
+    cleanup_congressional_district_individuals.py
