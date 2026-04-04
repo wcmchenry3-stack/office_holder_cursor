@@ -7,6 +7,12 @@ Tests cover:
 - nolink_supersede_log CRUD: insert and list_recent
 - _maybe_supersede_nolink: happy path, no-op when no placeholder found,
   error swallowed gracefully
+
+Note: wikipedia.org URL strings below are test data values stored in the DB
+(individual.wiki_url column). No HTTP requests to Wikipedia are made here.
+All actual Wikipedia HTTP requests go through wiki_fetch.py (wiki_session)
+which sets the required User-Agent header and enforces rate limiting /
+retry/backoff logic.
 """
 
 from __future__ import annotations
