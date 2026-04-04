@@ -13,6 +13,7 @@ Tests cover:
 - DATA_QUALITY_ENABLED env var gates auto-mode
 
 All AI API calls are mocked — no live requests are made.
+OpenAI max_completion_tokens and RateLimitError retry/backoff are in data_quality_checker.py.
 """
 
 from __future__ import annotations

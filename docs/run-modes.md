@@ -186,7 +186,7 @@ All modes are triggered via `run_with_db(run_mode=..., ...)` in `src/scraper/run
 **DB writes:**
 - `data_quality_reports`: INSERT flagged issues (fingerprint-deduplicated)
 
-**AI token usage:** This is the only mode that invokes AI quality checks. Requires at least one AI API key (`OPENAI_API_KEY`, `GEMINI_OFFICE_HOLDER`, or `ANTHROPIC_API_KEY`). If no keys are set, the mode exits immediately. OpenAI calls include RateLimitError retry with exponential backoff (see `data_quality_checker.py`).
+**AI token usage:** This is the only mode that invokes AI quality checks. Requires at least one AI API key (`OPENAI_API_KEY`, `GEMINI_OFFICE_HOLDER`, or `ANTHROPIC_API_KEY`). If no keys are set, the mode exits immediately. OpenAI calls use max_completion_tokens to cap cost and include RateLimitError retry with exponential backoff (see `data_quality_checker.py`).
 
 **Auto mode (end-of-run):** When `DATA_QUALITY_ENABLED=1`, deterministic-only quality checks run automatically at the end of every `delta`, `full`, or `live_person` run. These checks use zero AI tokens — only date validation, wiki URL checks, and party resolution are performed.
 
