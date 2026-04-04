@@ -54,6 +54,7 @@ from src.db import offices as db_offices
 from src.db import parties as db_parties
 from src.db import individuals as db_individuals
 from src.db import office_terms as db_office_terms
+from src.db import nolink_supersede_log as db_supersede_log
 from src.db.date_utils import normalize_date
 from src.scraper.logger import HTTP_USER_AGENT, Logger
 from src.scraper.config_test import get_raw_table_preview
@@ -300,6 +301,56 @@ def _holder_keys_from_parsed_rows(
 def _is_dead_wiki_url(url: str) -> bool:
     u = (url or "").lower()
     return "redlink=1" in u
+
+
+def _maybe_supersede_nolink(
+    office_id: int,
+    name: str,
+    new_individual_id: int,
+    new_wiki_url: str,
+    conn,
+) -> None:
+    """Retire any matching "No link:{office_id}:{name}" placeholder for this person.
+
+    Called after a real-URL individual is written so that stale no-link placeholders
+    are detected and superseded in the same transaction. The event is written to
+    nolink_supersede_log for audit visibility.
+    """
+    import logging as _logging
+
+    _log = _logging.getLogger(__name__)
+
+    try:
+        old = db_individuals.find_nolink_by_name_and_office(office_id, name, conn=conn)
+        if old is None:
+            return
+
+        old_id = old["id"]
+        old_wiki_url = old["wiki_url"]
+
+        reassigned = db_individuals.mark_superseded(old_id, new_individual_id, conn=conn)
+        db_supersede_log.insert_log(
+            old_individual_id=old_id,
+            new_individual_id=new_individual_id,
+            office_id=office_id,
+            old_wiki_url=old_wiki_url,
+            new_wiki_url=new_wiki_url,
+            office_terms_reassigned=reassigned,
+            conn=conn,
+        )
+        _log.info(
+            "Superseded no-link placeholder id=%d (%s) with real individual id=%d (%s);"
+            " %d office_term(s) reassigned.",
+            old_id,
+            old_wiki_url,
+            new_individual_id,
+            new_wiki_url,
+            reassigned,
+        )
+    except Exception:
+        _log.exception(
+            "Failed to supersede no-link placeholder for office_id=%d name=%r", office_id, name
+        )
 
 
 def _fetch_bio_batch(
@@ -2317,6 +2368,18 @@ def run_with_db(
                         payload["full_name"] = row.get("_name_from_table")
                         payload["is_dead_link"] = 1
                     individual_id = db_individuals.upsert_individual(payload, conn=conn)
+
+                # No-link lifecycle: if this is a real-URL individual (not a placeholder),
+                # check whether a "No link:{office_id}:{name}" placeholder exists for the
+                # same person. If so, reassign its office_terms and retire it.
+                if not no_link_placeholder and individual_id and row.get("_name_from_table"):
+                    _maybe_supersede_nolink(
+                        office_id=office_id,
+                        name=row["_name_from_table"],
+                        new_individual_id=individual_id,
+                        new_wiki_url=wiki_url,
+                        conn=conn,
+                    )
                 party_text = row.get("Party")
                 od_id = row.get("_office_details_id")
                 tc_id = row.get("_office_table_config_id")

@@ -456,6 +456,23 @@ def _run_pg_migrations(conn) -> None:
         "CREATE INDEX IF NOT EXISTS idx_data_quality_reports_fingerprint"
         " ON data_quality_reports(fingerprint)",
     )
+    _apply(
+        "pg_individuals_superseded_by_individual_id",
+        "ALTER TABLE individuals ADD COLUMN IF NOT EXISTS"
+        " superseded_by_individual_id INTEGER REFERENCES individuals(id)",
+    )
+    _apply(
+        "pg_create_nolink_supersede_log",
+        "CREATE TABLE IF NOT EXISTS nolink_supersede_log ("
+        " id SERIAL PRIMARY KEY,"
+        " old_individual_id INTEGER NOT NULL REFERENCES individuals(id),"
+        " new_individual_id INTEGER NOT NULL REFERENCES individuals(id),"
+        " office_id INTEGER NOT NULL,"
+        " old_wiki_url TEXT NOT NULL,"
+        " new_wiki_url TEXT NOT NULL,"
+        " office_terms_reassigned INTEGER NOT NULL DEFAULT 0,"
+        " created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())",
+    )
 
 
 def _sqlite_add_columns_if_missing(conn) -> None:
@@ -471,6 +488,7 @@ def _sqlite_add_columns_if_missing(conn) -> None:
         ("scraper_jobs", "job_params_json", "TEXT"),
         ("individual_research_sources", "origin", "TEXT DEFAULT 'manual'"),
         ("wiki_draft_proposals", "origin", "TEXT DEFAULT 'manual'"),
+        ("individuals", "superseded_by_individual_id", "INTEGER"),
     ]
     for table, column, col_type in migrations:
         try:
