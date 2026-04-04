@@ -2,7 +2,8 @@
 
 wikipedia.org URLs in this file are string literals used as test inputs only.
 No HTTP requests are made here; all network calls are mocked. Actual requests
-use the User-Agent header defined in wiki_fetch.py (wiki_session / HTTP_HEADERS).
+use the User-Agent header defined in wiki_fetch.py (wiki_session / HTTP_HEADERS)
+and are subject to rate limiting and retry/backoff logic defined there.
 
 Targets branches not exercised by the existing test suite:
   - _parse_date: datetime instance and parse-failure paths

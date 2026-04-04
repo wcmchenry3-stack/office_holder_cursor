@@ -55,9 +55,7 @@ def main(dry_run: bool) -> None:
     all_individuals = [dict(r) for r in cur.fetchall()]
 
     district_ids = [
-        row["id"]
-        for row in all_individuals
-        if is_district_url(row.get("wiki_url") or "")
+        row["id"] for row in all_individuals if is_district_url(row.get("wiki_url") or "")
     ]
 
     if not district_ids:
@@ -88,9 +86,13 @@ def main(dry_run: bool) -> None:
         return
 
     # --- Step 3: confirm ---
-    answer = input(
-        f"\nDelete {len(district_ids)} individual(s) and {total_terms} office_term(s)? [yes/N] "
-    ).strip().lower()
+    answer = (
+        input(
+            f"\nDelete {len(district_ids)} individual(s) and {total_terms} office_term(s)? [yes/N] "
+        )
+        .strip()
+        .lower()
+    )
     if answer != "yes":
         print("Aborted.")
         conn.close()
@@ -113,7 +115,9 @@ def main(dry_run: bool) -> None:
         )
 
         conn.execute("COMMIT")
-        print(f"\nDeleted {len(district_ids)} individual(s) and {total_terms} office_term(s). Done.")
+        print(
+            f"\nDeleted {len(district_ids)} individual(s) and {total_terms} office_term(s). Done."
+        )
     except Exception as exc:
         conn.execute("ROLLBACK")
         print(f"\nERROR: {exc}\nRolled back. No changes made.")
