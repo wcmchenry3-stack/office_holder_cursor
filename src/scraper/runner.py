@@ -1604,13 +1604,10 @@ def _run_data_quality(ctx: _RunContext, logger, report: Callable) -> dict[str, A
     checker = DataQualityChecker()
 
     has_ai_keys = any(
-        os.environ.get(k)
-        for k in ("OPENAI_API_KEY", "GEMINI_OFFICE_HOLDER", "ANTHROPIC_API_KEY")
+        os.environ.get(k) for k in ("OPENAI_API_KEY", "GEMINI_OFFICE_HOLDER", "ANTHROPIC_API_KEY")
     )
     if not has_ai_keys:
-        logger.log(
-            "Data quality manual run skipped: no AI API keys configured.", True
-        )
+        logger.log("Data quality manual run skipped: no AI API keys configured.", True)
         logger.close()
         return {
             "office_count": 0,

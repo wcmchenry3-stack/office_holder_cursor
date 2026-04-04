@@ -38,5 +38,7 @@ class QualityIssueReporter:
                 "; ".join(r.concerns),
             )
 
-        logger.info("Data quality: %d issue(s) logged (GitHub reporting pending #187).", len(results))
+        logger.info(
+            "Data quality: %d issue(s) logged (GitHub reporting pending #187).", len(results)
+        )
         return len(results)

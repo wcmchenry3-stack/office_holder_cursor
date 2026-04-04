@@ -26,7 +26,6 @@ import pytest
 from src.db.connection import _SQLiteConnWrapper
 from src.services.data_quality_checker import DataQualityChecker, QualityCheckResult
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -86,9 +85,7 @@ class TestAutoModeDeterministicOnly:
             },
         )
 
-        with patch(
-            "src.services.data_quality_checker._run_ai_pipeline"
-        ) as mock_ai:
+        with patch("src.services.data_quality_checker._run_ai_pipeline") as mock_ai:
             results = checker.flush(conn=conn, deterministic_only=True)
             mock_ai.assert_not_called()
 
