@@ -458,8 +458,7 @@ def _run_pg_migrations(conn) -> None:
     )
     _apply(
         "pg_source_pages_last_quality_checked_at",
-        "ALTER TABLE source_pages ADD COLUMN IF NOT EXISTS"
-        " last_quality_checked_at TIMESTAMPTZ",
+        "ALTER TABLE source_pages ADD COLUMN IF NOT EXISTS" " last_quality_checked_at TIMESTAMPTZ",
     )
     _apply(
         "pg_create_page_quality_checks",
