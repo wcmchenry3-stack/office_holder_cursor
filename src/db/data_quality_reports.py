@@ -133,6 +133,34 @@ def list_recent_reports(limit: int = 100, conn=None) -> list[dict]:
             conn.close()
 
 
+def update_github_issue(
+    fingerprint: str,
+    github_issue_url: str,
+    github_issue_number: int,
+    conn=None,
+) -> bool:
+    """Backfill GitHub issue URL and number on an existing report.
+
+    Returns True if a row was updated, False otherwise.
+    """
+    own_conn = conn is None
+    if own_conn:
+        conn = get_connection()
+    try:
+        cur = conn.execute(
+            "UPDATE data_quality_reports"
+            " SET github_issue_url = %s, github_issue_number = %s"
+            " WHERE fingerprint = %s",
+            (github_issue_url, github_issue_number, fingerprint),
+        )
+        if own_conn:
+            conn.commit()
+        return cur.rowcount > 0
+    finally:
+        if own_conn:
+            conn.close()
+
+
 def count_by_check_type(conn=None) -> dict[str, int]:
     """Return a dict of {check_type: count} across all reports."""
     own_conn = conn is None

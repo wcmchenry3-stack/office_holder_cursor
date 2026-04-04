@@ -221,32 +221,178 @@ class TestEnvVarGate:
 
 
 # ---------------------------------------------------------------------------
-# QualityIssueReporter stub
+# QualityIssueReporter
 # ---------------------------------------------------------------------------
+
+_SAMPLE_RESULT = QualityCheckResult(
+    record_type="individual",
+    record_id=1,
+    check_type="bad_dates",
+    flagged_by="deterministic",
+    concerns=["term_end before term_start"],
+)
 
 
 class TestQualityIssueReporter:
-    """Verify the stub reporter logs without errors."""
+    """Verify QualityIssueReporter GitHub issue creation and dedup."""
 
     def test_report_empty_results(self):
         from src.services.quality_issue_reporter import QualityIssueReporter
 
         reporter = QualityIssueReporter()
-        count = reporter.report([])
-        assert count == 0
+        urls = reporter.report([])
+        assert urls == []
 
-    def test_report_logs_results(self):
+    def test_creates_github_issue_for_flagged_record(self, tmp_path):
+        """A flagged record with no prior report creates a GitHub issue."""
+        from src.services.quality_issue_reporter import QualityIssueReporter
+        from src.db import data_quality_reports as db_dqr
+
+        conn = _make_conn(tmp_path)
+        # Pre-insert the report row (as DataQualityChecker would)
+        fp = db_dqr.make_fingerprint("individual", 1, "bad_dates")
+        db_dqr.insert_report(
+            fingerprint=fp,
+            record_type="individual",
+            record_id=1,
+            check_type="bad_dates",
+            flagged_by="deterministic",
+            concern_details="term_end before term_start",
+            conn=conn,
+        )
+
+        mock_github = MagicMock()
+        mock_github.find_open_issue_by_label.return_value = None
+        mock_github.create_issue.return_value = {
+            "html_url": "https://github.com/test/repo/issues/42",
+            "number": 42,
+        }
+
+        with patch(
+            "src.services.github_client.get_github_client",
+            return_value=mock_github,
+        ):
+            reporter = QualityIssueReporter()
+            urls = reporter.report([_SAMPLE_RESULT], conn=conn)
+
+        assert urls == ["https://github.com/test/repo/issues/42"]
+        mock_github.create_issue.assert_called_once()
+        call_kwargs = mock_github.create_issue.call_args
+        assert "data-quality" in call_kwargs.kwargs.get("labels", call_kwargs[1].get("labels", []))
+
+    def test_dedup_skips_existing_fingerprint(self, tmp_path):
+        """DB-level dedup: skip when fingerprint already has a GitHub issue URL."""
+        from src.services.quality_issue_reporter import QualityIssueReporter
+        from src.db import data_quality_reports as db_dqr
+
+        conn = _make_conn(tmp_path)
+        fp = db_dqr.make_fingerprint("individual", 1, "bad_dates")
+        db_dqr.insert_report(
+            fingerprint=fp,
+            record_type="individual",
+            record_id=1,
+            check_type="bad_dates",
+            flagged_by="deterministic",
+            concern_details="term_end before term_start",
+            github_issue_url="https://github.com/test/repo/issues/99",
+            github_issue_number=99,
+            conn=conn,
+        )
+
+        mock_github = MagicMock()
+
+        with patch(
+            "src.services.github_client.get_github_client",
+            return_value=mock_github,
+        ):
+            reporter = QualityIssueReporter()
+            urls = reporter.report([_SAMPLE_RESULT], conn=conn)
+
+        assert urls == []
+        mock_github.create_issue.assert_not_called()
+
+    def test_dedup_skips_existing_github_label(self, tmp_path):
+        """GitHub-level dedup: skip when an open issue with the label exists."""
+        from src.services.quality_issue_reporter import QualityIssueReporter
+        from src.db import data_quality_reports as db_dqr
+
+        conn = _make_conn(tmp_path)
+        fp = db_dqr.make_fingerprint("individual", 1, "bad_dates")
+        # Insert report WITHOUT github_issue_url (simulates DB reset)
+        db_dqr.insert_report(
+            fingerprint=fp,
+            record_type="individual",
+            record_id=1,
+            check_type="bad_dates",
+            flagged_by="deterministic",
+            concern_details="term_end before term_start",
+            conn=conn,
+        )
+
+        mock_github = MagicMock()
+        mock_github.find_open_issue_by_label.return_value = {
+            "html_url": "https://github.com/test/repo/issues/77",
+            "number": 77,
+        }
+
+        with patch(
+            "src.services.github_client.get_github_client",
+            return_value=mock_github,
+        ):
+            reporter = QualityIssueReporter()
+            urls = reporter.report([_SAMPLE_RESULT], conn=conn)
+
+        assert urls == []
+        mock_github.create_issue.assert_not_called()
+        # Verify the DB was backfilled with the existing issue
+        row = db_dqr.find_by_fingerprint(fp, conn=conn)
+        assert row["github_issue_url"] == "https://github.com/test/repo/issues/77"
+        assert row["github_issue_number"] == 77
+
+    def test_updates_report_with_issue_url(self, tmp_path):
+        """After creating an issue, the DB report is updated with the URL."""
+        from src.services.quality_issue_reporter import QualityIssueReporter
+        from src.db import data_quality_reports as db_dqr
+
+        conn = _make_conn(tmp_path)
+        fp = db_dqr.make_fingerprint("individual", 1, "bad_dates")
+        db_dqr.insert_report(
+            fingerprint=fp,
+            record_type="individual",
+            record_id=1,
+            check_type="bad_dates",
+            flagged_by="deterministic",
+            concern_details="term_end before term_start",
+            conn=conn,
+        )
+
+        mock_github = MagicMock()
+        mock_github.find_open_issue_by_label.return_value = None
+        mock_github.create_issue.return_value = {
+            "html_url": "https://github.com/test/repo/issues/55",
+            "number": 55,
+        }
+
+        with patch(
+            "src.services.github_client.get_github_client",
+            return_value=mock_github,
+        ):
+            reporter = QualityIssueReporter()
+            reporter.report([_SAMPLE_RESULT], conn=conn)
+
+        row = db_dqr.find_by_fingerprint(fp, conn=conn)
+        assert row["github_issue_url"] == "https://github.com/test/repo/issues/55"
+        assert row["github_issue_number"] == 55
+
+    def test_no_github_token_degrades_gracefully(self):
+        """No GITHUB_TOKEN -> reporter returns empty list without crashing."""
         from src.services.quality_issue_reporter import QualityIssueReporter
 
-        reporter = QualityIssueReporter()
-        results = [
-            QualityCheckResult(
-                record_type="individual",
-                record_id=1,
-                check_type="bad_dates",
-                flagged_by="deterministic",
-                concerns=["term_end before term_start"],
-            ),
-        ]
-        count = reporter.report(results)
-        assert count == 1
+        with patch(
+            "src.services.github_client.get_github_client",
+            return_value=None,
+        ):
+            reporter = QualityIssueReporter()
+            urls = reporter.report([_SAMPLE_RESULT])
+
+        assert urls == []
