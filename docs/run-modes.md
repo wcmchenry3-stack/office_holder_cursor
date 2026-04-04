@@ -221,6 +221,34 @@ All modes are triggered via `run_with_db(run_mode=..., ...)` in `src/scraper/run
 
 ---
 
+## `auto_fix`
+
+**Trigger:** Manual via `run_mode="auto_fix"`.
+
+**Behavior:**
+1. Query GitHub for open issues with `parser-bug` label
+2. Filter to issues created by `ParseErrorReporter` (must have `parse-error:pf-*` label)
+3. For each qualifying issue:
+   a. Read the source file from the repo (`src/scraper/table_parser.py`)
+   b. Send issue + source to **Claude API** for a fix proposal
+   c. Check proposal against 7 **minimal risk criteria** (deterministic, no AI):
+      - Files changed exclusively within `src/scraper/`
+      - Diff < 50 lines
+      - No DDL statements (ALTER/CREATE/DROP TABLE)
+      - No new imports for packages not in requirements.txt
+      - No changes to public function signatures
+      - At least one new `def test_` function
+      - `error_type` is ValueError, TypeError, IndexError, or AttributeError
+   d. If all criteria pass → create branch `fix/parser-auto-<fingerprint>`, apply fix, open **draft PR** targeting `dev`
+
+**Safety:** PR is always opened as **draft** — CI runs but auto-merge is never triggered. Criteria check is pure Python — AI never decides what's "safe."
+
+**Env vars:** `ANTHROPIC_API_KEY` + `GITHUB_TOKEN` — if either is unset, feature is silently disabled. No issue is modified if criteria fail.
+
+**Policy:** See `claude_client.py` docstring for Anthropic API compliance. See `github_client.py` for GitHub API rate-limit handling.
+
+---
+
 ## Auto-Table-Update Algorithm
 
 When a delta (or full) run parses a table and finds that some existing `office_terms` holders are **missing** from the new parse, the runner checks whether the table numbering has changed on the Wikipedia page (this happens when Wikipedia editors add or remove tables).

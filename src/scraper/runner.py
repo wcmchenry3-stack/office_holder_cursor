@@ -1932,6 +1932,54 @@ def _get_office_context_for_individual(individual_id: int) -> dict[str, str]:
     return context
 
 
+def _run_auto_fix(ctx: _RunContext, logger, report: Callable) -> dict[str, Any]:
+    """Scan open parser-bug issues and auto-fix qualifying ones via Claude API.
+
+    For each issue: criteria check → Claude API → create branch → open draft PR.
+    """
+    from src.services.auto_fix import process_open_parser_bug_issues
+
+    report("auto_fix", 0, 1, "Scanning open parser-bug issues…", {})
+
+    try:
+        results = process_open_parser_bug_issues()
+    except Exception as exc:
+        logger.log(f"Auto-fix failed: {exc}", True)
+        results = []
+
+    pr_count = sum(1 for r in results if r.get("status") == "pr_created")
+    skip_count = sum(1 for r in results if r.get("status") in ("skipped", "criteria_failed"))
+    error_count = sum(1 for r in results if r.get("status") == "error")
+
+    report(
+        "auto_fix",
+        1,
+        1,
+        f"Auto-fix complete: {pr_count} PRs, {skip_count} skipped, {error_count} errors",
+        {},
+    )
+    logger.close()
+
+    return {
+        "office_count": 0,
+        "terms_parsed": 0,
+        "unique_wiki_urls": 0,
+        "bio_success_count": 0,
+        "bio_error_count": error_count,
+        "bio_errors": [r for r in results if r.get("status") == "error"],
+        "bio_skipped_count": skip_count,
+        "living_success_count": 0,
+        "living_error_count": 0,
+        "living_errors": [],
+        "auto_fix_issues_scanned": len(results),
+        "auto_fix_prs_created": pr_count,
+        "auto_fix_results": results,
+        "dry_run": False,
+        "test_run": False,
+        "preview_rows": None,
+    }
+
+
 def run_with_db(
     run_mode: str = "delta",  # full | delta | live_person | single_bio | bios_only
     run_bio: bool = False,
@@ -1997,6 +2045,8 @@ def run_with_db(
         return _run_dead_link_research(ctx, logger, report)
     if run_mode == "data_quality":
         return _run_data_quality(ctx, logger, report)
+    if run_mode == "auto_fix":
+        return _run_auto_fix(ctx, logger, report)
 
     # Main loop modes (full | delta | live_person): load offices and dispatch.
     party_list = db_parties.get_party_list_for_scraper()

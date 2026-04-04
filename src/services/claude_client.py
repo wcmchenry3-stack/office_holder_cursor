@@ -34,6 +34,13 @@ class DataQualityResult(BaseModel):
     confidence: str  # "high", "medium", "low"
 
 
+class ParserFixProposal(BaseModel):
+    file_path: str
+    diff: str  # unified diff to apply
+    test_code: str  # new test function(s)
+    explanation: str  # human-readable explanation of the fix
+
+
 # ---------------------------------------------------------------------------
 # Singleton
 # ---------------------------------------------------------------------------
@@ -177,4 +184,114 @@ class ClaudeClient:
             is_valid=data.get("is_valid", True),
             concerns=data.get("concerns", []),
             confidence=data.get("confidence", "low"),
+        )
+
+    # ------------------------------------------------------------------
+    # Parser auto-fix
+    # ------------------------------------------------------------------
+
+    def propose_parser_fix(
+        self,
+        issue_title: str,
+        issue_body: str,
+        file_content: str,
+    ) -> ParserFixProposal | None:
+        """Generate a parser fix proposal from a GitHub issue.
+
+        Returns a ParserFixProposal with the diff and test code,
+        or None if the fix cannot be generated.
+        """
+        try:
+            return self._call_claude_fix(issue_title, issue_body, file_content)
+        except Exception:
+            logger.exception("Claude auto-fix proposal failed")
+            return None
+
+    def _call_claude_fix(
+        self,
+        issue_title: str,
+        issue_body: str,
+        file_content: str,
+    ) -> ParserFixProposal | None:
+        """Call Claude to propose a parser fix. Exponential backoff on 429.
+
+        max_tokens=4096 on every call.
+        """
+        import anthropic
+
+        system = (
+            "You are a senior Python developer fixing parser bugs in a web scraping application.\n"
+            "You will be given a GitHub issue describing a parser bug and the current source file.\n"
+            "Generate a minimal, targeted fix.\n\n"
+            "RULES:\n"
+            "1. Only modify code in src/scraper/ files.\n"
+            "2. Keep changes minimal — fix the bug, nothing else.\n"
+            "3. The diff should be < 50 lines (additions + deletions).\n"
+            "4. Do NOT add new import statements for packages not in requirements.txt.\n"
+            "5. Do NOT change function signatures that are called by other modules.\n"
+            "6. Include at least one test function (def test_...) that verifies the fix.\n"
+            "7. Use the traceback and HTML snippet from the issue to understand the failure.\n\n"
+            "Return a JSON object with:\n"
+            '  file_path (string): relative path to the file to modify (e.g. "src/scraper/table_parser.py")\n'
+            "  diff (string): unified diff of the change (--- a/file, +++ b/file format)\n"
+            "  test_code (string): complete test function(s) to add\n"
+            "  explanation (string): brief explanation of what the fix does and why\n"
+        )
+
+        user_prompt = (
+            f"## GitHub Issue\n**Title:** {issue_title}\n\n{issue_body}\n\n"
+            f"## Current Source File\n```python\n{file_content}\n```\n\n"
+            "Generate a fix as a JSON object."
+        )
+
+        backoff = 1.0
+        for attempt in range(3):
+            try:
+                response = self._client.messages.create(
+                    model=self._model,
+                    max_tokens=4096,
+                    system=system,
+                    messages=[{"role": "user", "content": user_prompt}],
+                )
+                return self._parse_fix_response(response)
+            except anthropic.RateLimitError:
+                if attempt == 2:
+                    import sentry_sdk
+
+                    sentry_sdk.add_breadcrumb(
+                        message="Claude rate limit exhausted after 3 retries (auto-fix)",
+                        level="error",
+                    )
+                    raise
+                logger.warning(
+                    "_call_claude_fix: rate limited (HTTP 429); retrying in %.0f s (attempt %d/3)",
+                    backoff,
+                    attempt + 1,
+                )
+                time.sleep(backoff)
+                backoff *= 2
+        raise RuntimeError("unreachable")
+
+    def _parse_fix_response(self, response) -> ParserFixProposal | None:
+        """Parse Claude response into a ParserFixProposal."""
+        text = response.content[0].text if response.content else ""
+        # Strip markdown code fences if present
+        if "```json" in text:
+            text = text.split("```json", 1)[1].split("```", 1)[0]
+        elif "```" in text:
+            text = text.split("```", 1)[1].split("```", 1)[0]
+        try:
+            data = json.loads(text.strip())
+        except json.JSONDecodeError:
+            logger.warning("Claude auto-fix returned non-JSON: %s", text[:200])
+            return None
+
+        if not data.get("file_path") or not data.get("diff"):
+            return None
+
+        return ParserFixProposal(
+            file_path=data["file_path"],
+            diff=data["diff"],
+            test_code=data.get("test_code", ""),
+            explanation=data.get("explanation", ""),
         )
