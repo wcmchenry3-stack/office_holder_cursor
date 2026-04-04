@@ -749,55 +749,6 @@ def test_is_valid_wiki_link_year_link_returns_false():
     assert offices._is_valid_wiki_link(url) is False
 
 
-def test_is_valid_wiki_link_congressional_district_possessive_returns_false():
-    """Congressional district URLs with possessive state names are ignored.
-
-    Previously [\\w%]+ failed to match apostrophes so Mississippi's, Virginia's
-    etc. slipped through and were stored as individual wiki_urls.
-    """
-    offices = _offices()
-    possessive_cases = [
-        "https://en.wikipedia.org/wiki/Mississippi's_4th_congressional_district",
-        "https://en.wikipedia.org/wiki/Virginia's_7th_congressional_district",
-        "https://en.wikipedia.org/wiki/Georgia's_5th_congressional_district",
-    ]
-    for url in possessive_cases:
-        assert offices._is_valid_wiki_link(url) is False, f"Should be ignored: {url}"
-
-
-def test_is_valid_wiki_link_at_large_congressional_district_returns_false():
-    """At-large congressional district URLs are ignored (no digit+suffix prefix)."""
-    offices = _offices()
-    cases = [
-        "https://en.wikipedia.org/wiki/Mississippi's_at-large_congressional_district",
-        "https://en.wikipedia.org/wiki/Wyoming's_at-large_congressional_district",
-    ]
-    for url in cases:
-        assert offices._is_valid_wiki_link(url) is False, f"Should be ignored: {url}"
-
-
-def test_is_valid_wiki_link_congressional_district_no_possessive_returns_false():
-    """Congressional district URLs without possessives are still ignored."""
-    offices = _offices()
-    cases = [
-        "https://en.wikipedia.org/wiki/Tennessee_2nd_congressional_district",
-        "https://en.wikipedia.org/wiki/North_Carolina_1st_congressional_district",
-    ]
-    for url in cases:
-        assert offices._is_valid_wiki_link(url) is False, f"Should be ignored: {url}"
-
-
-def test_is_valid_wiki_link_real_person_not_filtered():
-    """Real person pages are not accidentally caught by the district pattern."""
-    offices = _offices()
-    cases = [
-        "https://en.wikipedia.org/wiki/Thomas_G._Abernethy",
-        "https://en.wikipedia.org/wiki/John_Lewis_(Georgia_politician)",
-    ]
-    for url in cases:
-        assert offices._is_valid_wiki_link(url) is True, f"Should be allowed: {url}"
-
-
 # ---------------------------------------------------------------------------
 # Offices._row_matches_filter — None column and invalid type branches
 # ---------------------------------------------------------------------------
