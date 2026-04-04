@@ -378,6 +378,22 @@ CREATE INDEX IF NOT EXISTS idx_offices_branch_id ON offices(branch_id);
 CREATE INDEX IF NOT EXISTS idx_parties_country_id ON parties(country_id);
 CREATE INDEX IF NOT EXISTS idx_office_terms_party_id ON office_terms(party_id);
 
+-- suspect_record_flags: audit log for records that triggered the pre-insertion
+-- suspect pattern gate (Issue #217). One row per flag event; result is
+-- 'allowed', 'skipped', or 'gh_issue'.
+CREATE TABLE IF NOT EXISTS suspect_record_flags (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    individual_id INTEGER REFERENCES individuals(id),
+    office_id INTEGER,
+    full_name TEXT,
+    wiki_url TEXT,
+    flag_reasons TEXT,
+    ai_votes TEXT,
+    result TEXT NOT NULL DEFAULT 'skipped',
+    gh_issue_url TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- nolink_supersede_log: audit trail for no-link placeholder lifecycle events.
 -- Each row records when a "No link:…" placeholder was retired in favour of a real-URL individual.
 CREATE TABLE IF NOT EXISTS nolink_supersede_log (
@@ -775,6 +791,20 @@ CREATE TABLE IF NOT EXISTS data_quality_reports (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_data_quality_reports_fingerprint ON data_quality_reports(fingerprint);
+
+-- suspect_record_flags: audit log for suspect pre-insertion gate (Issue #217).
+CREATE TABLE IF NOT EXISTS suspect_record_flags (
+    id SERIAL PRIMARY KEY,
+    individual_id INTEGER REFERENCES individuals(id),
+    office_id INTEGER,
+    full_name TEXT,
+    wiki_url TEXT,
+    flag_reasons TEXT,
+    ai_votes TEXT,
+    result TEXT NOT NULL DEFAULT 'skipped',
+    gh_issue_url TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 
 -- nolink_supersede_log: audit trail for no-link placeholder lifecycle events.
 CREATE TABLE IF NOT EXISTS nolink_supersede_log (

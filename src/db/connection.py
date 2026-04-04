@@ -457,6 +457,20 @@ def _run_pg_migrations(conn) -> None:
         " ON data_quality_reports(fingerprint)",
     )
     _apply(
+        "pg_create_suspect_record_flags",
+        "CREATE TABLE IF NOT EXISTS suspect_record_flags ("
+        " id SERIAL PRIMARY KEY,"
+        " individual_id INTEGER REFERENCES individuals(id),"
+        " office_id INTEGER,"
+        " full_name TEXT,"
+        " wiki_url TEXT,"
+        " flag_reasons TEXT,"
+        " ai_votes TEXT,"
+        " result TEXT NOT NULL DEFAULT 'skipped',"
+        " gh_issue_url TEXT,"
+        " created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())",
+    )
+    _apply(
         "pg_individuals_superseded_by_individual_id",
         "ALTER TABLE individuals ADD COLUMN IF NOT EXISTS"
         " superseded_by_individual_id INTEGER REFERENCES individuals(id)",
