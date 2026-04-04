@@ -280,6 +280,167 @@ class TestConsensusVoterAllUnavailable:
 
 
 # ---------------------------------------------------------------------------
+# _vote_openai / _vote_gemini / _vote_claude unit tests
+# (patch the singleton getters so the function bodies are covered)
+# ---------------------------------------------------------------------------
+
+
+class TestVoteOpenai:
+    def test_client_not_configured_returns_unavailable(self):
+        from src.services.consensus_voter import _vote_openai
+
+        with patch(
+            "src.services.orchestrator.get_ai_builder",
+            return_value=None,
+        ):
+            vote = _vote_openai("prompt", {})
+        assert vote.provider == "openai"
+        assert vote.is_valid is None
+        assert vote.error is not None
+
+    def test_valid_response_parsed(self):
+        import json
+
+        from src.services.consensus_voter import _vote_openai
+
+        response_text = json.dumps({"is_valid": True, "concerns": [], "confidence": "high"})
+        mock_message = MagicMock()
+        mock_message.content = response_text
+        mock_choice = MagicMock()
+        mock_choice.message = mock_message
+        mock_response = MagicMock()
+        mock_response.choices = [mock_choice]
+
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.return_value = mock_response
+
+        mock_builder = MagicMock()
+        mock_builder._client = mock_client
+
+        with patch("src.services.orchestrator.get_ai_builder", return_value=mock_builder):
+            vote = _vote_openai("prompt", {})
+
+        assert vote.provider == "openai"
+        assert vote.is_valid is True
+        assert vote.confidence == "high"
+
+    def test_invalid_response_parsed(self):
+        import json
+
+        from src.services.consensus_voter import _vote_openai
+
+        response_text = json.dumps(
+            {"is_valid": False, "concerns": ["bad name"], "confidence": "medium"}
+        )
+        mock_message = MagicMock()
+        mock_message.content = response_text
+        mock_choice = MagicMock()
+        mock_choice.message = mock_message
+        mock_response = MagicMock()
+        mock_response.choices = [mock_choice]
+
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.return_value = mock_response
+
+        mock_builder = MagicMock()
+        mock_builder._client = mock_client
+
+        with patch("src.services.orchestrator.get_ai_builder", return_value=mock_builder):
+            vote = _vote_openai("prompt", {})
+
+        assert vote.is_valid is False
+        assert "bad name" in vote.concerns
+
+
+class TestVoteGemini:
+    def test_client_not_configured_returns_unavailable(self):
+        from src.services.consensus_voter import _vote_gemini
+
+        with patch(
+            "src.services.gemini_vitals_researcher.get_gemini_researcher",
+            return_value=None,
+        ):
+            vote = _vote_gemini("prompt", {})
+        assert vote.provider == "gemini"
+        assert vote.is_valid is None
+
+    def test_valid_response_parsed(self):
+        from src.services.consensus_voter import _vote_gemini
+
+        mock_researcher = MagicMock()
+        mock_researcher.check_data_quality.return_value = {
+            "is_valid": True,
+            "concerns": [],
+            "confidence": "high",
+        }
+        with patch(
+            "src.services.gemini_vitals_researcher.get_gemini_researcher",
+            return_value=mock_researcher,
+        ):
+            vote = _vote_gemini("prompt", {})
+        assert vote.provider == "gemini"
+        assert vote.is_valid is True
+
+    def test_none_response_returns_unavailable(self):
+        from src.services.consensus_voter import _vote_gemini
+
+        mock_researcher = MagicMock()
+        mock_researcher.check_data_quality.return_value = None
+        with patch(
+            "src.services.gemini_vitals_researcher.get_gemini_researcher",
+            return_value=mock_researcher,
+        ):
+            vote = _vote_gemini("prompt", {})
+        assert vote.is_valid is None
+        assert vote.error is not None
+
+
+class TestVoteClaude:
+    def test_client_not_configured_returns_unavailable(self):
+        from src.services.consensus_voter import _vote_claude
+
+        with patch(
+            "src.services.claude_client.get_claude_client",
+            return_value=None,
+        ):
+            vote = _vote_claude("prompt", {})
+        assert vote.provider == "claude"
+        assert vote.is_valid is None
+
+    def test_valid_response_parsed(self):
+        from src.services.claude_client import DataQualityResult
+        from src.services.consensus_voter import _vote_claude
+
+        mock_client = MagicMock()
+        mock_client.check_data_quality.return_value = DataQualityResult(
+            is_valid=True, concerns=[], confidence="high"
+        )
+        with patch(
+            "src.services.claude_client.get_claude_client",
+            return_value=mock_client,
+        ):
+            vote = _vote_claude("prompt", {})
+        assert vote.provider == "claude"
+        assert vote.is_valid is True
+
+    def test_invalid_response_parsed(self):
+        from src.services.claude_client import DataQualityResult
+        from src.services.consensus_voter import _vote_claude
+
+        mock_client = MagicMock()
+        mock_client.check_data_quality.return_value = DataQualityResult(
+            is_valid=False, concerns=["suspicious"], confidence="medium"
+        )
+        with patch(
+            "src.services.claude_client.get_claude_client",
+            return_value=mock_client,
+        ):
+            vote = _vote_claude("prompt", {})
+        assert vote.is_valid is False
+        assert "suspicious" in vote.concerns
+
+
+# ---------------------------------------------------------------------------
 # Vote ordering is deterministic
 # ---------------------------------------------------------------------------
 
