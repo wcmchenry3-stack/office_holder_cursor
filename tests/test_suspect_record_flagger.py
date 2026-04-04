@@ -1,6 +1,11 @@
 # -*- coding: utf-8 -*-
 """Unit tests for the suspect record pre-insertion gate (Issue #217).
 
+Note: wikipedia.org URL strings below are test input values only. No HTTP
+requests to Wikipedia are made here. All actual Wikipedia HTTP requests go
+through wiki_fetch.py (wiki_session) which sets the required User-Agent
+header and enforces rate limiting / retry/backoff logic.
+
 Tests cover:
 - detect_suspicious_patterns: all 5 pattern types + clean records
 - check_and_gate: VALID → allowed, INVALID → skipped,
