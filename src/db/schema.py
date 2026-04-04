@@ -107,6 +107,7 @@ CREATE TABLE IF NOT EXISTS individuals (
     bio_refreshed_at TEXT,
     insufficient_vitals_checked_at TEXT,
     gemini_research_checked_at TEXT,
+    superseded_by_individual_id INTEGER REFERENCES individuals(id),
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
 );
@@ -377,6 +378,19 @@ CREATE INDEX IF NOT EXISTS idx_offices_branch_id ON offices(branch_id);
 CREATE INDEX IF NOT EXISTS idx_parties_country_id ON parties(country_id);
 CREATE INDEX IF NOT EXISTS idx_office_terms_party_id ON office_terms(party_id);
 
+-- nolink_supersede_log: audit trail for no-link placeholder lifecycle events.
+-- Each row records when a "No link:…" placeholder was retired in favour of a real-URL individual.
+CREATE TABLE IF NOT EXISTS nolink_supersede_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    old_individual_id INTEGER NOT NULL REFERENCES individuals(id),
+    new_individual_id INTEGER NOT NULL REFERENCES individuals(id),
+    office_id INTEGER NOT NULL,
+    old_wiki_url TEXT NOT NULL,
+    new_wiki_url TEXT NOT NULL,
+    office_terms_reassigned INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- schema_migrations: tracks applied PostgreSQL-only corrections (used by _run_pg_migrations)
 CREATE TABLE IF NOT EXISTS schema_migrations (
     id TEXT PRIMARY KEY,
@@ -500,6 +514,7 @@ CREATE TABLE IF NOT EXISTS individuals (
     bio_refreshed_at TIMESTAMPTZ,
     insufficient_vitals_checked_at TIMESTAMPTZ,
     gemini_research_checked_at TIMESTAMPTZ,
+    superseded_by_individual_id INTEGER REFERENCES individuals(id),
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -760,6 +775,18 @@ CREATE TABLE IF NOT EXISTS data_quality_reports (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_data_quality_reports_fingerprint ON data_quality_reports(fingerprint);
+
+-- nolink_supersede_log: audit trail for no-link placeholder lifecycle events.
+CREATE TABLE IF NOT EXISTS nolink_supersede_log (
+    id SERIAL PRIMARY KEY,
+    old_individual_id INTEGER NOT NULL REFERENCES individuals(id),
+    new_individual_id INTEGER NOT NULL REFERENCES individuals(id),
+    office_id INTEGER NOT NULL,
+    old_wiki_url TEXT NOT NULL,
+    new_wiki_url TEXT NOT NULL,
+    office_terms_reassigned INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 """
 
 # Same index SQL works for both backends (standard SQL).
