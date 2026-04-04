@@ -119,3 +119,51 @@ Auth is bypassed locally when `GOOGLE_CLIENT_ID` is not set. Database is created
 | `PLAYWRIGHT_OFFICE_A_ID` | Testing | — | Office ID A for comparison tests |
 | `PLAYWRIGHT_OFFICE_B_ID` | Testing | — | Office ID B for comparison tests |
 | `PLAYWRIGHT_PAGE_EDIT_URL` | Testing | — | Source page URL for page edit tests |
+
+---
+
+## Database Access (pgAdmin Desktop)
+
+The production PostgreSQL database on Render can be queried directly using [pgAdmin Desktop](https://www.pgadmin.org/download/) — useful for ad-hoc data analysis and debugging.
+
+### Setup
+
+1. **Get connection details** — In the [Render dashboard](https://dashboard.render.com), navigate to the `office-holder-db` database and copy the **External Database URL** (under "Connections").
+2. **Install pgAdmin** — Download from [pgadmin.org/download](https://www.pgadmin.org/download/) (free, runs locally).
+3. **Register a new server** — In pgAdmin: *Object → Register → Server…*, then fill in:
+
+   | Tab | Field | Value |
+   |---|---|---|
+   | General | Name | `office-holder-prd` (any label you like) |
+   | Connection | Host name/address | `dpg-d73k20ruibrs73auubeg-a.oregon-postgres.render.com` |
+   | Connection | Port | `5432` |
+   | Connection | Maintenance database | `office_holder_db` |
+   | Connection | Username | `office_holder_user` |
+   | Connection | Password | *(from Render dashboard — do not commit)* |
+   | SSL | SSL mode | `Require` |
+
+4. **Optional: mark read-only** — Under *Properties → Advanced*, set *Session role* or use pgAdmin's *Preferences → SQL Editor → Read-Only* to prevent accidental writes.
+
+### Useful Queries
+
+```sql
+-- Records with missing wiki URLs
+SELECT COUNT(*) FROM individuals
+WHERE wiki_url LIKE 'No link:%' OR wiki_url = '';
+
+-- Records flagged as dead links
+SELECT id, name, wiki_url FROM individuals
+WHERE is_dead_link = 1;
+
+-- Office terms with no linked individual
+SELECT ot.id, ot.office_id, ot.holder_name
+FROM office_terms ot
+LEFT JOIN individuals i ON ot.individual_id = i.id
+WHERE ot.individual_id IS NULL;
+
+-- Individuals with missing vital dates
+SELECT id, name, birth_date, death_date FROM individuals
+WHERE birth_date IS NULL OR birth_date = '';
+```
+
+> **Security note:** Never commit database credentials or connection strings to the repo. Always retrieve them from the Render dashboard.
