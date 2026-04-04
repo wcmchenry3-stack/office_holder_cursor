@@ -281,8 +281,14 @@ class DataQualityChecker:
                 )
             )
 
-    def flush(self, conn=None) -> list[QualityCheckResult]:
-        """Run pipeline on all buffered records. Called at end-of-run."""
+    def flush(self, conn=None, deterministic_only: bool = False) -> list[QualityCheckResult]:
+        """Run pipeline on all buffered records. Called at end-of-run.
+
+        Args:
+            conn: DB connection (optional, creates own if None).
+            deterministic_only: If True, skip AI pipeline entirely (no API
+                token usage). Used in auto-mode to keep costs under control.
+        """
         with self._lock:
             requests = list(self._buffer)
             self._buffer.clear()
@@ -295,7 +301,9 @@ class DataQualityChecker:
             conn = get_connection()
 
         try:
-            return self._process_batch(requests[:MAX_BATCH_SIZE], conn)
+            return self._process_batch(
+                requests[:MAX_BATCH_SIZE], conn, deterministic_only=deterministic_only
+            )
         except Exception:
             logger.exception("Data quality flush failed")
             return []
@@ -321,7 +329,12 @@ class DataQualityChecker:
             if own_conn:
                 conn.close()
 
-    def _process_batch(self, requests: list[QualityCheckRequest], conn) -> list[QualityCheckResult]:
+    def _process_batch(
+        self,
+        requests: list[QualityCheckRequest],
+        conn,
+        deterministic_only: bool = False,
+    ) -> list[QualityCheckResult]:
         """Process a batch of requests through the pipeline."""
         results: list[QualityCheckResult] = []
 
@@ -335,7 +348,7 @@ class DataQualityChecker:
             if db_dqr.find_by_fingerprint(fingerprint, conn=conn) is not None:
                 continue
 
-            result = self._check_one(req)
+            result = self._check_one(req, deterministic_only=deterministic_only)
             if result:
                 # Persist to DB
                 fp = db_dqr.make_fingerprint(
@@ -354,8 +367,14 @@ class DataQualityChecker:
 
         return results
 
-    def _check_one(self, req: QualityCheckRequest) -> QualityCheckResult | None:
-        """Run the full pipeline on one record."""
+    def _check_one(
+        self, req: QualityCheckRequest, deterministic_only: bool = False
+    ) -> QualityCheckResult | None:
+        """Run the full pipeline on one record.
+
+        Args:
+            deterministic_only: If True, skip AI pipeline (Phase 2).
+        """
         data = req.record_data
 
         # Phase 1: deterministic checks
@@ -364,6 +383,9 @@ class DataQualityChecker:
             det_result.record_type = req.record_type
             det_result.record_id = req.record_id
             return det_result
+
+        if deterministic_only:
+            return None
 
         # Phase 2: AI pipeline (only for checks that need it)
         check_type = self._infer_check_type(data)

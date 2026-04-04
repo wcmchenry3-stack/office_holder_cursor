@@ -1591,6 +1591,81 @@ def _run_gemini_vitals_research(ctx: _RunContext, logger, report: Callable) -> d
     }
 
 
+def _run_data_quality(ctx: _RunContext, logger, report: Callable) -> dict[str, Any]:
+    """Run data quality checks on eligible DB records (manual mode).
+
+    This mode runs the full AI pipeline (OpenAI → Gemini → Claude) on records
+    that need quality verification. No scraping is performed.
+    """
+    import os
+
+    from src.services.data_quality_checker import DataQualityChecker
+
+    checker = DataQualityChecker()
+
+    has_ai_keys = any(
+        os.environ.get(k)
+        for k in ("OPENAI_API_KEY", "GEMINI_OFFICE_HOLDER", "ANTHROPIC_API_KEY")
+    )
+    if not has_ai_keys:
+        logger.log(
+            "Data quality manual run skipped: no AI API keys configured.", True
+        )
+        logger.close()
+        return {
+            "office_count": 0,
+            "terms_parsed": 0,
+            "unique_wiki_urls": 0,
+            "bio_success_count": 0,
+            "bio_error_count": 0,
+            "bio_errors": [],
+            "bio_skipped_count": 0,
+            "living_success_count": 0,
+            "living_error_count": 0,
+            "living_errors": [],
+            "data_quality_checked": 0,
+            "data_quality_flagged": 0,
+            "dry_run": False,
+            "test_run": False,
+            "preview_rows": None,
+        }
+
+    report("data_quality", 0, 1, "Running data quality checks…", {})
+
+    conn = get_connection()
+    try:
+        results = checker.run_manual(conn=conn)
+    except Exception as e:
+        logger.log(f"Data quality manual run failed: {e}", True)
+        results = []
+    finally:
+        conn.close()
+
+    flagged = len(results)
+    logger.log(f"Data quality: checked eligible records, {flagged} issue(s) flagged.", True)
+
+    report("complete", 1, 1, "Done", {"data_quality_flagged": flagged})
+    logger.close()
+
+    return {
+        "office_count": 0,
+        "terms_parsed": 0,
+        "unique_wiki_urls": 0,
+        "bio_success_count": 0,
+        "bio_error_count": 0,
+        "bio_errors": [],
+        "bio_skipped_count": 0,
+        "living_success_count": 0,
+        "living_error_count": 0,
+        "living_errors": [],
+        "data_quality_checked": flagged,
+        "data_quality_flagged": flagged,
+        "dry_run": False,
+        "test_run": False,
+        "preview_rows": None,
+    }
+
+
 def _get_office_context_for_individual(individual_id: int) -> dict[str, str]:
     """Fetch office/location context for an individual to enrich Gemini prompts."""
     from src.db import office_terms as db_office_terms
@@ -1725,6 +1800,8 @@ def run_with_db(
         return _run_insufficient_vitals(ctx, logger, report)
     if run_mode == "gemini_vitals_research":
         return _run_gemini_vitals_research(ctx, logger, report)
+    if run_mode == "data_quality":
+        return _run_data_quality(ctx, logger, report)
 
     # Main loop modes (full | delta | live_person): load offices and dispatch.
     party_list = db_parties.get_party_list_for_scraper()
@@ -1756,6 +1833,19 @@ def run_with_db(
             True,
         )
         _reporter = None
+
+    # Build data quality checker (deterministic-only in auto mode; gated by env var)
+    _quality_checker = None
+    if os.environ.get("DATA_QUALITY_ENABLED") == "1":
+        try:
+            from src.services.data_quality_checker import DataQualityChecker
+
+            _quality_checker = DataQualityChecker()
+        except Exception as _dq_init_err:
+            logger.log(
+                f"DataQualityChecker init failed (quality checks disabled): {_dq_init_err}",
+                True,
+            )
 
     data_cleanup = parse_core.DataCleanup(logger, reporter=_reporter)
     biography = parse_core.Biography(logger, data_cleanup, reporter=_reporter)
@@ -2023,6 +2113,28 @@ def run_with_db(
                     )
                 if individual_id:
                     db_individuals._recompute_is_living_for_individual(individual_id, conn)
+                # Collect records for quality checking (auto mode)
+                if _quality_checker and individual_id:
+                    _quality_checker.collect(
+                        "individual",
+                        {
+                            "record_type": "individual",
+                            "record_id": individual_id,
+                            "wiki_url": wiki_url,
+                            "full_name": row.get("_name_from_table"),
+                        },
+                    )
+                    _quality_checker.collect(
+                        "office_term",
+                        {
+                            "record_type": "office_term",
+                            "record_id": individual_id,
+                            "term_start_year": term_start_year,
+                            "term_end_year": term_end_year,
+                            "party_text": party_text,
+                            "party_id": party_id,
+                        },
+                    )
             for tc_id, h in html_hashes_to_update.items():
                 db_offices.update_html_hash(tc_id, h, conn=conn)
             conn.commit()
@@ -2267,6 +2379,19 @@ def run_with_db(
         except Exception as _flush_err:
             logger.log(
                 f"ParseErrorReporter flush failed (run result not affected): {_flush_err}", True
+            )
+    if _quality_checker is not None:
+        try:
+            quality_results = _quality_checker.flush(deterministic_only=True)
+            if quality_results:
+                logger.log(
+                    f"Data quality: {len(quality_results)} issue(s) flagged (deterministic).",
+                    True,
+                )
+        except Exception as _dq_flush_err:
+            logger.log(
+                f"DataQualityChecker flush failed (run result not affected): {_dq_flush_err}",
+                True,
             )
     logger.close()
     report(

@@ -173,6 +173,25 @@ All modes are triggered via `run_with_db(run_mode=..., ...)` in `src/scraper/run
 
 ---
 
+## `data_quality`
+
+**Trigger:** Manual via `run_mode="data_quality"`.
+
+**Behavior:**
+1. Query `individuals` with missing or placeholder `wiki_url` values
+2. Run full data quality pipeline: deterministic checks → OpenAI → Gemini → Claude
+3. Persist flagged issues to `data_quality_reports` table
+4. No scraping or bio updates — quality checks only
+
+**DB writes:**
+- `data_quality_reports`: INSERT flagged issues (fingerprint-deduplicated)
+
+**AI token usage:** This is the only mode that invokes AI quality checks. Requires at least one AI API key (`OPENAI_API_KEY`, `GEMINI_OFFICE_HOLDER`, or `ANTHROPIC_API_KEY`). If no keys are set, the mode exits immediately.
+
+**Auto mode (end-of-run):** When `DATA_QUALITY_ENABLED=1`, deterministic-only quality checks run automatically at the end of every `delta`, `full`, or `live_person` run. These checks use zero AI tokens — only date validation, wiki URL checks, and party resolution are performed.
+
+---
+
 ## Auto-Table-Update Algorithm
 
 When a delta (or full) run parses a table and finds that some existing `office_terms` holders are **missing** from the new parse, the runner checks whether the table numbering has changed on the Wikipedia page (this happens when Wikipedia editors add or remove tables).
