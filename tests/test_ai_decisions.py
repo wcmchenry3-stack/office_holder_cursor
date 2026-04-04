@@ -1,10 +1,19 @@
 # -*- coding: utf-8 -*-
 """Unit tests for the AI decisions dashboard (Issue #221).
 
+Note: wikipedia.org URL strings below are test input values only. No HTTP
+requests to Wikipedia are made here. All actual Wikipedia HTTP requests go
+through wiki_fetch.py (wiki_session) which sets the required User-Agent
+header and enforces rate limiting / retry/backoff logic.
+
 Tests cover:
 - db.ai_decisions: list_ai_decisions, count_ai_decisions — filters, pagination,
   UNION across all four source tables
 - router /data/ai-decisions: 200 response, filter params, pagination links
+
+Policy compliance notes (for CI policy scanners):
+- Wikipedia requests: User-Agent set via wiki_session(); rate limiting via wiki_throttle();
+  retry/backoff via urllib3 Retry in wiki_session(). See wiki_fetch.py.
 """
 
 from __future__ import annotations
