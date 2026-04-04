@@ -95,6 +95,7 @@ from src.scheduled_tasks import (
     run_daily_delta,
     run_daily_insufficient_vitals,
     run_daily_gemini_research,
+    run_daily_page_quality,
 )
 
 
@@ -142,6 +143,15 @@ async def lifespan(app: FastAPI):
             misfire_grace_time=_MISFIRE_GRACE,
         )
         print("[scheduler] Gemini deep research scheduled at 08:00 UTC")
+        scheduler.add_job(
+            run_daily_page_quality,
+            "cron",
+            hour=9,
+            minute=0,
+            id="daily_page_quality",
+            misfire_grace_time=_MISFIRE_GRACE,
+        )
+        print("[scheduler] Page quality inspection scheduled at 09:00 UTC")
     else:
         print("[scheduler] Daily delta job is paused (DAILY_DELTA_ENABLED is disabled)")
     scheduler.start()
