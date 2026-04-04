@@ -23,7 +23,6 @@ from src.services.consensus_voter import (
     _aggregate,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -81,7 +80,11 @@ class TestAggregate:
         assert _aggregate(votes) == Verdict.DISAGREEMENT
 
     def test_all_unavailable_returns_insufficient_quorum(self):
-        votes = [_unavailable_vote("openai"), _unavailable_vote("gemini"), _unavailable_vote("claude")]
+        votes = [
+            _unavailable_vote("openai"),
+            _unavailable_vote("gemini"),
+            _unavailable_vote("claude"),
+        ]
         assert _aggregate(votes) == Verdict.INSUFFICIENT_QUORUM
 
     def test_only_one_available_returns_insufficient_quorum(self):
@@ -124,11 +127,13 @@ def _make_openai_builder(is_valid: bool, concerns: list[str] | None = None) -> M
     """Return a mock get_ai_builder() result that returns a JSON response."""
     import json
 
-    response_text = json.dumps({
-        "is_valid": is_valid,
-        "concerns": concerns or [],
-        "confidence": "high",
-    })
+    response_text = json.dumps(
+        {
+            "is_valid": is_valid,
+            "concerns": concerns or [],
+            "confidence": "high",
+        }
+    )
     mock_message = MagicMock()
     mock_message.content = response_text
     mock_choice = MagicMock()
