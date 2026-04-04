@@ -55,6 +55,7 @@ from src.db import parties as db_parties
 from src.db import individuals as db_individuals
 from src.db import office_terms as db_office_terms
 from src.db import nolink_supersede_log as db_supersede_log
+from src.db import suspect_record_flags as db_suspect_flags
 from src.db.date_utils import normalize_date
 from src.scraper.logger import HTTP_USER_AGENT, Logger
 from src.scraper.config_test import get_raw_table_preview
@@ -301,6 +302,26 @@ def _holder_keys_from_parsed_rows(
 def _is_dead_wiki_url(url: str) -> bool:
     u = (url or "").lower()
     return "redlink=1" in u
+
+
+def _suspect_gate(
+    full_name: str | None,
+    wiki_url: str | None,
+    office_id: int,
+    conn,
+) -> tuple[bool, int | None]:
+    """Thin wrapper around SuspectRecordFlagger.check_and_gate for the import loop.
+
+    Kept here so the import loop stays readable. Never raises.
+    """
+    from src.services.suspect_record_flagger import check_and_gate
+
+    return check_and_gate(
+        full_name=full_name,
+        wiki_url=wiki_url,
+        office_id=office_id,
+        conn=conn,
+    )
 
 
 def _maybe_supersede_nolink(
@@ -2355,6 +2376,17 @@ def run_with_db(
                         + ":"
                         + (row.get("_name_from_table") or "Unknown")
                     )
+
+                # Suspect record gate: run deterministic patterns → 3-AI vote before insertion
+                _should_insert, _flag_id = _suspect_gate(
+                    full_name=row.get("_name_from_table"),
+                    wiki_url=wiki_url,
+                    office_id=office_id,
+                    conn=conn,
+                )
+                if not _should_insert:
+                    continue
+
                 # Resolve or create individual
                 ind = db_individuals.get_individual_by_wiki_url(wiki_url, conn=conn)
                 individual_id = ind["id"] if ind else None
