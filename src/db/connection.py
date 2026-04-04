@@ -457,6 +457,23 @@ def _run_pg_migrations(conn) -> None:
         " ON data_quality_reports(fingerprint)",
     )
     _apply(
+        "pg_source_pages_last_quality_checked_at",
+        "ALTER TABLE source_pages ADD COLUMN IF NOT EXISTS" " last_quality_checked_at TIMESTAMPTZ",
+    )
+    _apply(
+        "pg_create_page_quality_checks",
+        "CREATE TABLE IF NOT EXISTS page_quality_checks ("
+        " id SERIAL PRIMARY KEY,"
+        " source_page_id INTEGER NOT NULL REFERENCES source_pages(id),"
+        " checked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),"
+        " html_char_count INTEGER,"
+        " office_terms_count INTEGER,"
+        " ai_votes TEXT,"
+        " result TEXT NOT NULL DEFAULT 'ok',"
+        " gh_issue_url TEXT,"
+        " created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())",
+    )
+    _apply(
         "pg_create_suspect_record_flags",
         "CREATE TABLE IF NOT EXISTS suspect_record_flags ("
         " id SERIAL PRIMARY KEY,"
@@ -503,6 +520,7 @@ def _sqlite_add_columns_if_missing(conn) -> None:
         ("individual_research_sources", "origin", "TEXT DEFAULT 'manual'"),
         ("wiki_draft_proposals", "origin", "TEXT DEFAULT 'manual'"),
         ("individuals", "superseded_by_individual_id", "INTEGER"),
+        ("source_pages", "last_quality_checked_at", "TEXT"),
     ]
     for table, column, col_type in migrations:
         try:

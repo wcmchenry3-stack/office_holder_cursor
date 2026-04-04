@@ -126,6 +126,7 @@ CREATE TABLE IF NOT EXISTS source_pages (
     allow_reuse_tables INTEGER NOT NULL DEFAULT 0,
     disable_auto_table_update INTEGER NOT NULL DEFAULT 0,
     last_scraped_at TEXT,
+    last_quality_checked_at TEXT,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
 );
@@ -378,6 +379,20 @@ CREATE INDEX IF NOT EXISTS idx_offices_branch_id ON offices(branch_id);
 CREATE INDEX IF NOT EXISTS idx_parties_country_id ON parties(country_id);
 CREATE INDEX IF NOT EXISTS idx_office_terms_party_id ON office_terms(party_id);
 
+-- page_quality_checks: one row per daily page quality inspection run (Issue #218).
+-- result: 'ok', 'reparse_ok', 'gh_issue', or 'manual_review'.
+CREATE TABLE IF NOT EXISTS page_quality_checks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_page_id INTEGER NOT NULL REFERENCES source_pages(id),
+    checked_at TEXT NOT NULL DEFAULT (datetime('now')),
+    html_char_count INTEGER,
+    office_terms_count INTEGER,
+    ai_votes TEXT,
+    result TEXT NOT NULL DEFAULT 'ok',
+    gh_issue_url TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- suspect_record_flags: audit log for records that triggered the pre-insertion
 -- suspect pattern gate (Issue #217). One row per flag event; result is
 -- 'allowed', 'skipped', or 'gh_issue'.
@@ -549,6 +564,7 @@ CREATE TABLE IF NOT EXISTS source_pages (
     allow_reuse_tables INTEGER NOT NULL DEFAULT 0,
     disable_auto_table_update INTEGER NOT NULL DEFAULT 0,
     last_scraped_at TIMESTAMPTZ,
+    last_quality_checked_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -791,6 +807,19 @@ CREATE TABLE IF NOT EXISTS data_quality_reports (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_data_quality_reports_fingerprint ON data_quality_reports(fingerprint);
+
+-- page_quality_checks: one row per daily page quality inspection run (Issue #218).
+CREATE TABLE IF NOT EXISTS page_quality_checks (
+    id SERIAL PRIMARY KEY,
+    source_page_id INTEGER NOT NULL REFERENCES source_pages(id),
+    checked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    html_char_count INTEGER,
+    office_terms_count INTEGER,
+    ai_votes TEXT,
+    result TEXT NOT NULL DEFAULT 'ok',
+    gh_issue_url TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 
 -- suspect_record_flags: audit log for suspect pre-insertion gate (Issue #217).
 CREATE TABLE IF NOT EXISTS suspect_record_flags (

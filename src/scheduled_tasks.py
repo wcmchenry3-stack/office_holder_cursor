@@ -346,6 +346,31 @@ def run_daily_gemini_research() -> None:
     _send_job_summary_email("Gemini Research", result, duration_s, run_start)
 
 
+def run_daily_page_quality() -> None:
+    """Entry point called by APScheduler at 09:00 UTC each day."""
+    sentry_sdk.set_tag("scheduled_task", "page_quality")
+    run_start = datetime.now(timezone.utc)
+    logger.info(
+        "Page quality inspection starting at %s UTC",
+        run_start.strftime("%Y-%m-%d %H:%M:%S"),
+    )
+    try:
+        from src.services.page_quality_inspector import inspect_one_page
+
+        result = inspect_one_page()
+        if result is None:
+            logger.info("Page quality inspection: no pages to inspect or error occurred")
+        else:
+            logger.info(
+                "Page quality inspection complete: result=%s source_page_id=%s",
+                result.get("result"),
+                result.get("source_page_id"),
+            )
+    except Exception:
+        sentry_sdk.capture_exception()
+        logger.exception("Page quality inspection crashed")
+
+
 def _format_duration(seconds: float) -> str:
     minutes, secs = divmod(int(seconds), 60)
     if minutes:
