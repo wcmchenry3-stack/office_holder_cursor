@@ -86,7 +86,6 @@ from src.routers import ui_tests as ui_tests_router
 from src.routers import preview as preview_router
 from src.routers import offices as offices_router
 from src.routers import ai_offices as ai_offices_router
-from src.routers import db_explorer as db_explorer_router
 from src.routers import gemini_research as gemini_research_router
 from src.routers import ai_decisions as ai_decisions_router
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -292,7 +291,6 @@ app.include_router(ui_tests_router.router)
 app.include_router(preview_router.router)
 app.include_router(offices_router.router)
 app.include_router(ai_offices_router.router)
-app.include_router(db_explorer_router.router)
 app.include_router(gemini_research_router.router)
 app.include_router(ai_decisions_router.router)
 
