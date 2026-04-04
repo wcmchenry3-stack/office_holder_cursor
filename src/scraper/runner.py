@@ -304,6 +304,62 @@ def _is_dead_wiki_url(url: str) -> bool:
     return "redlink=1" in u
 
 
+_FILL_RATE_DROP_THRESHOLD = 0.30  # 30 percentage points
+
+
+def _check_fill_rate_drop(office_row: dict, new_rate: float) -> None:
+    """Create a GH issue when link fill rate drops >30pp vs the stored baseline.
+
+    Called after each parse. Logs a warning and opens a GitHub issue so the
+    table structure change is visible for manual review. Never raises.
+    """
+    import logging as _logging
+
+    _log = _logging.getLogger(__name__)
+
+    prev_rate = office_row.get("last_link_fill_rate")
+    if prev_rate is None:
+        return  # no baseline yet — first scrape for this office
+    drop = prev_rate - new_rate
+    if drop <= _FILL_RATE_DROP_THRESHOLD:
+        return
+
+    office_name = office_row.get("name") or office_row.get("id", "unknown")
+    page_url = office_row.get("url", "")
+    tc_id = office_row.get("office_table_config_id") or office_row.get("id")
+    _log.warning(
+        "Fill-rate drop detected for office '%s' (tc_id=%s): %.0f%% → %.0f%% (drop=%.0f%%)",
+        office_name,
+        tc_id,
+        prev_rate * 100,
+        new_rate * 100,
+        drop * 100,
+    )
+    try:
+        from src.services.github_client import get_github_client
+
+        gh = get_github_client()
+        if gh is None:
+            return
+        title = f"[Structural change] Link fill rate dropped {drop * 100:.0f}pp: {office_name}"
+        body = (
+            f"## Wikipedia table structure may have changed\n\n"
+            f"**Office:** {office_name}\n"
+            f"**Source page URL:** {page_url}\n"
+            f"**office_table_config id:** {tc_id}\n\n"
+            f"| Metric | Value |\n"
+            f"|---|---|\n"
+            f"| Previous fill rate | {prev_rate * 100:.1f}% |\n"
+            f"| Current fill rate  | {new_rate * 100:.1f}% |\n"
+            f"| Drop               | {drop * 100:.1f}pp |\n\n"
+            f"A drop of more than 30 percentage points suggests the Wikipedia table "
+            f"column layout has changed. Please review the page and update `office_table_config`."
+        )
+        gh.create_issue(title=title, body=body, labels=["structural-change"])
+    except Exception:
+        _log.exception("_check_fill_rate_drop: failed to create GH issue")
+
+
 def _suspect_gate(
     full_name: str | None,
     wiki_url: str | None,
@@ -746,6 +802,7 @@ class _OfficeResult:
     offices_unchanged_inc: bool = False  # hash matched, existing terms kept
     rows: list[dict] = field(default_factory=list)  # parsed table rows to accumulate
     html_hash: str | None = None  # hash to store after write
+    link_fill_rate: float | None = None  # fraction of rows with a real wiki link (0.0–1.0)
     revalidate_failure: tuple[int, str] | None = None  # (office_id, message) to append
     missing_holders: list[str] | None = None  # for revalidate_missing_holders_list
     replaceable: bool = False  # add office_id to replaceable set
@@ -1066,9 +1123,17 @@ def _process_single_office(
         cfg.logger.log("Run cancelled by user.", True)
         return _OfficeResult(cancel=True)
 
+    # Compute link fill rate: fraction of parsed rows with a real (non-placeholder) wiki link.
+    if table_data:
+        linked = sum(1 for r in table_data if (r.get("Wiki Link") or "") not in ("", "No link"))
+        link_fill_rate: float | None = linked / len(table_data)
+    else:
+        link_fill_rate = None
+
     return _OfficeResult(
         rows=table_data,
         html_hash=html_hash,
+        link_fill_rate=link_fill_rate,
         replaceable=replaceable,
     )
 
@@ -2188,6 +2253,7 @@ def run_with_db(
     cancelled_early = False
     offices_unchanged = 0
     html_hashes_to_update: dict[int, str] = {}
+    fill_rates_to_update: dict[int, float] = {}
     bio_success_count = 0
     bio_error_count = 0
     bio_errors: list[dict[str, str]] = []
@@ -2271,6 +2337,9 @@ def run_with_db(
             continue
         if result.html_hash:
             html_hashes_to_update[office_id] = result.html_hash
+        if result.link_fill_rate is not None:
+            fill_rates_to_update[office_id] = result.link_fill_rate
+            _check_fill_rate_drop(office_row, result.link_fill_rate)
         if result.replaceable:
             replaceable_office_ids.add(office_id)
 
@@ -2477,6 +2546,8 @@ def run_with_db(
                     )
             for tc_id, h in html_hashes_to_update.items():
                 db_offices.update_html_hash(tc_id, h, conn=conn)
+            for tc_id, rate in fill_rates_to_update.items():
+                db_offices.update_link_fill_rate(tc_id, rate, conn=conn)
             conn.commit()
         except Exception:
             conn.rollback()
