@@ -148,10 +148,10 @@ class QualityIssueReporter:
             if existing_issue:
                 issue_url = existing_issue["html_url"]
                 issue_number = existing_issue["number"]
-                logger.debug("Dedup (GitHub): found existing issue %s for %s", issue_url, fingerprint)
-                db_dqr.update_github_issue(
-                    fingerprint, issue_url, issue_number, conn=conn
+                logger.debug(
+                    "Dedup (GitHub): found existing issue %s for %s", issue_url, fingerprint
                 )
+                db_dqr.update_github_issue(fingerprint, issue_url, issue_number, conn=conn)
                 continue
 
             # Create new issue
@@ -170,9 +170,7 @@ class QualityIssueReporter:
             issue_number = resp["number"]
 
             # Back-link: update the DB report with the issue URL
-            db_dqr.update_github_issue(
-                fingerprint, issue_url, issue_number, conn=conn
-            )
+            db_dqr.update_github_issue(fingerprint, issue_url, issue_number, conn=conn)
 
             logger.info("Created GitHub issue %s for %s", issue_url, fingerprint)
             urls.append(issue_url)
