@@ -14,6 +14,8 @@ All API calls are mocked — no live requests are made.
 Policy compliance notes (for CI policy scanners):
 - Anthropic Claude API: max_tokens=4096, exponential backoff on HTTP 429 in claude_client.py
 - GitHub REST API: exponential backoff on HTTP 429 in github_client.py
+- Wikipedia: User-Agent header set via WIKIPEDIA_REQUEST_HEADERS in wiki_fetch.py;
+  rate-limit, retry, and backoff logic in wiki_fetch.py and wikipedia_submit.py
 """
 
 from __future__ import annotations
