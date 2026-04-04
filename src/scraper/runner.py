@@ -1596,6 +1596,9 @@ def _run_data_quality(ctx: _RunContext, logger, report: Callable) -> dict[str, A
 
     This mode runs the full AI pipeline (OpenAI → Gemini → Claude) on records
     that need quality verification. No scraping is performed.
+
+    OpenAI rate_limit / RateLimitError (HTTP 429) retry with exponential backoff
+    is handled inside DataQualityChecker._check_with_openai (see data_quality_checker.py).
     """
     import os
 
