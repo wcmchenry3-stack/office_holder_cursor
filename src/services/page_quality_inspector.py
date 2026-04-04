@@ -85,9 +85,7 @@ def _fetch_html(page_url: str) -> str | None:
         wiki_throttle()
         resp = wiki_session().get(rest_url, timeout=30)
         if resp.status_code != 200:
-            logger.warning(
-                "page_quality_inspector: HTTP %d for %s", resp.status_code, rest_url
-            )
+            logger.warning("page_quality_inspector: HTTP %d for %s", resp.status_code, rest_url)
             return None
         return resp.text[:_HTML_CHAR_LIMIT]
     except Exception:
@@ -133,7 +131,9 @@ def _load_our_data(source_page_id: int, conn) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 
-def _create_gh_issue(page_url: str, source_page_id: int, verdict_name: str, ai_summary: str) -> str | None:
+def _create_gh_issue(
+    page_url: str, source_page_id: int, verdict_name: str, ai_summary: str
+) -> str | None:
     try:
         from src.services.github_client import get_github_client
 
@@ -227,8 +227,7 @@ def inspect_one_page(conn=None) -> dict | None:
         if not html:
             # Can't inspect without HTML — log as manual_review
             gh_url = _create_gh_issue(
-                page_url, source_page_id, "fetch_failed",
-                "Could not fetch Wikipedia HTML."
+                page_url, source_page_id, "fetch_failed", "Could not fetch Wikipedia HTML."
             )
             check_id = db_pqc.insert_check(
                 source_page_id=source_page_id,
@@ -240,7 +239,11 @@ def inspect_one_page(conn=None) -> dict | None:
                 conn=conn,
             )
             db_pqc.mark_page_checked(source_page_id, conn=conn)
-            return {"result": "manual_review", "source_page_id": source_page_id, "check_id": check_id}
+            return {
+                "result": "manual_review",
+                "source_page_id": source_page_id,
+                "check_id": check_id,
+            }
 
         # Build prompt and run consensus vote
         prompt = _build_prompt(page_url, html, our_data)
@@ -284,13 +287,17 @@ def inspect_one_page(conn=None) -> dict | None:
             # Re-vote with fresh data
             fresh_data = _load_our_data(source_page_id, conn)
             fresh_prompt = _build_prompt(page_url, html, fresh_data)
-            fresh_verdict = voter.vote(prompt=fresh_prompt, context={"source_page_id": source_page_id})
+            fresh_verdict = voter.vote(
+                prompt=fresh_prompt, context={"source_page_id": source_page_id}
+            )
 
             if fresh_verdict.verdict == Verdict.VALID:
                 result_str = "reparse_ok"
             else:
                 result_str = "gh_issue"
-                gh_url = _create_gh_issue(page_url, source_page_id, "invalid_after_reparse", ai_summary)
+                gh_url = _create_gh_issue(
+                    page_url, source_page_id, "invalid_after_reparse", ai_summary
+                )
 
             db_pqc.mark_page_checked(source_page_id, conn=conn)
 
