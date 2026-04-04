@@ -173,6 +173,82 @@ All modes are triggered via `run_with_db(run_mode=..., ...)` in `src/scraper/run
 
 ---
 
+## `dead_link_research`
+
+**Trigger:** Manual via `run_mode="dead_link_research"`, or schedulable via APScheduler.
+
+**Behavior:**
+1. Calculate today's batch: `date.today().day % 30`
+2. Query individuals where `is_dead_link = 1` OR `wiki_url LIKE 'No link:%'` in that batch, with **90-day** cooldown via `gemini_research_checked_at`
+3. For each individual:
+   a. **Gemini API** researches vitals and biographical data from external sources
+   b. If vitals found → `upsert_individual()` immediately
+   c. Store research sources in `individual_research_sources`
+   d. **Notability threshold** (deterministic, no AI): requires ≥2 independent sources (Wikipedia mirrors excluded), ≥1 government/academic source, and verifiable term dates
+   e. If notable AND enough data → **OpenAI** polishes findings into a wikitext Wikipedia article
+   f. Store article draft in `wiki_draft_proposals` (status: pending)
+   g. Mark `gemini_research_checked_at = NOW()`
+
+**DB writes:**
+- `individuals`: UPDATE with found vitals (birth/death dates, places)
+- `individual_research_sources`: INSERT found sources
+- `wiki_draft_proposals`: INSERT article drafts (only if notability threshold met)
+
+**Notability gate:** Articles are only generated when the deterministic threshold passes. This prevents low-quality drafts from individuals with insufficient sourcing.
+
+**Env var:** `GEMINI_OFFICE_HOLDER` — if not set, feature is silently disabled.
+
+**Policy:** Same Gemini/OpenAI policy compliance as `gemini_vitals_research`. Wikipedia submit (when used) sets User-Agent per Wikimedia API:Etiquette and respects rate limits.
+
+---
+
+## `data_quality`
+
+**Trigger:** Manual via `run_mode="data_quality"`.
+
+**Behavior:**
+1. Query `individuals` with missing or placeholder `wiki_url` values
+2. Run full data quality pipeline: deterministic checks → OpenAI → Gemini → Claude
+3. Persist flagged issues to `data_quality_reports` table
+4. No scraping or bio updates — quality checks only
+
+**DB writes:**
+- `data_quality_reports`: INSERT flagged issues (fingerprint-deduplicated)
+
+**AI token usage:** This is the only mode that invokes AI quality checks. Requires at least one AI API key (`OPENAI_API_KEY`, `GEMINI_OFFICE_HOLDER`, or `ANTHROPIC_API_KEY`). If no keys are set, the mode exits immediately. OpenAI calls use max_completion_tokens to cap cost and include RateLimitError retry with exponential backoff (see `data_quality_checker.py`).
+
+**Auto mode (end-of-run):** When `DATA_QUALITY_ENABLED=1`, deterministic-only quality checks run automatically at the end of every `delta`, `full`, or `live_person` run. These checks use zero AI tokens — only date validation, wiki URL checks, and party resolution are performed.
+
+---
+
+## `auto_fix`
+
+**Trigger:** Manual via `run_mode="auto_fix"`.
+
+**Behavior:**
+1. Query GitHub for open issues with `parser-bug` label
+2. Filter to issues created by `ParseErrorReporter` (must have `parse-error:pf-*` label)
+3. For each qualifying issue:
+   a. Read the source file from the repo (`src/scraper/table_parser.py`)
+   b. Send issue + source to **Claude API** for a fix proposal
+   c. Check proposal against 7 **minimal risk criteria** (deterministic, no AI):
+      - Files changed exclusively within `src/scraper/`
+      - Diff < 50 lines
+      - No DDL statements (ALTER/CREATE/DROP TABLE)
+      - No new imports for packages not in requirements.txt
+      - No changes to public function signatures
+      - At least one new `def test_` function
+      - `error_type` is ValueError, TypeError, IndexError, or AttributeError
+   d. If all criteria pass → create branch `fix/parser-auto-<fingerprint>`, apply fix, open **draft PR** targeting `dev`
+
+**Safety:** PR is always opened as **draft** — CI runs but auto-merge is never triggered. Criteria check is pure Python — AI never decides what's "safe."
+
+**Env vars:** `ANTHROPIC_API_KEY` + `GITHUB_TOKEN` — if either is unset, feature is silently disabled. No issue is modified if criteria fail.
+
+**Policy:** See `claude_client.py` docstring for Anthropic API compliance. See `github_client.py` for GitHub API rate-limit handling.
+
+---
+
 ## Auto-Table-Update Algorithm
 
 When a delta (or full) run parses a table and finds that some existing `office_terms` holders are **missing** from the new parse, the runner checks whether the table numbering has changed on the Wikipedia page (this happens when Wikipedia editors add or remove tables).

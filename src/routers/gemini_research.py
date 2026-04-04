@@ -235,8 +235,13 @@ def _research_worker(job_id: str, individual_id: int) -> None:
                 ),
             )
 
-        # Step 3: OpenAI polish
-        if result.biographical_notes or result.birth_date:
+        # Step 3: Notability gate → OpenAI polish
+        source_dicts = [{"url": s.url, "source_type": s.source_type} for s in result.sources]
+        notable = db_research.check_notability_threshold(
+            source_dicts, office_ctx.get("term_dates", "")
+        )
+
+        if notable and (result.biographical_notes or result.birth_date):
             _update_job(job_id, phase="openai polish")
             try:
                 from src.services.orchestrator import get_ai_builder
@@ -263,6 +268,12 @@ def _research_worker(job_id: str, individual_id: int) -> None:
             except Exception as exc:
                 logger.exception("OpenAI polish failed")
                 _update_job(job_id, article=f"OpenAI polish failed: {exc}")
+        elif not notable:
+            _update_job(
+                job_id,
+                article="Notability threshold not met: requires ≥2 independent sources, "
+                "≥1 government/academic source, and verifiable term dates.",
+            )
 
         # Mark checked
         db_individuals.mark_gemini_research_checked(individual_id)

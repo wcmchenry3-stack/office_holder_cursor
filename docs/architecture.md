@@ -41,6 +41,16 @@ office_holder_cursor/
 │   │   ├── config_test.py         # Config validation, raw table preview
 │   │   ├── parse_core.py          # Re-exports DataCleanup, Offices, Biography
 │   │   └── logger.py              # Logger class + HTTP_USER_AGENT constant
+│   ├── services/
+│   │   ├── ai_office_builder.py       # OpenAI client: office config generation, wiki article polish
+│   │   ├── gemini_vitals_researcher.py # Gemini API: deep vitals research, data quality checks
+│   │   ├── wikipedia_submit.py        # MediaWiki Action API: article submission (bot credentials)
+│   │   ├── orchestrator.py            # Singleton factory for AI services
+│   │   ├── github_client.py           # GitHub API client for issues/PRs
+│   │   ├── parse_error_reporter.py    # Parser error → GitHub issue pipeline
+│   │   ├── quality_issue_reporter.py  # Data quality → GitHub issue pipeline
+│   │   ├── data_quality_checker.py    # Multi-model data quality validation
+│   │   └── claude_client.py           # Claude API client for auto-fix proposals
 │   └── db/
 │       ├── connection.py          # get_connection(), init_db(), get_db_path()
 │       ├── schema.py              # SCHEMA_SQL string (all CREATE TABLE statements)
@@ -49,6 +59,7 @@ office_holder_cursor/
 │       ├── individuals.py         # Individual upsert/lookup
 │       ├── office_terms.py        # Term insert/update/delete
 │       ├── parties.py             # Party CRUD; get_party_list_for_scraper()
+│       ├── individual_research_sources.py # Research sources + wiki draft CRUD + notability threshold
 │       ├── bulk_import.py         # CSV bulk import
 │       ├── date_utils.py          # normalize_date(); date parsing utilities
 │       ├── refs.py                # Reference data (countries, states, cities, levels, branches)
@@ -111,6 +122,8 @@ Auth is bypassed locally when `GOOGLE_CLIENT_ID` is not set. Database is created
 | `EMAIL_FROM` | No | `wcmchenry3@gmail.com` | Sender address for summary email |
 | `EMAIL_TO` | No | `wcmchenry3@gmail.com` | Recipient address for summary email |
 | `GEMINI_OFFICE_HOLDER` | For Gemini | — | Google Gemini API key for deep vitals research (Feature C). If unset, Gemini research is silently disabled. |
+| `WIKIPEDIA_BOT_USERNAME` | For wiki submit | — | Wikipedia bot account username for article submission via MediaWiki Action API. If unset, submit is disabled. |
+| `WIKIPEDIA_BOT_PASSWORD` | For wiki submit | — | Wikipedia bot account password. If unset, submit is disabled. |
 | `APP_ENVIRONMENT` | No | `dev` | Environment name (`dev` or `prd`). Used by Sentry and logging. |
 | `SENTRY_DSN` | For Sentry | — | Sentry DSN for error tracking. If unset, Sentry is disabled (local dev). |
 | `SENTRY_TRACES_SAMPLE_RATE` | No | `0.1` | Fraction of requests to trace for Sentry performance monitoring (0.0–1.0). |
@@ -119,3 +132,51 @@ Auth is bypassed locally when `GOOGLE_CLIENT_ID` is not set. Database is created
 | `PLAYWRIGHT_OFFICE_A_ID` | Testing | — | Office ID A for comparison tests |
 | `PLAYWRIGHT_OFFICE_B_ID` | Testing | — | Office ID B for comparison tests |
 | `PLAYWRIGHT_PAGE_EDIT_URL` | Testing | — | Source page URL for page edit tests |
+
+---
+
+## Database Access (pgAdmin Desktop)
+
+The production PostgreSQL database on Render can be queried directly using [pgAdmin Desktop](https://www.pgadmin.org/download/) — useful for ad-hoc data analysis and debugging.
+
+### Setup
+
+1. **Get connection details** — In the [Render dashboard](https://dashboard.render.com), navigate to the `office-holder-db` database and copy the **External Database URL** (under "Connections").
+2. **Install pgAdmin** — Download from [pgadmin.org/download](https://www.pgadmin.org/download/) (free, runs locally).
+3. **Register a new server** — In pgAdmin: *Object → Register → Server…*, then fill in:
+
+   | Tab | Field | Value |
+   |---|---|---|
+   | General | Name | `office-holder-prd` (any label you like) |
+   | Connection | Host name/address | `dpg-d73k20ruibrs73auubeg-a.oregon-postgres.render.com` |
+   | Connection | Port | `5432` |
+   | Connection | Maintenance database | `office_holder_db` |
+   | Connection | Username | `office_holder_user` |
+   | Connection | Password | *(from Render dashboard — do not commit)* |
+   | SSL | SSL mode | `Require` |
+
+4. **Optional: mark read-only** — Under *Properties → Advanced*, set *Session role* or use pgAdmin's *Preferences → SQL Editor → Read-Only* to prevent accidental writes.
+
+### Useful Queries
+
+```sql
+-- Records with missing wiki URLs
+SELECT COUNT(*) FROM individuals
+WHERE wiki_url LIKE 'No link:%' OR wiki_url = '';
+
+-- Records flagged as dead links
+SELECT id, name, wiki_url FROM individuals
+WHERE is_dead_link = 1;
+
+-- Office terms with no linked individual
+SELECT ot.id, ot.office_id, ot.holder_name
+FROM office_terms ot
+LEFT JOIN individuals i ON ot.individual_id = i.id
+WHERE ot.individual_id IS NULL;
+
+-- Individuals with missing vital dates
+SELECT id, name, birth_date, death_date FROM individuals
+WHERE birth_date IS NULL OR birth_date = '';
+```
+
+> **Security note:** Never commit database credentials or connection strings to the repo. Always retrieve them from the Render dashboard.

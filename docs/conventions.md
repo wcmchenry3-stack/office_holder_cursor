@@ -9,6 +9,9 @@
 - **Progress callbacks:** `run_with_db()` accepts an optional `progress_callback(phase, current, total, message, extra_dict)` for streaming progress to the UI.
 - **Wikipedia requests:** Always use `WIKIPEDIA_REQUEST_HEADERS` from `wiki_fetch.py` (includes User-Agent + gzip per Wikimedia policy).
 - **Gemini API:** All calls go through `src/services/gemini_vitals_researcher.py`. API key from `GEMINI_OFFICE_HOLDER` env var (never hardcoded). Exponential backoff on HTTP 429 (`RESOURCE_EXHAUSTED`). `max_output_tokens` set on every call. See runner.py docstring for full policy details.
+- **Wikipedia submit:** All MediaWiki Action API calls go through `src/services/wikipedia_submit.py`. Bot credentials from `WIKIPEDIA_BOT_USERNAME`/`WIKIPEDIA_BOT_PASSWORD` env vars (never hardcoded). User-Agent set per Wikimedia etiquette. Rate-limited to 1 req/sec minimum; respects `Retry-After`. If credentials not set, submit is silently disabled (503 from endpoint).
+- **Notability threshold:** Deterministic gate in `individual_research_sources.check_notability_threshold()` — requires ≥2 independent sources (Wikipedia mirrors excluded), ≥1 government/academic source, and verifiable term dates. Applied before wiki draft generation in both nightly and interactive flows.
+- **Claude auto-fix:** All Claude API calls go through `src/services/claude_client.py`. API key from `ANTHROPIC_API_KEY` env var (never hardcoded). Exponential backoff on HTTP 429. `max_tokens=4096` on every call. Auto-fix proposals are gated by 7 deterministic minimal-risk criteria in `src/services/auto_fix.py` before any PR is created. PRs are always opened as draft.
 - **No DB write in dry_run/test_run:** `run_with_db(dry_run=True)` or `test_run=True` skips all DB writes.
 
 ---

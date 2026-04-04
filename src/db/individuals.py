@@ -476,6 +476,41 @@ def get_gemini_research_candidates_for_batch(batch: int, conn=None) -> list[dict
             conn.close()
 
 
+def get_dead_link_research_candidates_for_batch(batch: int, conn=None) -> list[dict]:
+    """Return dead-link individuals in *batch* eligible for Gemini deep research.
+
+    Targets individuals where is_dead_link=1 OR wiki_url LIKE 'No link:%'.
+    Same id % 30 bucketing and 90-day cooldown as regular Gemini research.
+
+    Returns list of dicts with id, wiki_url, full_name.
+    """
+    from datetime import datetime, timezone, timedelta
+
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=90)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    own_conn = conn is None
+    if own_conn:
+        conn = get_connection()
+    try:
+        rows = conn.execute(
+            """
+            SELECT id, wiki_url, full_name
+            FROM individuals
+            WHERE (is_dead_link = 1 OR wiki_url LIKE %s)
+              AND (id %% 30) = %s
+              AND (
+                  gemini_research_checked_at IS NULL
+                  OR gemini_research_checked_at < %s
+              )
+            ORDER BY id
+            """,
+            ("No link:%", batch, cutoff),
+        ).fetchall()
+        return [dict(zip(("id", "wiki_url", "full_name"), row)) for row in rows]
+    finally:
+        if own_conn:
+            conn.close()
+
+
 def mark_gemini_research_checked(individual_id: int, conn=None) -> None:
     """Set gemini_research_checked_at = NOW() for *individual_id*.
 
