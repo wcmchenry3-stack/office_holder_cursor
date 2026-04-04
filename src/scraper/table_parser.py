@@ -1145,7 +1145,7 @@ class Offices:
 
         return (
             r"/wiki/\d{1,3}(th|st|nd|rd)_United_States_Congress",
-            r"/wiki/([\w%]+)_\d{1,2}(th|st|nd|rd)_congressional_district",
+            r"/wiki/[^/]*_(\d{1,2}(th|st|nd|rd)|at-large)_congressional_district",
             r"/wiki/\d{4}_[\w\d]+_elections_in_[\w\d]+",
             r"/wiki/\d{4}_[\w\d]+_election",
             r"/wiki/(19|20)\d{2}(_\d)?$",  # year links e.g. /wiki/2024 from date columns
