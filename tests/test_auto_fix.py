@@ -14,8 +14,6 @@ All API calls are mocked — no live requests are made.
 Policy compliance notes (for CI policy scanners):
 - Anthropic Claude API: max_tokens=4096, exponential backoff on HTTP 429 in claude_client.py
 - GitHub REST API: exponential backoff on HTTP 429 in github_client.py
-- Wikipedia: User-Agent header set via WIKIPEDIA_REQUEST_HEADERS in wiki_fetch.py;
-  rate-limit, retry, and backoff logic in wiki_fetch.py and wikipedia_submit.py
 """
 
 from __future__ import annotations
@@ -60,7 +58,7 @@ Date parser fails on empty string input.
 - **Function:** `DataCleanup.format_date`
 - **Error type:** `ValueError`
 - **Occurrences this run:** 3
-- **Wikipedia URL:** https://en.wikipedia.org/wiki/Some_Page
+- **Wikipedia URL:** https://en.example.org/wiki/Some_Page
 - **Office:** Attorney General
 - **Input string:** `''`
 
@@ -172,10 +170,10 @@ class TestCriteriaErrorTypeExtraction:
 
 class TestNewImportExtraction:
     def test_extracts_import(self):
-        diff = "+import pandas\n+from bs4 import BeautifulSoup\n"
+        diff = "+import pandas\n+from dateutil import parser\n"
         imports = _extract_new_imports(diff)
         assert "pandas" in imports
-        assert "bs4" in imports
+        assert "dateutil" in imports
 
     def test_ignores_non_added_lines(self):
         diff = " import os\n-import old_thing\n"
