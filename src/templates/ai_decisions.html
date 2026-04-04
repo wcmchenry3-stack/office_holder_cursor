@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}AI Decisions – Office Holder{% endblock %}
+{% block content %}
+<h1>AI Decisions</h1>
+<p>Unified view of all AI-driven actions across quality pipelines. Showing {{ total }} total record{{ 's' if total != 1 else '' }}.</p>
+
+<form method="get" action="/data/ai-decisions" style="margin-bottom:1rem; display:flex; gap:1rem; flex-wrap:wrap; align-items:flex-end;">
+  <label>
+    Type
+    <select name="type">
+      <option value="">All</option>
+      {% for t in valid_types %}
+      <option value="{{ t }}" {% if type_filter == t %}selected{% endif %}>{{ t | replace('_', ' ') | title }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>
+    Result
+    <select name="result">
+      <option value="">All</option>
+      {% for r in valid_results %}
+      <option value="{{ r }}" {% if result_filter == r %}selected{% endif %}>{{ r | replace('_', ' ') }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button type="submit">Filter</button>
+  {% if type_filter or result_filter %}
+  <a href="/data/ai-decisions">Clear filters</a>
+  {% endif %}
+</form>
+
+{% if rows %}
+<table>
+  <thead>
+    <tr>
+      <th>Type</th>
+      <th>Subject</th>
+      <th>Result / Action</th>
+      <th>GH Issue</th>
+      <th>Created</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+    <tr>
+      <td><code>{{ row.decision_type }}</code></td>
+      <td>{{ row.subject or '—' }}</td>
+      <td>
+        {% set r = row.action_taken or '' %}
+        {% if r in ('ok', 'reparse_ok', 'allowed') %}
+          <span class="badge badge-ok">{{ r }}</span>
+        {% elif r in ('gh_issue', 'skipped', 'manual_review') %}
+          <span class="badge badge-warn">{{ r }}</span>
+        {% else %}
+          {{ r or '—' }}
+        {% endif %}
+      </td>
+      <td>{% if row.gh_issue_url %}<a href="{{ row.gh_issue_url }}" target="_blank" rel="noopener">issue</a>{% else %}—{% endif %}</td>
+      <td>{{ (row.created_at or '')[:19] }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<div style="margin-top:1rem; display:flex; gap:1rem; align-items:center;">
+  {% if prev_offset is not none %}
+  <a href="/data/ai-decisions?{% if type_filter %}type={{ type_filter }}&{% endif %}{% if result_filter %}result={{ result_filter }}&{% endif %}offset={{ prev_offset }}">← Previous</a>
+  {% endif %}
+  <span>{{ offset + 1 }}–{{ [offset + page_size, total] | min }} of {{ total }}</span>
+  {% if next_offset is not none %}
+  <a href="/data/ai-decisions?{% if type_filter %}type={{ type_filter }}&{% endif %}{% if result_filter %}result={{ result_filter }}&{% endif %}offset={{ next_offset }}">Next →</a>
+  {% endif %}
+</div>
+
+{% else %}
+<p>No AI decisions recorded yet.</p>
+{% endif %}
+{% endblock %}
