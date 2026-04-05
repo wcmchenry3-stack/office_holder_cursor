@@ -68,3 +68,40 @@ jobs:
   gemini-policy:
     uses: wcmchenry3-stack/.github/.github/workflows/called-gemini-policy.yml@main
     secrets: inherit
+
+  ui-tests:
+    name: Playwright UI tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install Playwright
+        run: pip install playwright && playwright install chromium --with-deps
+
+      - name: Start test server
+        run: |
+          uvicorn src.main:app --host 127.0.0.1 --port 8000 &
+          echo $! > /tmp/uvicorn.pid
+          for i in $(seq 1 15); do
+            curl -sf http://127.0.0.1:8000/run > /dev/null 2>&1 && echo "Server ready" && break
+            sleep 2
+          done
+        env:
+          OFFICE_HOLDER_DB_PATH: /tmp/playwright_ci.db
+
+      - name: Run Playwright tests
+        run: pytest src/test_ui_edit_office_playwright.py src/test_ui_offices_list_playwright.py src/test_ui_run_playwright.py --tb=short -v
+        env:
+          PLAYWRIGHT_BASE_URL: http://127.0.0.1:8000
+          OFFICE_HOLDER_DB_PATH: /tmp/playwright_ci.db
+
+      - name: Stop test server
+        if: always()
+        run: kill $(cat /tmp/uvicorn.pid) 2>/dev/null || true
