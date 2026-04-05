@@ -46,27 +46,16 @@ def _ui_test_env_defaults() -> dict[str, str]:
         offices = []
 
     if not offices:
-        # Fallback for older schema variants where list_offices may fail.
+        # Fallback when list_offices returns empty (e.g. empty test DB).
         try:
             conn = get_connection()
-            # On PostgreSQL, office_details always exists; on SQLite check sqlite_master
-            if is_postgres():
-                has_hierarchy = True
-            else:
-                has_hierarchy = conn.execute(
-                    "SELECT name FROM sqlite_master WHERE type='table' AND name='office_details'"
-                ).fetchone()
-            if has_hierarchy:
-                rows = conn.execute(
-                    "SELECT od.id AS id, od.source_page_id AS source_page_id FROM office_details od ORDER BY od.id"
-                ).fetchall()
-                offices = [
-                    {"id": int(r[0]), "source_page_id": int(r[1]) if r[1] is not None else None}
-                    for r in rows
-                ]
-            else:
-                rows = conn.execute("SELECT id FROM offices ORDER BY id").fetchall()
-                offices = [{"id": int(r[0]), "source_page_id": None} for r in rows]
+            rows = conn.execute(
+                "SELECT od.id AS id, od.source_page_id AS source_page_id FROM office_details od ORDER BY od.id"
+            ).fetchall()
+            offices = [
+                {"id": int(r[0]), "source_page_id": int(r[1]) if r[1] is not None else None}
+                for r in rows
+            ]
         except Exception:
             offices = []
         finally:
