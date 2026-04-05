@@ -137,11 +137,6 @@ def resolve_party_id(
             (office_id,),
         ).fetchone()
         if not row:
-            row = conn.execute(
-                "SELECT o.country_id FROM offices o WHERE o.id = %s LIMIT 1",
-                (office_id,),
-            ).fetchone()
-        if not row:
             return None
         country_id = row["country_id"]
         return resolve_party_id_by_country(country_id, party_name_or_link, conn=conn)
