@@ -191,13 +191,19 @@ def count_queued_jobs(conn=None) -> int:
             conn.close()
 
 
-def expire_stale_jobs(conn=None) -> list[dict]:
+def expire_stale_jobs(cancel_callback=None, conn=None) -> list[dict]:
     """Mark stale running/queued jobs as 'error' and return details of expired jobs.
 
     Expiry rules:
     - Queued jobs older than 12 hours → expired
     - Running jobs older than 8 hours → expired (except type='full')
     - Running 'full' jobs older than 24 hours → expired
+
+    Args:
+        cancel_callback: Optional callable(job_id) invoked for each expired job so the
+            caller can signal in-memory threads to stop (e.g. set cancelled=True).
+        conn: Optional shared DB connection; if None, a new connection is opened and
+            committed by this function.
     """
     own_conn = conn is None
     if own_conn:
@@ -206,7 +212,6 @@ def expire_stale_jobs(conn=None) -> list[dict]:
         from datetime import timedelta
 
         now = datetime.now(timezone.utc)
-        # Fetch all running/queued jobs
         rows = conn.execute(
             "SELECT id, type, status, created_at FROM scraper_jobs WHERE status IN (%s, %s)",
             ("running", "queued"),
@@ -242,8 +247,13 @@ def expire_stale_jobs(conn=None) -> list[dict]:
                     ("error", now.strftime("%Y-%m-%dT%H:%M:%SZ"), job_id),
                 )
                 expired.append({"id": job_id, "type": job_type, "status": status, "reason": reason})
+                if cancel_callback is not None:
+                    try:
+                        cancel_callback(job_id)
+                    except Exception:
+                        pass
 
-        if expired and own_conn:
+        if own_conn:
             conn.commit()
         return expired
     finally:

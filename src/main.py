@@ -96,7 +96,7 @@ from src.routers import ai_decisions as ai_decisions_router
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from src.routers._deps import templates, limiter
 from src.scheduled_tasks import (
-    is_daily_delta_enabled,
+    run_daily_maintenance,
     run_daily_delta,
     run_daily_insufficient_vitals,
     run_daily_gemini_research,
@@ -118,45 +118,60 @@ async def lifespan(app: FastAPI):
     # don't silently skip the job (APScheduler default is only 1 second).
     _MISFIRE_GRACE = 15 * 60  # seconds
     scheduler = AsyncIOScheduler(timezone="UTC")
-    if is_daily_delta_enabled():
-        scheduler.add_job(
-            run_daily_delta,
-            "cron",
-            hour=6,
-            minute=0,
-            id="daily_delta",
-            misfire_grace_time=_MISFIRE_GRACE,
-        )
-        logger.info("[scheduler] Daily delta run scheduled at 06:00 UTC")
-        scheduler.add_job(
-            run_daily_insufficient_vitals,
-            "cron",
-            hour=7,
-            minute=0,
-            id="daily_insufficient_vitals",
-            misfire_grace_time=_MISFIRE_GRACE,
-        )
-        logger.info("[scheduler] Insufficient vitals recheck scheduled at 07:00 UTC")
-        scheduler.add_job(
-            run_daily_gemini_research,
-            "cron",
-            hour=8,
-            minute=0,
-            id="daily_gemini_research",
-            misfire_grace_time=_MISFIRE_GRACE,
-        )
-        logger.info("[scheduler] Gemini deep research scheduled at 08:00 UTC")
-        scheduler.add_job(
-            run_daily_page_quality,
-            "cron",
-            hour=9,
-            minute=0,
-            id="daily_page_quality",
-            misfire_grace_time=_MISFIRE_GRACE,
-        )
-        logger.info("[scheduler] Page quality inspection scheduled at 09:00 UTC")
-    else:
-        logger.info("[scheduler] Daily delta job is paused (DAILY_DELTA_ENABLED is disabled)")
+
+    # Maintenance job: always registered unconditionally — expiry must run regardless of
+    # whether scraping is paused. Per-job pause is controlled via the scheduler_settings DB
+    # table (managed in the UI). The global kill switch is the RUNNERS_ENABLED env var.
+    scheduler.add_job(
+        run_daily_maintenance,
+        "cron",
+        hour=5,
+        minute=30,
+        id="daily_maintenance",
+        misfire_grace_time=_MISFIRE_GRACE,
+    )
+    logger.info("[scheduler] Daily maintenance (stale job expiry) scheduled at 05:30 UTC")
+
+    scheduler.add_job(
+        run_daily_delta,
+        "cron",
+        hour=6,
+        minute=0,
+        id="daily_delta",
+        misfire_grace_time=_MISFIRE_GRACE,
+    )
+    logger.info("[scheduler] Daily delta run scheduled at 06:00 UTC")
+
+    scheduler.add_job(
+        run_daily_insufficient_vitals,
+        "cron",
+        hour=7,
+        minute=0,
+        id="daily_insufficient_vitals",
+        misfire_grace_time=_MISFIRE_GRACE,
+    )
+    logger.info("[scheduler] Insufficient vitals recheck scheduled at 07:00 UTC")
+
+    scheduler.add_job(
+        run_daily_gemini_research,
+        "cron",
+        hour=8,
+        minute=0,
+        id="daily_gemini_research",
+        misfire_grace_time=_MISFIRE_GRACE,
+    )
+    logger.info("[scheduler] Gemini deep research scheduled at 08:00 UTC")
+
+    scheduler.add_job(
+        run_daily_page_quality,
+        "cron",
+        hour=9,
+        minute=0,
+        id="daily_page_quality",
+        misfire_grace_time=_MISFIRE_GRACE,
+    )
+    logger.info("[scheduler] Page quality inspection scheduled at 09:00 UTC")
+
     scheduler.start()
     yield
     scheduler.shutdown(wait=False)

@@ -10,7 +10,9 @@ Required env var (for email):
 Optional env vars:
     EMAIL_FROM          — sender address (default: wcmchenry3@gmail.com)
     EMAIL_TO            — recipient address (default: wcmchenry3@gmail.com)
-    DAILY_DELTA_ENABLED — set to 0/false/no/off to pause daily job (default: enabled)
+    RUNNERS_ENABLED     — set to 0/false/no/off to globally disable all runner jobs (default: enabled)
+
+Per-job pause state is stored in the scheduler_settings DB table and managed via the UI.
 """
 
 from __future__ import annotations
@@ -35,10 +37,58 @@ logger = logging.getLogger(__name__)
 _DEFAULT_EMAIL = "wcmchenry3@gmail.com"
 
 
-def is_daily_delta_enabled() -> bool:
-    """Return True unless DAILY_DELTA_ENABLED is set to a false-like value."""
-    raw = os.environ.get("DAILY_DELTA_ENABLED", "1").strip().lower()
+def is_runners_enabled() -> bool:
+    """Return False if the RUNNERS_ENABLED env var is set to a false-like value.
+
+    This is the global kill switch — when disabled, no scheduled job or user-triggered
+    job will execute. Set RUNNERS_ENABLED=0 in Render to pause everything without a deploy.
+    """
+    raw = os.environ.get("RUNNERS_ENABLED", "1").strip().lower()
     return raw not in {"0", "false", "no", "off"}
+
+
+# ---------------------------------------------------------------------------
+# Scheduled job registry
+# Used by the /data/scheduled-jobs UI page to show all scheduled jobs and their config.
+# ---------------------------------------------------------------------------
+
+SCHEDULED_JOBS = [
+    {
+        "job_id": "daily_maintenance",
+        "label": "Daily Maintenance (Stale Job Expiry)",
+        "cron": "05:30 UTC",
+        "pauseable": False,
+        "description": "Expires stale running/queued jobs. Always runs — cannot be paused.",
+    },
+    {
+        "job_id": "daily_delta",
+        "label": "Daily Delta Run",
+        "cron": "06:00 UTC",
+        "pauseable": True,
+        "description": "Incremental scrape of all enabled offices; sends summary email.",
+    },
+    {
+        "job_id": "daily_insufficient_vitals",
+        "label": "Insufficient Vitals Recheck",
+        "cron": "07:00 UTC",
+        "pauseable": True,
+        "description": "Re-scrapes individuals whose vital dates are still missing.",
+    },
+    {
+        "job_id": "daily_gemini_research",
+        "label": "Gemini Deep Research",
+        "cron": "08:00 UTC",
+        "pauseable": True,
+        "description": "Runs Gemini research pass on individuals lacking verified dates.",
+    },
+    {
+        "job_id": "daily_page_quality",
+        "label": "Page Quality Inspection",
+        "cron": "09:00 UTC",
+        "pauseable": True,
+        "description": "Inspects one source page per day for quality and coverage issues.",
+    },
+]
 
 
 def _run_daily_delta_in_subprocess(today_batch: int) -> dict:
@@ -92,11 +142,16 @@ except Exception as _exc:
 
 
 def _expire_stale_jobs_with_email() -> None:
-    """Expire stale jobs and send an email notification for each expired job."""
+    """Expire stale jobs and send an email notification for each expired job.
+
+    Passes a cancel_callback to expire_stale_jobs so any in-memory worker thread
+    for an expired job will receive the cancellation signal.
+    """
     try:
         from src.db.scraper_jobs import expire_stale_jobs
+        from src.routers.run_scraper import _cancel_in_memory_job
 
-        expired = expire_stale_jobs()
+        expired = expire_stale_jobs(cancel_callback=_cancel_in_memory_job)
         for job in expired:
             logger.info("Expired stale job: %s", job)
             _send_expiry_email(job)
@@ -174,14 +229,31 @@ def _send_expiry_email(job: dict) -> None:
         logger.warning("Failed to send expiry email: %s", exc)
 
 
+def run_daily_maintenance() -> None:
+    """Entry point called by APScheduler at 05:30 UTC each day — always runs, never pauseable.
+
+    Expires stale jobs so the queue stays healthy regardless of whether scraping is paused.
+    """
+    sentry_sdk.set_tag("scheduled_task", "daily_maintenance")
+    _expire_stale_jobs_with_email()
+
+
 def run_daily_delta() -> None:
     """Entry point called by APScheduler at 06:00 UTC each day."""
     from src.db import scheduled_job_runs as db_job_runs
 
     sentry_sdk.set_tag("scheduled_task", "daily_delta")
-    if not is_daily_delta_enabled():
-        logger.info("Daily delta run skipped because DAILY_DELTA_ENABLED is disabled")
+    if not is_runners_enabled():
+        logger.info("Daily delta run skipped: RUNNERS_ENABLED is disabled")
         return
+    try:
+        from src.db.scheduler_settings import is_job_paused
+
+        if is_job_paused("daily_delta"):
+            logger.info("Daily delta run skipped: paused via UI")
+            return
+    except Exception as e:
+        logger.warning("Could not check pause state for daily_delta (non-fatal): %s", e)
 
     _expire_stale_jobs_with_email()
 
@@ -296,6 +368,20 @@ def run_daily_insufficient_vitals() -> None:
     from src.db import scheduled_job_runs as db_job_runs
 
     sentry_sdk.set_tag("scheduled_task", "insufficient_vitals")
+    if not is_runners_enabled():
+        logger.info("Insufficient vitals run skipped: RUNNERS_ENABLED is disabled")
+        return
+    try:
+        from src.db.scheduler_settings import is_job_paused
+
+        if is_job_paused("daily_insufficient_vitals"):
+            logger.info("Insufficient vitals run skipped: paused via UI")
+            return
+    except Exception as e:
+        logger.warning(
+            "Could not check pause state for daily_insufficient_vitals (non-fatal): %s", e
+        )
+
     _expire_stale_jobs_with_email()
 
     try:
@@ -343,6 +429,20 @@ def run_daily_gemini_research() -> None:
     from src.db import scheduled_job_runs as db_job_runs
 
     sentry_sdk.set_tag("scheduled_task", "gemini_research")
+    if not is_runners_enabled():
+        logger.info("Gemini research run skipped: RUNNERS_ENABLED is disabled")
+        return
+    try:
+        from src.db.scheduler_settings import is_job_paused
+
+        if is_job_paused("daily_gemini_research"):
+            logger.info("Gemini research run skipped: paused via UI")
+            return
+    except Exception as e:
+        logger.warning(
+            "Could not check pause state for daily_gemini_research (non-fatal): %s", e
+        )
+
     _expire_stale_jobs_with_email()
 
     try:
@@ -391,6 +491,18 @@ def run_daily_gemini_research() -> None:
 def run_daily_page_quality() -> None:
     """Entry point called by APScheduler at 09:00 UTC each day."""
     sentry_sdk.set_tag("scheduled_task", "page_quality")
+    if not is_runners_enabled():
+        logger.info("Page quality run skipped: RUNNERS_ENABLED is disabled")
+        return
+    try:
+        from src.db.scheduler_settings import is_job_paused
+
+        if is_job_paused("daily_page_quality"):
+            logger.info("Page quality run skipped: paused via UI")
+            return
+    except Exception as e:
+        logger.warning("Could not check pause state for daily_page_quality (non-fatal): %s", e)
+
     run_start = datetime.now(timezone.utc)
     logger.info(
         "Page quality inspection starting at %s UTC",
