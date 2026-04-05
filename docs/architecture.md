@@ -208,11 +208,11 @@ Auth is bypassed locally when `GOOGLE_CLIENT_ID` is not set. Database is created
 | `APP_ENVIRONMENT` | No | `dev` | Environment name (`dev` or `prd`). Used by Sentry and logging. |
 | `SENTRY_DSN` | For Sentry | — | Sentry DSN for error tracking. If unset, Sentry is disabled (local dev). |
 | `SENTRY_TRACES_SAMPLE_RATE` | No | `0.1` | Fraction of requests to trace for Sentry performance monitoring (0.0–1.0). |
-| `PLAYWRIGHT_BASE_URL` | Testing | `http://127.0.0.1:8000` | Base URL for Playwright tests |
-| `PLAYWRIGHT_EDIT_OFFICE_ID` | Testing | — | Office ID used in Playwright UI tests |
-| `PLAYWRIGHT_OFFICE_A_ID` | Testing | — | Office ID A for comparison tests |
-| `PLAYWRIGHT_OFFICE_B_ID` | Testing | — | Office ID B for comparison tests |
-| `PLAYWRIGHT_PAGE_EDIT_URL` | Testing | — | Source page URL for page edit tests |
+| `PLAYWRIGHT_BASE_URL` | Testing | `http://127.0.0.1:8000` | Base URL for Playwright tests. Set automatically by CI to `http://127.0.0.1:8000`. |
+| `PLAYWRIGHT_EDIT_OFFICE_ID` | Local testing only | — | Office ID for edit-office Playwright tests. **Not required by CI** — CI uses a freshly seeded temp DB. Only set when running tests locally against a pre-populated database. |
+| `PLAYWRIGHT_OFFICE_A_ID` | Local testing only | — | Office ID A for comparison tests. See note above. |
+| `PLAYWRIGHT_OFFICE_B_ID` | Local testing only | — | Office ID B for comparison tests. See note above. |
+| `PLAYWRIGHT_PAGE_EDIT_URL` | Local testing only | — | Source page URL for page edit tests. See note above. |
 
 ---
 
