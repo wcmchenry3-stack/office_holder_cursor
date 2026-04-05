@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Scheduled Jobs – Office Holder{% endblock %}
+{% block content %}
+<h1>Scheduled Jobs</h1>
+{% if not runners_enabled %}
+<div class="sync-banner" role="alert">
+  <strong>Global kill switch active:</strong> RUNNERS_ENABLED=false — all runner jobs are disabled.
+  Update the env var in Render and redeploy to re-enable.
+</div>
+{% endif %}
+<p>Pause/resume individual jobs below. The maintenance job cannot be paused.</p>
+<table>
+  <thead>
+    <tr>
+      <th>Job</th>
+      <th>Cron (UTC)</th>
+      <th>Description</th>
+      <th>Last Run</th>
+      <th>Last Status</th>
+      <th>Duration</th>
+      <th>Control</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for j in jobs %}
+    <tr id="row-{{ j.job_id }}">
+      <td>{{ j.label }}</td>
+      <td><code>{{ j.cron }}</code></td>
+      <td>{{ j.description }}</td>
+      <td>{{ j.last_run.started_at if j.last_run else '—' }}</td>
+      <td>{% if j.last_run %}<span class="status-{{ j.last_run.status }}">{{ j.last_run.status }}</span>{% else %}—{% endif %}</td>
+      <td>{% if j.last_run and j.last_run.duration_s is not none %}{{ "%.0f"|format(j.last_run.duration_s) }}s{% else %}—{% endif %}</td>
+      <td>
+        {% if j.pauseable %}
+          {% if j.paused %}
+            <button onclick="setJobPaused('{{ j.job_id }}', false)">Resume</button>
+            <span class="status-error">Paused</span>
+          {% else %}
+            <button onclick="setJobPaused('{{ j.job_id }}', true)">Pause</button>
+            <span class="status-complete">Running</span>
+          {% endif %}
+        {% else %}
+          <span style="color:#888">Always on</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+<script>
+function setJobPaused(jobId, paused) {
+  var action = paused ? 'pause' : 'resume';
+  fetch('/api/scheduler-settings/' + encodeURIComponent(jobId) + '/' + action, {method: 'POST'})
+    .then(function(r) { return r.json(); })
+    .then(function() { location.reload(); })
+    .catch(function(e) { alert('Error: ' + e); });
+}
+</script>
+{% endblock %}

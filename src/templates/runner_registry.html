@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Runner Registry – Office Holder{% endblock %}
+{% block content %}
+<h1>Runner Registry</h1>
+<p>All available run modes, their descriptions, and expiry timeouts.</p>
+<table>
+  <thead>
+    <tr>
+      <th>ID</th>
+      <th>Label</th>
+      <th>Description</th>
+      <th>Expiry Timeout</th>
+      <th>Trigger</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in runners %}
+    <tr>
+      <td><code>{{ r.id }}</code></td>
+      <td>{{ r.label }}</td>
+      <td>{{ r.description }}</td>
+      <td>{{ r.expiry_hours }}h</td>
+      <td>{{ r.trigger }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

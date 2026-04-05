@@ -7,6 +7,11 @@
   <a href="?days=90">90d</a> |
   <a href="?days=365">365d</a>
 </p>
+{% if runs and runs[0].status == 'error' %}
+<div class="sync-banner" role="alert">
+  <strong>Most recent run failed:</strong> {{ runs[0].job_name }} — check the error column below.
+</div>
+{% endif %}
 {% if runs %}
 <table>
   <thead>
@@ -17,6 +22,9 @@
       <th>Finished</th>
       <th>Duration</th>
       <th>Status</th>
+      <th>Terms</th>
+      <th>Bio OK</th>
+      <th>Bio Err</th>
       <th>Error</th>
     </tr>
   </thead>
@@ -29,6 +37,9 @@
       <td>{{ r.finished_at or '—' }}</td>
       <td>{% if r.duration_s is not none %}{{ "%.0f"|format(r.duration_s) }}s{% else %}—{% endif %}</td>
       <td class="status-{{ r.status }}">{{ r.status }}</td>
+      <td>{{ r.result.terms_parsed if r.result and r.result.terms_parsed is defined else '—' }}</td>
+      <td>{{ r.result.bio_ok if r.result and r.result.bio_ok is defined else '—' }}</td>
+      <td>{{ r.result.bio_errors if r.result and r.result.bio_errors is defined else '—' }}</td>
       <td>{% if r.error %}<pre class="error-snippet">{{ r.error[:300] }}</pre>{% else %}—{% endif %}</td>
     </tr>
     {% endfor %}

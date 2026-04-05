@@ -125,16 +125,16 @@ def test_run_daily_delta_sends_crash_email_on_exception(monkeypatch):
     assert "FAILED" in raw_msg
 
 
-def test_is_daily_delta_enabled_parses_false_values(monkeypatch):
-    from src.scheduled_tasks import is_daily_delta_enabled
+def test_is_runners_enabled_parses_false_values(monkeypatch):
+    from src.scheduled_tasks import is_runners_enabled
 
     for raw in ("0", "false", "False", "NO", "off"):
-        monkeypatch.setenv("DAILY_DELTA_ENABLED", raw)
-        assert is_daily_delta_enabled() is False
+        monkeypatch.setenv("RUNNERS_ENABLED", raw)
+        assert is_runners_enabled() is False
 
 
-def test_run_daily_delta_skips_when_disabled(monkeypatch):
-    monkeypatch.setenv("DAILY_DELTA_ENABLED", "0")
+def test_run_daily_delta_skips_when_runners_disabled(monkeypatch):
+    monkeypatch.setenv("RUNNERS_ENABLED", "0")
 
     called = {"subprocess": False}
 
@@ -147,6 +147,7 @@ def test_run_daily_delta_skips_when_disabled(monkeypatch):
     from src.scheduled_tasks import run_daily_delta
 
     run_daily_delta()
+    assert not called["subprocess"]
 
     assert called["subprocess"] is False
 

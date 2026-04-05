@@ -436,6 +436,13 @@ CREATE TABLE IF NOT EXISTS scheduled_job_runs (
 );
 CREATE INDEX IF NOT EXISTS idx_scheduled_job_runs_started ON scheduled_job_runs (started_at DESC);
 
+-- Scheduler settings: per-job pause state managed via the UI.
+CREATE TABLE IF NOT EXISTS scheduler_settings (
+    job_id TEXT PRIMARY KEY,
+    paused INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- schema_migrations: tracks applied PostgreSQL-only corrections (used by _run_pg_migrations)
 CREATE TABLE IF NOT EXISTS schema_migrations (
     id TEXT PRIMARY KEY,
@@ -874,6 +881,13 @@ CREATE TABLE IF NOT EXISTS scheduled_job_runs (
     error TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_scheduled_job_runs_started ON scheduled_job_runs (started_at DESC);
+
+-- Scheduler settings: per-job pause state managed via the UI.
+CREATE TABLE IF NOT EXISTS scheduler_settings (
+    job_id TEXT PRIMARY KEY,
+    paused BOOLEAN NOT NULL DEFAULT FALSE,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 """
 
 # Same index SQL works for both backends (standard SQL).
