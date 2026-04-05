@@ -439,9 +439,7 @@ def run_daily_gemini_research() -> None:
             logger.info("Gemini research run skipped: paused via UI")
             return
     except Exception as e:
-        logger.warning(
-            "Could not check pause state for daily_gemini_research (non-fatal): %s", e
-        )
+        logger.warning("Could not check pause state for daily_gemini_research (non-fatal): %s", e)
 
     _expire_stale_jobs_with_email()
 

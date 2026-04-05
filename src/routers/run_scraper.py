@@ -71,9 +71,7 @@ def _maybe_start_next_queued_job() -> None:
         try:
             params = json.loads(next_job.get("job_params_json") or "{}")
         except (ValueError, TypeError):
-            logger.error(
-                "Queued job %s has malformed job_params_json — marking as error", job_id
-            )
+            logger.error("Queued job %s has malformed job_params_json — marking as error", job_id)
             try:
                 db_scraper_jobs.update_job(job_id, "error", {"error": "malformed job_params_json"})
             except Exception:

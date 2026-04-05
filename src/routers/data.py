@@ -166,16 +166,12 @@ async def data_scraper_jobs(
     limit: int = Query(50, le=200),
 ):
     jobs = db_scraper_jobs.list_recent_jobs(limit=limit)
-    return templates.TemplateResponse(
-        request, "scraper_jobs.html", {"jobs": jobs, "limit": limit}
-    )
+    return templates.TemplateResponse(request, "scraper_jobs.html", {"jobs": jobs, "limit": limit})
 
 
 @router.get("/data/runner-registry", response_class=HTMLResponse)
 async def data_runner_registry(request: Request):
-    return templates.TemplateResponse(
-        request, "runner_registry.html", {"runners": RUNNER_REGISTRY}
-    )
+    return templates.TemplateResponse(request, "runner_registry.html", {"runners": RUNNER_REGISTRY})
 
 
 @router.get("/data/scheduled-jobs", response_class=HTMLResponse)
@@ -196,7 +192,10 @@ async def data_scheduled_jobs(request: Request):
             }
         )
     runners_enabled = os.environ.get("RUNNERS_ENABLED", "1").strip().lower() not in {
-        "0", "false", "no", "off"
+        "0",
+        "false",
+        "no",
+        "off",
     }
     return templates.TemplateResponse(
         request,
