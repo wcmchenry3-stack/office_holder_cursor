@@ -233,7 +233,7 @@ class DataCleanup:
                     return parsed_date.strftime("%Y-%m-%d")
 
                 except (ValueError, TypeError, IndexError) as e:
-                    logger.info(f"Value error {e} found in {date_str} while running format_date")
+                    logger.warning(f"Value error {e} found in {date_str} while running format_date")
                     continue  # Try the next pattern if parsing fails
 
         # Never use today for missing parts: year-only must not become a full date; use imprecise path instead.
@@ -265,7 +265,7 @@ class DataCleanup:
 
     def parse_date_info(self, date_str, date_type):
 
-        logger.info(f"Running parse_date_info: {date_str} {date_type}")
+        logger.debug(f"Running parse_date_info: {date_str} {date_type}")
 
         # remove footnotes and parenthesis from date fields
         date_str = self.remove_footnote(date_str)
@@ -326,7 +326,7 @@ class DataCleanup:
                         )
 
         except (ValueError, IndexError, TypeError) as e:
-            logger.info(f"Error {e} found in {date_str} while parsing by delimiter {delimiter}")
+            logger.warning(f"Error {e} found in {date_str} while parsing by delimiter {delimiter}")
 
         if date_type == "both":
             for pattern in compiled_patterns:
@@ -360,7 +360,7 @@ class DataCleanup:
                             return (start_date, end_date)
                         return (start_date, "N/A") if date_type == "start" else ("N/A", end_date)
                 except (ValueError, IndexError, TypeError) as e:
-                    logger.info(
+                    logger.warning(
                         f"Value Error {e} found in {date_str} while parsing by date pattern"
                     )
 
@@ -378,7 +378,7 @@ class DataCleanup:
                 return date if date_type == "start" else date if date_type == "end" else date
 
             except (ValueError, IndexError, TypeError) as e:
-                logger.info(f"Error {e} found in {date_str} while parsing by date pattern")
+                logger.warning(f"Error {e} found in {date_str} while parsing by date pattern")
 
         logger.debug(f"invalid date found in {date_str}")
         return "Invalid date", "Invalid date"
@@ -487,7 +487,7 @@ class DataCleanup:
             return cleaned_text
 
         except (TypeError, ValueError, IndexError) as e:
-            logger.info(f"error {e} parsing footnote")
+            logger.warning(f"error {e} parsing footnote")
 
     def remove_parenthesis(self, content):
 
@@ -501,7 +501,7 @@ class DataCleanup:
             return cleaned_text
 
         except (TypeError, ValueError, IndexError) as e:
-            logger.info(f"error {e} parsing parenthesis")
+            logger.warning(f"error {e} parsing parenthesis")
 
 
 class Offices:
@@ -561,7 +561,7 @@ class Offices:
         max_rows=None,
         run_cache=None,
     ):
-        logger.info(f"---------------\n\n Processing table with config: {table_config}")
+        logger.debug(f"---------------\n\n Processing table with config: {table_config}")
 
         # Parse HTML content using BeautifulSoup
         soup = BeautifulSoup(html_content, "html.parser")
@@ -569,7 +569,7 @@ class Offices:
 
         # Check if specified table number is within bounds
         if not (0 <= table_config["table_no"] - 1 < len(tables)):
-            logger.info("Table number out of bounds.")
+            logger.warning("Table number out of bounds.")
             return []
 
         target_table = tables[table_config["table_no"] - 1]
@@ -635,7 +635,7 @@ class Offices:
                 UnicodeEncodeError,
                 UnicodeDecodeError,
             ) as e:
-                logger.info(f" found error {e} when processing row {row_index}")
+                logger.warning(f" found error {e} when processing row {row_index}")
 
         if table_config.get("consolidate_rowspan_terms"):
             accumulated_results = self._consolidate_rowspan_terms(accumulated_results, table_config)
@@ -712,7 +712,7 @@ class Offices:
         This function parses out the specific table.
         """
 
-        logger.info(
+        logger.debug(
             f"---------------\n\n table config in parse_table_row: \n\n {table_config} \n\n row: {row} "
         )
 
@@ -725,7 +725,7 @@ class Offices:
 
         # total columns primarily works with right_to_left function
         total_columns = len(cells)
-        logger.info(f"total columns {total_columns}")
+        logger.debug(f"total columns {total_columns}")
 
         # create a duplicate version of table_config. This duplicate version could be changed by other functions, without updating table_config
         table_config_to_parse = copy.deepcopy(table_config)
@@ -810,11 +810,11 @@ class Offices:
             len(cells) < table_config_to_parse["table_rows"]
             and table_config_to_parse["parse_rowspan"] == False
         ):  # Adjust this number based on the expected minimum number of cells
-            logger.info("issue with table rows")
+            logger.warning("issue with table rows")
             return None  # or some default data structure
         # With rowspan, skip only rows that have too few cells to parse any term (need at least 2 to try; continuation rows often have 3)
         if table_config_to_parse["parse_rowspan"] == True and len(cells) < 2:
-            logger.info("skipping rowspan continuation row (too few cells)")
+            logger.warning("skipping rowspan continuation row (too few cells)")
             return None
         # Skip rows that don't have enough columns to include term_end (e.g. President-only continuation rows). When parse_rowspan, continuation rows have fewer cells so column indices don't align—skip check.
         term_end_col = table_config_to_parse.get("term_end_column", -1)
@@ -824,7 +824,7 @@ class Offices:
             and not table_config_to_parse.get("parse_rowspan")
             and not table_config_to_parse.get("find_date_in_infobox")
         ):
-            logger.info("skipping row (too few columns for term_end)")
+            logger.warning("skipping row (too few columns for term_end)")
             return None
 
         logger.debug("column numbers determined, extracting information")
@@ -1102,7 +1102,7 @@ class Offices:
                     )
             results_list.append(row_dict)
         for results in results_list:
-            logger.info(f"results {results}")
+            logger.debug(f"results {results}")
         return results_list
 
     def patterns_to_ignore(self):
@@ -1197,7 +1197,7 @@ class Offices:
                         return full_url
 
             except (ValueError, TypeError, IndexError, AttributeError) as e:
-                logger.info(f"found error when finding url for {full_url} in {cells}")
+                logger.warning(f"found error when finding url for {full_url} in {cells}")
 
         # Fallback: wrong link column often points at footnote-only cells.
         # Only run fallback when configured column had link markup but no acceptable candidate.
@@ -1421,7 +1421,7 @@ class Offices:
             return (term_start, term_end, None, None)
 
         except (ValueError, TypeError, AttributeError, IndexError) as e:
-            logger.info(f" error {e} when parsing {wiki_link}")
+            logger.warning(f" error {e} when parsing {wiki_link}")
             return ("Invalid date", "Invalid date", None, None)
 
     def extract_party(
@@ -1473,7 +1473,7 @@ class Offices:
                                 logger.debug(f"Match found for party: {party_info['name']}")
                                 return party_info["name"]
             except (ValueError, IndexError, TypeError) as e:
-                logger.info(f"found error {e} in party_extract when searching for party link")
+                logger.warning(f"found error {e} in party_extract when searching for party link")
 
             # Fallback: when party_link=True but cell has no link (or no match), match by text
             if country in party_list:
@@ -1509,7 +1509,7 @@ class Offices:
                 logger.debug(f"No party match found in party list for text: {party_text}")
 
             except (ValueError, TypeError, IndexError) as e:
-                logger.info(f"Error {e} while searching for party text")
+                logger.warning(f"Error {e} while searching for party text")
 
         return no_value_return
 
@@ -1749,7 +1749,7 @@ class Biography:
         This function does not yet find birth_place and death_place.
         """
 
-        logger.info("start running parse_infobox")
+        logger.debug("start running parse_infobox")
 
         details = {
             "full_name": None,
@@ -1791,12 +1791,12 @@ class Biography:
                     death_date = self.DataCleanup.parse_date_info(death_date_text, "end")
                     details["death_date"] = death_date
 
-        logger.info("completd running parse_infobox")
+        logger.debug("completd running parse_infobox")
         return details
 
     def parse_first_paragraph(self, paragraph):
 
-        logger.info("running first paragraphy method")
+        logger.debug("running first paragraphy method")
 
         logger.debug(f"running first paragraph \n\n {paragraph}")
 
@@ -1829,7 +1829,7 @@ class Biography:
 
     def biography_extract(self, wiki_link, run_cache=None):
 
-        logger.info("-------- \n\n Running biography extract")
+        logger.debug("-------- \n\n Running biography extract")
 
         normalized_link = normalize_wiki_url(wiki_link) or wiki_link
         fetch_url = wiki_url_to_rest_html_url(normalized_link) or normalized_link
@@ -1867,12 +1867,12 @@ class Biography:
                     details = {"page_path": urlparse(wiki_link).path.split("/")[-1].strip()}
                 return details
             else:
-                logger.info(
+                logger.error(
                     f"Failed to fetch biography URL with status code: {response.status_code}"
                 )
                 return {}
         except _RequestException as e:
-            logger.info(f"Request failed: {e}")
+            logger.error(f"Request failed: {e}")
             return {}
 
     def find_term_dates(
@@ -2176,7 +2176,7 @@ class Biography:
                     self._last_dead_link = True
         except _RequestException as e:
             self._last_bio_details = None
-            logger.info(f"Request failed: {e}")
+            logger.error(f"Request failed: {e}")
             infobox_items.append("Request failed: %s" % str(e))
             if (wiki_link or "").strip() and (wiki_link or "").strip() != "No link":
                 self._last_dead_link = True

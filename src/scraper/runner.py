@@ -856,7 +856,7 @@ def _process_single_office(
     )
 
     if not url:
-        _log.info(f"Skipping office id {office_id}: no URL")
+        _log.warning(f"Skipping office id {office_id}: no URL")
         cfg.report(
             "office",
             office_index,
@@ -887,7 +887,7 @@ def _process_single_office(
         run_cache=cfg.run_cache,
     )
     if "error" in cache_result:
-        _log.info(f"Failed to get table for {url}: {cache_result['error']}")
+        _log.warning(f"Failed to get table for {url}: {cache_result['error']}")
         if has_existing:
             return _OfficeResult(
                 skip=True,
@@ -903,7 +903,7 @@ def _process_single_office(
         return _OfficeResult(cancel=True)
 
     if "cache_file" in cache_result:
-        _log.info(f"Cached table: {cache_result['cache_file']}")
+        _log.debug(f"Cached table: {cache_result['cache_file']}")
     html_content = cache_result.get("html") or ""
     cached_table_html = html_content if html_content else None
 
@@ -919,7 +919,7 @@ def _process_single_office(
         and html_hash == stored_hash
         and has_existing
     ):
-        _log.info(
+        _log.debug(
             f"Skipped (HTML unchanged): {office_name} — table HTML matches last run hash. No write."
         )
         return _OfficeResult(offices_unchanged_inc=True)
@@ -941,7 +941,7 @@ def _process_single_office(
             run_cache=cfg.run_cache,
         )
         if len(table_data_pre) == 0:
-            _log.info(
+            _log.warning(
                 f"Repopulate validation failed for {office_name}: table parsed to zero rows (existing had {len(existing_terms)}). Keeping existing terms."
             )
             return _OfficeResult(
@@ -1003,7 +1003,7 @@ def _process_single_office(
                     f"Force overwrite for {office_name}: table-only check found new list missing {len(missing_years)} holder(s); replacing anyway. Missing: {missing_str}"
                 )
             elif missing_years:
-                _log.info(
+                _log.warning(
                     f"Repopulate validation failed for {office_name}: table-only check found new list missing {len(missing_years)} office holder(s). Skipping infobox fetch. Keeping existing terms. Missing: {missing_str}"
                 )
                 return _OfficeResult(
@@ -1022,7 +1022,7 @@ def _process_single_office(
                 table_data_pre, office_id, years_only_pre, key_years_only=True
             )
             if current_new_holders_years == old_holders_years:
-                _log.info(
+                _log.debug(
                     f"Skipped (holders unchanged): {office_name} — holder set identical to existing terms. No write."
                 )
                 return _OfficeResult(offices_unchanged_inc=True, html_hash=html_hash)
@@ -1045,7 +1045,7 @@ def _process_single_office(
         table_data = _dedupe_parsed_rows(table_data, years_only=bool(office_row.get("years_only")))
 
     if has_existing and len(table_data) == 0:
-        _log.info(
+        _log.warning(
             f"Repopulate validation failed for {office_name}: table parsed to zero rows (existing had {len(existing_terms)}). Keeping existing terms."
         )
         return _OfficeResult(
@@ -1106,7 +1106,7 @@ def _process_single_office(
                 )
                 replaceable = True
             elif missing:
-                _log.info(
+                _log.warning(
                     f"Repopulate validation failed for {office_name}: new list is missing {len(missing)} office holder(s) that were in existing data. Keeping existing terms. Missing: {missing_str}"
                 )
                 revalidate_failure = (
@@ -1261,7 +1261,7 @@ def _run_single_bio(ctx: _RunContext, report: Callable) -> dict[str, Any]:
     """Run a biography fetch for one individual (single_bio mode)."""
     ref = (ctx.individual_ref or "").strip()
     if not ref:
-        _log.info("single_bio requires individual_ref (id or Wikipedia URL).")
+        _log.warning("single_bio requires individual_ref (id or Wikipedia URL).")
         return {
             "office_count": 0,
             "message": "Individual (ID or URL) required.",
@@ -1272,7 +1272,7 @@ def _run_single_bio(ctx: _RunContext, report: Callable) -> dict[str, Any]:
     if ref.isdigit():
         ind = db_individuals.get_individual(int(ref))
         if not ind:
-            _log.info(f"No individual with id={ref}.")
+            _log.warning(f"No individual with id={ref}.")
             return {
                 "office_count": 0,
                 "message": f"No individual with id {ref}.",
@@ -1560,7 +1560,7 @@ def _run_gemini_vitals_research(ctx: _RunContext, report: Callable) -> dict[str,
 
     researcher = get_gemini_researcher()
     if researcher is None:
-        _log.info("Gemini research skipped: GEMINI_OFFICE_HOLDER not configured.")
+        _log.debug("Gemini research skipped: GEMINI_OFFICE_HOLDER not configured.")
         return {
             "office_count": 0,
             "terms_parsed": 0,
@@ -1746,7 +1746,7 @@ def _run_dead_link_research(ctx: _RunContext, report: Callable) -> dict[str, Any
 
     researcher = get_gemini_researcher()
     if researcher is None:
-        _log.info("Dead-link research skipped: GEMINI_OFFICE_HOLDER not configured.")
+        _log.debug("Dead-link research skipped: GEMINI_OFFICE_HOLDER not configured.")
         return {
             "office_count": 0,
             "terms_parsed": 0,
@@ -1934,7 +1934,7 @@ def _run_data_quality(ctx: _RunContext, report: Callable) -> dict[str, Any]:
         os.environ.get(k) for k in ("OPENAI_API_KEY", "GEMINI_OFFICE_HOLDER", "ANTHROPIC_API_KEY")
     )
     if not has_ai_keys:
-        _log.info("Data quality manual run skipped: no AI API keys configured.")
+        _log.debug("Data quality manual run skipped: no AI API keys configured.")
         return {
             "office_count": 0,
             "terms_parsed": 0,
@@ -1959,7 +1959,7 @@ def _run_data_quality(ctx: _RunContext, report: Callable) -> dict[str, Any]:
     try:
         results = checker.run_manual(conn=conn)
     except Exception as e:
-        _log.info(f"Data quality manual run failed: {e}")
+        _log.error(f"Data quality manual run failed: {e}")
         results = []
     finally:
         conn.close()
@@ -2073,7 +2073,7 @@ def _run_auto_fix(ctx: _RunContext, report: Callable) -> dict[str, Any]:
     try:
         results = process_open_parser_bug_issues()
     except Exception as exc:
-        _log.info(f"Auto-fix failed: {exc}")
+        _log.warning(f"Auto-fix failed: {exc}")
         results = []
 
     pr_count = sum(1 for r in results if r.get("status") == "pr_created")
@@ -2186,7 +2186,7 @@ def run_with_db(
         if office_ids:
             offices = [o for o in offices if o["id"] in office_ids]
         if not offices:
-            _log.info("No offices to process.")
+            _log.warning("No offices to process.")
             return {"office_count": 0, "message": "No offices to process."}
 
         report("init", 0, len(offices), "Starting…", {"total_offices": len(offices)})
@@ -2202,7 +2202,7 @@ def run_with_db(
 
             _reporter = ParseErrorReporter() if get_github_client() is not None else None
         except Exception as _reporter_init_err:
-            _log.info(
+            _log.warning(
                 f"ParseErrorReporter init failed (reporting disabled for this run): {_reporter_init_err}"
             )
             _reporter = None
@@ -2215,7 +2215,7 @@ def run_with_db(
 
                 _quality_checker = DataQualityChecker()
             except Exception as _dq_init_err:
-                _log.info(
+                _log.warning(
                     f"DataQualityChecker init failed (quality checks disabled): {_dq_init_err}"
                 )
 
@@ -2574,7 +2574,7 @@ def run_with_db(
 
                 def _lp_error(wiki_url: str, err: str) -> None:
                     _lp_counts[1] += 1
-                    _log.info(f"Living update failed for {wiki_url}: {err}")
+                    _log.warning(f"Living update failed for {wiki_url}: {err}")
                     living_errors.append({"url": wiki_url, "error": err})
 
                 def _lp_progress(done: int, total: int) -> None:
@@ -2598,7 +2598,7 @@ def run_with_db(
                 to_fetch = list(unique_wiki_urls - existing_individual_wiki_urls)
                 bio_skipped_count = len(unique_wiki_urls) - len(to_fetch)
                 if bio_skipped_count > 0:
-                    _log.info(
+                    _log.debug(
                         f"Skipping {bio_skipped_count} individuals (already in DB); fetching bio for {len(to_fetch)} new."
                     )
                     report(
@@ -2652,7 +2652,7 @@ def run_with_db(
 
                 def _new_bio_error(wiki_url: str, err: str) -> None:
                     _new_bio_counts[1] += 1
-                    _log.info(f"Bio failed for {wiki_url}: {err}")
+                    _log.warning(f"Bio failed for {wiki_url}: {err}")
                     bio_errors.append({"url": wiki_url, "error": err})
 
                 def _new_bio_progress(done: int, total: int) -> None:
@@ -2718,7 +2718,7 @@ def run_with_db(
 
                         def _liv2_error(wiki_url: str, err: str) -> None:
                             _liv2_counts[1] += 1
-                            _log.info(f"Living update failed for {wiki_url}: {err}")
+                            _log.warning(f"Living update failed for {wiki_url}: {err}")
                             living_errors.append({"url": wiki_url, "error": err})
 
                         def _liv2_progress(done: int, total: int) -> None:
@@ -2785,7 +2785,7 @@ def run_with_db(
             try:
                 _reporter.flush()
             except Exception as _flush_err:
-                _log.info(
+                _log.warning(
                     f"ParseErrorReporter flush failed (run result not affected): {_flush_err}"
                 )
         if _quality_checker is not None:
@@ -2796,7 +2796,7 @@ def run_with_db(
                         f"Data quality: {len(quality_results)} issue(s) flagged (deterministic)."
                     )
             except Exception as _dq_flush_err:
-                _log.info(
+                _log.warning(
                     f"DataQualityChecker flush failed (run result not affected): {_dq_flush_err}"
                 )
         report(
