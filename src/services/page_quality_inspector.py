@@ -54,10 +54,11 @@ _GH_LABEL = "page-quality"
 
 def _build_prompt(page_url: str, html_snippet: str, our_data: list[dict]) -> str:
     our_json = json.dumps(our_data, default=str)
+    record_count = len(our_data)
     return (
         f"You are auditing a political office holders database.\n\n"
         f"Wikipedia page URL: {page_url}\n\n"
-        f"Our parsed data for this page (JSON):\n{our_json}\n\n"
+        f"Our parsed data for this page ({record_count} records, JSON):\n{our_json}\n\n"
         f"Current Wikipedia HTML (first {_HTML_CHAR_LIMIT:,} chars):\n{html_snippet}\n\n"
         "Question: Does our parsed data accurately represent the office holders "
         "shown in the Wikipedia table(s) on this page?\n\n"
@@ -93,8 +94,12 @@ def _fetch_html(page_url: str) -> str | None:
         return None
 
 
-def _load_our_data(source_page_id: int, conn) -> list[dict]:
-    """Return compact list of our parsed office_terms for this source page."""
+def _load_our_data(source_page_id: int, conn) -> list[dict] | None:
+    """Return compact list of our parsed office_terms for this source page.
+
+    Returns None on any DB error — callers must treat None as a fetch failure,
+    not as 'page has zero records'.
+    """
     try:
         cur = conn.execute(
             "SELECT i.full_name, i.wiki_url, ot.term_start_year, ot.term_end_year,"
@@ -123,7 +128,7 @@ def _load_our_data(source_page_id: int, conn) -> list[dict]:
             "page_quality_inspector: failed to load our data for source_page_id=%d",
             source_page_id,
         )
-        return []
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -220,9 +225,59 @@ def inspect_one_page(conn=None) -> dict | None:
         html = _fetch_html(page_url)
         html_char_count = len(html) if html else 0
 
-        # Load our parsed data
+        # Load our parsed data — None means a DB error, not an empty page
         our_data = _load_our_data(source_page_id, conn)
-        office_terms_count = len(our_data)
+        office_terms_count = len(our_data) if our_data is not None else 0
+
+        if our_data is None:
+            logger.error(
+                "page_quality_inspector: DB error loading data for source_page_id=%d — skipping vote",
+                source_page_id,
+            )
+            check_id = db_pqc.insert_check(
+                source_page_id=source_page_id,
+                html_char_count=0,
+                office_terms_count=0,
+                ai_votes=None,
+                result="fetch_failed",
+                gh_issue_url=None,
+                conn=conn,
+            )
+            return {
+                "result": "fetch_failed",
+                "source_page_id": source_page_id,
+                "check_id": check_id,
+            }
+
+        if our_data == []:
+            # No records in our DB for this page — don't waste AI tokens on an empty prompt.
+            # Create a GH issue so the data gap is visible and can be investigated.
+            logger.warning(
+                "page_quality_inspector: no office_terms found for source_page_id=%d — "
+                "skipping AI vote, creating issue",
+                source_page_id,
+            )
+            gh_url = _create_gh_issue(
+                page_url,
+                source_page_id,
+                "no_data",
+                "Our database has zero records for this page. Cannot run quality check.",
+            )
+            check_id = db_pqc.insert_check(
+                source_page_id=source_page_id,
+                html_char_count=0,
+                office_terms_count=0,
+                ai_votes=None,
+                result="no_data",
+                gh_issue_url=gh_url,
+                conn=conn,
+            )
+            db_pqc.mark_page_checked(source_page_id, conn=conn)
+            return {
+                "result": "no_data",
+                "source_page_id": source_page_id,
+                "check_id": check_id,
+            }
 
         if not html:
             # Can't inspect without HTML — log as manual_review
@@ -286,18 +341,30 @@ def inspect_one_page(conn=None) -> dict | None:
 
             # Re-vote with fresh data
             fresh_data = _load_our_data(source_page_id, conn)
-            fresh_prompt = _build_prompt(page_url, html, fresh_data)
-            fresh_verdict = voter.vote(
-                prompt=fresh_prompt, context={"source_page_id": source_page_id}
-            )
-
-            if fresh_verdict.verdict == Verdict.VALID:
-                result_str = "reparse_ok"
-            else:
+            if fresh_data is None:
+                # DB error on re-load — can't re-vote; flag for manual review
+                logger.error(
+                    "page_quality_inspector: DB error loading fresh data after re-parse "
+                    "for source_page_id=%d",
+                    source_page_id,
+                )
                 result_str = "gh_issue"
                 gh_url = _create_gh_issue(
-                    page_url, source_page_id, "invalid_after_reparse", ai_summary
+                    page_url, source_page_id, "db_error_after_reparse", ai_summary
                 )
+            else:
+                fresh_prompt = _build_prompt(page_url, html, fresh_data)
+                fresh_verdict = voter.vote(
+                    prompt=fresh_prompt, context={"source_page_id": source_page_id}
+                )
+
+                if fresh_verdict.verdict == Verdict.VALID:
+                    result_str = "reparse_ok"
+                else:
+                    result_str = "gh_issue"
+                    gh_url = _create_gh_issue(
+                        page_url, source_page_id, "invalid_after_reparse", ai_summary
+                    )
 
             db_pqc.mark_page_checked(source_page_id, conn=conn)
 
