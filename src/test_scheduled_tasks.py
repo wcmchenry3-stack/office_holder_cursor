@@ -246,6 +246,150 @@ def test_run_daily_maintenance_ignores_job_pause_state(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# run_daily_page_quality
+# ---------------------------------------------------------------------------
+
+
+def _patch_page_quality_deps(monkeypatch, inspect_side_effect):
+    """Patch all DB/external deps for run_daily_page_quality tests."""
+    monkeypatch.setenv("RUNNERS_ENABLED", "1")
+    monkeypatch.setattr("src.db.scheduler_settings.is_job_paused", lambda *a, **kw: False)
+    monkeypatch.setattr("src.db.scheduled_job_runs.create_run", lambda *a, **kw: 1)
+    monkeypatch.setattr("src.db.scheduled_job_runs.finish_run", lambda *a, **kw: None)
+    monkeypatch.setattr("src.services.page_quality_inspector.inspect_one_page", inspect_side_effect)
+
+
+def test_run_daily_page_quality_records_run_in_db(monkeypatch):
+    """run_daily_page_quality calls create_run and finish_run so the run is visible in the UI."""
+    create_calls = []
+    finish_calls = []
+
+    monkeypatch.setenv("RUNNERS_ENABLED", "1")
+    monkeypatch.setattr("src.db.scheduler_settings.is_job_paused", lambda *a, **kw: False)
+    monkeypatch.setattr(
+        "src.db.scheduled_job_runs.create_run",
+        lambda job_id, **kw: create_calls.append(job_id) or 1,
+    )
+    monkeypatch.setattr(
+        "src.db.scheduled_job_runs.finish_run",
+        lambda run_id, **kw: finish_calls.append(kw),
+    )
+    monkeypatch.setattr(
+        "src.services.page_quality_inspector.inspect_one_page",
+        lambda: {
+            "result": "ok",
+            "source_page_id": 1,
+            "check_id": 1,
+            "html_char_count": 100,
+            "office_terms_count": 5,
+        },
+    )
+
+    from src.scheduled_tasks import run_daily_page_quality
+
+    run_daily_page_quality()
+
+    assert create_calls == ["daily_page_quality"]
+    assert len(finish_calls) == 1
+    assert finish_calls[0]["status"] == "complete"
+
+
+def test_run_daily_page_quality_skips_no_data_pages_and_retries(monkeypatch):
+    """When inspect_one_page returns no_data, run_daily_page_quality tries the next page."""
+    call_count = {"n": 0}
+
+    def _inspect():
+        call_count["n"] += 1
+        if call_count["n"] < 3:
+            return {
+                "result": "no_data",
+                "source_page_id": call_count["n"],
+                "check_id": call_count["n"],
+            }
+        return {
+            "result": "ok",
+            "source_page_id": 99,
+            "check_id": 99,
+            "html_char_count": 200,
+            "office_terms_count": 3,
+        }
+
+    finish_calls = []
+    monkeypatch.setenv("RUNNERS_ENABLED", "1")
+    monkeypatch.setattr("src.db.scheduler_settings.is_job_paused", lambda *a, **kw: False)
+    monkeypatch.setattr("src.db.scheduled_job_runs.create_run", lambda *a, **kw: 1)
+    monkeypatch.setattr(
+        "src.db.scheduled_job_runs.finish_run",
+        lambda run_id, **kw: finish_calls.append(kw),
+    )
+    monkeypatch.setattr("src.services.page_quality_inspector.inspect_one_page", _inspect)
+
+    from src.scheduled_tasks import run_daily_page_quality
+
+    run_daily_page_quality()
+
+    assert call_count["n"] == 3
+    assert finish_calls[0]["status"] == "complete"
+    assert finish_calls[0]["result"]["result"] == "ok"
+    assert finish_calls[0]["result"]["attempts"] == 3
+
+
+def test_run_daily_page_quality_records_skipped_no_data_after_max_attempts(monkeypatch):
+    """If all 10 pages have no data, result is skipped_no_data — no crash, no wasted tokens."""
+    from src.scheduled_tasks import _PAGE_QUALITY_MAX_ATTEMPTS
+
+    finish_calls = []
+    monkeypatch.setenv("RUNNERS_ENABLED", "1")
+    monkeypatch.setattr("src.db.scheduler_settings.is_job_paused", lambda *a, **kw: False)
+    monkeypatch.setattr("src.db.scheduled_job_runs.create_run", lambda *a, **kw: 1)
+    monkeypatch.setattr(
+        "src.db.scheduled_job_runs.finish_run",
+        lambda run_id, **kw: finish_calls.append(kw),
+    )
+    call_count = {"n": 0}
+
+    def _always_no_data():
+        call_count["n"] += 1
+        return {"result": "no_data", "source_page_id": call_count["n"], "check_id": call_count["n"]}
+
+    monkeypatch.setattr("src.services.page_quality_inspector.inspect_one_page", _always_no_data)
+
+    from src.scheduled_tasks import run_daily_page_quality
+
+    run_daily_page_quality()
+
+    assert call_count["n"] == _PAGE_QUALITY_MAX_ATTEMPTS
+    assert finish_calls[0]["result"]["result"] == "skipped_no_data"
+    assert finish_calls[0]["result"]["attempts"] == _PAGE_QUALITY_MAX_ATTEMPTS
+
+
+def test_run_daily_page_quality_stops_on_none_result(monkeypatch):
+    """If inspect_one_page returns None (error/no pages), stop immediately."""
+    call_count = {"n": 0}
+
+    def _inspect():
+        call_count["n"] += 1
+        return None
+
+    finish_calls = []
+    monkeypatch.setenv("RUNNERS_ENABLED", "1")
+    monkeypatch.setattr("src.db.scheduler_settings.is_job_paused", lambda *a, **kw: False)
+    monkeypatch.setattr("src.db.scheduled_job_runs.create_run", lambda *a, **kw: 1)
+    monkeypatch.setattr(
+        "src.db.scheduled_job_runs.finish_run",
+        lambda run_id, **kw: finish_calls.append(kw),
+    )
+    monkeypatch.setattr("src.services.page_quality_inspector.inspect_one_page", _inspect)
+
+    from src.scheduled_tasks import run_daily_page_quality
+
+    run_daily_page_quality()
+
+    assert call_count["n"] == 1
+    assert finish_calls[0]["result"]["result"] == "no_pages"
+
+
+# ---------------------------------------------------------------------------
 # Sentry subprocess instrumentation — verify real payload content
 # ---------------------------------------------------------------------------
 
