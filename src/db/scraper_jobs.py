@@ -6,6 +6,22 @@ Each job represents one run_scraper or preview run.  The table is the durable
 backing store; the routers keep an in-memory dict for live progress updates.
 
 Status lifecycle: running → complete | cancelled | error
+
+--- Two-table design ---
+
+scraper_jobs (this module)
+    Records every *user-triggered* job: full runs, delta runs, single-bio, preview, etc.
+    Supports queuing (status='queued'), live cancellation, and stale-job expiry.
+    Consumed by /data/scraper-jobs in the UI and by the in-memory run_scraper router.
+
+scheduled_job_runs (src/db/scheduled_job_runs.py)
+    Records every *APScheduler* job execution: daily_delta, insufficient_vitals, etc.
+    Rows are written by the scheduled task functions, never by the user-facing router.
+    Consumed by /data/scheduled-job-runs and /data/scheduled-jobs in the UI.
+
+The separation is intentional: user-triggered and scheduler-triggered runs have
+different lifecycles, queue semantics, and UI surfaces.  Merging them would require
+complex filtering on every query and obscure the queue-depth checks that gate new runs.
 """
 
 from __future__ import annotations
