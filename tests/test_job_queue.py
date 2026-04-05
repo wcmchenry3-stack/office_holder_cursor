@@ -336,7 +336,9 @@ class TestMaybeStartNextQueuedJob:
             # Should not raise, should not start a thread
             _maybe_start_next_queued_job()
             mock_thread.assert_not_called()
-            mock_update.assert_called_once_with("q1", "error", {"error": "malformed job_params_json"})
+            mock_update.assert_called_once_with(
+                "q1", "error", {"error": "malformed job_params_json"}
+            )
 
 
 # ---------------------------------------------------------------------------
