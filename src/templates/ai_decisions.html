@@ -44,15 +44,47 @@
     {% for row in rows %}
     <tr>
       <td><code>{{ row.decision_type }}</code></td>
-      <td>{{ row.subject or '—' }}</td>
+      <td>
+        {% if row.decision_type == 'page_quality' and row.subject and row.subject.startswith('http') %}
+          <a href="{{ row.subject }}" target="_blank" rel="noopener" style="word-break:break-all">{{ row.subject }}</a>
+        {% else %}
+          {{ row.subject or '—' }}
+        {% endif %}
+      </td>
       <td>
         {% set r = row.action_taken or '' %}
         {% if r in ('ok', 'reparse_ok', 'allowed') %}
           <span class="badge badge-ok">{{ r }}</span>
-        {% elif r in ('gh_issue', 'skipped', 'manual_review') %}
+        {% elif r in ('gh_issue', 'skipped', 'manual_review', 'no_data', 'skipped_no_data') %}
           <span class="badge badge-warn">{{ r }}</span>
+        {% elif r in ('fetch_failed', 'error') %}
+          <span class="badge badge-error">{{ r }}</span>
         {% else %}
           {{ r or '—' }}
+        {% endif %}
+        {% if row.ai_votes %}
+        <details style="margin-top:4px;font-size:0.85em">
+          <summary style="cursor:pointer;color:#666">votes ({{ row.ai_votes | length }})</summary>
+          <table style="margin-top:4px;border-collapse:collapse">
+            {% for v in row.ai_votes %}
+            <tr>
+              <td style="padding:2px 6px;font-weight:bold">{{ v.provider }}</td>
+              <td style="padding:2px 6px">
+                {% if v.is_valid is none or v.is_valid == none %}
+                  <span style="color:#888">unavailable{% if v.error %}: {{ v.error }}{% endif %}</span>
+                {% elif v.is_valid %}
+                  <span style="color:green">accurate</span>
+                {% else %}
+                  <span style="color:#c00">inaccurate</span>
+                {% endif %}
+              </td>
+              <td style="padding:2px 6px;color:#555">
+                {% if v.concerns %}{{ v.concerns | join('; ') }}{% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </table>
+        </details>
         {% endif %}
       </td>
       <td>{% if row.gh_issue_url %}<a href="{{ row.gh_issue_url }}" target="_blank" rel="noopener">issue</a>{% else %}—{% endif %}</td>

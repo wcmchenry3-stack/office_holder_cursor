@@ -465,3 +465,58 @@ class TestVoteOrdering:
             result = voter.vote("prompt", {})
         names = [v.provider for v in result.votes]
         assert names == sorted(names)
+
+
+# ---------------------------------------------------------------------------
+# System prompt alignment — Claude and Gemini must receive _SYSTEM_PROMPT
+# ---------------------------------------------------------------------------
+
+
+class TestSystemPromptAlignment:
+    """_vote_claude and _vote_gemini must pass the shared _SYSTEM_PROMPT so all
+    three providers evaluate the page quality question under the same framing.
+    Regression guard for Issue #274."""
+
+    def test_vote_claude_passes_shared_system_prompt(self):
+        from src.services.claude_client import DataQualityResult
+        from src.services.consensus_voter import _SYSTEM_PROMPT, _vote_claude
+
+        mock_client = MagicMock()
+        mock_client.check_data_quality.return_value = DataQualityResult(
+            is_valid=True, concerns=[], confidence="high"
+        )
+        with patch("src.services.claude_client.get_claude_client", return_value=mock_client):
+            _vote_claude("some prompt", {})
+
+        call_kwargs = mock_client.check_data_quality.call_args
+        assert call_kwargs is not None
+        passed_system = call_kwargs.kwargs.get("system_prompt") or (
+            call_kwargs.args[2] if len(call_kwargs.args) > 2 else None
+        )
+        assert (
+            passed_system == _SYSTEM_PROMPT
+        ), "Claude must use the shared consensus _SYSTEM_PROMPT, not the individual-record prompt"
+
+    def test_vote_gemini_passes_shared_system_prompt(self):
+        from src.services.consensus_voter import _SYSTEM_PROMPT, _vote_gemini
+
+        mock_researcher = MagicMock()
+        mock_researcher.check_data_quality.return_value = {
+            "is_valid": True,
+            "concerns": [],
+            "confidence": "high",
+        }
+        with patch(
+            "src.services.gemini_vitals_researcher.get_gemini_researcher",
+            return_value=mock_researcher,
+        ):
+            _vote_gemini("some prompt", {})
+
+        call_kwargs = mock_researcher.check_data_quality.call_args
+        assert call_kwargs is not None
+        passed_system = call_kwargs.kwargs.get("system_prompt") or (
+            call_kwargs.args[1] if len(call_kwargs.args) > 1 else None
+        )
+        assert (
+            passed_system == _SYSTEM_PROMPT
+        ), "Gemini must use the shared consensus _SYSTEM_PROMPT, not its vitals-research prompt"
