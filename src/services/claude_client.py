@@ -119,11 +119,19 @@ class ClaudeClient:
         self._client = anthropic.Anthropic(api_key=api_key)
         self._model = "claude-sonnet-4-20250514"
 
-    def check_data_quality(self, prompt: str, context: dict) -> DataQualityResult:
-        """Assess data quality for a record. Returns structured result."""
+    def check_data_quality(
+        self, prompt: str, context: dict, system_prompt: str | None = None
+    ) -> DataQualityResult:
+        """Assess data quality for a record or page. Returns structured result.
+
+        Args:
+            system_prompt: Override the default individual-record system prompt.
+                Pass consensus_voter._SYSTEM_PROMPT when used for page-level checks
+                so Claude uses the same framing as OpenAI and Gemini.
+        """
         try:
             user_prompt = self._build_prompt(prompt, context)
-            return self._call_claude(user_prompt)
+            return self._call_claude(user_prompt, system_prompt=system_prompt or _SYSTEM_PROMPT)
         except Exception:
             logger.exception("Claude data quality check failed")
             return DataQualityResult(is_valid=True, concerns=[], confidence="low")
@@ -136,7 +144,9 @@ class ClaudeClient:
                 lines.append(f"  {key}: {value}")
         return "\n".join(lines)
 
-    def _call_claude(self, user_prompt: str) -> DataQualityResult:
+    def _call_claude(
+        self, user_prompt: str, system_prompt: str = _SYSTEM_PROMPT
+    ) -> DataQualityResult:
         """Call Claude with exponential backoff on rate limit (HTTP 429).
 
         Retries up to 3 times, doubling the backoff delay each attempt (1 s → 2 s → 4 s).
@@ -149,7 +159,7 @@ class ClaudeClient:
                 response = self._client.messages.create(
                     model=self._model,
                     max_tokens=1024,
-                    system=_SYSTEM_PROMPT,
+                    system=system_prompt,
                     messages=[{"role": "user", "content": user_prompt}],
                 )
                 return self._parse_response(response)

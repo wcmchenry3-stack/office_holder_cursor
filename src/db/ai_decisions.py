@@ -83,7 +83,8 @@ SELECT
     CAST(record_id AS TEXT) AS subject,
     check_type      AS action_taken,
     github_issue_url AS gh_issue_url,
-    created_at
+    created_at,
+    NULL            AS ai_votes
 FROM data_quality_reports
 
 UNION ALL
@@ -93,18 +94,21 @@ SELECT
     COALESCE(wiki_url, office_name, 'unknown') AS subject,
     error_type      AS action_taken,
     github_issue_url AS gh_issue_url,
-    created_at
+    created_at,
+    NULL            AS ai_votes
 FROM parse_error_reports
 
 UNION ALL
 
 SELECT
     'page_quality'  AS decision_type,
-    CAST(source_page_id AS TEXT) AS subject,
-    result          AS action_taken,
-    gh_issue_url,
-    created_at
-FROM page_quality_checks
+    COALESCE(sp.url, CAST(pqc.source_page_id AS TEXT)) AS subject,
+    pqc.result      AS action_taken,
+    pqc.gh_issue_url,
+    pqc.created_at,
+    pqc.ai_votes
+FROM page_quality_checks pqc
+LEFT JOIN source_pages sp ON sp.id = pqc.source_page_id
 
 UNION ALL
 
@@ -113,7 +117,8 @@ SELECT
     COALESCE(full_name, wiki_url, 'unknown') AS subject,
     result          AS action_taken,
     gh_issue_url,
-    created_at
+    created_at,
+    NULL            AS ai_votes
 FROM suspect_record_flags
 """
 
@@ -135,7 +140,7 @@ def _build_where(decision_type: str | None, result: str | None) -> tuple[str, li
 def _fetch_union(conn, decision_type, result, offset, limit) -> list[dict]:
     where, params = _build_where(decision_type, result)
     sql = f"""
-        SELECT decision_type, subject, action_taken, gh_issue_url, created_at
+        SELECT decision_type, subject, action_taken, gh_issue_url, created_at, ai_votes
         FROM ({_UNION_SQL}) AS combined
         {where}
         ORDER BY created_at DESC
@@ -143,8 +148,13 @@ def _fetch_union(conn, decision_type, result, offset, limit) -> list[dict]:
     """
     params += [limit, offset]
     cur = conn.execute(sql, params)
-    keys = ["decision_type", "subject", "action_taken", "gh_issue_url", "created_at"]
-    return [dict(zip(keys, row)) for row in cur.fetchall()]
+    keys = ["decision_type", "subject", "action_taken", "gh_issue_url", "created_at", "ai_votes"]
+    rows = []
+    for row in cur.fetchall():
+        d = dict(zip(keys, row))
+        d["ai_votes"] = _safe_json(d["ai_votes"])
+        rows.append(d)
+    return rows
 
 
 def _fetch_count(conn, decision_type, result) -> int:

@@ -57,6 +57,13 @@ CREATE TABLE IF NOT EXISTS parse_error_reports (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS source_pages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    url TEXT NOT NULL UNIQUE,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    last_quality_checked_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS page_quality_checks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     source_page_id INTEGER NOT NULL DEFAULT 1,
@@ -179,6 +186,7 @@ class TestListAiDecisions:
             "action_taken",
             "gh_issue_url",
             "created_at",
+            "ai_votes",
         }
 
     def test_unknown_type_filter_returns_empty(self, tmp_path):
