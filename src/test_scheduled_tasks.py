@@ -153,6 +153,99 @@ def test_run_daily_delta_skips_when_runners_disabled(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# Active-job skip logic
+# ---------------------------------------------------------------------------
+
+
+def test_run_daily_delta_skips_when_active_job_running(monkeypatch):
+    """run_daily_delta returns early without calling the subprocess when a job is active."""
+    monkeypatch.setenv("RUNNERS_ENABLED", "1")
+    monkeypatch.setattr("src.db.scheduler_settings.is_job_paused", lambda *a, **kw: False)
+    monkeypatch.setattr("src.db.scraper_jobs.count_active_jobs", lambda: 1)
+    monkeypatch.setattr("src.scheduled_tasks._expire_stale_jobs_with_email", lambda: None)
+
+    called = {"subprocess": False}
+
+    def _should_not_run(**kwargs):
+        called["subprocess"] = True
+        return {}
+
+    monkeypatch.setattr("src.scheduled_tasks._run_daily_delta_in_subprocess", _should_not_run)
+
+    from src.scheduled_tasks import run_daily_delta
+
+    run_daily_delta()
+
+    assert not called["subprocess"]
+
+
+def test_run_daily_delta_calls_expire_before_active_check(monkeypatch):
+    """_expire_stale_jobs_with_email is called before the active-job count check."""
+    monkeypatch.setenv("RUNNERS_ENABLED", "1")
+    monkeypatch.setattr("src.db.scheduler_settings.is_job_paused", lambda *a, **kw: False)
+
+    call_order: list[str] = []
+
+    monkeypatch.setattr(
+        "src.scheduled_tasks._expire_stale_jobs_with_email",
+        lambda: call_order.append("expire"),
+    )
+    # Return 1 active job (triggers skip) AND record the call order
+    monkeypatch.setattr(
+        "src.db.scraper_jobs.count_active_jobs",
+        lambda: call_order.append("count") or 1,
+    )
+
+    from src.scheduled_tasks import run_daily_delta
+
+    run_daily_delta()
+
+    assert "expire" in call_order
+    assert "count" in call_order
+    assert call_order.index("expire") < call_order.index("count")
+
+
+# ---------------------------------------------------------------------------
+# run_daily_maintenance
+# ---------------------------------------------------------------------------
+
+
+def test_run_daily_maintenance_always_calls_expiry(monkeypatch):
+    """run_daily_maintenance calls _expire_stale_jobs_with_email even when RUNNERS_ENABLED=0."""
+    monkeypatch.setenv("RUNNERS_ENABLED", "0")
+
+    called = {"expire": False}
+    monkeypatch.setattr(
+        "src.scheduled_tasks._expire_stale_jobs_with_email",
+        lambda: called.__setitem__("expire", True),
+    )
+
+    from src.scheduled_tasks import run_daily_maintenance
+
+    run_daily_maintenance()
+
+    assert called["expire"]
+
+
+def test_run_daily_maintenance_ignores_job_pause_state(monkeypatch):
+    """run_daily_maintenance never checks is_job_paused — it always runs."""
+    pause_checked = {"checked": False}
+
+    def _should_not_check(*a, **kw):
+        pause_checked["checked"] = True
+        return True  # paused — but maintenance should still run
+
+    monkeypatch.setattr("src.db.scheduler_settings.is_job_paused", _should_not_check)
+    monkeypatch.setattr("src.scheduled_tasks._expire_stale_jobs_with_email", lambda: None)
+
+    from src.scheduled_tasks import run_daily_maintenance
+
+    run_daily_maintenance()
+
+    assert not pause_checked["checked"]
+
+
+# ---------------------------------------------------------------------------
 # Sentry subprocess instrumentation — verify real payload content
 # ---------------------------------------------------------------------------
 
