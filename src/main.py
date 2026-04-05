@@ -18,6 +18,8 @@ import sys
 import threading
 import uuid
 
+import sentry_sdk
+
 logger = logging.getLogger(__name__)
 
 import requests
@@ -108,8 +110,6 @@ async def lifespan(app: FastAPI):
         init_db()
     except Exception as e:
         import traceback
-
-        import sentry_sdk
 
         sentry_sdk.capture_exception(e)
         traceback.print_exc()
@@ -259,7 +259,9 @@ async def auth_google(request: Request):
 async def auth_google_callback(request: Request):
     try:
         token = await _oauth.google.authorize_access_token(request)
-    except Exception:
+    except Exception as e:
+        sentry_sdk.capture_exception(e)
+        logger.error("OAuth callback failed: %s", e, exc_info=True)
         return HTMLResponse(
             "<h2>Authentication failed. <a href='/login'>Try again</a>.</h2>", status_code=400
         )
