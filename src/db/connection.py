@@ -278,6 +278,7 @@ def _init_postgres() -> None:
         _run_pg_migrations(conn)
 
         from .scheduler_settings import seed_scheduler_settings
+
         seed_scheduler_settings(conn=conn)
 
         # migrate_to_fk() is deliberately NOT called — PostgreSQL starts with the final schema
@@ -575,6 +576,7 @@ def _init_sqlite(path: Path | None = None) -> None:
         seed_wikipedia_mos(conn=conn)
         db_test_scripts.seed_db_from_manifest_if_empty(conn=conn)
         from .scheduler_settings import seed_scheduler_settings
+
         seed_scheduler_settings(conn=conn)
         conn.commit()
     finally:
