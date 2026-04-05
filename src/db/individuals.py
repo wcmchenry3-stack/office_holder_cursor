@@ -3,7 +3,7 @@
 from datetime import date
 from typing import Any
 
-from .connection import get_connection, is_postgres, _DB_UNIQUE_ERRORS
+from .connection import get_connection, is_postgres, _DB_UNIQUE_ERRORS, _PGSavepointContext
 from .utils import _row_to_dict
 from . import office_terms as db_office_terms
 
@@ -127,24 +127,30 @@ def upsert_individual(data: dict[str, Any], conn=None) -> int:
             if own_conn:
                 conn.commit()
             return row["id"]
+        # Use a savepoint so a race-condition UniqueViolation on the INSERT only rolls
+        # back this sub-unit — not the caller's entire transaction.  Without this, any
+        # UniqueViolation puts a PostgreSQL shared connection into the aborted state and
+        # every subsequent statement fails with InFailedSqlTransaction.
+        # SQLite: _PGSavepointContext is a no-op (IntegrityError doesn't abort the conn).
         try:
-            cur = conn.execute(
-                """INSERT INTO individuals (wiki_url, page_path, full_name, birth_date, death_date, birth_date_imprecise, death_date_imprecise, birth_place, death_place, is_dead_link)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
-                (
-                    wiki_url,
-                    data.get("page_path"),
-                    data.get("full_name"),
-                    data.get("birth_date"),
-                    data.get("death_date"),
-                    bd_imprecise,
-                    dd_imprecise,
-                    data.get("birth_place"),
-                    data.get("death_place"),
-                    is_dead_link,
-                ),
-            )
-            ind_id = cur.fetchone()["id"]
+            with _PGSavepointContext(conn, "_upsert_individual"):
+                cur = conn.execute(
+                    """INSERT INTO individuals (wiki_url, page_path, full_name, birth_date, death_date, birth_date_imprecise, death_date_imprecise, birth_place, death_place, is_dead_link)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+                    (
+                        wiki_url,
+                        data.get("page_path"),
+                        data.get("full_name"),
+                        data.get("birth_date"),
+                        data.get("death_date"),
+                        bd_imprecise,
+                        dd_imprecise,
+                        data.get("birth_place"),
+                        data.get("death_place"),
+                        is_dead_link,
+                    ),
+                )
+                ind_id = cur.fetchone()["id"]
             conn.execute("UPDATE individuals SET bio_batch = id %% 7 WHERE id = %s", (ind_id,))
             # New individuals start as living by default; recompute may downgrade to not living
             _recompute_is_living_for_individual(ind_id, conn)
@@ -152,7 +158,8 @@ def upsert_individual(data: dict[str, Any], conn=None) -> int:
                 conn.commit()
             return ind_id
         except _DB_UNIQUE_ERRORS:
-            # Race condition: another insert beat us — fall back to UPDATE path
+            # Race condition: another insert beat us — fall back to UPDATE path.
+            # The savepoint above ensures the outer transaction is still healthy here.
             cur = conn.execute("SELECT id FROM individuals WHERE wiki_url = %s", (wiki_url,))
             row = cur.fetchone()
             if row is None:
