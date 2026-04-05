@@ -759,3 +759,70 @@ def test_row_matches_filter_non_int_column_defaults_to_no_filter():
     row = _bs4_row(["Alice"])
     tc = {"row_filter_column": "not-an-int", "row_filter_criteria": "Senator"}
     assert offices._row_matches_filter(row, tc) is True
+
+
+# ---------------------------------------------------------------------------
+# Log-level classification: skipped-row paths emit WARNING
+# ---------------------------------------------------------------------------
+
+
+def _table_html_with_short_row() -> str:
+    """HTML table whose second row has too few cells to satisfy table_rows=4."""
+    return (
+        "<table>"
+        "<tr><th>Name</th><th>Party</th><th>Start</th><th>End</th></tr>"
+        "<tr><td>Only one cell</td></tr>"
+        "</table>"
+    )
+
+
+def test_short_row_logs_warning(caplog):
+    """parse_table_row should emit a WARNING when a row has too few cells."""
+    import logging
+
+    offices = _offices()
+    html = _table_html_with_short_row()
+    table_config = {
+        "url": "https://en.example.org/wiki/Test",
+        "table_no": 1,
+        "table_rows": 4,
+        "link_column": 0,
+        "party_column": 1,
+        "term_start_column": 2,
+        "term_end_column": 3,
+        "district_column": 0,
+        "dynamic_parse": False,
+        "read_columns_right_to_left": False,
+        "find_date_in_infobox": False,
+        "years_only": False,
+        "parse_rowspan": False,
+        "consolidate_rowspan_terms": False,
+        "rep_link": False,
+        "party_link": False,
+        "alt_links": [],
+        "alt_link_include_main": False,
+        "use_full_page_for_table": False,
+        "term_dates_merged": False,
+        "party_ignore": False,
+        "district_ignore": False,
+        "district_at_large": False,
+        "ignore_non_links": False,
+        "infobox_role_key": "",
+        "row_filter_column": None,
+        "row_filter_criteria": "",
+        "run_dynamic_parse": False,
+    }
+    office_details = {
+        "office_country": "United States",
+        "office_level": "Federal",
+        "office_branch": "Legislative",
+        "office_department": "",
+        "office_name": "Test Office",
+        "office_state": "",
+        "office_notes": "",
+    }
+    with caplog.at_level(logging.WARNING, logger="src.scraper.table_parser"):
+        offices.process_table(html, table_config, office_details, "https://en.example.org/wiki/Test", [])
+    assert any("issue with table rows" in r.message for r in caplog.records), (
+        "Expected a WARNING about too-few rows"
+    )
