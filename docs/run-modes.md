@@ -284,6 +284,57 @@ Infobox fetches are the slowest part of a run (one HTTP request per individual).
 
 ---
 
+## `page_quality` (Scheduled Only)
+
+**Trigger:** APScheduler cron job `daily_page_quality` — default 09:00 UTC. Not exposed as a user-selectable run mode in the UI.
+
+**Purpose:** Verify that the office holder data we have parsed matches the current Wikipedia page. Uses `ConsensusVoter` (3-AI parallel vote) to detect drift between our DB records and live Wikipedia content.
+
+**Guard conditions (run is skipped entirely if any fail):**
+- `RUNNERS_ENABLED` env var is truthy
+- `daily_page_quality` job is not paused in `scheduler_settings`
+
+**Algorithm (`run_daily_page_quality()` in `src/scheduled_tasks.py`):**
+1. Pick one `source_page` using unchecked-first LRU order (pages never checked are prioritized; among checked, oldest `last_quality_checked_at` first)
+2. Fetch current Wikipedia HTML via the REST API (first 50,000 chars)
+3. Load our parsed `office_terms` + `individuals` for that page from DB
+4. If no records exist (`no_data`): skip this page and try the next one — up to 10 attempts (`_PAGE_QUALITY_MAX_ATTEMPTS`)
+5. Build a prompt with the Wikipedia HTML and our JSON records
+6. Call `ConsensusVoter` — three providers vote in parallel (OpenAI, Gemini, Claude)
+7. Act on the verdict:
+   - **VALID (all agree accurate):** mark `source_pages.last_quality_checked_at`, log `result='ok'`
+   - **INVALID (all agree inaccurate):** trigger AI re-parse via `AIOfficeBuilder`; re-vote:
+     - Re-vote VALID → `result='reparse_ok'`
+     - Re-vote INVALID → create GitHub issue with `page-quality` label → `result='gh_issue'`
+   - **DISAGREEMENT / INSUFFICIENT_QUORUM:** create GitHub issue for manual review → `result='manual_review'`
+   - **Fetch failure:** log `result='fetch_failed'`
+
+**Result codes written to `scheduled_job_runs.result_json`:**
+
+| `result` | Meaning |
+|---|---|
+| `ok` | Consensus valid — data matches Wikipedia |
+| `reparse_ok` | Was invalid; re-parsed and re-voted valid |
+| `gh_issue` | Invalid after re-parse; GitHub issue opened |
+| `manual_review` | Mixed/quorum-fail verdict; GitHub issue opened for human review |
+| `fetch_failed` | Could not fetch Wikipedia HTML |
+| `no_data` | Single-page result only; outer loop retries |
+| `skipped_no_data` | All 10 attempts returned `no_data`; run recorded but no AI called |
+| `no_pages` | No enabled `source_pages` exist |
+
+The `attempts` field in `result_json` always reflects how many source pages were tried before a final result was reached.
+
+**DB writes:**
+- `page_quality_checks`: one row per page inspected (verdict, result, concerns JSON)
+- `source_pages.last_quality_checked_at`: updated after a successful inspection
+- `scheduled_job_runs`: one row created at start, updated with final result on finish
+
+**Env vars required:** `OPENAI_API_KEY`, `GEMINI_OFFICE_HOLDER`, `ANTHROPIC_API_KEY` (consensus voter uses all three). `GITHUB_TOKEN` + `GITHUB_REPO` required only if a GitHub issue needs to be opened. Missing keys cause that provider to be skipped; quorum rules still apply.
+
+**Cron time:** Configured via `cron_daily_page_quality_hour` / `cron_daily_page_quality_minute` in `app_settings` (see `docs/operational-settings.md`). Change takes effect on next restart.
+
+---
+
 ## Progress Callback
 
 `run_with_db()` accepts an optional `progress_callback(phase, current, total, message, extra_dict)` callable. The UI polls a job endpoint that reads from the in-memory job store updated by this callback.
