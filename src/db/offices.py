@@ -1651,9 +1651,7 @@ def update_office(
                 raise ValueError("Duplicate table_no within office")
             page_data = get_page(page_id, conn)
             if page_data and not page_data.get("allow_reuse_tables"):
-                other_nos = _table_nos_on_page(
-                    conn, page_id, exclude_office_details_id=office_id
-                )
+                other_nos = _table_nos_on_page(conn, page_id, exclude_office_details_id=office_id)
                 if set(table_nos) & other_nos:
                     raise ValueError(
                         "Table numbers must be unique per page when 'Allow reuse of tables' is unchecked"
@@ -1716,28 +1714,18 @@ def update_office(
                             int(tc.get("district_column", 0)),
                             int(tc.get("filter_column", 0)),
                             (tc.get("filter_criteria") or "").strip(),
+                            (1 if tc.get("dynamic_parse") in (True, 1, "TRUE", "true", "1") else 0),
                             (
                                 1
-                                if tc.get("dynamic_parse") in (True, 1, "TRUE", "true", "1")
+                                if tc.get("read_right_to_left") in (True, 1, "TRUE", "true", "1")
                                 else 0
                             ),
                             (
                                 1
-                                if tc.get("read_right_to_left")
-                                in (True, 1, "TRUE", "true", "1")
+                                if tc.get("find_date_in_infobox") in (True, 1, "TRUE", "true", "1")
                                 else 0
                             ),
-                            (
-                                1
-                                if tc.get("find_date_in_infobox")
-                                in (True, 1, "TRUE", "true", "1")
-                                else 0
-                            ),
-                            (
-                                1
-                                if tc.get("parse_rowspan") in (True, 1, "TRUE", "true", "1")
-                                else 0
-                            ),
+                            (1 if tc.get("parse_rowspan") in (True, 1, "TRUE", "true", "1") else 0),
                             1 if tc.get("rep_link") in (True, 1, "TRUE", "true", "1") else 0,
                             1 if tc.get("party_link") in (True, 1, "TRUE", "true", "1") else 0,
                             1 if tc.get("enabled") in (True, 1, "TRUE", "true", "1") else 0,
@@ -1749,11 +1737,7 @@ def update_office(
                             ),
                             1 if tc.get("years_only") in (True, 1, "TRUE", "true", "1") else 0,
                             1 if t_merged else 0,
-                            (
-                                1
-                                if tc.get("party_ignore") in (True, 1, "TRUE", "true", "1")
-                                else 0
-                            ),
+                            (1 if tc.get("party_ignore") in (True, 1, "TRUE", "true", "1") else 0),
                             (
                                 1
                                 if tc.get("district_ignore") in (True, 1, "TRUE", "true", "1")
@@ -1806,28 +1790,18 @@ def update_office(
                             int(tc.get("district_column", 0)),
                             int(tc.get("filter_column", 0)),
                             (tc.get("filter_criteria") or "").strip(),
+                            (1 if tc.get("dynamic_parse") in (True, 1, "TRUE", "true", "1") else 0),
                             (
                                 1
-                                if tc.get("dynamic_parse") in (True, 1, "TRUE", "true", "1")
+                                if tc.get("read_right_to_left") in (True, 1, "TRUE", "true", "1")
                                 else 0
                             ),
                             (
                                 1
-                                if tc.get("read_right_to_left")
-                                in (True, 1, "TRUE", "true", "1")
+                                if tc.get("find_date_in_infobox") in (True, 1, "TRUE", "true", "1")
                                 else 0
                             ),
-                            (
-                                1
-                                if tc.get("find_date_in_infobox")
-                                in (True, 1, "TRUE", "true", "1")
-                                else 0
-                            ),
-                            (
-                                1
-                                if tc.get("parse_rowspan") in (True, 1, "TRUE", "true", "1")
-                                else 0
-                            ),
+                            (1 if tc.get("parse_rowspan") in (True, 1, "TRUE", "true", "1") else 0),
                             1 if tc.get("rep_link") in (True, 1, "TRUE", "true", "1") else 0,
                             1 if tc.get("party_link") in (True, 1, "TRUE", "true", "1") else 0,
                             1 if tc.get("enabled") in (True, 1, "TRUE", "true", "1") else 0,
@@ -1839,11 +1813,7 @@ def update_office(
                             ),
                             1 if tc.get("years_only") in (True, 1, "TRUE", "true", "1") else 0,
                             1 if t_merged else 0,
-                            (
-                                1
-                                if tc.get("party_ignore") in (True, 1, "TRUE", "true", "1")
-                                else 0
-                            ),
+                            (1 if tc.get("party_ignore") in (True, 1, "TRUE", "true", "1") else 0),
                             (
                                 1
                                 if tc.get("district_ignore") in (True, 1, "TRUE", "true", "1")
@@ -2226,14 +2196,10 @@ def delete_office(office_id: int, conn: Any | None = None) -> bool:
     if own_conn:
         conn = get_connection()
     try:
-        row = conn.execute(
-            "SELECT id FROM office_details WHERE id = %s", (office_id,)
-        ).fetchone()
+        row = conn.execute("SELECT id FROM office_details WHERE id = %s", (office_id,)).fetchone()
         if not row:
             return False
-        conn.execute(
-            "DELETE FROM office_table_config WHERE office_details_id = %s", (office_id,)
-        )
+        conn.execute("DELETE FROM office_table_config WHERE office_details_id = %s", (office_id,))
         conn.execute("DELETE FROM alt_links WHERE office_details_id = %s", (office_id,))
         conn.execute("DELETE FROM office_terms WHERE office_details_id = %s", (office_id,))
         conn.execute("DELETE FROM office_details WHERE id = %s", (office_id,))
