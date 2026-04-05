@@ -588,6 +588,66 @@ def _run_pg_migrations(conn) -> None:
         " updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())",
     )
 
+    # Migrate alt_links off the legacy offices table (issue #311).
+    # Step 1 — backfill office_details_id for any pre-M14 rows that still carry
+    # only office_id.  The mapping is: offices.url → source_pages.url →
+    # office_details.source_page_id, with offices.name = office_details.name.
+    # Abort if any rows cannot be resolved so that no link paths are silently lost.
+    _apply(
+        "pg_alt_links_backfill_office_details_id",
+        """
+        DO $$
+        DECLARE before_count INTEGER;
+        DECLARE unmapped INTEGER;
+        BEGIN
+            SELECT COUNT(*) INTO before_count
+            FROM alt_links WHERE office_id IS NOT NULL AND office_details_id IS NULL;
+            RAISE NOTICE 'pg_alt_links_backfill: % rows to backfill', before_count;
+
+            UPDATE alt_links al
+            SET office_details_id = od.id
+            FROM offices o
+            JOIN source_pages sp ON sp.url = o.url
+            JOIN office_details od ON od.source_page_id = sp.id AND od.name = o.name
+            WHERE al.office_id = o.id AND al.office_details_id IS NULL;
+
+            SELECT COUNT(*) INTO unmapped
+            FROM alt_links WHERE office_id IS NOT NULL AND office_details_id IS NULL;
+            IF unmapped > 0 THEN
+                RAISE EXCEPTION
+                    'pg_alt_links_backfill: % rows could not be mapped to office_details — aborting',
+                    unmapped;
+            END IF;
+        END $$
+        """,
+    )
+    # Step 2 — drop the old UNIQUE(office_id, link_path) constraint and index,
+    # then drop the office_id column itself.
+    _apply(
+        "pg_alt_links_drop_unique_constraint",
+        "ALTER TABLE alt_links DROP CONSTRAINT IF EXISTS alt_links_office_id_link_path_key",
+    )
+    _apply(
+        "pg_alt_links_drop_office_id_index",
+        "DROP INDEX IF EXISTS idx_alt_links_office_id",
+    )
+    _apply(
+        "pg_alt_links_drop_office_id",
+        "ALTER TABLE alt_links DROP COLUMN IF EXISTS office_id",
+    )
+    # Step 3 — enforce NOT NULL and add the new unique constraint.
+    # If any office_details_id is still NULL at this point the SET NOT NULL will
+    # fail, acting as a final assertion that the backfill was complete.
+    _apply(
+        "pg_alt_links_office_details_id_not_null",
+        "ALTER TABLE alt_links ALTER COLUMN office_details_id SET NOT NULL",
+    )
+    _apply(
+        "pg_alt_links_add_unique_office_details_link_path",
+        "ALTER TABLE alt_links ADD CONSTRAINT alt_links_office_details_id_link_path_key"
+        " UNIQUE (office_details_id, link_path)",
+    )
+
 
 def _sqlite_add_columns_if_missing(conn) -> None:
     """Idempotently add new columns to pre-existing SQLite tables.

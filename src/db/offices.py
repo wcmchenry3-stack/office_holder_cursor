@@ -2355,7 +2355,6 @@ def delete_office(office_id: int, conn: Any | None = None) -> bool:
             conn.execute("DELETE FROM office_details WHERE id = %s", (office_id,))
             conn.commit()
             return True
-        conn.execute("DELETE FROM alt_links WHERE office_id = %s", (office_id,))
         cur = conn.execute("DELETE FROM offices WHERE id = %s", (office_id,))
         conn.commit()
         return cur.rowcount > 0
@@ -2424,19 +2423,13 @@ def deduplicate_source_pages_by_url(conn: Any | None = None) -> dict[str, Any]:
 
 
 def list_alt_links(office_id: int, conn: Any | None = None) -> list[str]:
-    """Return list of link_path strings for the office (office_details_id in hierarchy)."""
+    """Return list of link_path strings for the office (office_details_id)."""
     own_conn = conn is None
     if own_conn:
         conn = get_connection()
     try:
-        if _use_hierarchy(conn):
-            cur = conn.execute(
-                "SELECT link_path FROM alt_links WHERE office_details_id = %s ORDER BY id",
-                (office_id,),
-            )
-            return [row["link_path"] for row in cur.fetchall()]
         cur = conn.execute(
-            "SELECT link_path FROM alt_links WHERE office_id = %s ORDER BY id",
+            "SELECT link_path FROM alt_links WHERE office_details_id = %s ORDER BY id",
             (office_id,),
         )
         return [row["link_path"] for row in cur.fetchall()]
@@ -2446,29 +2439,19 @@ def list_alt_links(office_id: int, conn: Any | None = None) -> list[str]:
 
 
 def set_alt_links_for_office(office_id: int, paths: list[str], conn: Any | None = None) -> None:
-    """Replace all alt links for the office (office_details_id in hierarchy)."""
+    """Replace all alt links for the office (office_details_id)."""
     own_conn = conn is None
     if own_conn:
         conn = get_connection()
     try:
-        if _use_hierarchy(conn):
-            conn.execute("DELETE FROM alt_links WHERE office_details_id = %s", (office_id,))
-            for raw in paths:
-                path = _normalize_alt_link_path(raw)
-                if path:
-                    conn.execute(
-                        "INSERT INTO alt_links (office_details_id, link_path) VALUES (%s, %s) ON CONFLICT DO NOTHING",
-                        (office_id, path),
-                    )
-        else:
-            conn.execute("DELETE FROM alt_links WHERE office_id = %s", (office_id,))
-            for raw in paths:
-                path = _normalize_alt_link_path(raw)
-                if path:
-                    conn.execute(
-                        "INSERT INTO alt_links (office_id, link_path) VALUES (%s, %s) ON CONFLICT DO NOTHING",
-                        (office_id, path),
-                    )
+        conn.execute("DELETE FROM alt_links WHERE office_details_id = %s", (office_id,))
+        for raw in paths:
+            path = _normalize_alt_link_path(raw)
+            if path:
+                conn.execute(
+                    "INSERT INTO alt_links (office_details_id, link_path) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+                    (office_id, path),
+                )
         conn.commit()
     finally:
         if own_conn:

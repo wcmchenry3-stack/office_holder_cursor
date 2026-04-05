@@ -235,15 +235,13 @@ CREATE TABLE IF NOT EXISTS offices (
 );
 
 -- Alt links: one row per office alternate infobox link (offices may have many)
--- office_id is nullable: hierarchy entries use office_details_id and leave office_id NULL
 CREATE TABLE IF NOT EXISTS alt_links (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    office_id INTEGER REFERENCES offices(id),
-    office_details_id INTEGER REFERENCES office_details(id),
+    office_details_id INTEGER NOT NULL REFERENCES office_details(id),
     link_path TEXT NOT NULL,
-    UNIQUE(office_id, link_path)
+    UNIQUE(office_details_id, link_path)
 );
-CREATE INDEX IF NOT EXISTS idx_alt_links_office_id ON alt_links(office_id);
+CREATE INDEX IF NOT EXISTS idx_alt_links_office_details_id ON alt_links(office_details_id);
 
 -- Parties: party list for resolving party links (before office_terms for FK)
 CREATE TABLE IF NOT EXISTS parties (
@@ -703,15 +701,13 @@ CREATE TABLE IF NOT EXISTS offices (
 );
 
 -- Alt links
--- office_id is nullable: hierarchy entries use office_details_id and leave office_id NULL
 CREATE TABLE IF NOT EXISTS alt_links (
     id SERIAL PRIMARY KEY,
-    office_id INTEGER REFERENCES offices(id),
-    office_details_id INTEGER REFERENCES office_details(id),
+    office_details_id INTEGER NOT NULL REFERENCES office_details(id),
     link_path TEXT NOT NULL,
-    UNIQUE(office_id, link_path)
+    UNIQUE(office_details_id, link_path)
 );
-CREATE INDEX IF NOT EXISTS idx_alt_links_office_id ON alt_links(office_id);
+CREATE INDEX IF NOT EXISTS idx_alt_links_office_details_id ON alt_links(office_details_id);
 
 -- Parties
 CREATE TABLE IF NOT EXISTS parties (
