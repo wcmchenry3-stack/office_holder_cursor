@@ -116,3 +116,32 @@ form { max-width: 640px; }
   margin-left: 0.75rem;
   color: var(--text-muted);
 }
+
+/* Badges — used across multiple pages */
+.badge { display:inline-flex;align-items:center;padding:0.15em 0.5em;border-radius:3px;font-size:0.8rem;font-weight:600; }
+.badge-ok    { background:rgba(47,158,68,0.2);  color:#6fcf97; }
+.badge-warn  { background:rgba(240,140,0,0.2);  color:#ffd8a8; }
+.badge-error { background:rgba(224,49,49,0.2);  color:#ff8787; }
+.badge-grey  { background:rgba(100,100,120,0.3);color:#9a9ba8; }
+.badge-blue  { background:rgba(92,124,250,0.2); color:#748ffc; }
+.badge-green { background:rgba(47,158,68,0.2);  color:#6fcf97; }
+.badge-red   { background:rgba(224,49,49,0.2);  color:#ff8787; }
+.badge-amber { background:rgba(240,140,0,0.2);  color:#ffd8a8; }
+
+/* Scheduled job run status colors */
+.status-complete { color:#6fcf97; font-weight:600; }
+.status-error    { color:#ff8787; font-weight:600; }
+.status-running  { color:#ffd8a8; font-weight:600; }
+
+/* Error snippet in tables */
+.error-snippet { margin:0; padding:0.25rem 0.5rem; background:var(--bg3); border:1px solid var(--border); border-radius:3px; font-size:0.75rem; white-space:pre-wrap; word-break:break-all; max-height:6rem; overflow-y:auto; color:#ff8787; }
+
+/* Error banner for failed runs */
+.error-banner {
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--danger);
+  background: rgba(224, 49, 49, 0.15);
+  color: #ff8787;
+  border-radius: 4px;
+  margin-bottom: 1rem;
+}
