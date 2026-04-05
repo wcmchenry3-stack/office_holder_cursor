@@ -147,3 +147,72 @@ def test_run_daily_delta_skips_when_disabled(monkeypatch):
     run_daily_delta()
 
     assert called["subprocess"] is False
+
+
+# ---------------------------------------------------------------------------
+# Sentry subprocess instrumentation — verify real payload content
+# ---------------------------------------------------------------------------
+
+
+import subprocess
+import json as _json
+from unittest.mock import patch, MagicMock
+
+
+def _make_completed_process(stdout: str, returncode: int = 0) -> "subprocess.CompletedProcess":
+    cp = MagicMock(spec=subprocess.CompletedProcess)
+    cp.returncode = returncode
+    cp.stdout = stdout
+    cp.stderr = ""
+    return cp
+
+
+def test_daily_delta_subprocess_payload_contains_sentry_instrumentation():
+    """_run_daily_delta_in_subprocess payload must init Sentry, set context, and capture exceptions."""
+    captured_payload: list[str] = []
+
+    fake_result = _json.dumps({"office_count": 1, "terms_parsed": 0})
+
+    def _fake_run(cmd, **kwargs):
+        # cmd is [sys.executable, "-c", payload]
+        captured_payload.append(cmd[2])
+        return _make_completed_process(stdout=fake_result)
+
+    with patch("src.scheduled_tasks.subprocess.run", side_effect=_fake_run):
+        from src.scheduled_tasks import _run_daily_delta_in_subprocess
+
+        _run_daily_delta_in_subprocess(today_batch=3)
+
+    assert len(captured_payload) == 1
+    payload = captured_payload[0]
+    assert "sentry_sdk.init(" in payload
+    assert 'set_tag("subprocess_job", "daily_delta")' in payload
+    assert '"bio_batch": 3' in payload
+    assert "sentry_sdk.capture_exception(_exc)" in payload
+    assert "sentry_sdk.flush(timeout=5)" in payload
+
+
+def test_run_mode_subprocess_payload_contains_sentry_instrumentation():
+    """_run_mode_in_subprocess payload must init Sentry, set context, and capture exceptions."""
+    for mode in ("delta_insufficient_vitals", "gemini_vitals_research"):
+        captured_payload: list[str] = []
+
+        fake_result = _json.dumps({"office_count": 0})
+
+        def _fake_run(cmd, **kwargs):
+            captured_payload.append(cmd[2])
+            return _make_completed_process(stdout=fake_result)
+
+        with patch("src.scheduled_tasks.subprocess.run", side_effect=_fake_run):
+            from src.scheduled_tasks import _run_mode_in_subprocess
+
+            _run_mode_in_subprocess(run_mode=mode, today_batch=15)
+
+        assert len(captured_payload) == 1, f"expected one subprocess call for mode {mode}"
+        payload = captured_payload[0]
+        assert "sentry_sdk.init(" in payload, f"missing sentry_sdk.init for mode {mode}"
+        assert f'set_tag("subprocess_job", "{mode}")' in payload
+        assert f'"run_mode": "{mode}"' in payload
+        assert '"bio_batch": 15' in payload
+        assert "sentry_sdk.capture_exception(_exc)" in payload
+        assert "sentry_sdk.flush(timeout=5)" in payload
