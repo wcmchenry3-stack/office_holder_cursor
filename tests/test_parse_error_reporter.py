@@ -673,3 +673,189 @@ def test_issue_body_contains_required_sections(tmp_sqlite, monkeypatch):
     assert "## HTML Snippet" in body
     assert "## Traceback" in body
     assert "parse-error:" in body  # fingerprint label present
+
+
+# ---------------------------------------------------------------------------
+# Sentry instrumentation
+# ---------------------------------------------------------------------------
+
+
+def test_flush_captures_exception_to_sentry_on_inner_failure(monkeypatch):
+    """flush() calls sentry_sdk.capture_exception when _flush_inner raises."""
+    monkeypatch.setenv("GITHUB_TOKEN", "ghp_test")
+
+    captured: list[Exception] = []
+
+    reporter = ParseErrorReporter()
+    reporter.collect(_make_failure())
+
+    with patch(
+        "src.services.parse_error_reporter.sentry_sdk.capture_exception",
+        side_effect=lambda e: captured.append(e),
+    ), patch("src.services.parse_error_reporter.sentry_sdk.add_breadcrumb"), patch(
+        "src.services.github_client.get_github_client",
+        side_effect=RuntimeError("forced inner failure"),
+    ):
+        reporter.flush()  # must not raise
+
+    assert len(captured) == 1
+    assert isinstance(captured[0], RuntimeError)
+
+
+def test_flush_adds_dedup_breadcrumb(tmp_sqlite, monkeypatch):
+    """flush() adds a breadcrumb after the DB dedup stage."""
+    monkeypatch.setenv("GITHUB_TOKEN", "ghp_test")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+
+    breadcrumbs: list[str] = []
+
+    mock_github = MagicMock()
+    mock_github.find_open_issue_by_label.return_value = None
+
+    mock_ai_builder = MagicMock()
+    mock_ai_builder.analyze_parse_failures.return_value = []
+
+    reporter = ParseErrorReporter()
+    reporter.collect(_make_failure())
+
+    conn = _wrap(tmp_sqlite)
+    with patch("src.services.github_client.get_github_client", return_value=mock_github), patch(
+        "src.services.orchestrator.get_ai_builder", return_value=mock_ai_builder
+    ), patch(
+        "src.services.parse_error_reporter.sentry_sdk.add_breadcrumb",
+        side_effect=lambda **kw: breadcrumbs.append(kw["message"]),
+    ):
+        reporter.flush(conn=conn)
+
+    dedup_crumbs = [m for m in breadcrumbs if "dedup check" in m]
+    assert dedup_crumbs, f"Expected a dedup breadcrumb; got: {breadcrumbs}"
+    assert "1 new fingerprint" in dedup_crumbs[0]
+
+
+def test_flush_adds_openai_batch_breadcrumb(tmp_sqlite, monkeypatch):
+    """flush() adds a breadcrumb before sending groups to OpenAI."""
+    monkeypatch.setenv("GITHUB_TOKEN", "ghp_test")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+
+    breadcrumbs: list[str] = []
+
+    mock_github = MagicMock()
+    mock_github.find_open_issue_by_label.return_value = None
+
+    mock_ai_builder = MagicMock()
+    mock_ai_builder.analyze_parse_failures.return_value = []
+
+    reporter = ParseErrorReporter()
+    reporter.collect(_make_failure())
+
+    conn = _wrap(tmp_sqlite)
+    with patch("src.services.github_client.get_github_client", return_value=mock_github), patch(
+        "src.services.orchestrator.get_ai_builder", return_value=mock_ai_builder
+    ), patch(
+        "src.services.parse_error_reporter.sentry_sdk.add_breadcrumb",
+        side_effect=lambda **kw: breadcrumbs.append(kw["message"]),
+    ):
+        reporter.flush(conn=conn)
+
+    openai_crumbs = [m for m in breadcrumbs if "OpenAI" in m]
+    assert openai_crumbs, f"Expected an OpenAI breadcrumb; got: {breadcrumbs}"
+    assert "1 group" in openai_crumbs[0]
+
+
+def test_flush_adds_github_issue_breadcrumb(tmp_sqlite, monkeypatch):
+    """flush() adds a breadcrumb before each GitHub issue creation."""
+    monkeypatch.setenv("GITHUB_TOKEN", "ghp_test")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+
+    breadcrumbs: list[str] = []
+
+    failure = _make_failure()
+    fp = compute_fingerprint(failure.function_name, failure.error_type, failure.wiki_url)
+    analysis = _make_analysis(fp)
+
+    mock_github = MagicMock()
+    mock_github.find_open_issue_by_label.return_value = None
+    mock_github.create_issue.return_value = {"number": 1, "html_url": "https://..."}
+
+    mock_ai_builder = MagicMock()
+    mock_ai_builder.analyze_parse_failures.return_value = [analysis]
+
+    reporter = ParseErrorReporter()
+    reporter.collect(failure)
+
+    conn = _wrap(tmp_sqlite)
+    with patch("src.services.github_client.get_github_client", return_value=mock_github), patch(
+        "src.services.orchestrator.get_ai_builder", return_value=mock_ai_builder
+    ), patch(
+        "src.services.parse_error_reporter.sentry_sdk.add_breadcrumb",
+        side_effect=lambda **kw: breadcrumbs.append(kw["message"]),
+    ):
+        reporter.flush(conn=conn)
+
+    gh_crumbs = [m for m in breadcrumbs if "creating GitHub issue" in m]
+    assert gh_crumbs, f"Expected a GitHub issue breadcrumb; got: {breadcrumbs}"
+    assert fp[:8] in gh_crumbs[0]
+
+
+def test_openai_failure_captured_to_sentry(tmp_sqlite, monkeypatch):
+    """capture_exception() is called when OpenAI analysis raises."""
+    monkeypatch.setenv("GITHUB_TOKEN", "ghp_test")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+
+    captured: list[Exception] = []
+
+    mock_github = MagicMock()
+    mock_github.find_open_issue_by_label.return_value = None
+
+    mock_ai_builder = MagicMock()
+    mock_ai_builder.analyze_parse_failures.side_effect = RuntimeError("OpenAI 500")
+
+    reporter = ParseErrorReporter()
+    reporter.collect(_make_failure())
+
+    conn = _wrap(tmp_sqlite)
+    with patch("src.services.github_client.get_github_client", return_value=mock_github), patch(
+        "src.services.orchestrator.get_ai_builder", return_value=mock_ai_builder
+    ), patch(
+        "src.services.parse_error_reporter.sentry_sdk.capture_exception",
+        side_effect=lambda e: captured.append(e),
+    ), patch(
+        "src.services.parse_error_reporter.sentry_sdk.add_breadcrumb"
+    ):
+        reporter.flush(conn=conn)  # must not raise
+
+    assert any(isinstance(e, RuntimeError) and "OpenAI 500" in str(e) for e in captured)
+
+
+def test_github_create_failure_captured_to_sentry(tmp_sqlite, monkeypatch):
+    """capture_exception() is called when GitHub issue creation raises."""
+    monkeypatch.setenv("GITHUB_TOKEN", "ghp_test")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+
+    captured: list[Exception] = []
+
+    failure = _make_failure()
+    fp = compute_fingerprint(failure.function_name, failure.error_type, failure.wiki_url)
+
+    mock_github = MagicMock()
+    mock_github.find_open_issue_by_label.return_value = None
+    mock_github.create_issue.side_effect = RuntimeError("GitHub 422")
+
+    mock_ai_builder = MagicMock()
+    mock_ai_builder.analyze_parse_failures.return_value = [_make_analysis(fp)]
+
+    reporter = ParseErrorReporter()
+    reporter.collect(failure)
+
+    conn = _wrap(tmp_sqlite)
+    with patch("src.services.github_client.get_github_client", return_value=mock_github), patch(
+        "src.services.orchestrator.get_ai_builder", return_value=mock_ai_builder
+    ), patch(
+        "src.services.parse_error_reporter.sentry_sdk.capture_exception",
+        side_effect=lambda e: captured.append(e),
+    ), patch(
+        "src.services.parse_error_reporter.sentry_sdk.add_breadcrumb"
+    ):
+        reporter.flush(conn=conn)  # must not raise
+
+    assert any(isinstance(e, RuntimeError) and "GitHub 422" in str(e) for e in captured)
