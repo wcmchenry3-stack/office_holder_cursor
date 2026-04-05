@@ -6,6 +6,27 @@ All modes are triggered via `run_with_db(run_mode=..., ...)` in `src/scraper/run
 
 ---
 
+## UI Run Mode Aliases
+
+The `/run` page exposes several UI-only run mode strings that are translated to internal `run_with_db` modes before execution. The mapping lives in `src/routers/run_scraper.py`:
+
+| UI `run_mode` value | Internal mode | Notes |
+|---|---|---|
+| `delta` | `delta` | Default |
+| `full` | `full` | |
+| `delta_live` | `delta` | Also sets `run_bio=True` (force-refresh living persons' bios) |
+| `full_no_bio` | `full` | `run_office_bio=False` — skips bio fetches entirely |
+| `delta_no_bio` | `delta` | `run_office_bio=False` — skips bio fetches entirely |
+| `full_no_bio_refresh` | `full` | `run_office_bio=False` + `refresh_table_cache=True` |
+| `delta_no_bio_refresh` | `delta` | `run_office_bio=False` + `refresh_table_cache=True` |
+| `populate_category_terms` | `delta` | Resolves `office_category_id` → `office_id_list`; runs delta over those offices only |
+| `selected_bios_by_category` | `selected_bios` | Resolves `office_category_id` → `individual_id_list` filtered by `living_only` / `valid_page_paths_only` |
+| All others (e.g. `single_bio`, `bios_only`, `selected_bios`, `category_bios`, `gemini_vitals_research`, `dead_link_research`, `data_quality`) | pass-through | Passed directly to `run_with_db` |
+
+`refresh_table_cache=True` deletes all cached HTML for the affected offices so the next fetch is guaranteed live.
+
+---
+
 ## `delta` (default)
 
 **Trigger:** Default mode; used for routine updates.
@@ -332,6 +353,47 @@ The `attempts` field in `result_json` always reflects how many source pages were
 **Env vars required:** `OPENAI_API_KEY`, `GEMINI_OFFICE_HOLDER`, `ANTHROPIC_API_KEY` (consensus voter uses all three). `GITHUB_TOKEN` + `GITHUB_REPO` required only if a GitHub issue needs to be opened. Missing keys cause that provider to be skipped; quorum rules still apply.
 
 **Cron time:** Configured via `cron_daily_page_quality_hour` / `cron_daily_page_quality_minute` in `app_settings` (see `docs/operational-settings.md`). Change takes effect on next restart.
+
+---
+
+## Bio Batch Partitioning
+
+`delta_insufficient_vitals` and `gemini_vitals_research` use a day-of-month partition to spread work across a 30-day cycle:
+
+```python
+today_batch = ctx.bio_batch if ctx.bio_batch is not None else date.today().day % 30
+```
+
+- Day 1 → batch 1, day 2 → batch 2, …, day 30 → batch 0, day 31 → batch 1, etc.
+- Each individual's `id % 30` determines its batch number.
+- On a given day only the matching subset of individuals is processed.
+- After each fetch (success or failure), `insufficient_vitals_checked_at` / `gemini_research_checked_at` is stamped with the current UTC time so the individual is skipped for the next ~30 days regardless of outcome.
+- The `bio_batch` field on `_RunContext` is set to `None` for scheduled runs (uses today's date) but can be overridden for testing by passing `bio_batch=<int>` to `run_with_db()`.
+
+**Why 30 partitions?** Each partition processes roughly 1/30 of the individuals pool. Combined with the cooldown stamp, this prevents re-processing the same individuals each day while ensuring the full pool rotates through once per month.
+
+---
+
+## Job Queue Behavior
+
+When a job is submitted via `POST /api/run` and another job is already running:
+
+1. The handler checks both the in-memory `_run_job_store` and the `scraper_jobs` DB table for active (running) jobs — the DB check covers jobs started before the last server restart.
+2. If a running job exists, the new job is **queued** in `scraper_jobs` (status `"queued"`) rather than started immediately.
+3. The queue depth is compared against `max_queued_jobs` (from `app_settings`, default 1). If `queue_depth >= max_queued_jobs`, the request returns `{"queued": false, "reason": "queue_full"}` with HTTP 202.
+4. When the running job finishes (complete, cancelled, or error), `_maybe_start_next_queued_job()` pops the oldest queued job and starts it in a worker thread.
+5. Queued jobs that exceed `expiry_hours_queued` (default 12h) are expired by `expire_stale_jobs()` and never start.
+
+**Result shape for queued submissions:**
+- Accepted into queue: `{"queued": true, "job_id": "<uuid>"}` — HTTP 202
+- Queue full: `{"queued": false, "reason": "queue_full"}` — HTTP 202
+- Job started immediately: `{"job_id": "<uuid>", "queued": false}` — HTTP 202
+
+**Operational settings** (`app_settings` table — see `docs/operational-settings.md`):
+- `max_queued_jobs` — how many jobs can queue behind the active job (default 1)
+- `expiry_hours_queued` — hours before a queued job is auto-expired (default 12)
+- `expiry_hours_running_full` — hours before a `full` run is considered stale (default 24)
+- `expiry_hours_running_other` — hours before any other run mode is considered stale (default 8)
 
 ---
 
