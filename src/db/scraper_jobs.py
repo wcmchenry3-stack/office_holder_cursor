@@ -164,8 +164,8 @@ def pop_next_queued_job(conn=None) -> dict | None:
             return None
         job_id = row[0]
         conn.execute(
-            "UPDATE scraper_jobs SET status = %s, updated_at = NOW() WHERE id = %s",
-            ("running", job_id),
+            "UPDATE scraper_jobs SET status = %s, updated_at = %s WHERE id = %s",
+            ("running", _now_iso(), job_id),
         )
         if own_conn:
             conn.commit()
