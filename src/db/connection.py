@@ -616,7 +616,7 @@ def _run_pg_migrations(conn) -> None:
 
             SELECT COUNT(*) INTO before_count
             FROM alt_links WHERE office_id IS NOT NULL AND office_details_id IS NULL;
-            RAISE NOTICE 'pg_alt_links_backfill: %% rows to backfill', before_count;
+            RAISE NOTICE 'pg_alt_links_backfill: % rows to backfill', before_count;
 
             UPDATE alt_links al
             SET office_details_id = od.id
@@ -629,7 +629,7 @@ def _run_pg_migrations(conn) -> None:
             FROM alt_links WHERE office_id IS NOT NULL AND office_details_id IS NULL;
             IF unmapped > 0 THEN
                 RAISE EXCEPTION
-                    'pg_alt_links_backfill: %% rows could not be mapped to office_details — aborting',
+                    'pg_alt_links_backfill: % rows could not be mapped to office_details — aborting',
                     unmapped;
             END IF;
         END $$
@@ -660,7 +660,7 @@ def _run_pg_migrations(conn) -> None:
             ALTER TABLE alt_links ALTER COLUMN office_details_id SET NOT NULL;
         EXCEPTION
             WHEN others THEN
-                RAISE NOTICE 'pg_alt_links_not_null: already enforced, skipping (%%)', SQLERRM;
+                RAISE NOTICE 'pg_alt_links_not_null: already enforced, skipping (%)', SQLERRM;
         END $$
         """,
     )
