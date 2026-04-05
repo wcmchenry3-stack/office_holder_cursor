@@ -2,24 +2,65 @@
 {% block title %}Individuals – Office Holder{% endblock %}
 {% block content %}
 <h1>Individuals</h1>
+
+<form method="get" action="/data/individuals">
+  <input type="hidden" name="limit" value="{{ limit }}">
+  <input type="text" name="q" value="{{ q }}" placeholder="Search name…" aria-label="Search name">
+  <select name="is_living" aria-label="Living status">
+    <option value="" {% if is_living is none %}selected{% endif %}>All</option>
+    <option value="1" {% if is_living == 1 %}selected{% endif %}>Living</option>
+    <option value="0" {% if is_living == 0 %}selected{% endif %}>Deceased</option>
+  </select>
+  <label>
+    <input type="checkbox" name="is_dead_link" value="1" {% if is_dead_link == 1 %}checked{% endif %}>
+    Dead links only
+  </label>
+  <button type="submit">Filter</button>
+  {% if q or is_living is not none or is_dead_link %}
+  <a href="/data/individuals?limit={{ limit }}">Clear filters</a>
+  {% endif %}
+</form>
+
 {% if individuals %}
 <table>
   <thead>
-    <tr><th>Full name</th><th>Wiki URL</th><th>Birth</th><th>Death</th></tr>
+    <tr>
+      <th>Full name</th>
+      <th>Wiki URL</th>
+      <th>Living</th>
+      <th>Dead link</th>
+      <th>Birth</th>
+      <th>Death</th>
+      <th>Birth place</th>
+      <th>Death place</th>
+    </tr>
   </thead>
   <tbody>
     {% for i in individuals %}
     <tr>
       <td>{{ i.full_name or '—' }}</td>
       <td>{% if i.wiki_url %}<a href="{{ i.wiki_url }}" target="_blank" rel="noopener">{{ i.wiki_url[:50] }}…</a>{% else %}—{% endif %}</td>
+      <td>{% if i.is_living %}Yes{% elif i.is_living == 0 %}No{% else %}—{% endif %}</td>
+      <td>{% if i.is_dead_link %}&#x26A0;{% else %}—{% endif %}</td>
       <td>{{ i.birth_date or '—' }}{% if i.birth_date_imprecise %} <span class="imprecise-hint">(imprecise)</span>{% endif %}</td>
       <td>{{ i.death_date or '—' }}{% if i.death_date_imprecise %} <span class="imprecise-hint">(imprecise)</span>{% endif %}</td>
+      <td>{{ i.birth_place or '—' }}</td>
+      <td>{{ i.death_place or '—' }}</td>
     </tr>
     {% endfor %}
   </tbody>
 </table>
-<p><small>Showing up to 100. Add limit/offset query params for more.</small></p>
+
+<nav aria-label="Pagination">
+  {% if offset > 0 %}
+  <a href="?q={{ q }}&amp;{% if is_living is not none %}is_living={{ is_living }}&amp;{% endif %}{% if is_dead_link %}is_dead_link=1&amp;{% endif %}limit={{ limit }}&amp;offset={{ [offset - limit, 0]|max }}">← Prev</a>
+  {% endif %}
+  {% if individuals|length == limit %}
+  <a href="?q={{ q }}&amp;{% if is_living is not none %}is_living={{ is_living }}&amp;{% endif %}{% if is_dead_link %}is_dead_link=1&amp;{% endif %}limit={{ limit }}&amp;offset={{ offset + limit }}">Next →</a>
+  {% endif %}
+</nav>
+<p><small>Showing {{ individuals|length }} record(s) (offset {{ offset }}, limit {{ limit }}).</small></p>
 {% else %}
-<p>No individuals yet. Run the scraper with “Run biography” checked.</p>
+<p>No individuals match the current filters.</p>
 {% endif %}
 {% endblock %}

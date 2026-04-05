@@ -16,10 +16,28 @@ router = APIRouter()
 
 @router.get("/data/individuals", response_class=HTMLResponse)
 async def data_individuals(
-    request: Request, limit: int = Query(100, le=500), offset: int = Query(0)
+    request: Request,
+    limit: int = Query(100, le=500),
+    offset: int = Query(0),
+    q: str | None = Query(None),
+    is_living: int | None = Query(None),
+    is_dead_link: int | None = Query(None),
 ):
-    individuals = db_individuals.list_individuals(limit=limit, offset=offset)
-    return templates.TemplateResponse(request, "individuals.html", {"individuals": individuals})
+    individuals = db_individuals.list_individuals(
+        limit=limit, offset=offset, q=q, is_living=is_living, is_dead_link=is_dead_link
+    )
+    return templates.TemplateResponse(
+        request,
+        "individuals.html",
+        {
+            "individuals": individuals,
+            "q": q or "",
+            "is_living": is_living,
+            "is_dead_link": is_dead_link,
+            "limit": limit,
+            "offset": offset,
+        },
+    )
 
 
 @router.get("/data/office-terms", response_class=HTMLResponse)
