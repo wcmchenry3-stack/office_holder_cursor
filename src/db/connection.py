@@ -31,6 +31,47 @@ def is_postgres() -> bool:
     return bool(os.environ.get("DATABASE_URL"))
 
 
+class _PGSavepointContext:
+    """Context manager for a PostgreSQL savepoint within a shared transaction.
+
+    Use this to wrap an INSERT that may raise a UniqueViolation inside a function
+    that accepts a caller-owned connection.  Without a savepoint, any error puts
+    the entire outer transaction in an aborted state and all subsequent statements
+    fail with InFailedSqlTransaction.
+
+    SQLite does NOT need this: an IntegrityError on SQLite does not abort the
+    surrounding connection.  The context manager is a no-op when is_postgres()
+    is False so the same calling code works for both backends.
+
+    Usage::
+
+        with _PGSavepointContext(conn, "_my_insert"):
+            conn.execute("INSERT ...")
+            # If UniqueViolation is raised here the savepoint is rolled back;
+            # the outer transaction continues unharmed.
+        # After the with-block the savepoint is released (success path).
+    """
+
+    def __init__(self, conn, name: str) -> None:
+        self._conn = conn
+        self._name = name
+        self._active = is_postgres()
+
+    def __enter__(self) -> "_PGSavepointContext":
+        if self._active:
+            self._conn.execute(f"SAVEPOINT {self._name}")
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
+        if self._active:
+            if exc_type is None:
+                self._conn.execute(f"RELEASE SAVEPOINT {self._name}")
+            else:
+                self._conn.execute(f"ROLLBACK TO SAVEPOINT {self._name}")
+                self._conn.execute(f"RELEASE SAVEPOINT {self._name}")
+        return False  # never suppress the exception
+
+
 def get_db_path() -> Path:
     """Return the SQLite DB path (test use only). Uses OFFICE_HOLDER_DB_PATH env var when set."""
     env_path = os.environ.get("OFFICE_HOLDER_DB_PATH")
