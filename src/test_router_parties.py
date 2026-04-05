@@ -60,18 +60,18 @@ def party_id(db_path):
 
 
 def test_parties_list_returns_200(client):
-    resp = client.get("/parties")
+    resp = client.get("/refs/parties")
     assert resp.status_code == 200
     assert "text/html" in resp.headers["content-type"]
 
 
 def test_parties_list_with_saved_flag(client):
-    resp = client.get("/parties?saved=1")
+    resp = client.get("/refs/parties?saved=1")
     assert resp.status_code == 200
 
 
 def test_parties_list_with_imported_flag(client):
-    resp = client.get("/parties?imported=1&count=3&errors=0")
+    resp = client.get("/refs/parties?imported=1&count=3&errors=0")
     assert resp.status_code == 200
 
 
@@ -81,7 +81,7 @@ def test_parties_list_with_imported_flag(client):
 
 
 def test_parties_import_page_returns_200(client):
-    resp = client.get("/parties/import")
+    resp = client.get("/refs/parties/import")
     assert resp.status_code == 200
     assert "text/html" in resp.headers["content-type"]
 
@@ -92,7 +92,7 @@ def test_parties_import_page_returns_200(client):
 
 
 def test_parties_import_no_file_returns_form_with_error(client):
-    resp = client.post("/parties/import", data={"mode": "append"})
+    resp = client.post("/refs/parties/import", data={"mode": "append"})
     assert resp.status_code == 200
     assert "text/html" in resp.headers["content-type"]
 
@@ -101,7 +101,7 @@ def test_parties_import_non_csv_returns_form_with_error(client):
     from io import BytesIO
 
     resp = client.post(
-        "/parties/import",
+        "/refs/parties/import",
         data={"mode": "append"},
         files={"csv_file": ("parties.txt", BytesIO(b"Country,Party name\n"), "text/plain")},
     )
@@ -114,7 +114,7 @@ def test_parties_import_non_csv_returns_form_with_error(client):
 
 
 def test_party_new_form_returns_200(client):
-    resp = client.get("/parties/new")
+    resp = client.get("/refs/parties/new")
     assert resp.status_code == 200
     assert "text/html" in resp.headers["content-type"]
 
@@ -126,7 +126,7 @@ def test_party_new_form_returns_200(client):
 
 def test_party_create_redirects_on_success(client):
     resp = client.post(
-        "/parties/new",
+        "/refs/parties/new",
         data={
             "country_id": "1",
             "party_name": "New Test Party",
@@ -142,13 +142,13 @@ def test_party_create_redirects_on_success(client):
 
 
 def test_party_edit_page_returns_200(client, party_id):
-    resp = client.get(f"/parties/{party_id}")
+    resp = client.get(f"/refs/parties/{party_id}")
     assert resp.status_code == 200
     assert "text/html" in resp.headers["content-type"]
 
 
 def test_party_edit_page_404_for_unknown(client):
-    resp = client.get("/parties/999999")
+    resp = client.get("/refs/parties/999999")
     assert resp.status_code == 404
 
 
@@ -159,7 +159,7 @@ def test_party_edit_page_404_for_unknown(client):
 
 def test_party_update_redirects_on_success(client, party_id):
     resp = client.post(
-        f"/parties/{party_id}",
+        f"/refs/parties/{party_id}",
         data={
             "country_id": "1",
             "party_name": "Updated Party",
@@ -179,7 +179,7 @@ def test_party_delete_redirects(client, db_path):
     pid = db_parties.create_party(
         {"country_id": 1, "party_name": "Delete Me", "party_link": "/wiki/Delete_Me"}
     )
-    resp = client.post(f"/parties/{pid}/delete")
+    resp = client.post(f"/refs/parties/{pid}/delete")
     assert resp.status_code in (302, 200)
 
 
