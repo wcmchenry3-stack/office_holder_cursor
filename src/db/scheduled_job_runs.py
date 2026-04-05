@@ -104,7 +104,7 @@ def get_last_run_for_job(job_name: str, conn=None) -> dict | None:
             "SELECT id, job_name, started_at, finished_at, status, duration_s, error"
             " FROM scheduled_job_runs"
             " WHERE job_name = %s"
-            " ORDER BY started_at DESC LIMIT 1",
+            " ORDER BY started_at DESC, id DESC LIMIT 1",
             (job_name,),
         ).fetchone()
         if row is None:
@@ -127,7 +127,7 @@ def list_recent_runs(days: int = 90, conn=None) -> list[dict]:
             "SELECT id, job_name, started_at, finished_at, status, duration_s, result_json, error"
             " FROM scheduled_job_runs"
             " WHERE started_at >= %s"
-            " ORDER BY started_at DESC",
+            " ORDER BY started_at DESC, id DESC",
             (cutoff,),
         ).fetchall()
         cols = (
