@@ -11,19 +11,48 @@ from . import office_terms as db_office_terms
 def list_individuals(
     limit: int = 500,
     offset: int = 0,
+    q: str | None = None,
+    is_living: int | None = None,
+    is_dead_link: int | None = None,
     conn=None,
 ) -> list[dict[str, Any]]:
-    """Return individuals with optional pagination."""
+    """Return individuals with optional pagination and filters.
+
+    Args:
+        q: Partial case-insensitive match on full_name.
+        is_living: 1 for living, 0 for deceased.
+        is_dead_link: 1 to show only dead-link records.
+    """
     own_conn = conn is None
     if own_conn:
         conn = get_connection()
     try:
+        where_clauses: list[str] = []
+        params: list[Any] = []
+
+        if q:
+            if is_postgres():
+                where_clauses.append("full_name ILIKE %s")
+            else:
+                where_clauses.append("full_name LIKE %s")
+            params.append(f"%{q}%")
+
+        if is_living is not None:
+            where_clauses.append("is_living = %s")
+            params.append(is_living)
+
+        if is_dead_link is not None:
+            where_clauses.append("is_dead_link = %s")
+            params.append(is_dead_link)
+
+        where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+
         cur = conn.execute(
-            """SELECT id, wiki_url, page_path, full_name, birth_date, death_date,
+            f"""SELECT id, wiki_url, page_path, full_name, birth_date, death_date,
                       birth_date_imprecise, death_date_imprecise,
-                      birth_place, death_place, is_dead_link, created_at, updated_at
-               FROM individuals ORDER BY full_name LIMIT %s OFFSET %s""",
-            (limit, offset),
+                      birth_place, death_place, is_living, is_dead_link, created_at, updated_at
+               FROM individuals {where_sql} ORDER BY full_name LIMIT %s OFFSET %s""",
+            (*params, limit, offset),
         )
         return [_row_to_dict(r) for r in cur.fetchall()]
     finally:
