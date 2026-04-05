@@ -192,49 +192,7 @@ CREATE INDEX IF NOT EXISTS idx_office_table_config_office_details_id ON office_t
 CREATE INDEX IF NOT EXISTS idx_office_table_config_enabled ON office_table_config(enabled);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_office_table_config_office_table_no ON office_table_config(office_details_id, table_no);
 
--- Offices: office definitions (what we scrape) — link by FK to countries, states, levels, branches (legacy, migrated to hierarchy)
-CREATE TABLE IF NOT EXISTS offices (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    country_id INTEGER NOT NULL REFERENCES countries(id),
-    state_id INTEGER REFERENCES states(id),
-    level_id INTEGER REFERENCES levels(id),
-    branch_id INTEGER REFERENCES branches(id),
-    department TEXT,
-    name TEXT NOT NULL,
-    enabled INTEGER NOT NULL DEFAULT 1,
-    notes TEXT,
-    url TEXT NOT NULL,
-    table_no INTEGER NOT NULL DEFAULT 1,
-    table_rows INTEGER NOT NULL DEFAULT 4,
-    link_column INTEGER NOT NULL DEFAULT 1,
-    party_column INTEGER NOT NULL DEFAULT 0,
-    term_start_column INTEGER NOT NULL DEFAULT 4,
-    term_end_column INTEGER NOT NULL DEFAULT 5,
-    district_column INTEGER NOT NULL DEFAULT 0,
-    filter_column INTEGER NOT NULL DEFAULT 0,
-    filter_criteria TEXT NOT NULL DEFAULT '',
-    dynamic_parse INTEGER NOT NULL DEFAULT 1,
-    read_right_to_left INTEGER NOT NULL DEFAULT 0,
-    find_date_in_infobox INTEGER NOT NULL DEFAULT 0,
-    parse_rowspan INTEGER NOT NULL DEFAULT 0,
-    consolidate_rowspan_terms INTEGER NOT NULL DEFAULT 0,
-    rep_link INTEGER NOT NULL DEFAULT 0,
-    party_link INTEGER NOT NULL DEFAULT 0,
-    alt_link_include_main INTEGER NOT NULL DEFAULT 0,
-    use_full_page_for_table INTEGER NOT NULL DEFAULT 0,
-    years_only INTEGER NOT NULL DEFAULT 0,
-    term_dates_merged INTEGER NOT NULL DEFAULT 0,
-    party_ignore INTEGER NOT NULL DEFAULT 0,
-    district_ignore INTEGER NOT NULL DEFAULT 0,
-    district_at_large INTEGER NOT NULL DEFAULT 0,
-    ignore_non_links INTEGER NOT NULL DEFAULT 0,
-    remove_duplicates INTEGER NOT NULL DEFAULT 0,
-    infobox_role_key TEXT NOT NULL DEFAULT '',
-    infobox_role_key_filter_id INTEGER REFERENCES infobox_role_key_filter(id),
-    created_at TEXT DEFAULT (datetime('now'))
-);
-
--- Alt links: one row per office alternate infobox link (offices may have many)
+-- Alt links: one row per office_details alternate infobox link
 CREATE TABLE IF NOT EXISTS alt_links (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     office_details_id INTEGER NOT NULL REFERENCES office_details(id),
@@ -370,11 +328,7 @@ CREATE TABLE IF NOT EXISTS data_quality_reports (
 );
 CREATE INDEX IF NOT EXISTS idx_data_quality_reports_fingerprint ON data_quality_reports(fingerprint);
 
--- Indexes on offices/parties/office_terms FK columns
-CREATE INDEX IF NOT EXISTS idx_offices_country_id ON offices(country_id);
-CREATE INDEX IF NOT EXISTS idx_offices_state_id ON offices(state_id);
-CREATE INDEX IF NOT EXISTS idx_offices_level_id ON offices(level_id);
-CREATE INDEX IF NOT EXISTS idx_offices_branch_id ON offices(branch_id);
+-- Indexes on parties/office_terms FK columns
 CREATE INDEX IF NOT EXISTS idx_parties_country_id ON parties(country_id);
 CREATE INDEX IF NOT EXISTS idx_office_terms_party_id ON office_terms(party_id);
 
@@ -461,10 +415,6 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 # For SQLite (tests) these are now embedded in SCHEMA_SQL above; this constant is still used
 # by _init_postgres() which passes it separately after the main schema.
 OFFICES_PARTIES_INDEX_SQL = """
-CREATE INDEX IF NOT EXISTS idx_offices_country_id ON offices(country_id);
-CREATE INDEX IF NOT EXISTS idx_offices_state_id ON offices(state_id);
-CREATE INDEX IF NOT EXISTS idx_offices_level_id ON offices(level_id);
-CREATE INDEX IF NOT EXISTS idx_offices_branch_id ON offices(branch_id);
 CREATE INDEX IF NOT EXISTS idx_parties_country_id ON parties(country_id);
 CREATE INDEX IF NOT EXISTS idx_office_terms_party_id ON office_terms(party_id);
 """
@@ -657,48 +607,6 @@ CREATE TABLE IF NOT EXISTS office_table_config (
 CREATE INDEX IF NOT EXISTS idx_office_table_config_office_details_id ON office_table_config(office_details_id);
 CREATE INDEX IF NOT EXISTS idx_office_table_config_enabled ON office_table_config(enabled);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_office_table_config_office_table_no ON office_table_config(office_details_id, table_no);
-
--- Offices (legacy — new data goes through source_pages → office_details → office_table_config)
-CREATE TABLE IF NOT EXISTS offices (
-    id SERIAL PRIMARY KEY,
-    country_id INTEGER NOT NULL REFERENCES countries(id),
-    state_id INTEGER REFERENCES states(id),
-    level_id INTEGER REFERENCES levels(id),
-    branch_id INTEGER REFERENCES branches(id),
-    department TEXT,
-    name TEXT NOT NULL,
-    enabled INTEGER NOT NULL DEFAULT 1,
-    notes TEXT,
-    url TEXT NOT NULL,
-    table_no INTEGER NOT NULL DEFAULT 1,
-    table_rows INTEGER NOT NULL DEFAULT 4,
-    link_column INTEGER NOT NULL DEFAULT 1,
-    party_column INTEGER NOT NULL DEFAULT 0,
-    term_start_column INTEGER NOT NULL DEFAULT 4,
-    term_end_column INTEGER NOT NULL DEFAULT 5,
-    district_column INTEGER NOT NULL DEFAULT 0,
-    filter_column INTEGER NOT NULL DEFAULT 0,
-    filter_criteria TEXT NOT NULL DEFAULT '',
-    dynamic_parse INTEGER NOT NULL DEFAULT 1,
-    read_right_to_left INTEGER NOT NULL DEFAULT 0,
-    find_date_in_infobox INTEGER NOT NULL DEFAULT 0,
-    parse_rowspan INTEGER NOT NULL DEFAULT 0,
-    consolidate_rowspan_terms INTEGER NOT NULL DEFAULT 0,
-    rep_link INTEGER NOT NULL DEFAULT 0,
-    party_link INTEGER NOT NULL DEFAULT 0,
-    alt_link_include_main INTEGER NOT NULL DEFAULT 0,
-    use_full_page_for_table INTEGER NOT NULL DEFAULT 0,
-    years_only INTEGER NOT NULL DEFAULT 0,
-    term_dates_merged INTEGER NOT NULL DEFAULT 0,
-    party_ignore INTEGER NOT NULL DEFAULT 0,
-    district_ignore INTEGER NOT NULL DEFAULT 0,
-    district_at_large INTEGER NOT NULL DEFAULT 0,
-    ignore_non_links INTEGER NOT NULL DEFAULT 0,
-    remove_duplicates INTEGER NOT NULL DEFAULT 0,
-    infobox_role_key TEXT NOT NULL DEFAULT '',
-    infobox_role_key_filter_id INTEGER REFERENCES infobox_role_key_filter(id),
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
 
 -- Alt links
 CREATE TABLE IF NOT EXISTS alt_links (

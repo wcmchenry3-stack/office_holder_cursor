@@ -594,13 +594,57 @@ def _run_pg_migrations(conn) -> None:
         " updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())",
     )
 
-    # TODO(issue #317): alt_links migration (backfill office_details_id, drop office_id,
-    # add UNIQUE constraint) is deferred — production has duplicate (office_details_id,
-    # link_path) rows that must be cleaned up before the UNIQUE constraint can be added.
-    # The migrations pg_alt_links_backfill_office_details_id through
-    # pg_alt_links_office_details_id_not_null already ran on production and are recorded
-    # in schema_migrations; pg_alt_links_add_unique_office_details_link_path is still
-    # pending and will be re-introduced once the duplicate data is resolved.
+    # Issue #311 residual: deduplicate alt_links before adding the UNIQUE constraint.
+    # The preceding 5 migrations (backfill through not-null) already ran on production.
+    # Production had duplicate (office_details_id, link_path) pairs (e.g. office_details_id=1256)
+    # that blocked the constraint; this step removes them, keeping the max-id row per pair.
+    _apply(
+        "pg_alt_links_dedup_before_unique",
+        """
+        DO $$
+        DECLARE
+            dup_count INTEGER;
+            deleted_count INTEGER;
+        BEGIN
+            SELECT COUNT(*) INTO dup_count
+            FROM (
+                SELECT office_details_id, link_path
+                FROM alt_links
+                GROUP BY office_details_id, link_path
+                HAVING COUNT(*) > 1
+            ) dupes;
+            RAISE NOTICE 'pg_alt_links_dedup: % duplicate (office_details_id, link_path) pairs found', dup_count;
+
+            DELETE FROM alt_links
+            WHERE id NOT IN (
+                SELECT MAX(id)
+                FROM alt_links
+                GROUP BY office_details_id, link_path
+            );
+            GET DIAGNOSTICS deleted_count = ROW_COUNT;
+            RAISE NOTICE 'pg_alt_links_dedup: % duplicate rows deleted', deleted_count;
+        END $$;
+        """,
+    )
+    _apply(
+        "pg_alt_links_add_unique_office_details_link_path",
+        "ALTER TABLE alt_links ADD CONSTRAINT alt_links_office_details_id_link_path_key"
+        " UNIQUE (office_details_id, link_path)",
+    )
+    # Issue #313: drop the legacy offices table now that all FK references are gone.
+    # office_terms.office_id FK was dropped in pg_drop_office_terms_office_id_fkey.
+    # alt_links.office_id was dropped in pg_alt_links_drop_office_id.
+    _apply(
+        "pg_drop_offices_indexes",
+        "DROP INDEX IF EXISTS idx_offices_country_id;"
+        "DROP INDEX IF EXISTS idx_offices_state_id;"
+        "DROP INDEX IF EXISTS idx_offices_level_id;"
+        "DROP INDEX IF EXISTS idx_offices_branch_id",
+    )
+    _apply(
+        "pg_drop_offices_table",
+        "DROP TABLE IF EXISTS offices",
+    )
 
 
 def _sqlite_add_columns_if_missing(conn) -> None:
