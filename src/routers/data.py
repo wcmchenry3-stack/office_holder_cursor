@@ -8,6 +8,7 @@ from src.db import offices as db_offices
 from src.db import office_terms as db_office_terms
 from src.db import reports as db_reports
 from src.db import individual_research_sources as db_research
+from src.db import scheduled_job_runs as db_job_runs
 from src.routers._deps import templates
 
 router = APIRouter()
@@ -123,6 +124,17 @@ async def api_research_submit(individual_id: int):
     except WikipediaSubmitError as exc:
         db_research.update_wiki_draft_proposal_status(draft["id"], "rejected")
         raise HTTPException(502, f"Wikipedia submission failed: {exc}")
+
+
+@router.get("/data/scheduled-job-runs", response_class=HTMLResponse)
+async def data_scheduled_job_runs(
+    request: Request,
+    days: int = Query(90, ge=1, le=365),
+):
+    runs = db_job_runs.list_recent_runs(days=days)
+    return templates.TemplateResponse(
+        request, "scheduled_job_runs.html", {"runs": runs, "days": days}
+    )
 
 
 @router.get("/report/milestones", response_class=HTMLResponse)
