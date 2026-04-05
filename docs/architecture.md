@@ -55,6 +55,21 @@ Wikipedia REST API      SQLite file
 | `/refs` | Reference data index (countries, states, cities, levels, branches, parties, etc.) |
 | `/refs/parties` | Party CRUD |
 
+**UI pages (selected):**
+
+| URL | Description |
+|---|---|
+| `/run` | Trigger scraper runs; select run mode, office category, individual ref |
+| `/offices` | List and search offices (legacy flat table) |
+| `/offices/<id>` | Edit individual office config |
+| `/source-pages` | List source pages (Wikipedia URLs) in the hierarchy |
+| `/data/individuals` | Filterable table of all individuals with batch bio-refresh action |
+| `/data/scheduled-jobs` | Scheduled job status, cron times, and operational settings (expiry/queue) |
+| `/data/scheduled-job-runs` | Per-run log for all scheduled jobs with result summaries |
+| `/data/ai-decisions` | AI decision log across data quality, parse errors, page quality, suspect flags |
+| `/refs` | Reference data index (countries, states, cities, levels, branches, parties, etc.) |
+| `/refs/parties` | Party CRUD |
+
 ---
 
 ## Directory Structure
@@ -80,7 +95,7 @@ office_holder_cursor/
 │   │   ├── data_quality_checker.py     # Multi-model data quality validation
 │   │   ├── auto_fix.py                 # Parser error auto-fix via Claude; opens draft PRs
 │   │   ├── parse_error_reporter.py     # Parser error → GitHub issue pipeline
-│   │   ├── quality_issue_reporter.py   # Data quality → GitHub issue pipeline
+│   │   ├── quality_issue_reporter.py   # Data quality → GitHub issue pipeline (two-level dedup: record-level + content hash)
 │   │   ├── github_client.py            # GitHub API client for issues/PRs
 │   │   ├── claude_client.py            # Anthropic Claude API client (max_tokens, backoff)
 │   │   ├── wikipedia_submit.py         # MediaWiki Action API: article submission (bot credentials)
@@ -213,6 +228,8 @@ Auth is bypassed locally when `GOOGLE_CLIENT_ID` is not set. Database is created
 | `PLAYWRIGHT_OFFICE_A_ID` | Local testing only | — | Office ID A for comparison tests. See note above. |
 | `PLAYWRIGHT_OFFICE_B_ID` | Local testing only | — | Office ID B for comparison tests. See note above. |
 | `PLAYWRIGHT_PAGE_EDIT_URL` | Local testing only | — | Source page URL for page edit tests. See note above. |
+
+**Sentry instrumentation scope:** `FastApiIntegration(transaction_style="endpoint")` + `LoggingIntegration(level=WARNING, event_level=ERROR)`. `send_default_pii=False`. Subprocess jobs call `sentry_sdk.set_tag("subprocess_job", ...)` and `sentry_sdk.set_context("subprocess", {...})` at startup so errors surface with run-specific context in Sentry. Scraper jobs also call `sentry_sdk.set_context("scraper_job", {"job_id": ..., "run_mode": ...})` in the job worker thread.
 
 ---
 
