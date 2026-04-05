@@ -63,6 +63,11 @@ See [~/.claude/standards/testing.md](~/.claude/standards/testing.md) for univers
 
 **Scenario tests as a PR expectation:** The `/run-scenarios-test` UI button has been removed from the nav. Scenario test cases (`tests/test_scenarios.py`) are expected as part of every PR that introduces new parsing functionality. Building the test case is part of the feature development, not a separate step — run them locally with `pytest tests/test_scenarios.py`.
 
+**Test location convention:**
+- Co-located unit tests: `src/scraper/test_*.py`, `src/db/test_*.py` — alongside the module they test
+- Integration and router tests: `tests/` — full request/response tests against a live TestClient
+- AI service tests (consensus voter, auto-fix, page quality inspector): `tests/` — mock external APIs
+
 **Unit tests:** Scattered across `src/scraper/test_*.py` and `src/db/test_*.py`. Shared fixtures for integration tests live in `tests/conftest.py`.
 
 **Playwright tests:** `src/test_ui_edit_office_playwright.py`, `src/test_ui_offices_list_playwright.py`, `src/test_ui_run_playwright.py`. Run automatically on every PR via the `ui-tests` CI job. CI starts a fresh server against a temp DB (`/tmp/playwright_ci.db`) and requires only `PLAYWRIGHT_BASE_URL`. The `PLAYWRIGHT_EDIT_OFFICE_ID` / `PLAYWRIGHT_OFFICE_A_ID` / etc. vars are only needed for local runs against a pre-seeded database.
