@@ -51,30 +51,30 @@ def test_parse_date_date_object_passthrough():
 
 
 def test_format_date_iso_passthrough():
-    dc = DataCleanup(_NullLogger())
+    dc = DataCleanup()
     assert dc.format_date("2020-01-15") == "2020-01-15"
 
 
 def test_format_date_year_only_returns_invalid():
-    dc = DataCleanup(_NullLogger())
+    dc = DataCleanup()
     assert dc.format_date("2020") == "Invalid date"
 
 
 def test_format_date_full_month_name():
-    dc = DataCleanup(_NullLogger())
+    dc = DataCleanup()
     assert dc.format_date("January 15, 2020") == "2020-01-15"
 
 
 def test_format_date_abbreviated_month():
-    dc = DataCleanup(_NullLogger())
+    dc = DataCleanup()
     assert dc.format_date("Jan 15, 2020") == "2020-01-15"
 
 
 def test_format_date_dd_month_yyyy():
-    dc = DataCleanup(_NullLogger())
+    dc = DataCleanup()
     assert dc.format_date("15 January 2020") == "2020-01-15"
 
 
 def test_format_date_historical_date():
-    dc = DataCleanup(_NullLogger())
+    dc = DataCleanup()
     assert dc.format_date("18 June 1798") == "1798-06-18"

@@ -32,7 +32,7 @@ _session: requests.Session | None = None
 
 # Global rate limiter: enforce ≤1 Wikipedia HTTP request per second across all threads.
 _throttle_lock = threading.Lock()
-_last_request_at: list[float] = [0.0]  # mutable container so closures can update it
+_last_request_at: float = 0.0
 _MIN_REQUEST_INTERVAL = 1.0  # seconds
 
 
@@ -42,12 +42,13 @@ def wiki_throttle() -> None:
     Must be called immediately before every wiki_session().get() call.  Using a global
     lock ensures the ≤1 req/s limit is respected even with ThreadPoolExecutor workers.
     """
+    global _last_request_at
     with _throttle_lock:
         now = time.monotonic()
-        wait = _MIN_REQUEST_INTERVAL - (now - _last_request_at[0])
+        wait = _MIN_REQUEST_INTERVAL - (now - _last_request_at)
         if wait > 0:
             time.sleep(wait)
-        _last_request_at[0] = time.monotonic()
+        _last_request_at = time.monotonic()
 
 
 def wiki_session() -> requests.Session:

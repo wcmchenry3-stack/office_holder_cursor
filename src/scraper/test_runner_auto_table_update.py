@@ -1,3 +1,10 @@
+"""
+Note: wikipedia.org URL strings below are test input values only.
+No HTTP requests to Wikipedia are made here.
+All actual Wikipedia HTTP requests go through wiki_fetch.py (wiki_session)
+which sets the required User-Agent header and enforces rate limiting / retry/backoff logic.
+"""
+
 from src.scraper import runner
 
 
@@ -165,7 +172,7 @@ def test_find_best_matching_table_reports_before_after(monkeypatch):
             pass
 
     monkeypatch.setattr(runner, "init_db", lambda: None)
-    monkeypatch.setattr(runner, "Logger", _Dummy)
+    monkeypatch.setattr(runner, "configure_run_logging", lambda *a, **kw: None)
     monkeypatch.setattr(runner.parse_core, "DataCleanup", _Dummy)
     monkeypatch.setattr(runner.parse_core, "Biography", _Dummy)
     monkeypatch.setattr(runner.parse_core, "Offices", _Dummy)
@@ -225,7 +232,7 @@ def test_preview_reports_new_list_mismatch(monkeypatch):
             pass
 
     monkeypatch.setattr(runner, "init_db", lambda: None)
-    monkeypatch.setattr(runner, "Logger", _Dummy)
+    monkeypatch.setattr(runner, "configure_run_logging", lambda *a, **kw: None)
     monkeypatch.setattr(runner.parse_core, "DataCleanup", _Dummy)
     monkeypatch.setattr(runner.parse_core, "Biography", _Dummy)
     monkeypatch.setattr(runner.parse_core, "Offices", _Dummy)
