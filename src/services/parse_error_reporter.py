@@ -42,6 +42,8 @@ import logging
 import threading
 from dataclasses import dataclass, field
 
+import sentry_sdk
+
 logger = logging.getLogger(__name__)
 
 _BATCH_SIZE = 100  # max groups per OpenAI call
@@ -104,7 +106,8 @@ class ParseErrorReporter:
 
         try:
             self._flush_inner(failures, conn=conn)
-        except Exception:
+        except Exception as _exc:
+            sentry_sdk.capture_exception(_exc)
             logger.exception("ParseErrorReporter.flush failed; run result not affected")
 
     # ------------------------------------------------------------------
@@ -133,6 +136,11 @@ class ParseErrorReporter:
 
         if not groups:
             return
+
+        sentry_sdk.add_breadcrumb(
+            message=f"ParseErrorReporter: dedup check — {len(failures)} failure(s), {len(groups)} new fingerprint(s)",
+            level="info",
+        )
 
         # Step 2: dedup against GitHub labels (level 2 — safety net after DB reset)
         new_groups: dict[str, list[ParseFailure]] = {}
@@ -164,6 +172,10 @@ class ParseErrorReporter:
             logger.warning("ParseErrorReporter: OPENAI_API_KEY not set; skipping OpenAI analysis")
             return
 
+        sentry_sdk.add_breadcrumb(
+            message=f"ParseErrorReporter: sending {len(new_groups)} group(s) to OpenAI for analysis",
+            level="info",
+        )
         group_items = list(new_groups.items())
         for batch_start in range(0, len(group_items), _BATCH_SIZE):
             batch = group_items[batch_start : batch_start + _BATCH_SIZE]
@@ -196,7 +208,8 @@ class ParseErrorReporter:
 
         try:
             analyses = ai_builder.analyze_parse_failures(groups_data)
-        except Exception:
+        except Exception as _exc:
+            sentry_sdk.capture_exception(_exc)
             logger.exception("ParseErrorReporter: OpenAI analysis failed for batch")
             return
 
@@ -211,6 +224,10 @@ class ParseErrorReporter:
             title = f"[Parser Bug] {analysis.title}"
             body = _format_issue_body(analysis, rep, len(group_failures))
 
+            sentry_sdk.add_breadcrumb(
+                message=f"ParseErrorReporter: creating GitHub issue for fingerprint {fp[:8]}",
+                level="info",
+            )
             try:
                 issue = github.create_issue(
                     title=title,
@@ -232,7 +249,8 @@ class ParseErrorReporter:
                     issue["number"],
                     analysis.title,
                 )
-            except Exception:
+            except Exception as _exc:
+                sentry_sdk.capture_exception(_exc)
                 logger.exception(
                     "ParseErrorReporter: failed to create GitHub issue for fingerprint %s", fp
                 )
