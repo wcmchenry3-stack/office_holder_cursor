@@ -1,4 +1,4 @@
-"""Party management routes."""
+"""Party management routes (under /refs/parties)."""
 
 import tempfile
 from pathlib import Path
@@ -14,7 +14,7 @@ from src.routers._deps import templates
 router = APIRouter()
 
 
-@router.get("/parties", response_class=HTMLResponse)
+@router.get("/refs/parties", response_class=HTMLResponse)
 async def parties_list(request: Request):
     parties = db_parties.list_parties()
     saved = request.query_params.get("saved") == "1"
@@ -34,12 +34,12 @@ async def parties_list(request: Request):
     )
 
 
-@router.get("/parties/import", response_class=HTMLResponse)
+@router.get("/refs/parties/import", response_class=HTMLResponse)
 async def parties_import_page(request: Request):
     return templates.TemplateResponse(request, "import_parties.html")
 
 
-@router.post("/parties/import")
+@router.post("/refs/parties/import")
 async def parties_import(
     request: Request,
     mode: str = Form("append"),
@@ -87,7 +87,7 @@ async def parties_import(
             overwrite = mode == "overwrite"
             imported, errors = bulk_import_parties_from_csv(tmp_path, overwrite=overwrite)
             return RedirectResponse(
-                f"/parties?imported=1&count={imported}&errors={errors}", status_code=302
+                f"/refs/parties?imported=1&count={imported}&errors={errors}", status_code=302
             )
         finally:
             tmp_path.unlink(missing_ok=True)
@@ -99,7 +99,7 @@ async def parties_import(
         )
 
 
-@router.get("/parties/new", response_class=HTMLResponse)
+@router.get("/refs/parties/new", response_class=HTMLResponse)
 async def party_new(request: Request):
     countries = db_refs.list_countries()
     return templates.TemplateResponse(
@@ -107,7 +107,7 @@ async def party_new(request: Request):
     )
 
 
-@router.post("/parties/new")
+@router.post("/refs/parties/new")
 async def party_create(
     country_id: int = Form(0),
     party_name: str = Form(""),
@@ -116,10 +116,10 @@ async def party_create(
     db_parties.create_party(
         {"country_id": country_id, "party_name": party_name, "party_link": party_link}
     )
-    return RedirectResponse("/parties?saved=1", status_code=302)
+    return RedirectResponse("/refs/parties?saved=1", status_code=302)
 
 
-@router.get("/parties/{party_id}", response_class=HTMLResponse)
+@router.get("/refs/parties/{party_id}", response_class=HTMLResponse)
 async def party_edit_page(request: Request, party_id: int):
     party = db_parties.get_party(party_id)
     if not party:
@@ -130,7 +130,7 @@ async def party_edit_page(request: Request, party_id: int):
     )
 
 
-@router.post("/parties/{party_id}")
+@router.post("/refs/parties/{party_id}")
 async def party_update(
     party_id: int,
     country_id: int = Form(0),
@@ -140,10 +140,10 @@ async def party_update(
     db_parties.update_party(
         party_id, {"country_id": country_id, "party_name": party_name, "party_link": party_link}
     )
-    return RedirectResponse("/parties?saved=1", status_code=302)
+    return RedirectResponse("/refs/parties?saved=1", status_code=302)
 
 
-@router.post("/parties/{party_id}/delete")
+@router.post("/refs/parties/{party_id}/delete")
 async def party_delete(party_id: int):
     db_parties.delete_party(party_id)
-    return RedirectResponse("/parties", status_code=302)
+    return RedirectResponse("/refs/parties", status_code=302)

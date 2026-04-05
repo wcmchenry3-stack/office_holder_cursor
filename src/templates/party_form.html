@@ -2,7 +2,7 @@
 {% block title %}{{ "Edit" if party else "New" }} party – Office Holder{% endblock %}
 {% block content %}
 <h1>{{ "Edit" if party else "New" }} party</h1>
-<form method="post" action="{% if party %}/parties/{{ party.id }}{% else %}/parties/new{% endif %}">
+<form method="post" action="{% if party %}/refs/parties/{{ party.id }}{% else %}/refs/parties/new{% endif %}">
   <div class="form-group">
     <label>Country</label>
     <select name="country_id" required>
@@ -16,9 +16,9 @@
   <div class="form-group"><label>Party link (Wikipedia URL)</label><input type="url" name="party_link" value="{{ party.party_link if party else '' }}" required></div>
   <div class="actions">
     <button type="submit" class="btn">Save</button>
-    <a href="/parties" class="btn btn-secondary">Cancel</a>
+    <a href="/refs/parties" class="btn btn-secondary">Cancel</a>
     {% if party %}
-    <form action="/parties/{{ party.id }}/delete" method="post" style="display:inline;" onsubmit="return confirm('Delete?');">
+    <form action="/refs/parties/{{ party.id }}/delete" method="post" style="display:inline;" onsubmit="return confirm('Delete?');">
       <button type="submit" class="btn btn-danger">Delete</button>
     </form>
     {% endif %}
