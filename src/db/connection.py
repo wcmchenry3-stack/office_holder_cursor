@@ -114,7 +114,13 @@ class _PGConnWrapper:
 
     def execute(self, sql, params=None):
         cur = self._conn.cursor()
-        cur.execute(sql, params if params is not None else ())
+        if params is not None:
+            cur.execute(sql, params)
+        else:
+            # Do NOT pass an empty tuple — psycopg2 would scan the SQL for '%'
+            # placeholders and raise IndexError when it finds one (e.g. inside a
+            # DO $$ RAISE NOTICE '% rows ...' block) with nothing to substitute.
+            cur.execute(sql)
         return cur
 
     def executemany(self, sql, seq_of_params):
@@ -610,7 +616,7 @@ def _run_pg_migrations(conn) -> None:
 
             SELECT COUNT(*) INTO before_count
             FROM alt_links WHERE office_id IS NOT NULL AND office_details_id IS NULL;
-            RAISE NOTICE 'pg_alt_links_backfill: % rows to backfill', before_count;
+            RAISE NOTICE 'pg_alt_links_backfill: %% rows to backfill', before_count;
 
             UPDATE alt_links al
             SET office_details_id = od.id
@@ -623,7 +629,7 @@ def _run_pg_migrations(conn) -> None:
             FROM alt_links WHERE office_id IS NOT NULL AND office_details_id IS NULL;
             IF unmapped > 0 THEN
                 RAISE EXCEPTION
-                    'pg_alt_links_backfill: % rows could not be mapped to office_details — aborting',
+                    'pg_alt_links_backfill: %% rows could not be mapped to office_details — aborting',
                     unmapped;
             END IF;
         END $$
@@ -666,7 +672,7 @@ def _run_pg_migrations(conn) -> None:
             ALTER TABLE alt_links ADD CONSTRAINT alt_links_office_details_id_link_path_key
                 UNIQUE (office_details_id, link_path);
         EXCEPTION
-            WHEN duplicate_table THEN
+            WHEN duplicate_object THEN
                 RAISE NOTICE 'pg_alt_links_unique: constraint already exists, skipping';
         END $$
         """,
