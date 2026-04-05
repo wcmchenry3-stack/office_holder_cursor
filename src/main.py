@@ -6,6 +6,7 @@ From project root: office_holder/
 """
 
 import json
+import logging
 import os
 import re
 import tempfile
@@ -16,6 +17,8 @@ from pathlib import Path
 import sys
 import threading
 import uuid
+
+logger = logging.getLogger(__name__)
 
 import requests
 
@@ -124,7 +127,7 @@ async def lifespan(app: FastAPI):
             id="daily_delta",
             misfire_grace_time=_MISFIRE_GRACE,
         )
-        print("[scheduler] Daily delta run scheduled at 06:00 UTC")
+        logger.info("[scheduler] Daily delta run scheduled at 06:00 UTC")
         scheduler.add_job(
             run_daily_insufficient_vitals,
             "cron",
@@ -133,7 +136,7 @@ async def lifespan(app: FastAPI):
             id="daily_insufficient_vitals",
             misfire_grace_time=_MISFIRE_GRACE,
         )
-        print("[scheduler] Insufficient vitals recheck scheduled at 07:00 UTC")
+        logger.info("[scheduler] Insufficient vitals recheck scheduled at 07:00 UTC")
         scheduler.add_job(
             run_daily_gemini_research,
             "cron",
@@ -142,7 +145,7 @@ async def lifespan(app: FastAPI):
             id="daily_gemini_research",
             misfire_grace_time=_MISFIRE_GRACE,
         )
-        print("[scheduler] Gemini deep research scheduled at 08:00 UTC")
+        logger.info("[scheduler] Gemini deep research scheduled at 08:00 UTC")
         scheduler.add_job(
             run_daily_page_quality,
             "cron",
@@ -151,9 +154,9 @@ async def lifespan(app: FastAPI):
             id="daily_page_quality",
             misfire_grace_time=_MISFIRE_GRACE,
         )
-        print("[scheduler] Page quality inspection scheduled at 09:00 UTC")
+        logger.info("[scheduler] Page quality inspection scheduled at 09:00 UTC")
     else:
-        print("[scheduler] Daily delta job is paused (DAILY_DELTA_ENABLED is disabled)")
+        logger.info("[scheduler] Daily delta job is paused (DAILY_DELTA_ENABLED is disabled)")
     scheduler.start()
     yield
     scheduler.shutdown(wait=False)

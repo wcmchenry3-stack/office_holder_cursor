@@ -599,19 +599,11 @@ def test_emit_parse_failure_reporter_error_is_silenced():
 def test_data_cleanup_format_date_collects_failure_on_bad_input():
     """DataCleanup.format_date triggers _emit_parse_failure for unparseable input."""
     from src.scraper.table_parser import DataCleanup
-    from src.scraper.logger import Logger
     import io
 
     mock_reporter = MagicMock()
 
-    class _FakeLogger:
-        def log(self, *a, **k):
-            pass
-
-        def debug_log(self, *a, **k):
-            pass
-
-    dc = DataCleanup(_FakeLogger(), reporter=mock_reporter)
+    dc = DataCleanup(reporter=mock_reporter)
     # Passing a string that cannot be parsed by dateutil should trigger the silent except
     # The dateutil fallback catches ValueError/TypeError — we need input that reaches that path
     # A truly unparseable string like an object that raises on str() would work,
@@ -629,14 +621,7 @@ def test_data_cleanup_reporter_none_no_error():
     """DataCleanup works normally with reporter=None (default)."""
     from src.scraper.table_parser import DataCleanup
 
-    class _FakeLogger:
-        def log(self, *a, **k):
-            pass
-
-        def debug_log(self, *a, **k):
-            pass
-
-    dc = DataCleanup(_FakeLogger())
+    dc = DataCleanup()
     result = dc.format_date("January 1, 2000")
     assert result == "2000-01-01"
 

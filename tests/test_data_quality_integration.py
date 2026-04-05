@@ -122,13 +122,11 @@ class TestDataQualityRunMode:
     @patch("src.scraper.runner.get_connection")
     @patch("src.scraper.runner.init_db")
     @patch("src.scraper.runner.get_log_dir", return_value="/tmp")
-    @patch("src.scraper.runner.Logger")
+    @patch("src.scraper.runner.configure_run_logging", return_value=None)
     def test_data_quality_mode_no_ai_keys(
         self, mock_logger_cls, mock_log_dir, mock_init_db, mock_get_conn
     ):
         """data_quality mode exits cleanly when no AI keys are set."""
-        mock_logger = MagicMock()
-        mock_logger_cls.return_value = mock_logger
 
         with patch.dict("os.environ", {}, clear=True):
             from src.scraper.runner import _run_data_quality, _RunContext
@@ -149,7 +147,7 @@ class TestDataQualityRunMode:
                 force_overwrite=False,
                 bio_batch=None,
             )
-            result = _run_data_quality(ctx, mock_logger, lambda *a, **kw: None)
+            result = _run_data_quality(ctx, lambda *a, **kw: None)
 
         assert result["data_quality_checked"] == 0
         assert result["data_quality_flagged"] == 0
@@ -157,13 +155,11 @@ class TestDataQualityRunMode:
     @patch("src.scraper.runner.get_connection")
     @patch("src.scraper.runner.init_db")
     @patch("src.scraper.runner.get_log_dir", return_value="/tmp")
-    @patch("src.scraper.runner.Logger")
+    @patch("src.scraper.runner.configure_run_logging", return_value=None)
     def test_data_quality_mode_runs_manual(
         self, mock_logger_cls, mock_log_dir, mock_init_db, mock_get_conn, tmp_path
     ):
         """data_quality mode calls run_manual when AI keys are present."""
-        mock_logger = MagicMock()
-        mock_logger_cls.return_value = mock_logger
         conn = _make_conn(tmp_path)
         mock_get_conn.return_value = conn
 
@@ -190,7 +186,7 @@ class TestDataQualityRunMode:
                     force_overwrite=False,
                     bio_batch=None,
                 )
-                result = _run_data_quality(ctx, mock_logger, lambda *a, **kw: None)
+                result = _run_data_quality(ctx, lambda *a, **kw: None)
                 mock_manual.assert_called_once()
 
 

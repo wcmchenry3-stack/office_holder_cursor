@@ -3,14 +3,6 @@ from bs4 import BeautifulSoup
 from src.scraper.table_parser import Offices, DataCleanup
 
 
-class _Logger:
-    def debug_log(self, *_args, **_kwargs):
-        return None
-
-    def log(self, *_args, **_kwargs):
-        return None
-
-
 class _BioInfoboxStub:
     def __init__(self):
         self._last_dead_link = False
@@ -54,8 +46,7 @@ def _base_config():
 
 
 def test_dynamic_parse_uses_left_bounds():
-    logger = _Logger()
-    offices = Offices(logger, biography=None, data_cleanup=DataCleanup(logger))
+    offices = Offices(biography=None, data_cleanup=DataCleanup())
     config = _base_config()
     config["dynamic_link_min_col"] = 0
     config["dynamic_link_max_col"] = 4
@@ -67,8 +58,7 @@ def test_dynamic_parse_uses_left_bounds():
 
 
 def test_dynamic_parse_uses_right_bounds():
-    logger = _Logger()
-    offices = Offices(logger, biography=None, data_cleanup=DataCleanup(logger))
+    offices = Offices(biography=None, data_cleanup=DataCleanup())
     config = _base_config()
     config["dynamic_link_min_col"] = 5
     config["dynamic_link_max_col"] = 7
@@ -80,8 +70,7 @@ def test_dynamic_parse_uses_right_bounds():
 
 
 def test_dynamic_parse_falls_back_to_full_row_when_bounds_miss_links():
-    logger = _Logger()
-    offices = Offices(logger, biography=None, data_cleanup=DataCleanup(logger))
+    offices = Offices(biography=None, data_cleanup=DataCleanup())
     config = _base_config()
     config["dynamic_link_min_col"] = 2
     config["dynamic_link_max_col"] = 5
@@ -93,8 +82,7 @@ def test_dynamic_parse_falls_back_to_full_row_when_bounds_miss_links():
 
 
 def test_process_table_ignores_rows_without_valid_wiki_links_when_enabled():
-    logger = _Logger()
-    offices = Offices(logger, biography=None, data_cleanup=DataCleanup(logger))
+    offices = Offices(biography=None, data_cleanup=DataCleanup())
     html = """
     <table>
       <tr><th>#</th><th>Senator</th><th>Party</th><th>Dates</th></tr>
@@ -143,8 +131,7 @@ def test_process_table_ignores_rows_without_valid_wiki_links_when_enabled():
 
 
 def test_process_table_accepts_rows_when_cell_count_equals_table_rows_threshold():
-    logger = _Logger()
-    offices = Offices(logger, biography=None, data_cleanup=DataCleanup(logger))
+    offices = Offices(biography=None, data_cleanup=DataCleanup())
     html = """
     <table>
       <tr><th>#</th><th>Governor</th><th>Term in office</th></tr>
@@ -197,8 +184,7 @@ def test_process_table_accepts_rows_when_cell_count_equals_table_rows_threshold(
 
 
 def test_parse_rowspan_does_not_carry_previous_holder_on_non_short_rows_without_link():
-    logger = _Logger()
-    offices = Offices(logger, biography=None, data_cleanup=DataCleanup(logger))
+    offices = Offices(biography=None, data_cleanup=DataCleanup())
     html = """
     <table>
       <tr><th>#</th><th>Governor</th><th>Term in office</th><th>Party</th><th>Election</th></tr>
@@ -252,8 +238,7 @@ def test_parse_rowspan_does_not_carry_previous_holder_on_non_short_rows_without_
 
 
 def test_find_link_fallback_recovers_holder_when_configured_link_column_is_footnote_cell():
-    logger = _Logger()
-    offices = Offices(logger, biography=None, data_cleanup=DataCleanup(logger))
+    offices = Offices(biography=None, data_cleanup=DataCleanup())
     html = """
     <table>
       <tr><th>#</th><th>Governor</th><th>Term in office</th><th>Party</th><th>Election</th></tr>
@@ -312,8 +297,7 @@ def test_find_link_fallback_recovers_holder_when_configured_link_column_is_footn
 
 
 def test_ignore_non_links_drops_party_organization_links():
-    logger = _Logger()
-    offices = Offices(logger, biography=None, data_cleanup=DataCleanup(logger))
+    offices = Offices(biography=None, data_cleanup=DataCleanup())
     html = """
     <table>
       <tr><th>#</th><th>Link</th><th>Party</th><th>Dates</th></tr>
@@ -365,8 +349,7 @@ def test_ignore_non_links_drops_party_organization_links():
 
 
 def test_find_link_fallback_works_with_rtl_by_probing_right_side_columns():
-    logger = _Logger()
-    offices = Offices(logger, biography=None, data_cleanup=DataCleanup(logger))
+    offices = Offices(biography=None, data_cleanup=DataCleanup())
     html = """
     <table>
       <tr><th>A</th><th>B</th><th>C</th><th>D</th></tr>
@@ -422,8 +405,7 @@ def test_find_link_fallback_works_with_rtl_by_probing_right_side_columns():
 
 
 def test_find_link_fallback_rtl_clamps_when_term_start_column_is_out_of_bounds():
-    logger = _Logger()
-    offices = Offices(logger, biography=None, data_cleanup=DataCleanup(logger))
+    offices = Offices(biography=None, data_cleanup=DataCleanup())
     html = """
     <table>
       <tr><th>A</th><th>B</th><th>C</th><th>D</th></tr>
@@ -479,8 +461,7 @@ def test_find_link_fallback_rtl_clamps_when_term_start_column_is_out_of_bounds()
 
 
 def test_find_link_does_not_fallback_when_configured_column_has_no_links():
-    logger = _Logger()
-    offices = Offices(logger, biography=None, data_cleanup=DataCleanup(logger))
+    offices = Offices(biography=None, data_cleanup=DataCleanup())
     html = """
     <table>
       <tr><th>#</th><th>Class A</th><th>Class B</th><th>Term</th></tr>
@@ -535,8 +516,7 @@ def test_find_link_does_not_fallback_when_configured_column_has_no_links():
 
 
 def test_find_link_keeps_party_links_when_ignore_non_links_is_false():
-    logger = _Logger()
-    offices = Offices(logger, biography=None, data_cleanup=DataCleanup(logger))
+    offices = Offices(biography=None, data_cleanup=DataCleanup())
     html = """
     <table>
       <tr><th>#</th><th>Link</th><th>Dates</th></tr>
@@ -587,8 +567,7 @@ def test_find_link_keeps_party_links_when_ignore_non_links_is_false():
 
 
 def test_find_link_ignores_alt_link_targets_and_uses_person_link():
-    logger = _Logger()
-    offices = Offices(logger, biography=None, data_cleanup=DataCleanup(logger))
+    offices = Offices(biography=None, data_cleanup=DataCleanup())
     html = """
     <table>
       <tr><th>#</th><th>Role</th><th>Name</th><th>Term</th></tr>
@@ -645,8 +624,7 @@ def test_find_link_ignores_alt_link_targets_and_uses_person_link():
 
 
 def test_term_range_fallback_recovers_when_term_column_is_misconfigured():
-    logger = _Logger()
-    offices = Offices(logger, biography=None, data_cleanup=DataCleanup(logger))
+    offices = Offices(biography=None, data_cleanup=DataCleanup())
     html = """
     <table>
       <tr><th>#</th><th>Governor</th><th>Term in office</th><th>Party</th><th>Election</th></tr>
@@ -704,8 +682,7 @@ def test_term_range_fallback_recovers_when_term_column_is_misconfigured():
 
 
 def test_find_date_in_infobox_still_runs_when_term_column_is_out_of_bounds():
-    logger = _Logger()
-    offices = Offices(logger, biography=_BioInfoboxStub(), data_cleanup=DataCleanup(logger))
+    offices = Offices(biography=_BioInfoboxStub(), data_cleanup=DataCleanup())
     html = """
     <table>
       <tr><th>#</th><th>Name</th><th>Role</th><th>Notes</th></tr>
@@ -761,8 +738,7 @@ def test_find_date_in_infobox_still_runs_when_term_column_is_out_of_bounds():
 
 
 def test_process_columns_right_to_left_maps_first_column_to_rightmost():
-    logger = _Logger()
-    offices = Offices(logger, biography=None, data_cleanup=DataCleanup(logger))
+    offices = Offices(biography=None, data_cleanup=DataCleanup())
     config = {
         "link_column": 0,
         "party_column": 1,
@@ -781,8 +757,7 @@ def test_process_columns_right_to_left_maps_first_column_to_rightmost():
 
 
 def test_rtl_parse_reads_rightmost_link_when_link_column_is_one_based_1():
-    logger = _Logger()
-    offices = Offices(logger, biography=None, data_cleanup=DataCleanup(logger))
+    offices = Offices(biography=None, data_cleanup=DataCleanup())
     html = """
     <table>
       <tr><th>A</th><th>B</th><th>C</th></tr>
@@ -834,8 +809,7 @@ def test_rtl_parse_reads_rightmost_link_when_link_column_is_one_based_1():
 
 
 def test_ignore_non_links_drops_non_person_wiki_links():
-    logger = _Logger()
-    offices = Offices(logger, biography=None, data_cleanup=DataCleanup(logger))
+    offices = Offices(biography=None, data_cleanup=DataCleanup())
     html = """
     <table>
       <tr><th>#</th><th>Link</th><th>Party</th><th>Dates</th></tr>
@@ -887,8 +861,7 @@ def test_ignore_non_links_drops_non_person_wiki_links():
 
 
 def test_dynamic_parse_ignores_fragment_links_when_finding_link_column():
-    logger = _Logger()
-    offices = Offices(logger, biography=None, data_cleanup=DataCleanup(logger))
+    offices = Offices(biography=None, data_cleanup=DataCleanup())
     html = """
     <tr>
       <td><a href="/wiki/Mayor_of_Philadelphia#cite_note-17">ref</a></td>
@@ -918,8 +891,7 @@ def test_dynamic_parse_ignores_fragment_links_when_finding_link_column():
 
 
 def test_process_table_applies_optional_row_filter():
-    logger = _Logger()
-    offices = Offices(logger, biography=None, data_cleanup=DataCleanup(logger))
+    offices = Offices(biography=None, data_cleanup=DataCleanup())
     html = """
     <table>
       <tr><th>#</th><th>Name</th><th>Position</th><th>Dates</th></tr>
@@ -970,8 +942,7 @@ def test_process_table_applies_optional_row_filter():
 
 
 def test_process_table_without_row_filter_returns_all_rows():
-    logger = _Logger()
-    offices = Offices(logger, biography=None, data_cleanup=DataCleanup(logger))
+    offices = Offices(biography=None, data_cleanup=DataCleanup())
     html = """
     <table>
       <tr><th>#</th><th>Name</th><th>Position</th><th>Dates</th></tr>

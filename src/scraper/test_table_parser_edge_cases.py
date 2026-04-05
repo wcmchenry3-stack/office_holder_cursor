@@ -19,19 +19,10 @@ from src.db.bulk_import import _bool_from_cell, _int_from_cell
 from src.scheduled_tasks import _format_duration
 
 
-class _NullLogger:
-    def log(self, *a, **kw):
-        pass
-
-    def debug_log(self, *a, **kw):
-        pass
-
-
 def _offices():
-    logger = _NullLogger()
-    dc = DataCleanup(logger)
-    bio = Biography(logger, dc)
-    return Offices(logger, bio, dc)
+    dc = DataCleanup()
+    bio = Biography(dc)
+    return Offices(bio, dc)
 
 
 # ---------------------------------------------------------------------------

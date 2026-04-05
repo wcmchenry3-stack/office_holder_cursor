@@ -36,16 +36,6 @@ from src.scraper.table_parser import (
 # ---------------------------------------------------------------------------
 
 
-class _NullLogger:
-    """Absorbs all logger calls without writing files."""
-
-    def log(self, *a, **kw):
-        pass
-
-    def debug_log(self, *a, **kw):
-        pass
-
-
 class _Resp:
     def __init__(self, status_code: int, text: str = ""):
         self.status_code = status_code
@@ -53,19 +43,17 @@ class _Resp:
 
 
 def _dc():
-    return DataCleanup(_NullLogger())
+    return DataCleanup()
 
 
 def _bio():
-    logger = _NullLogger()
-    return Biography(logger, DataCleanup(logger))
+    return Biography(DataCleanup())
 
 
 def _offices():
-    logger = _NullLogger()
-    dc = DataCleanup(logger)
-    bio = Biography(logger, dc)
-    return Offices(logger, bio, dc)
+    dc = DataCleanup()
+    bio = Biography(dc)
+    return Offices(bio, dc)
 
 
 def _cell(text: str = "", href: str | None = None) -> BeautifulSoup:

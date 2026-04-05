@@ -1,6 +1,5 @@
 import pytest
 
-from src.scraper.logger import Logger
 from src.scraper.table_parser import Biography, DataCleanup, parse_infobox_role_key_query
 from src.scraper.test_script_runner import run_test_script_from_html
 
@@ -62,9 +61,8 @@ def test_find_term_dates_filters_by_infobox_role_key(monkeypatch):
 
     monkeypatch.setattr(_wf, "_session", _S())
 
-    logger = Logger("test", "infobox_role_key")
-    cleanup = DataCleanup(logger)
-    biography = Biography(logger, cleanup)
+    cleanup = DataCleanup()
+    biography = Biography(cleanup)
 
     terms, _ = biography.find_term_dates(
         "https://en.wikipedia.org/wiki/Alex_R._Munson",
@@ -91,9 +89,8 @@ def test_find_term_dates_without_infobox_role_key_returns_all_matching_rows(monk
 
     monkeypatch.setattr(_wf, "_session", _S())
 
-    logger = Logger("test", "infobox_no_role_key")
-    cleanup = DataCleanup(logger)
-    biography = Biography(logger, cleanup)
+    cleanup = DataCleanup()
+    biography = Biography(cleanup)
 
     terms, _ = biography.find_term_dates(
         "https://en.wikipedia.org/wiki/Alex_R._Munson",
@@ -121,9 +118,8 @@ def test_find_term_dates_role_key_matches_when_first_link_is_not_office(monkeypa
 
     monkeypatch.setattr(_wf, "_session", _S())
 
-    logger = Logger("test", "infobox_non_office_first_link")
-    cleanup = DataCleanup(logger)
-    biography = Biography(logger, cleanup)
+    cleanup = DataCleanup()
+    biography = Biography(cleanup)
 
     terms, _ = biography.find_term_dates(
         "https://en.wikipedia.org/wiki/Alex_R._Munson",
@@ -152,9 +148,8 @@ def test_find_term_dates_role_key_supports_excludes(monkeypatch):
 
     monkeypatch.setattr(_wf, "_session", _S())
 
-    logger = Logger("test", "infobox_role_key_excludes")
-    cleanup = DataCleanup(logger)
-    biography = Biography(logger, cleanup)
+    cleanup = DataCleanup()
+    biography = Biography(cleanup)
 
     terms, _ = biography.find_term_dates(
         "https://en.wikipedia.org/wiki/Alex_R._Munson",

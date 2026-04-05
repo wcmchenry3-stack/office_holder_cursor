@@ -11,7 +11,6 @@ from typing import Any
 
 from bs4 import BeautifulSoup
 
-from src.scraper.logger import Logger
 from src.scraper import parse_core
 from src.scraper.runner import parse_full_table_for_export
 from src.scraper.wiki_fetch import wiki_url_to_rest_html_url, normalize_wiki_url
@@ -149,9 +148,8 @@ def _run_table_test(html_content: str, cfg: dict[str, Any], source_url: str) -> 
 
 def _run_bio_like_test(html_content: str, mode: str) -> dict[str, Any]:
     ensure_data_dir()
-    logger = Logger("test_script", "Office", log_dir=get_log_dir())
-    cleanup = parse_core.DataCleanup(logger)
-    biography = parse_core.Biography(logger, cleanup)
+    cleanup = parse_core.DataCleanup()
+    biography = parse_core.Biography(cleanup)
     soup = BeautifulSoup(html_content, "html.parser")
     infobox = soup.find("table", {"class": ["infobox vcard", "infobox biography vcard"]})
     if mode == "infobox":
