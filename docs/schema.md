@@ -9,12 +9,11 @@ SQLite database. Schema defined in `src/db/schema.py` (`SCHEMA_SQL`). Migrations
 ```
 countries ──┬── states ── cities
             │
-            ├── source_pages ── office_details ── office_table_config ──→ infobox_role_key_filter
-            │                       │
+            ├── source_pages ── office_details ──┬── office_table_config ──→ infobox_role_key_filter
+            │                       │            └── alt_links
             │                   (office_category)
             │
             ├── offices (LEGACY flat table — still in active use)
-            │       └── alt_links
             │
             ├── parties
             │
@@ -122,9 +121,9 @@ The original flat design. Still used by all scraper runs. Contains all fields fr
 | Column | Type | Notes |
 |---|---|---|
 | `id` | INTEGER PK | |
-| `office_id` | FK → offices | |
+| `office_details_id` | FK → office_details (NOT NULL) | |
 | `link_path` | TEXT | Wikipedia path (e.g. `/wiki/John_Smith`) |
-| | | UNIQUE(office_id, link_path) |
+| | | UNIQUE(office_details_id, link_path) |
 
 Alt links are alternate Wikipedia URLs associated with an office — used to look up infobox data from different pages than the main office holder link.
 
