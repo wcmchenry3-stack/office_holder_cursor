@@ -322,6 +322,10 @@ def _init_postgres() -> None:
 
         seed_scheduler_settings(conn=conn)
 
+        from .app_settings import seed_app_settings
+
+        seed_app_settings(conn=conn)
+
         # migrate_to_fk() is deliberately NOT called — PostgreSQL starts with the final schema
     finally:
         conn.close()
@@ -574,6 +578,15 @@ def _run_pg_migrations(conn) -> None:
         " paused BOOLEAN NOT NULL DEFAULT FALSE,"
         " updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())",
     )
+    _apply(
+        "pg_create_app_settings",
+        "CREATE TABLE IF NOT EXISTS app_settings ("
+        " key TEXT PRIMARY KEY,"
+        " value TEXT NOT NULL,"
+        " value_type TEXT NOT NULL DEFAULT 'int',"
+        " description TEXT,"
+        " updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())",
+    )
 
 
 def _sqlite_add_columns_if_missing(conn) -> None:
@@ -619,6 +632,10 @@ def _init_sqlite(path: Path | None = None) -> None:
         from .scheduler_settings import seed_scheduler_settings
 
         seed_scheduler_settings(conn=conn)
+
+        from .app_settings import seed_app_settings
+
+        seed_app_settings(conn=conn)
         conn.commit()
     finally:
         conn.close()

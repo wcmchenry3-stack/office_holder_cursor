@@ -119,58 +119,79 @@ async def lifespan(app: FastAPI):
     _MISFIRE_GRACE = 15 * 60  # seconds
     scheduler = AsyncIOScheduler(timezone="UTC")
 
+    from src.db.app_settings import get_setting
+
+    # Cron times are read from DB at startup so they can be adjusted via the UI without
+    # a code change. The hardcoded values are the fallback defaults.
+    maint_h = get_setting("cron_daily_maintenance_hour", 5)
+    maint_m = get_setting("cron_daily_maintenance_minute", 30)
+    delta_h = get_setting("cron_daily_delta_hour", 6)
+    delta_m = get_setting("cron_daily_delta_minute", 0)
+    vitals_h = get_setting("cron_daily_insufficient_vitals_hour", 7)
+    vitals_m = get_setting("cron_daily_insufficient_vitals_minute", 0)
+    gemini_h = get_setting("cron_daily_gemini_research_hour", 8)
+    gemini_m = get_setting("cron_daily_gemini_research_minute", 0)
+    quality_h = get_setting("cron_daily_page_quality_hour", 9)
+    quality_m = get_setting("cron_daily_page_quality_minute", 0)
+
     # Maintenance job: always registered unconditionally — expiry must run regardless of
     # whether scraping is paused. Per-job pause is controlled via the scheduler_settings DB
     # table (managed in the UI). The global kill switch is the RUNNERS_ENABLED env var.
     scheduler.add_job(
         run_daily_maintenance,
         "cron",
-        hour=5,
-        minute=30,
+        hour=maint_h,
+        minute=maint_m,
         id="daily_maintenance",
         misfire_grace_time=_MISFIRE_GRACE,
     )
-    logger.info("[scheduler] Daily maintenance (stale job expiry) scheduled at 05:30 UTC")
+    logger.info(
+        f"[scheduler] Daily maintenance (stale job expiry) scheduled at {maint_h:02d}:{maint_m:02d} UTC"
+    )
 
     scheduler.add_job(
         run_daily_delta,
         "cron",
-        hour=6,
-        minute=0,
+        hour=delta_h,
+        minute=delta_m,
         id="daily_delta",
         misfire_grace_time=_MISFIRE_GRACE,
     )
-    logger.info("[scheduler] Daily delta run scheduled at 06:00 UTC")
+    logger.info(f"[scheduler] Daily delta run scheduled at {delta_h:02d}:{delta_m:02d} UTC")
 
     scheduler.add_job(
         run_daily_insufficient_vitals,
         "cron",
-        hour=7,
-        minute=0,
+        hour=vitals_h,
+        minute=vitals_m,
         id="daily_insufficient_vitals",
         misfire_grace_time=_MISFIRE_GRACE,
     )
-    logger.info("[scheduler] Insufficient vitals recheck scheduled at 07:00 UTC")
+    logger.info(
+        f"[scheduler] Insufficient vitals recheck scheduled at {vitals_h:02d}:{vitals_m:02d} UTC"
+    )
 
     scheduler.add_job(
         run_daily_gemini_research,
         "cron",
-        hour=8,
-        minute=0,
+        hour=gemini_h,
+        minute=gemini_m,
         id="daily_gemini_research",
         misfire_grace_time=_MISFIRE_GRACE,
     )
-    logger.info("[scheduler] Gemini deep research scheduled at 08:00 UTC")
+    logger.info(f"[scheduler] Gemini deep research scheduled at {gemini_h:02d}:{gemini_m:02d} UTC")
 
     scheduler.add_job(
         run_daily_page_quality,
         "cron",
-        hour=9,
-        minute=0,
+        hour=quality_h,
+        minute=quality_m,
         id="daily_page_quality",
         misfire_grace_time=_MISFIRE_GRACE,
     )
-    logger.info("[scheduler] Page quality inspection scheduled at 09:00 UTC")
+    logger.info(
+        f"[scheduler] Page quality inspection scheduled at {quality_h:02d}:{quality_m:02d} UTC"
+    )
 
     scheduler.start()
     yield

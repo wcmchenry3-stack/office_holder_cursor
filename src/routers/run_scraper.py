@@ -354,7 +354,10 @@ async def api_run(
 
     if has_running:
         queue_depth = db_scraper_jobs.count_queued_jobs()
-        if queue_depth >= _MAX_QUEUED_JOBS:
+        from src.db.app_settings import get_setting
+
+        max_queued = get_setting("max_queued_jobs", default=_MAX_QUEUED_JOBS)
+        if queue_depth >= max_queued:
             return JSONResponse({"queued": False, "reason": "queue_full"}, status_code=202)
         job_id = str(uuid.uuid4())
         job_params = json.dumps(
