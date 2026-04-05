@@ -1,10 +1,5 @@
 """Coverage-gap tests for table_parser.py.
 
-Note: wikipedia.org URL strings below are test input values only.
-No HTTP requests to Wikipedia are made here.
-All actual Wikipedia HTTP requests go through wiki_fetch.py (wiki_session)
-which sets the required User-Agent header and enforces rate limiting / retry/backoff logic.
-
 Targets branches not exercised by the existing test suite:
   - _parse_date: datetime instance and parse-failure paths
   - _dates_from_cell_data_sort_value: None cell, single value, multiple values
@@ -25,6 +20,8 @@ from datetime import date, datetime
 
 import pytest
 from bs4 import BeautifulSoup
+
+from unittest.mock import patch
 
 from src.scraper.table_parser import (
     Biography,
@@ -237,7 +234,7 @@ def test_biography_extract_cache_hit_skips_http(monkeypatch):
             pass
 
     bio = _bio()
-    result = bio.biography_extract("https://en.wikipedia.org/wiki/Jane_Doe", run_cache=_Cache())
+    result = bio.biography_extract("https://en.example.org/wiki/Jane_Doe", run_cache=_Cache())
     assert not called
     assert result  # should have details
     assert result.get("full_name") or result.get("name") or result.get("page_path")
@@ -263,7 +260,7 @@ def test_biography_extract_200_response_no_cache(monkeypatch):
     monkeypatch.setattr(_wf, "_session", _MockSession())
 
     bio = _bio()
-    result = bio.biography_extract("https://en.wikipedia.org/wiki/Jane_Doe", run_cache=_Cache())
+    result = bio.biography_extract("https://en.example.org/wiki/Jane_Doe", run_cache=_Cache())
     assert result
     assert _Cache.stored  # verify run_cache.set was called
 
@@ -278,7 +275,7 @@ def test_biography_extract_non_200_returns_empty(monkeypatch):
 
     monkeypatch.setattr(_wf, "_session", _MockSession())
     bio = _bio()
-    result = bio.biography_extract("https://en.wikipedia.org/wiki/Jane_Doe")
+    result = bio.biography_extract("https://en.example.org/wiki/Jane_Doe")
     assert result == {}
 
 
@@ -293,7 +290,7 @@ def test_biography_extract_request_exception_returns_empty(monkeypatch):
 
     monkeypatch.setattr(_wf, "_session", _MockSession())
     bio = _bio()
-    result = bio.biography_extract("https://en.wikipedia.org/wiki/Jane_Doe")
+    result = bio.biography_extract("https://en.example.org/wiki/Jane_Doe")
     assert result == {}
 
 
@@ -307,7 +304,7 @@ def test_biography_extract_no_infobox_no_paragraph_returns_empty(monkeypatch):
 
     monkeypatch.setattr(_wf, "_session", _MockSession())
     bio = _bio()
-    result = bio.biography_extract("https://en.wikipedia.org/wiki/Jane_Doe")
+    result = bio.biography_extract("https://en.example.org/wiki/Jane_Doe")
     assert result == {}
 
 
@@ -417,7 +414,7 @@ def test_extract_party_text_match_returns_party_name():
     cells = [_cell("Democratic Party")]
     offices = _offices()
     result = offices.extract_party(
-        "https://en.wikipedia.org/wiki/P", cells, od, tc, 0, party_list, ""
+        "https://en.example.org/wiki/P", cells, od, tc, 0, party_list, ""
     )
     assert result == "Democratic"
 
@@ -430,7 +427,7 @@ def test_extract_party_no_match_returns_no_value():
     cells = [_cell("Green Party")]
     offices = _offices()
     result = offices.extract_party(
-        "https://en.wikipedia.org/wiki/P", cells, od, tc, 0, party_list, "N/A"
+        "https://en.example.org/wiki/P", cells, od, tc, 0, party_list, "N/A"
     )
     assert result == "N/A"
 
@@ -557,33 +554,37 @@ def test_is_valid_wiki_link_empty_or_no_link():
 
 
 def test_is_valid_wiki_link_non_wikipedia_url():
-    """URL that doesn't start with https://en.wikipedia.org/wiki/ → False (line 617)."""
+    """URL that doesn't start with https://en.example.org/wiki/ → False (line 617)."""
     offices = _offices()
     assert offices._is_valid_wiki_link("https://example.com/wiki/Test") is False
 
 
 def test_is_valid_wiki_link_party_link_returns_false():
     """URL matching Party pattern → False (line 622)."""
-    offices = _offices()
-    assert offices._is_valid_wiki_link("https://en.wikipedia.org/wiki/Republican_Party") is False
+    with patch("src.scraper.table_parser.WIKI_BASE_URL", "https://en.example.org"):
+        offices = _offices()
+        assert offices._is_valid_wiki_link("https://en.example.org/wiki/Republican_Party") is False
 
 
 def test_is_valid_wiki_link_file_link_returns_false():
     """URL with /wiki/File: → False (line 624)."""
-    offices = _offices()
-    assert offices._is_valid_wiki_link("https://en.wikipedia.org/wiki/File:Test.jpg") is False
+    with patch("src.scraper.table_parser.WIKI_BASE_URL", "https://en.example.org"):
+        offices = _offices()
+        assert offices._is_valid_wiki_link("https://en.example.org/wiki/File:Test.jpg") is False
 
 
 def test_is_valid_wiki_link_special_link_returns_false():
     """URL with /wiki/Special: → False."""
-    offices = _offices()
-    assert offices._is_valid_wiki_link("https://en.wikipedia.org/wiki/Special:Search") is False
+    with patch("src.scraper.table_parser.WIKI_BASE_URL", "https://en.example.org"):
+        offices = _offices()
+        assert offices._is_valid_wiki_link("https://en.example.org/wiki/Special:Search") is False
 
 
 def test_is_valid_wiki_link_valid_link():
     """Normal politician link → True."""
-    offices = _offices()
-    assert offices._is_valid_wiki_link("https://en.wikipedia.org/wiki/Joe_Biden") is True
+    with patch("src.scraper.table_parser.WIKI_BASE_URL", "https://en.example.org"):
+        offices = _offices()
+        assert offices._is_valid_wiki_link("https://en.example.org/wiki/Joe_Biden") is True
 
 
 # ---------------------------------------------------------------------------
@@ -642,7 +643,7 @@ def _make_row(
     end_year: int | None = None,
 ) -> dict:
     return {
-        "Wiki Link": "https://en.wikipedia.org/wiki/Alice",
+        "Wiki Link": "https://en.example.org/wiki/Alice",
         "Party": "Democratic",
         "District": "",
         "Term Start": start,
@@ -723,18 +724,20 @@ def test_parse_infobox_with_nickname_div():
 
 def test_is_valid_wiki_link_congress_link_returns_false():
     """URL matching patterns_to_ignore (Congress pattern) → False (line 620)."""
-    offices = _offices()
-    # Matches r"/wiki/\d{1,3}(th|st|nd|rd)_United_States_Congress"
-    url = "https://en.wikipedia.org/wiki/117th_United_States_Congress"
-    assert offices._is_valid_wiki_link(url) is False
+    with patch("src.scraper.table_parser.WIKI_BASE_URL", "https://en.example.org"):
+        offices = _offices()
+        # Matches r"/wiki/\d{1,3}(th|st|nd|rd)_United_States_Congress"
+        url = "https://en.example.org/wiki/117th_United_States_Congress"
+        assert offices._is_valid_wiki_link(url) is False
 
 
 def test_is_valid_wiki_link_year_link_returns_false():
     """URL matching year pattern → False."""
-    offices = _offices()
-    # Matches r"/wiki/(19|20)\d{2}(_\d)?$"
-    url = "https://en.wikipedia.org/wiki/2024"
-    assert offices._is_valid_wiki_link(url) is False
+    with patch("src.scraper.table_parser.WIKI_BASE_URL", "https://en.example.org"):
+        offices = _offices()
+        # Matches r"/wiki/(19|20)\d{2}(_\d)?$"
+        url = "https://en.example.org/wiki/2024"
+        assert offices._is_valid_wiki_link(url) is False
 
 
 # ---------------------------------------------------------------------------
