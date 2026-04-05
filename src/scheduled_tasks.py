@@ -44,16 +44,28 @@ def is_daily_delta_enabled() -> bool:
 def _run_daily_delta_in_subprocess(today_batch: int) -> dict:
     """Run scraper in a child process so memory is fully released when job ends."""
     payload = f"""
-import json
-from src.scraper.runner import run_with_db
+import json, os, sentry_sdk
 
-result = run_with_db(
-    run_mode="delta",
-    run_bio=True,
-    run_office_bio=True,
-    bio_batch={today_batch},
+sentry_sdk.init(
+    dsn=os.environ.get("SENTRY_DSN"),
+    environment=os.environ.get("APP_ENVIRONMENT", "dev"),
 )
-print(json.dumps(result))
+sentry_sdk.set_tag("subprocess_job", "daily_delta")
+sentry_sdk.set_context("subprocess", {{"bio_batch": {today_batch}}})
+
+try:
+    from src.scraper.runner import run_with_db
+    result = run_with_db(
+        run_mode="delta",
+        run_bio=True,
+        run_office_bio=True,
+        bio_batch={today_batch},
+    )
+    print(json.dumps(result))
+except Exception as _exc:
+    sentry_sdk.capture_exception(_exc)
+    sentry_sdk.flush(timeout=5)
+    raise
 """
     completed = subprocess.run(
         [sys.executable, "-c", payload],
@@ -228,14 +240,26 @@ def run_daily_delta() -> None:
 def _run_mode_in_subprocess(run_mode: str, today_batch: int) -> dict:
     """Run a specific scraper mode in a child process so memory is fully released."""
     payload = f"""
-import json
-from src.scraper.runner import run_with_db
+import json, os, sentry_sdk
 
-result = run_with_db(
-    run_mode="{run_mode}",
-    bio_batch={today_batch},
+sentry_sdk.init(
+    dsn=os.environ.get("SENTRY_DSN"),
+    environment=os.environ.get("APP_ENVIRONMENT", "dev"),
 )
-print(json.dumps(result))
+sentry_sdk.set_tag("subprocess_job", "{run_mode}")
+sentry_sdk.set_context("subprocess", {{"run_mode": "{run_mode}", "bio_batch": {today_batch}}})
+
+try:
+    from src.scraper.runner import run_with_db
+    result = run_with_db(
+        run_mode="{run_mode}",
+        bio_batch={today_batch},
+    )
+    print(json.dumps(result))
+except Exception as _exc:
+    sentry_sdk.capture_exception(_exc)
+    sentry_sdk.flush(timeout=5)
+    raise
 """
     completed = subprocess.run(
         [sys.executable, "-c", payload],
