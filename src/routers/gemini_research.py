@@ -281,6 +281,7 @@ def _research_worker(job_id: str, individual_id: int) -> None:
         _update_job(job_id, status="complete", phase="done")
 
     except Exception as exc:
+        sentry_sdk.capture_exception(exc)
         logger.exception("Research worker failed for individual %d", individual_id)
         _update_job(job_id, status="error", error=str(exc))
 

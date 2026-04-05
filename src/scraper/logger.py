@@ -1,54 +1,66 @@
 # -*- coding: utf-8 -*-
-"""File-based logger for scraper (no Colab/Drive)."""
+"""Logging helpers for the scraper.
+
+configure_run_logging() attaches a per-run timestamped FileHandler to the
+'src.scraper' logger hierarchy for the duration of one scraper job.  The
+caller is responsible for removing and closing the handler when the job ends.
+
+Log level is controlled by the SCRAPER_LOG_LEVEL env var (default: INFO).
+Set DEBUG for local diagnosis, WARNING in prod for clean-run silence.
+"""
+
+import logging
+import os
+from datetime import datetime
+from pathlib import Path
 
 HTTP_USER_AGENT = (
     "OfficeHolder/1.0 (https://github.com/wcmchenry3-stack/office-holder; wcmchenry3@gmail.com)"
 )
 
-from datetime import datetime
-import os
-from pathlib import Path
-import threading
+_SCRAPER_LOGGER = "src.scraper"
 
 
-def get_default_log_dir() -> Path:
-    from ..db.connection import get_log_dir
+def configure_run_logging(
+    process: str,
+    run_type: str,
+    log_dir: Path | str | None = None,
+) -> logging.FileHandler:
+    """Attach a timestamped FileHandler to the src.scraper logger hierarchy.
 
-    return get_log_dir()
+    Returns the handler so the caller can remove it when the job finishes:
 
+        handler = configure_run_logging("Office", run_type, log_dir)
+        try:
+            ...
+        finally:
+            logging.getLogger("src.scraper").removeHandler(handler)
+            handler.close()
 
-class Logger:
-    def __init__(self, run_type: str, process: str, log_dir: Path | str | None = None):
-        self.run_type = run_type
-        self.process = process
-        if log_dir is None:
-            log_dir = get_default_log_dir()
-        log_dir = Path(log_dir)
-        log_dir.mkdir(parents=True, exist_ok=True)
-        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        log_file_name = f"{process}_{run_type}_{timestamp}.txt"
-        self.log_file_path = log_dir / log_file_name
-        self.log_file = open(self.log_file_path, "w", encoding="utf-8")
-        self._lock = threading.Lock()
-        print(f"using log file: {self.log_file_path}")
+    Per-run log files are written to log_dir (defaults to get_log_dir()).
+    """
+    if log_dir is None:
+        from src.db.connection import get_log_dir
 
-    def log(self, message: str, print_flag: bool) -> None:
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        formatted_message = f"[{timestamp}] {message}\n\n"
-        with self._lock:
-            self.log_file.write(formatted_message)
-            self.log_file.flush()
-        if print_flag and self.run_type:
-            try:
-                print(f"{message}\n\n")
-            except UnicodeEncodeError:
-                safe = message.encode("ascii", errors="replace").decode("ascii")
-                print(f"{safe}\n\n")
+        log_dir = get_log_dir()
 
-    def debug_log(self, message: str, print_flag: bool) -> None:
-        if self.run_type == "test run":
-            self.log(message, print_flag)
+    log_dir = Path(log_dir)
+    log_dir.mkdir(parents=True, exist_ok=True)
 
-    def close(self) -> None:
-        if self.log_file:
-            self.log_file.close()
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    log_path = log_dir / f"{process}_{run_type}_{timestamp}.txt"
+
+    handler = logging.FileHandler(log_path, encoding="utf-8")
+    handler.setFormatter(logging.Formatter("[%(asctime)s] %(levelname)s %(name)s: %(message)s"))
+
+    level_name = os.getenv("SCRAPER_LOG_LEVEL", "INFO").upper()
+    level = getattr(logging, level_name, logging.INFO)
+    handler.setLevel(level)
+
+    scraper_logger = logging.getLogger(_SCRAPER_LOGGER)
+    scraper_logger.addHandler(handler)
+    # Ensure the logger itself passes DEBUG through so the handler can filter.
+    if scraper_logger.level == logging.NOTSET or scraper_logger.level > logging.DEBUG:
+        scraper_logger.setLevel(logging.DEBUG)
+
+    return handler

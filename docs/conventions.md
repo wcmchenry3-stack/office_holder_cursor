@@ -56,6 +56,8 @@ See [~/.claude/standards/testing.md](~/.claude/standards/testing.md) for univers
 - Sets `OFFICE_HOLDER_DB_PATH=data/test_run.db` — never touches production DB
 - Pre-fills `data/wiki_cache/` with fixture HTML — no live Wikipedia requests
 
+**Scenario tests as a PR expectation:** The `/run-scenarios-test` UI button has been removed from the nav. Scenario test cases (`tests/test_scenarios.py`) are expected as part of every PR that introduces new parsing functionality. Building the test case is part of the feature development, not a separate step — run them locally with `pytest tests/test_scenarios.py`.
+
 **Unit tests:** Scattered across `src/scraper/test_*.py` and `src/db/test_*.py`. No shared `conftest.py` yet.
 
 **Playwright tests:** `src/test_ui_edit_office_playwright.py`. Require manual `PLAYWRIGHT_*` env var setup. Not currently wired into CI.

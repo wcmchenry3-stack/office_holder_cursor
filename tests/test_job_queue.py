@@ -414,6 +414,52 @@ class TestExpireStaleJobs:
         expired = db_scraper_jobs.expire_stale_jobs(conn=conn)
         assert len(expired) == 0
 
+    def test_handles_datetime_object_from_postgres(self, tmp_path):
+        """Postgres TIMESTAMPTZ columns return datetime objects, not strings."""
+
+        class _FakeConn:
+            """Simulates a psycopg-style connection returning datetime objects."""
+
+            def __init__(self, rows):
+                self._rows = rows
+                self.updates = []
+
+            def execute(self, sql, params):
+                if sql.strip().upper().startswith("SELECT"):
+                    return self
+
+                class _Result:
+                    pass
+
+                self.updates.append((sql, params))
+                return _Result()
+
+            def fetchall(self):
+                return self._rows
+
+            def commit(self):
+                pass
+
+            def close(self):
+                pass
+
+        from datetime import timedelta
+
+        # Aware datetime (like psycopg would return for TIMESTAMPTZ)
+        old_aware = datetime.now(timezone.utc) - timedelta(hours=10)
+        # Naive datetime (fallback case)
+        old_naive = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=10)
+        fake = _FakeConn(
+            [
+                ("r1", "delta", "running", old_aware),
+                ("r2", "delta", "running", old_naive),
+            ]
+        )
+        expired = db_scraper_jobs.expire_stale_jobs(conn=fake)
+        assert len(expired) == 2
+        assert {e["id"] for e in expired} == {"r1", "r2"}
+        assert len(fake.updates) == 2
+
 
 # ---------------------------------------------------------------------------
 # Scheduler tests
@@ -445,5 +491,7 @@ class TestSchedulerSkipsWhenActive:
             patch("src.scheduled_tasks._send_summary_email"),
             patch("src.scraper.runner._cleanup_disk_cache", return_value=0),
             patch.object(db_scraper_jobs, "delete_jobs_older_than", return_value=0),
+            patch("src.db.scheduled_job_runs.create_run", return_value=1),
+            patch("src.db.scheduled_job_runs.finish_run"),
         ):
             run_daily_delta()

@@ -11,19 +11,48 @@ from . import office_terms as db_office_terms
 def list_individuals(
     limit: int = 500,
     offset: int = 0,
+    q: str | None = None,
+    is_living: int | None = None,
+    is_dead_link: int | None = None,
     conn=None,
 ) -> list[dict[str, Any]]:
-    """Return individuals with optional pagination."""
+    """Return individuals with optional pagination and filters.
+
+    Args:
+        q: Partial case-insensitive match on full_name.
+        is_living: 1 for living, 0 for deceased.
+        is_dead_link: 1 to show only dead-link records.
+    """
     own_conn = conn is None
     if own_conn:
         conn = get_connection()
     try:
+        where_clauses: list[str] = []
+        params: list[Any] = []
+
+        if q:
+            if is_postgres():
+                where_clauses.append("full_name ILIKE %s")
+            else:
+                where_clauses.append("full_name LIKE %s")
+            params.append(f"%{q}%")
+
+        if is_living is not None:
+            where_clauses.append("is_living = %s")
+            params.append(is_living)
+
+        if is_dead_link is not None:
+            where_clauses.append("is_dead_link = %s")
+            params.append(is_dead_link)
+
+        where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+
         cur = conn.execute(
-            """SELECT id, wiki_url, page_path, full_name, birth_date, death_date,
+            f"""SELECT id, wiki_url, page_path, full_name, birth_date, death_date,
                       birth_date_imprecise, death_date_imprecise,
-                      birth_place, death_place, is_dead_link, created_at, updated_at
-               FROM individuals ORDER BY full_name LIMIT %s OFFSET %s""",
-            (limit, offset),
+                      birth_place, death_place, is_living, is_dead_link, created_at, updated_at
+               FROM individuals {where_sql} ORDER BY full_name LIMIT %s OFFSET %s""",
+            (*params, limit, offset),
         )
         return [_row_to_dict(r) for r in cur.fetchall()]
     finally:
@@ -506,6 +535,68 @@ def get_dead_link_research_candidates_for_batch(batch: int, conn=None) -> list[d
             ("No link:%", batch, cutoff),
         ).fetchall()
         return [dict(zip(("id", "wiki_url", "full_name"), row)) for row in rows]
+    finally:
+        if own_conn:
+            conn.close()
+
+
+def find_nolink_by_name_and_office(office_id: int, name: str, conn=None) -> dict | None:
+    """Find a "No link:{office_id}:{name}" placeholder individual by office and name.
+
+    Matches case-insensitively with whitespace normalization. Returns the first
+    matching individual dict, or None if not found.
+    """
+    own_conn = conn is None
+    if own_conn:
+        conn = get_connection()
+    try:
+        prefix = f"No link:{office_id}:"
+        cur = conn.execute(
+            "SELECT id, wiki_url, full_name FROM individuals WHERE wiki_url LIKE %s",
+            (prefix + "%",),
+        )
+        target = " ".join(name.lower().split())
+        for row in cur.fetchall():
+            ind_id, wiki_url, full_name = row[0], row[1], row[2]
+            embedded = wiki_url[len(prefix) :]
+            if " ".join(embedded.lower().split()) == target:
+                return {"id": ind_id, "wiki_url": wiki_url, "full_name": full_name}
+        return None
+    finally:
+        if own_conn:
+            conn.close()
+
+
+def mark_superseded(old_id: int, new_id: int, conn=None) -> int:
+    """Retire a no-link placeholder by reassigning its office_terms and marking it superseded.
+
+    Steps (within caller's transaction):
+    1. Reassign office_terms.individual_id from old_id → new_id.
+    2. Set individuals.superseded_by_individual_id = new_id on the old row.
+    3. Set individuals.is_dead_link = 1 on the old row.
+
+    Returns the number of office_terms rows reassigned.
+    """
+    own_conn = conn is None
+    if own_conn:
+        conn = get_connection()
+    try:
+        cur = conn.execute(
+            "UPDATE office_terms SET individual_id = %s WHERE individual_id = %s",
+            (new_id, old_id),
+        )
+        reassigned = cur.rowcount
+
+        conn.execute(
+            "UPDATE individuals"
+            " SET superseded_by_individual_id = %s, is_dead_link = 1"
+            " WHERE id = %s",
+            (new_id, old_id),
+        )
+
+        if own_conn:
+            conn.commit()
+        return reassigned
     finally:
         if own_conn:
             conn.close()

@@ -44,16 +44,28 @@ def is_daily_delta_enabled() -> bool:
 def _run_daily_delta_in_subprocess(today_batch: int) -> dict:
     """Run scraper in a child process so memory is fully released when job ends."""
     payload = f"""
-import json
-from src.scraper.runner import run_with_db
+import json, os, sentry_sdk
 
-result = run_with_db(
-    run_mode="delta",
-    run_bio=True,
-    run_office_bio=True,
-    bio_batch={today_batch},
+sentry_sdk.init(
+    dsn=os.environ.get("SENTRY_DSN"),
+    environment=os.environ.get("APP_ENVIRONMENT", "dev"),
 )
-print(json.dumps(result))
+sentry_sdk.set_tag("subprocess_job", "daily_delta")
+sentry_sdk.set_context("subprocess", {{"bio_batch": {today_batch}}})
+
+try:
+    from src.scraper.runner import run_with_db
+    result = run_with_db(
+        run_mode="delta",
+        run_bio=True,
+        run_office_bio=True,
+        bio_batch={today_batch},
+    )
+    print(json.dumps(result))
+except Exception as _exc:
+    sentry_sdk.capture_exception(_exc)
+    sentry_sdk.flush(timeout=5)
+    raise
 """
     completed = subprocess.run(
         [sys.executable, "-c", payload],
@@ -164,6 +176,8 @@ def _send_expiry_email(job: dict) -> None:
 
 def run_daily_delta() -> None:
     """Entry point called by APScheduler at 06:00 UTC each day."""
+    from src.db import scheduled_job_runs as db_job_runs
+
     sentry_sdk.set_tag("scheduled_task", "daily_delta")
     if not is_daily_delta_enabled():
         logger.info("Daily delta run skipped because DAILY_DELTA_ENABLED is disabled")
@@ -195,6 +209,8 @@ def run_daily_delta() -> None:
         today_batch,
     )
 
+    run_id = db_job_runs.create_run("daily_delta")
+
     try:
         cache_deleted = _cleanup_disk_cache(max_age_days=30)
     except Exception as e:
@@ -217,10 +233,12 @@ def run_daily_delta() -> None:
         sentry_sdk.capture_exception()
         tb = traceback.format_exc()
         logger.error("Daily run crashed:\n%s", tb)
+        db_job_runs.finish_run(run_id, status="error", error=tb)
         _send_summary_email(None, 0.0, run_start, error=tb, cache_deleted=cache_deleted)
         return
 
     duration_s = (datetime.now(timezone.utc) - run_start).total_seconds()
+    db_job_runs.finish_run(run_id, status="complete", result=result)
     logger.info("Daily run complete in %.0fs — sending summary email", duration_s)
     _send_summary_email(result, duration_s, run_start)
 
@@ -228,14 +246,26 @@ def run_daily_delta() -> None:
 def _run_mode_in_subprocess(run_mode: str, today_batch: int) -> dict:
     """Run a specific scraper mode in a child process so memory is fully released."""
     payload = f"""
-import json
-from src.scraper.runner import run_with_db
+import json, os, sentry_sdk
 
-result = run_with_db(
-    run_mode="{run_mode}",
-    bio_batch={today_batch},
+sentry_sdk.init(
+    dsn=os.environ.get("SENTRY_DSN"),
+    environment=os.environ.get("APP_ENVIRONMENT", "dev"),
 )
-print(json.dumps(result))
+sentry_sdk.set_tag("subprocess_job", "{run_mode}")
+sentry_sdk.set_context("subprocess", {{"run_mode": "{run_mode}", "bio_batch": {today_batch}}})
+
+try:
+    from src.scraper.runner import run_with_db
+    result = run_with_db(
+        run_mode="{run_mode}",
+        bio_batch={today_batch},
+    )
+    print(json.dumps(result))
+except Exception as _exc:
+    sentry_sdk.capture_exception(_exc)
+    sentry_sdk.flush(timeout=5)
+    raise
 """
     completed = subprocess.run(
         [sys.executable, "-c", payload],
@@ -263,6 +293,8 @@ print(json.dumps(result))
 
 def run_daily_insufficient_vitals() -> None:
     """Entry point called by APScheduler at 07:00 UTC each day."""
+    from src.db import scheduled_job_runs as db_job_runs
+
     sentry_sdk.set_tag("scheduled_task", "insufficient_vitals")
     _expire_stale_jobs_with_email()
 
@@ -288,22 +320,28 @@ def run_daily_insufficient_vitals() -> None:
         today_batch,
     )
 
+    run_id = db_job_runs.create_run("insufficient_vitals")
+
     try:
         result = _run_mode_in_subprocess("delta_insufficient_vitals", today_batch)
     except Exception:
         sentry_sdk.capture_exception()
         tb = traceback.format_exc()
         logger.error("Insufficient vitals run crashed:\n%s", tb)
+        db_job_runs.finish_run(run_id, status="error", error=tb)
         _send_job_summary_email("Insufficient Vitals", None, 0.0, run_start, error=tb)
         return
 
     duration_s = (datetime.now(timezone.utc) - run_start).total_seconds()
+    db_job_runs.finish_run(run_id, status="complete", result=result)
     logger.info("Insufficient vitals run complete in %.0fs", duration_s)
     _send_job_summary_email("Insufficient Vitals", result, duration_s, run_start)
 
 
 def run_daily_gemini_research() -> None:
     """Entry point called by APScheduler at 08:00 UTC each day."""
+    from src.db import scheduled_job_runs as db_job_runs
+
     sentry_sdk.set_tag("scheduled_task", "gemini_research")
     _expire_stale_jobs_with_email()
 
@@ -329,12 +367,15 @@ def run_daily_gemini_research() -> None:
         today_batch,
     )
 
+    run_id = db_job_runs.create_run("gemini_research")
+
     try:
         result = _run_mode_in_subprocess("gemini_vitals_research", today_batch)
     except Exception:
         sentry_sdk.capture_exception()
         tb = traceback.format_exc()
         logger.error("Gemini research run crashed:\n%s", tb)
+        db_job_runs.finish_run(run_id, status="error", error=tb)
         # Detect model deprecation from subprocess traceback
         if "GeminiModelDeprecatedError" in tb:
             _send_model_deprecated_email("gemini-3.1-pro-preview", tb)
@@ -342,8 +383,34 @@ def run_daily_gemini_research() -> None:
         return
 
     duration_s = (datetime.now(timezone.utc) - run_start).total_seconds()
+    db_job_runs.finish_run(run_id, status="complete", result=result)
     logger.info("Gemini research run complete in %.0fs", duration_s)
     _send_job_summary_email("Gemini Research", result, duration_s, run_start)
+
+
+def run_daily_page_quality() -> None:
+    """Entry point called by APScheduler at 09:00 UTC each day."""
+    sentry_sdk.set_tag("scheduled_task", "page_quality")
+    run_start = datetime.now(timezone.utc)
+    logger.info(
+        "Page quality inspection starting at %s UTC",
+        run_start.strftime("%Y-%m-%d %H:%M:%S"),
+    )
+    try:
+        from src.services.page_quality_inspector import inspect_one_page
+
+        result = inspect_one_page()
+        if result is None:
+            logger.info("Page quality inspection: no pages to inspect or error occurred")
+        else:
+            logger.info(
+                "Page quality inspection complete: result=%s source_page_id=%s",
+                result.get("result"),
+                result.get("source_page_id"),
+            )
+    except Exception:
+        sentry_sdk.capture_exception()
+        logger.exception("Page quality inspection crashed")
 
 
 def _format_duration(seconds: float) -> str:

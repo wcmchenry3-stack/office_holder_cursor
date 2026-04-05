@@ -191,6 +191,7 @@ def _run_job_worker(
         with _run_job_lock:
             return _run_job_store.get(job_id, {}).get("cancelled", False)
 
+    sentry_sdk.set_context("scraper_job", {"job_id": job_id, "run_mode": run_mode})
     try:
         result = run_with_db(
             run_mode=run_mode,

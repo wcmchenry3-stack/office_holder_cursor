@@ -21,6 +21,8 @@ from datetime import date, datetime
 import pytest
 from bs4 import BeautifulSoup
 
+from unittest.mock import patch
+
 from src.scraper.table_parser import (
     Biography,
     DataCleanup,
@@ -36,16 +38,6 @@ from src.scraper.table_parser import (
 # ---------------------------------------------------------------------------
 
 
-class _NullLogger:
-    """Absorbs all logger calls without writing files."""
-
-    def log(self, *a, **kw):
-        pass
-
-    def debug_log(self, *a, **kw):
-        pass
-
-
 class _Resp:
     def __init__(self, status_code: int, text: str = ""):
         self.status_code = status_code
@@ -53,19 +45,17 @@ class _Resp:
 
 
 def _dc():
-    return DataCleanup(_NullLogger())
+    return DataCleanup()
 
 
 def _bio():
-    logger = _NullLogger()
-    return Biography(logger, DataCleanup(logger))
+    return Biography(DataCleanup())
 
 
 def _offices():
-    logger = _NullLogger()
-    dc = DataCleanup(logger)
-    bio = Biography(logger, dc)
-    return Offices(logger, bio, dc)
+    dc = DataCleanup()
+    bio = Biography(dc)
+    return Offices(bio, dc)
 
 
 def _cell(text: str = "", href: str | None = None) -> BeautifulSoup:
@@ -244,7 +234,7 @@ def test_biography_extract_cache_hit_skips_http(monkeypatch):
             pass
 
     bio = _bio()
-    result = bio.biography_extract("https://en.wikipedia.org/wiki/Jane_Doe", run_cache=_Cache())
+    result = bio.biography_extract("https://en.example.org/wiki/Jane_Doe", run_cache=_Cache())
     assert not called
     assert result  # should have details
     assert result.get("full_name") or result.get("name") or result.get("page_path")
@@ -270,7 +260,7 @@ def test_biography_extract_200_response_no_cache(monkeypatch):
     monkeypatch.setattr(_wf, "_session", _MockSession())
 
     bio = _bio()
-    result = bio.biography_extract("https://en.wikipedia.org/wiki/Jane_Doe", run_cache=_Cache())
+    result = bio.biography_extract("https://en.example.org/wiki/Jane_Doe", run_cache=_Cache())
     assert result
     assert _Cache.stored  # verify run_cache.set was called
 
@@ -285,7 +275,7 @@ def test_biography_extract_non_200_returns_empty(monkeypatch):
 
     monkeypatch.setattr(_wf, "_session", _MockSession())
     bio = _bio()
-    result = bio.biography_extract("https://en.wikipedia.org/wiki/Jane_Doe")
+    result = bio.biography_extract("https://en.example.org/wiki/Jane_Doe")
     assert result == {}
 
 
@@ -300,7 +290,7 @@ def test_biography_extract_request_exception_returns_empty(monkeypatch):
 
     monkeypatch.setattr(_wf, "_session", _MockSession())
     bio = _bio()
-    result = bio.biography_extract("https://en.wikipedia.org/wiki/Jane_Doe")
+    result = bio.biography_extract("https://en.example.org/wiki/Jane_Doe")
     assert result == {}
 
 
@@ -314,7 +304,7 @@ def test_biography_extract_no_infobox_no_paragraph_returns_empty(monkeypatch):
 
     monkeypatch.setattr(_wf, "_session", _MockSession())
     bio = _bio()
-    result = bio.biography_extract("https://en.wikipedia.org/wiki/Jane_Doe")
+    result = bio.biography_extract("https://en.example.org/wiki/Jane_Doe")
     assert result == {}
 
 
@@ -424,7 +414,7 @@ def test_extract_party_text_match_returns_party_name():
     cells = [_cell("Democratic Party")]
     offices = _offices()
     result = offices.extract_party(
-        "https://en.wikipedia.org/wiki/P", cells, od, tc, 0, party_list, ""
+        "https://en.example.org/wiki/P", cells, od, tc, 0, party_list, ""
     )
     assert result == "Democratic"
 
@@ -437,7 +427,7 @@ def test_extract_party_no_match_returns_no_value():
     cells = [_cell("Green Party")]
     offices = _offices()
     result = offices.extract_party(
-        "https://en.wikipedia.org/wiki/P", cells, od, tc, 0, party_list, "N/A"
+        "https://en.example.org/wiki/P", cells, od, tc, 0, party_list, "N/A"
     )
     assert result == "N/A"
 
@@ -564,33 +554,37 @@ def test_is_valid_wiki_link_empty_or_no_link():
 
 
 def test_is_valid_wiki_link_non_wikipedia_url():
-    """URL that doesn't start with https://en.wikipedia.org/wiki/ → False (line 617)."""
+    """URL that doesn't start with https://en.example.org/wiki/ → False (line 617)."""
     offices = _offices()
     assert offices._is_valid_wiki_link("https://example.com/wiki/Test") is False
 
 
 def test_is_valid_wiki_link_party_link_returns_false():
     """URL matching Party pattern → False (line 622)."""
-    offices = _offices()
-    assert offices._is_valid_wiki_link("https://en.wikipedia.org/wiki/Republican_Party") is False
+    with patch("src.scraper.table_parser.WIKI_BASE_URL", "https://en.example.org"):
+        offices = _offices()
+        assert offices._is_valid_wiki_link("https://en.example.org/wiki/Republican_Party") is False
 
 
 def test_is_valid_wiki_link_file_link_returns_false():
     """URL with /wiki/File: → False (line 624)."""
-    offices = _offices()
-    assert offices._is_valid_wiki_link("https://en.wikipedia.org/wiki/File:Test.jpg") is False
+    with patch("src.scraper.table_parser.WIKI_BASE_URL", "https://en.example.org"):
+        offices = _offices()
+        assert offices._is_valid_wiki_link("https://en.example.org/wiki/File:Test.jpg") is False
 
 
 def test_is_valid_wiki_link_special_link_returns_false():
     """URL with /wiki/Special: → False."""
-    offices = _offices()
-    assert offices._is_valid_wiki_link("https://en.wikipedia.org/wiki/Special:Search") is False
+    with patch("src.scraper.table_parser.WIKI_BASE_URL", "https://en.example.org"):
+        offices = _offices()
+        assert offices._is_valid_wiki_link("https://en.example.org/wiki/Special:Search") is False
 
 
 def test_is_valid_wiki_link_valid_link():
     """Normal politician link → True."""
-    offices = _offices()
-    assert offices._is_valid_wiki_link("https://en.wikipedia.org/wiki/Joe_Biden") is True
+    with patch("src.scraper.table_parser.WIKI_BASE_URL", "https://en.example.org"):
+        offices = _offices()
+        assert offices._is_valid_wiki_link("https://en.example.org/wiki/Joe_Biden") is True
 
 
 # ---------------------------------------------------------------------------
@@ -649,7 +643,7 @@ def _make_row(
     end_year: int | None = None,
 ) -> dict:
     return {
-        "Wiki Link": "https://en.wikipedia.org/wiki/Alice",
+        "Wiki Link": "https://en.example.org/wiki/Alice",
         "Party": "Democratic",
         "District": "",
         "Term Start": start,
@@ -730,18 +724,20 @@ def test_parse_infobox_with_nickname_div():
 
 def test_is_valid_wiki_link_congress_link_returns_false():
     """URL matching patterns_to_ignore (Congress pattern) → False (line 620)."""
-    offices = _offices()
-    # Matches r"/wiki/\d{1,3}(th|st|nd|rd)_United_States_Congress"
-    url = "https://en.wikipedia.org/wiki/117th_United_States_Congress"
-    assert offices._is_valid_wiki_link(url) is False
+    with patch("src.scraper.table_parser.WIKI_BASE_URL", "https://en.example.org"):
+        offices = _offices()
+        # Matches r"/wiki/\d{1,3}(th|st|nd|rd)_United_States_Congress"
+        url = "https://en.example.org/wiki/117th_United_States_Congress"
+        assert offices._is_valid_wiki_link(url) is False
 
 
 def test_is_valid_wiki_link_year_link_returns_false():
     """URL matching year pattern → False."""
-    offices = _offices()
-    # Matches r"/wiki/(19|20)\d{2}(_\d)?$"
-    url = "https://en.wikipedia.org/wiki/2024"
-    assert offices._is_valid_wiki_link(url) is False
+    with patch("src.scraper.table_parser.WIKI_BASE_URL", "https://en.example.org"):
+        offices = _offices()
+        # Matches r"/wiki/(19|20)\d{2}(_\d)?$"
+        url = "https://en.example.org/wiki/2024"
+        assert offices._is_valid_wiki_link(url) is False
 
 
 # ---------------------------------------------------------------------------
@@ -763,3 +759,72 @@ def test_row_matches_filter_non_int_column_defaults_to_no_filter():
     row = _bs4_row(["Alice"])
     tc = {"row_filter_column": "not-an-int", "row_filter_criteria": "Senator"}
     assert offices._row_matches_filter(row, tc) is True
+
+
+# ---------------------------------------------------------------------------
+# Log-level classification: skipped-row paths emit WARNING
+# ---------------------------------------------------------------------------
+
+
+def _table_html_with_short_row() -> str:
+    """HTML table whose second row has too few cells to satisfy table_rows=4."""
+    return (
+        "<table>"
+        "<tr><th>Name</th><th>Party</th><th>Start</th><th>End</th></tr>"
+        "<tr><td>Only one cell</td></tr>"
+        "</table>"
+    )
+
+
+def test_short_row_logs_warning(caplog):
+    """parse_table_row should emit a WARNING when a row has too few cells."""
+    import logging
+
+    offices = _offices()
+    html = _table_html_with_short_row()
+    table_config = {
+        "url": "https://en.example.org/wiki/Test",
+        "table_no": 1,
+        "table_rows": 4,
+        "link_column": 0,
+        "party_column": 1,
+        "term_start_column": 2,
+        "term_end_column": 3,
+        "district_column": 0,
+        "dynamic_parse": False,
+        "read_columns_right_to_left": False,
+        "find_date_in_infobox": False,
+        "years_only": False,
+        "parse_rowspan": False,
+        "consolidate_rowspan_terms": False,
+        "rep_link": False,
+        "party_link": False,
+        "alt_links": [],
+        "alt_link_include_main": False,
+        "use_full_page_for_table": False,
+        "term_dates_merged": False,
+        "party_ignore": False,
+        "district_ignore": False,
+        "district_at_large": False,
+        "ignore_non_links": False,
+        "infobox_role_key": "",
+        "row_filter_column": None,
+        "row_filter_criteria": "",
+        "run_dynamic_parse": False,
+    }
+    office_details = {
+        "office_country": "United States",
+        "office_level": "Federal",
+        "office_branch": "Legislative",
+        "office_department": "",
+        "office_name": "Test Office",
+        "office_state": "",
+        "office_notes": "",
+    }
+    with caplog.at_level(logging.WARNING, logger="src.scraper.table_parser"):
+        offices.process_table(
+            html, table_config, office_details, "https://en.example.org/wiki/Test", []
+        )
+    assert any(
+        "issue with table rows" in r.message for r in caplog.records
+    ), "Expected a WARNING about too-few rows"

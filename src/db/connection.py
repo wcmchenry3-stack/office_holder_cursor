@@ -456,6 +456,72 @@ def _run_pg_migrations(conn) -> None:
         "CREATE INDEX IF NOT EXISTS idx_data_quality_reports_fingerprint"
         " ON data_quality_reports(fingerprint)",
     )
+    _apply(
+        "pg_source_pages_last_quality_checked_at",
+        "ALTER TABLE source_pages ADD COLUMN IF NOT EXISTS" " last_quality_checked_at TIMESTAMPTZ",
+    )
+    _apply(
+        "pg_create_page_quality_checks",
+        "CREATE TABLE IF NOT EXISTS page_quality_checks ("
+        " id SERIAL PRIMARY KEY,"
+        " source_page_id INTEGER NOT NULL REFERENCES source_pages(id),"
+        " checked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),"
+        " html_char_count INTEGER,"
+        " office_terms_count INTEGER,"
+        " ai_votes TEXT,"
+        " result TEXT NOT NULL DEFAULT 'ok',"
+        " gh_issue_url TEXT,"
+        " created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())",
+    )
+    _apply(
+        "pg_create_suspect_record_flags",
+        "CREATE TABLE IF NOT EXISTS suspect_record_flags ("
+        " id SERIAL PRIMARY KEY,"
+        " individual_id INTEGER REFERENCES individuals(id),"
+        " office_id INTEGER,"
+        " full_name TEXT,"
+        " wiki_url TEXT,"
+        " flag_reasons TEXT,"
+        " ai_votes TEXT,"
+        " result TEXT NOT NULL DEFAULT 'skipped',"
+        " gh_issue_url TEXT,"
+        " created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())",
+    )
+    _apply(
+        "pg_office_table_config_last_link_fill_rate",
+        "ALTER TABLE office_table_config ADD COLUMN IF NOT EXISTS last_link_fill_rate REAL",
+    )
+    _apply(
+        "pg_individuals_superseded_by_individual_id",
+        "ALTER TABLE individuals ADD COLUMN IF NOT EXISTS"
+        " superseded_by_individual_id INTEGER REFERENCES individuals(id)",
+    )
+    _apply(
+        "pg_create_scheduled_job_runs",
+        "CREATE TABLE IF NOT EXISTS scheduled_job_runs ("
+        " id SERIAL PRIMARY KEY,"
+        " job_name TEXT NOT NULL,"
+        " started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),"
+        " finished_at TIMESTAMPTZ,"
+        " status TEXT NOT NULL DEFAULT 'running',"
+        " duration_s NUMERIC(10,2),"
+        " result_json TEXT,"
+        " error TEXT);"
+        "CREATE INDEX IF NOT EXISTS idx_scheduled_job_runs_started"
+        " ON scheduled_job_runs (started_at DESC)",
+    )
+    _apply(
+        "pg_create_nolink_supersede_log",
+        "CREATE TABLE IF NOT EXISTS nolink_supersede_log ("
+        " id SERIAL PRIMARY KEY,"
+        " old_individual_id INTEGER NOT NULL REFERENCES individuals(id),"
+        " new_individual_id INTEGER NOT NULL REFERENCES individuals(id),"
+        " office_id INTEGER NOT NULL,"
+        " old_wiki_url TEXT NOT NULL,"
+        " new_wiki_url TEXT NOT NULL,"
+        " office_terms_reassigned INTEGER NOT NULL DEFAULT 0,"
+        " created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())",
+    )
 
 
 def _sqlite_add_columns_if_missing(conn) -> None:
@@ -471,6 +537,9 @@ def _sqlite_add_columns_if_missing(conn) -> None:
         ("scraper_jobs", "job_params_json", "TEXT"),
         ("individual_research_sources", "origin", "TEXT DEFAULT 'manual'"),
         ("wiki_draft_proposals", "origin", "TEXT DEFAULT 'manual'"),
+        ("individuals", "superseded_by_individual_id", "INTEGER"),
+        ("source_pages", "last_quality_checked_at", "TEXT"),
+        ("office_table_config", "last_link_fill_rate", "REAL"),
     ]
     for table, column, col_type in migrations:
         try:

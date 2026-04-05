@@ -8,6 +8,7 @@ from src.db import offices as db_offices
 from src.db import office_terms as db_office_terms
 from src.db import reports as db_reports
 from src.db import individual_research_sources as db_research
+from src.db import scheduled_job_runs as db_job_runs
 from src.routers._deps import templates
 
 router = APIRouter()
@@ -15,10 +16,28 @@ router = APIRouter()
 
 @router.get("/data/individuals", response_class=HTMLResponse)
 async def data_individuals(
-    request: Request, limit: int = Query(100, le=500), offset: int = Query(0)
+    request: Request,
+    limit: int = Query(100, le=500),
+    offset: int = Query(0),
+    q: str | None = Query(None),
+    is_living: int | None = Query(None),
+    is_dead_link: int | None = Query(None),
 ):
-    individuals = db_individuals.list_individuals(limit=limit, offset=offset)
-    return templates.TemplateResponse(request, "individuals.html", {"individuals": individuals})
+    individuals = db_individuals.list_individuals(
+        limit=limit, offset=offset, q=q, is_living=is_living, is_dead_link=is_dead_link
+    )
+    return templates.TemplateResponse(
+        request,
+        "individuals.html",
+        {
+            "individuals": individuals,
+            "q": q or "",
+            "is_living": is_living,
+            "is_dead_link": is_dead_link,
+            "limit": limit,
+            "offset": offset,
+        },
+    )
 
 
 @router.get("/data/office-terms", response_class=HTMLResponse)
@@ -123,6 +142,17 @@ async def api_research_submit(individual_id: int):
     except WikipediaSubmitError as exc:
         db_research.update_wiki_draft_proposal_status(draft["id"], "rejected")
         raise HTTPException(502, f"Wikipedia submission failed: {exc}")
+
+
+@router.get("/data/scheduled-job-runs", response_class=HTMLResponse)
+async def data_scheduled_job_runs(
+    request: Request,
+    days: int = Query(90, ge=1, le=365),
+):
+    runs = db_job_runs.list_recent_runs(days=days)
+    return templates.TemplateResponse(
+        request, "scheduled_job_runs.html", {"runs": runs, "days": days}
+    )
 
 
 @router.get("/report/milestones", response_class=HTMLResponse)

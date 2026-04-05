@@ -214,13 +214,19 @@ def expire_stale_jobs(conn=None) -> list[dict]:
 
         expired = []
         for row in rows:
-            job_id, job_type, status, created_at_str = row[0], row[1], row[2], row[3]
-            try:
-                created_at = datetime.strptime(created_at_str, "%Y-%m-%dT%H:%M:%SZ").replace(
-                    tzinfo=timezone.utc
-                )
-            except (ValueError, TypeError):
-                continue
+            job_id, job_type, status, created_at_raw = row[0], row[1], row[2], row[3]
+            # PostgreSQL TIMESTAMPTZ returns datetime; SQLite TEXT returns str.
+            if isinstance(created_at_raw, datetime):
+                created_at = created_at_raw
+                if created_at.tzinfo is None:
+                    created_at = created_at.replace(tzinfo=timezone.utc)
+            else:
+                try:
+                    created_at = datetime.strptime(created_at_raw, "%Y-%m-%dT%H:%M:%SZ").replace(
+                        tzinfo=timezone.utc
+                    )
+                except (ValueError, TypeError):
+                    continue
             age = now - created_at
             reason = None
             if status == "queued" and age > timedelta(hours=12):

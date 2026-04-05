@@ -239,8 +239,6 @@ class TestRunnerInsufficientVitals:
     def test_uses_explicit_batch(self):
         """When bio_batch is set on ctx, that batch number is used."""
         ctx = self._make_ctx(bio_batch=7)
-        mock_logger = MagicMock()
-        mock_logger.close = MagicMock()
         report = MagicMock()
 
         with (
@@ -253,7 +251,7 @@ class TestRunnerInsufficientVitals:
         ):
             from src.scraper.runner import _run_insufficient_vitals
 
-            _run_insufficient_vitals(ctx, mock_logger, report)
+            _run_insufficient_vitals(ctx, report)
             mock_get.assert_called_once_with(7)
 
     def test_uses_today_batch_when_none(self):
@@ -262,8 +260,6 @@ class TestRunnerInsufficientVitals:
 
         expected_batch = date.today().day % 30
         ctx = self._make_ctx(bio_batch=None)
-        mock_logger = MagicMock()
-        mock_logger.close = MagicMock()
         report = MagicMock()
 
         with (
@@ -276,14 +272,12 @@ class TestRunnerInsufficientVitals:
         ):
             from src.scraper.runner import _run_insufficient_vitals
 
-            _run_insufficient_vitals(ctx, mock_logger, report)
+            _run_insufficient_vitals(ctx, report)
             mock_get.assert_called_once_with(expected_batch)
 
     def test_marks_checked_on_success(self):
         """mark_insufficient_vitals_checked called for each successful bio fetch."""
         ctx = self._make_ctx(bio_batch=0)
-        mock_logger = MagicMock()
-        mock_logger.close = MagicMock()
         report = MagicMock()
 
         individuals = [{"id": 30, "wiki_url": "https://en.wikipedia.org/wiki/A", "full_name": "A"}]
@@ -306,7 +300,7 @@ class TestRunnerInsufficientVitals:
         ):
             from src.scraper.runner import _run_insufficient_vitals
 
-            result = _run_insufficient_vitals(ctx, mock_logger, report)
+            result = _run_insufficient_vitals(ctx, report)
 
         mock_mark.assert_called_once_with(30)
         assert result["bio_success_count"] == 1
@@ -314,8 +308,6 @@ class TestRunnerInsufficientVitals:
     def test_marks_checked_on_error(self):
         """mark_insufficient_vitals_checked also called when bio fetch fails."""
         ctx = self._make_ctx(bio_batch=0)
-        mock_logger = MagicMock()
-        mock_logger.close = MagicMock()
         report = MagicMock()
 
         individuals = [{"id": 30, "wiki_url": "https://en.wikipedia.org/wiki/A", "full_name": "A"}]
@@ -336,15 +328,13 @@ class TestRunnerInsufficientVitals:
         ):
             from src.scraper.runner import _run_insufficient_vitals
 
-            result = _run_insufficient_vitals(ctx, mock_logger, report)
+            result = _run_insufficient_vitals(ctx, report)
 
         mock_mark.assert_called_once_with(30)
         assert result["bio_error_count"] == 1
 
     def test_empty_batch_returns_zero_counts(self):
         ctx = self._make_ctx(bio_batch=5)
-        mock_logger = MagicMock()
-        mock_logger.close = MagicMock()
         report = MagicMock()
 
         with (
@@ -355,7 +345,7 @@ class TestRunnerInsufficientVitals:
         ):
             from src.scraper.runner import _run_insufficient_vitals
 
-            result = _run_insufficient_vitals(ctx, mock_logger, report)
+            result = _run_insufficient_vitals(ctx, report)
 
         assert result["bio_success_count"] == 0
         assert result["bio_error_count"] == 0
@@ -363,8 +353,6 @@ class TestRunnerInsufficientVitals:
 
     def test_result_includes_batch_metadata(self):
         ctx = self._make_ctx(bio_batch=3)
-        mock_logger = MagicMock()
-        mock_logger.close = MagicMock()
         report = MagicMock()
 
         with (
@@ -375,7 +363,7 @@ class TestRunnerInsufficientVitals:
         ):
             from src.scraper.runner import _run_insufficient_vitals
 
-            result = _run_insufficient_vitals(ctx, mock_logger, report)
+            result = _run_insufficient_vitals(ctx, report)
 
         assert result["insufficient_vitals_batch"] == 3
         assert "insufficient_vitals_checked" in result

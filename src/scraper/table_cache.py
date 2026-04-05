@@ -9,6 +9,7 @@ import hashlib
 import json
 import logging
 import threading
+import weakref
 from pathlib import Path
 
 from bs4 import BeautifulSoup
@@ -20,8 +21,25 @@ logger = logging.getLogger(__name__)
 
 TIMEOUT = 30
 _LOCK = threading.Lock()
-_key_locks: dict[str, threading.Lock] = {}
+
+# WeakValueDictionary: entries are removed automatically once no thread holds
+# a reference to the _KeyLock, so the dict never grows unboundedly.
+_key_locks: weakref.WeakValueDictionary = weakref.WeakValueDictionary()
 _key_locks_lock = threading.Lock()
+
+
+class _KeyLock:
+    """Thin wrapper around threading.Lock that is weakly referenceable."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+
+    def __enter__(self):
+        self._lock.acquire()
+        return self
+
+    def __exit__(self, *args):
+        self._lock.release()
 
 
 def _cache_dir() -> Path:
@@ -36,11 +54,16 @@ def _cache_key(url: str, table_no: int, use_full_page: bool = False) -> str:
     return hashlib.sha256(normalized).hexdigest()[:32]
 
 
-def _key_lock(key: str) -> threading.Lock:
+def _key_lock(key: str) -> _KeyLock:
+    """Return a per-key lock, creating one if needed. Caller must hold a strong
+    reference for the duration of the critical section — the WeakValueDictionary
+    will GC the lock once the caller's local variable goes out of scope."""
     with _key_locks_lock:
-        if key not in _key_locks:
-            _key_locks[key] = threading.Lock()
-        return _key_locks[key]
+        lock = _key_locks.get(key)
+        if lock is None:
+            lock = _KeyLock()
+            _key_locks[key] = lock
+        return lock
 
 
 def _fetch_table_from_url(

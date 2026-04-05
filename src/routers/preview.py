@@ -122,6 +122,7 @@ def _preview_job_worker(job_id: str, draft: dict, max_rows: "int | None"):
                     }
                 )
 
+    sentry_sdk.set_context("preview_job", {"job_id": job_id})
     try:
         result = preview_with_config(draft, max_rows=max_rows, progress_callback=progress_callback)
         with _preview_job_lock:
@@ -157,6 +158,7 @@ def _export_job_worker(job_id: str, office_name: str, config: dict):
                     }
                 )
 
+    sentry_sdk.set_context("export_job", {"job_id": job_id, "office_name": office_name})
     try:
         with _export_job_lock:
             if job_id in _export_job_store:
@@ -328,6 +330,7 @@ def _export_job_worker(job_id: str, office_name: str, config: dict):
                     "filename": filename,
                 }
     except Exception as e:
+        sentry_sdk.capture_exception(e)
         with _export_job_lock:
             if job_id in _export_job_store:
                 _export_job_store[job_id]["status"] = "error"

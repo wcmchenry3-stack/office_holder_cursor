@@ -54,14 +54,18 @@ from src.db import offices as db_offices
 from src.db import parties as db_parties
 from src.db import individuals as db_individuals
 from src.db import office_terms as db_office_terms
+from src.db import nolink_supersede_log as db_supersede_log
+from src.db import suspect_record_flags as db_suspect_flags
 from src.db.date_utils import normalize_date
-from src.scraper.logger import HTTP_USER_AGENT, Logger
+from src.scraper.logger import HTTP_USER_AGENT, configure_run_logging
 from src.scraper.config_test import get_raw_table_preview
 from src.scraper.table_cache import get_table_html_cached
 from src.scraper.run_cache import RunPageCache
 from src.scraper.wiki_fetch import canonical_holder_url, normalize_wiki_url
 
 from src.scraper import parse_core
+
+_log = logging.getLogger(__name__)
 
 
 def parse_full_table_for_export(
@@ -78,44 +82,49 @@ def parse_full_table_for_export(
     """
     init_db()
     log_dir = get_log_dir()
-    logger = Logger("export", "Office", log_dir=log_dir)
-    party_list = db_parties.get_party_list_for_scraper()
-    data_cleanup = parse_core.DataCleanup(logger)
-    biography = parse_core.Biography(logger, data_cleanup)
-    offices_parser = parse_core.Offices(logger, biography, data_cleanup)
-    # reporter=None for export: single-record export, failures are acceptable silently
-    table_data = _parse_office_html(
-        office_row,
-        "",
-        url,
-        party_list,
-        offices_parser,
-        cached_table_html=table_html,
-        progress_callback=progress_callback,
-    )
-    years_only = bool(office_row.get("years_only"))
-    if bool(office_row.get("remove_duplicates")):
-        table_data = _dedupe_parsed_rows(table_data, years_only=years_only)
-    rows_out = []
-    for row in table_data:
-        normalized = _normalize_row_for_import(row, years_only=years_only, include_no_link=True)
-        if normalized is None:
-            continue
-        _, term_start_val, term_end_val, _ts_imp, _te_imp, term_start_year, term_end_year = (
-            normalized
+    _fh = configure_run_logging("export", "Office", log_dir=log_dir)
+    try:
+        party_list = db_parties.get_party_list_for_scraper()
+        data_cleanup = parse_core.DataCleanup()
+        biography = parse_core.Biography(data_cleanup)
+        offices_parser = parse_core.Offices(biography, data_cleanup)
+        # reporter=None for export: single-record export, failures are acceptable silently
+        table_data = _parse_office_html(
+            office_row,
+            "",
+            url,
+            party_list,
+            offices_parser,
+            cached_table_html=table_html,
+            progress_callback=progress_callback,
         )
-        out = {
-            "Wiki Link": row.get("Wiki Link") or "",
-            "Party": row.get("Party") or "",
-            "District": row.get("District") or "",
-            "Term Start": term_start_val if term_start_val else "",
-            "Term End": term_end_val if term_end_val else "",
-            "Term Start Year": term_start_year,
-            "Term End Year": term_end_year,
-            "Infobox items": row.get("Infobox items") or "",
-        }
-        rows_out.append(out)
-    return rows_out
+        years_only = bool(office_row.get("years_only"))
+        if bool(office_row.get("remove_duplicates")):
+            table_data = _dedupe_parsed_rows(table_data, years_only=years_only)
+        rows_out = []
+        for row in table_data:
+            normalized = _normalize_row_for_import(row, years_only=years_only, include_no_link=True)
+            if normalized is None:
+                continue
+            _, term_start_val, term_end_val, _ts_imp, _te_imp, term_start_year, term_end_year = (
+                normalized
+            )
+            out = {
+                "Wiki Link": row.get("Wiki Link") or "",
+                "Party": row.get("Party") or "",
+                "District": row.get("District") or "",
+                "Term Start": term_start_val if term_start_val else "",
+                "Term End": term_end_val if term_end_val else "",
+                "Term Start Year": term_start_year,
+                "Term End Year": term_end_year,
+                "Infobox items": row.get("Infobox items") or "",
+            }
+            rows_out.append(out)
+        return rows_out
+    finally:
+        if _fh is not None:
+            logging.getLogger("src.scraper").removeHandler(_fh)
+            _fh.close()
 
 
 def _parse_office_html(
@@ -300,6 +309,132 @@ def _holder_keys_from_parsed_rows(
 def _is_dead_wiki_url(url: str) -> bool:
     u = (url or "").lower()
     return "redlink=1" in u
+
+
+_FILL_RATE_DROP_THRESHOLD = 0.30  # 30 percentage points
+
+
+def _check_fill_rate_drop(office_row: dict, new_rate: float) -> None:
+    """Create a GH issue when link fill rate drops >30pp vs the stored baseline.
+
+    Called after each parse. Logs a warning and opens a GitHub issue so the
+    table structure change is visible for manual review. Never raises.
+    """
+    import logging as _logging
+
+    _log = _logging.getLogger(__name__)
+
+    prev_rate = office_row.get("last_link_fill_rate")
+    if prev_rate is None:
+        return  # no baseline yet — first scrape for this office
+    drop = prev_rate - new_rate
+    if drop <= _FILL_RATE_DROP_THRESHOLD:
+        return
+
+    office_name = office_row.get("name") or office_row.get("id", "unknown")
+    page_url = office_row.get("url", "")
+    tc_id = office_row.get("office_table_config_id") or office_row.get("id")
+    _log.warning(
+        "Fill-rate drop detected for office '%s' (tc_id=%s): %.0f%% → %.0f%% (drop=%.0f%%)",
+        office_name,
+        tc_id,
+        prev_rate * 100,
+        new_rate * 100,
+        drop * 100,
+    )
+    try:
+        from src.services.github_client import get_github_client
+
+        gh = get_github_client()
+        if gh is None:
+            return
+        title = f"[Structural change] Link fill rate dropped {drop * 100:.0f}pp: {office_name}"
+        body = (
+            f"## Wikipedia table structure may have changed\n\n"
+            f"**Office:** {office_name}\n"
+            f"**Source page URL:** {page_url}\n"
+            f"**office_table_config id:** {tc_id}\n\n"
+            f"| Metric | Value |\n"
+            f"|---|---|\n"
+            f"| Previous fill rate | {prev_rate * 100:.1f}% |\n"
+            f"| Current fill rate  | {new_rate * 100:.1f}% |\n"
+            f"| Drop               | {drop * 100:.1f}pp |\n\n"
+            f"A drop of more than 30 percentage points suggests the Wikipedia table "
+            f"column layout has changed. Please review the page and update `office_table_config`."
+        )
+        gh.create_issue(title=title, body=body, labels=["structural-change"])
+    except Exception:
+        _log.exception("_check_fill_rate_drop: failed to create GH issue")
+
+
+def _suspect_gate(
+    full_name: str | None,
+    wiki_url: str | None,
+    office_id: int,
+    conn,
+) -> tuple[bool, int | None]:
+    """Thin wrapper around SuspectRecordFlagger.check_and_gate for the import loop.
+
+    Kept here so the import loop stays readable. Never raises.
+    """
+    from src.services.suspect_record_flagger import check_and_gate
+
+    return check_and_gate(
+        full_name=full_name,
+        wiki_url=wiki_url,
+        office_id=office_id,
+        conn=conn,
+    )
+
+
+def _maybe_supersede_nolink(
+    office_id: int,
+    name: str,
+    new_individual_id: int,
+    new_wiki_url: str,
+    conn,
+) -> None:
+    """Retire any matching "No link:{office_id}:{name}" placeholder for this person.
+
+    Called after a real-URL individual is written so that stale no-link placeholders
+    are detected and superseded in the same transaction. The event is written to
+    nolink_supersede_log for audit visibility.
+    """
+    import logging as _logging
+
+    _log = _logging.getLogger(__name__)
+
+    try:
+        old = db_individuals.find_nolink_by_name_and_office(office_id, name, conn=conn)
+        if old is None:
+            return
+
+        old_id = old["id"]
+        old_wiki_url = old["wiki_url"]
+
+        reassigned = db_individuals.mark_superseded(old_id, new_individual_id, conn=conn)
+        db_supersede_log.insert_log(
+            old_individual_id=old_id,
+            new_individual_id=new_individual_id,
+            office_id=office_id,
+            old_wiki_url=old_wiki_url,
+            new_wiki_url=new_wiki_url,
+            office_terms_reassigned=reassigned,
+            conn=conn,
+        )
+        _log.info(
+            "Superseded no-link placeholder id=%d (%s) with real individual id=%d (%s);"
+            " %d office_term(s) reassigned.",
+            old_id,
+            old_wiki_url,
+            new_individual_id,
+            new_wiki_url,
+            reassigned,
+        )
+    except Exception:
+        _log.exception(
+            "Failed to supersede no-link placeholder for office_id=%d name=%r", office_id, name
+        )
 
 
 def _fetch_bio_batch(
@@ -561,68 +696,77 @@ def find_best_matching_table_for_existing_terms(
     """
     init_db()
     log_dir = get_log_dir()
-    logger = Logger("table_search", "Office", log_dir=log_dir)
-    party_list = db_parties.get_party_list_for_scraper()
-    data_cleanup = parse_core.DataCleanup(logger)
-    biography = parse_core.Biography(logger, data_cleanup)
-    offices_parser = parse_core.Offices(logger, biography, data_cleanup)
-    years_only = bool(office_row.get("years_only"))
-    office_id = int(office_row.get("id") or 0)
+    _fh = configure_run_logging("table_search", "Office", log_dir=log_dir)
+    try:
+        party_list = db_parties.get_party_list_for_scraper()
+        data_cleanup = parse_core.DataCleanup()
+        biography = parse_core.Biography(data_cleanup)
+        offices_parser = parse_core.Offices(biography, data_cleanup)
+        years_only = bool(office_row.get("years_only"))
+        office_id = int(office_row.get("id") or 0)
 
-    url = (office_row.get("url") or "").strip()
-    table_no = int(office_row.get("table_no") or 1)
-    current_html = (
-        get_table_html_cached(
+        url = (office_row.get("url") or "").strip()
+        table_no = int(office_row.get("table_no") or 1)
+        current_html = (
+            get_table_html_cached(
+                url,
+                table_no,
+                refresh=refresh_table_cache,
+                use_full_page=bool(office_row.get("use_full_page_for_table")),
+            ).get("html")
+            or ""
+        )
+        current_rows = _parse_office_html(
+            {**office_row, "find_date_in_infobox": False},
+            current_html,
             url,
-            table_no,
-            refresh=refresh_table_cache,
-            use_full_page=bool(office_row.get("use_full_page_for_table")),
-        ).get("html")
-        or ""
-    )
-    current_rows = _parse_office_html(
-        {**office_row, "find_date_in_infobox": False},
-        current_html,
-        url,
-        party_list,
-        offices_parser,
-        cached_table_html=current_html if current_html else None,
-        progress_callback=None,
-    )
-    missing_before_set = _missing_holder_keys(
-        existing_terms, current_rows, office_id, years_only, key_years_only=key_years_only
-    )
-    found_table_no, found_rows = _try_auto_update_table_no(
-        office_row,
-        existing_terms,
-        party_list,
-        offices_parser,
-        refresh_table_cache=refresh_table_cache,
-        years_only=years_only,
-        key_years_only=key_years_only,
-        current_missing_count=len(missing_before_set),
-    )
-    if not found_table_no or found_rows is None:
+            party_list,
+            offices_parser,
+            cached_table_html=current_html if current_html else None,
+            progress_callback=None,
+        )
+        missing_before_set = _missing_holder_keys(
+            existing_terms, current_rows, office_id, years_only, key_years_only=key_years_only
+        )
+        found_table_no, found_rows = _try_auto_update_table_no(
+            office_row,
+            existing_terms,
+            party_list,
+            offices_parser,
+            refresh_table_cache=refresh_table_cache,
+            years_only=years_only,
+            key_years_only=key_years_only,
+            current_missing_count=len(missing_before_set),
+        )
+        if not found_table_no or found_rows is None:
+            return {
+                "found_table_no": None,
+                "missing_before": len(missing_before_set),
+                "missing_after": None,
+                "missing_labels_after": [],
+                "rows": None,
+            }
+        missing_after_set = _missing_holder_keys(
+            existing_terms, found_rows, office_id, years_only, key_years_only=key_years_only
+        )
+        key_fn = (
+            _holder_key_from_existing_term_years
+            if key_years_only
+            else _holder_key_from_existing_term
+        )
         return {
-            "found_table_no": None,
+            "found_table_no": int(found_table_no),
             "missing_before": len(missing_before_set),
-            "missing_after": None,
-            "missing_labels_after": [],
-            "rows": None,
+            "missing_after": len(missing_after_set),
+            "missing_labels_after": _missing_holders_display(
+                existing_terms, missing_after_set, key_fn
+            ),
+            "rows": found_rows,
         }
-    missing_after_set = _missing_holder_keys(
-        existing_terms, found_rows, office_id, years_only, key_years_only=key_years_only
-    )
-    key_fn = (
-        _holder_key_from_existing_term_years if key_years_only else _holder_key_from_existing_term
-    )
-    return {
-        "found_table_no": int(found_table_no),
-        "missing_before": len(missing_before_set),
-        "missing_after": len(missing_after_set),
-        "missing_labels_after": _missing_holders_display(existing_terms, missing_after_set, key_fn),
-        "rows": found_rows,
-    }
+    finally:
+        if _fh is not None:
+            logging.getLogger("src.scraper").removeHandler(_fh)
+            _fh.close()
 
 
 @dataclass
@@ -639,7 +783,6 @@ class _RunConfig:
     force_overwrite: bool
     max_rows_per_table: int | None
     cancel_check: Callable[[], bool] | None
-    logger: Any
     report: Callable
     run_cache: Any = None
     bio_batch: int | None = None
@@ -674,6 +817,7 @@ class _OfficeResult:
     offices_unchanged_inc: bool = False  # hash matched, existing terms kept
     rows: list[dict] = field(default_factory=list)  # parsed table rows to accumulate
     html_hash: str | None = None  # hash to store after write
+    link_fill_rate: float | None = None  # fraction of rows with a real wiki link (0.0–1.0)
     revalidate_failure: tuple[int, str] | None = None  # (office_id, message) to append
     missing_holders: list[str] | None = None  # for revalidate_missing_holders_list
     replaceable: bool = False  # add office_id to replaceable set
@@ -712,7 +856,7 @@ def _process_single_office(
     )
 
     if not url:
-        cfg.logger.log(f"Skipping office id {office_id}: no URL", True)
+        _log.warning(f"Skipping office id {office_id}: no URL")
         cfg.report(
             "office",
             office_index,
@@ -729,7 +873,7 @@ def _process_single_office(
         office_name,
         {"terms_so_far": 0, **table_progress_extra},
     )
-    cfg.logger.log(f"Processing office {office_index}/{office_total}: {office_name} ({url})", True)
+    _log.info(f"Processing office {office_index}/{office_total}: {office_name} ({url})")
 
     existing_terms = db_office_terms.get_existing_terms_for_office(office_id)
     has_existing = len(existing_terms) > 0
@@ -743,7 +887,7 @@ def _process_single_office(
         run_cache=cfg.run_cache,
     )
     if "error" in cache_result:
-        cfg.logger.log(f"Failed to get table for {url}: {cache_result['error']}", True)
+        _log.warning(f"Failed to get table for {url}: {cache_result['error']}")
         if has_existing:
             return _OfficeResult(
                 skip=True,
@@ -755,11 +899,11 @@ def _process_single_office(
         return _OfficeResult(skip=True)
 
     if cfg.cancel_check and cfg.cancel_check():
-        cfg.logger.log("Run cancelled by user.", True)
+        _log.info("Run cancelled by user.")
         return _OfficeResult(cancel=True)
 
     if "cache_file" in cache_result:
-        cfg.logger.log(f"Cached table: {cache_result['cache_file']}", True)
+        _log.debug(f"Cached table: {cache_result['cache_file']}")
     html_content = cache_result.get("html") or ""
     cached_table_html = html_content if html_content else None
 
@@ -775,9 +919,8 @@ def _process_single_office(
         and html_hash == stored_hash
         and has_existing
     ):
-        cfg.logger.log(
-            f"Skipped (HTML unchanged): {office_name} — table HTML matches last run hash. No write.",
-            True,
+        _log.debug(
+            f"Skipped (HTML unchanged): {office_name} — table HTML matches last run hash. No write."
         )
         return _OfficeResult(offices_unchanged_inc=True)
 
@@ -798,9 +941,8 @@ def _process_single_office(
             run_cache=cfg.run_cache,
         )
         if len(table_data_pre) == 0:
-            cfg.logger.log(
-                f"Repopulate validation failed for {office_name}: table parsed to zero rows (existing had {len(existing_terms)}). Keeping existing terms.",
-                True,
+            _log.warning(
+                f"Repopulate validation failed for {office_name}: table parsed to zero rows (existing had {len(existing_terms)}). Keeping existing terms."
             )
             return _OfficeResult(
                 skip=True,
@@ -827,9 +969,8 @@ def _process_single_office(
                     current_missing_count=len(missing_years),
                 )
                 if found_table_no and found_rows is not None:
-                    cfg.logger.log(
-                        f"Auto-updated table_no for {office_name}: {table_no} -> {found_table_no} based on validation match.",
-                        True,
+                    _log.info(
+                        f"Auto-updated table_no for {office_name}: {table_no} -> {found_table_no} based on validation match."
                     )
                     office_row["table_no"] = int(found_table_no)
                     table_no = int(found_table_no)
@@ -858,14 +999,12 @@ def _process_single_office(
                 cfg.force_replace_office_ids and office_id in cfg.force_replace_office_ids
             )
             if force_replace_early:
-                cfg.logger.log(
-                    f"Force overwrite for {office_name}: table-only check found new list missing {len(missing_years)} holder(s); replacing anyway. Missing: {missing_str}",
-                    True,
+                _log.info(
+                    f"Force overwrite for {office_name}: table-only check found new list missing {len(missing_years)} holder(s); replacing anyway. Missing: {missing_str}"
                 )
             elif missing_years:
-                cfg.logger.log(
-                    f"Repopulate validation failed for {office_name}: table-only check found new list missing {len(missing_years)} office holder(s). Skipping infobox fetch. Keeping existing terms. Missing: {missing_str}",
-                    True,
+                _log.warning(
+                    f"Repopulate validation failed for {office_name}: table-only check found new list missing {len(missing_years)} office holder(s). Skipping infobox fetch. Keeping existing terms. Missing: {missing_str}"
                 )
                 return _OfficeResult(
                     skip=True,
@@ -883,9 +1022,8 @@ def _process_single_office(
                 table_data_pre, office_id, years_only_pre, key_years_only=True
             )
             if current_new_holders_years == old_holders_years:
-                cfg.logger.log(
-                    f"Skipped (holders unchanged): {office_name} — holder set identical to existing terms. No write.",
-                    True,
+                _log.debug(
+                    f"Skipped (holders unchanged): {office_name} — holder set identical to existing terms. No write."
                 )
                 return _OfficeResult(offices_unchanged_inc=True, html_hash=html_hash)
 
@@ -907,9 +1045,8 @@ def _process_single_office(
         table_data = _dedupe_parsed_rows(table_data, years_only=bool(office_row.get("years_only")))
 
     if has_existing and len(table_data) == 0:
-        cfg.logger.log(
-            f"Repopulate validation failed for {office_name}: table parsed to zero rows (existing had {len(existing_terms)}). Keeping existing terms.",
-            True,
+        _log.warning(
+            f"Repopulate validation failed for {office_name}: table parsed to zero rows (existing had {len(existing_terms)}). Keeping existing terms."
         )
         return _OfficeResult(
             skip=True,
@@ -941,9 +1078,8 @@ def _process_single_office(
                     current_missing_count=len(missing),
                 )
                 if found_table_no and found_rows is not None:
-                    cfg.logger.log(
-                        f"Auto-updated table_no for {office_name}: {table_no} -> {found_table_no} based on holder match.",
-                        True,
+                    _log.info(
+                        f"Auto-updated table_no for {office_name}: {table_no} -> {found_table_no} based on holder match."
                     )
                     office_row["table_no"] = int(found_table_no)
                     table_no = int(found_table_no)
@@ -965,15 +1101,13 @@ def _process_single_office(
             )
             missing_str = _format_missing_holders(missing_list)
             if force_replace:
-                cfg.logger.log(
-                    f"Force override for {office_name}: replacing despite {len(missing)} holder(s) missing from new list. Missing: {missing_str}",
-                    True,
+                _log.info(
+                    f"Force override for {office_name}: replacing despite {len(missing)} holder(s) missing from new list. Missing: {missing_str}"
                 )
                 replaceable = True
             elif missing:
-                cfg.logger.log(
-                    f"Repopulate validation failed for {office_name}: new list is missing {len(missing)} office holder(s) that were in existing data. Keeping existing terms. Missing: {missing_str}",
-                    True,
+                _log.warning(
+                    f"Repopulate validation failed for {office_name}: new list is missing {len(missing)} office holder(s) that were in existing data. Keeping existing terms. Missing: {missing_str}"
                 )
                 revalidate_failure = (
                     office_id,
@@ -991,12 +1125,20 @@ def _process_single_office(
             replaceable = True
 
     if cfg.cancel_check and cfg.cancel_check():
-        cfg.logger.log("Run cancelled by user.", True)
+        _log.info("Run cancelled by user.")
         return _OfficeResult(cancel=True)
+
+    # Compute link fill rate: fraction of parsed rows with a real (non-placeholder) wiki link.
+    if table_data:
+        linked = sum(1 for r in table_data if (r.get("Wiki Link") or "") not in ("", "No link"))
+        link_fill_rate: float | None = linked / len(table_data)
+    else:
+        link_fill_rate = None
 
     return _OfficeResult(
         rows=table_data,
         html_hash=html_hash,
+        link_fill_rate=link_fill_rate,
         replaceable=replaceable,
     )
 
@@ -1115,12 +1257,11 @@ def _cleanup_disk_cache(max_age_days: int = 30) -> int:
     return deleted
 
 
-def _run_single_bio(ctx: _RunContext, logger: Logger, report: Callable) -> dict[str, Any]:
+def _run_single_bio(ctx: _RunContext, report: Callable) -> dict[str, Any]:
     """Run a biography fetch for one individual (single_bio mode)."""
     ref = (ctx.individual_ref or "").strip()
     if not ref:
-        logger.log("single_bio requires individual_ref (id or Wikipedia URL).", True)
-        logger.close()
+        _log.warning("single_bio requires individual_ref (id or Wikipedia URL).")
         return {
             "office_count": 0,
             "message": "Individual (ID or URL) required.",
@@ -1131,8 +1272,7 @@ def _run_single_bio(ctx: _RunContext, logger: Logger, report: Callable) -> dict[
     if ref.isdigit():
         ind = db_individuals.get_individual(int(ref))
         if not ind:
-            logger.log(f"No individual with id={ref}.", True)
-            logger.close()
+            _log.warning(f"No individual with id={ref}.")
             return {
                 "office_count": 0,
                 "message": f"No individual with id {ref}.",
@@ -1152,8 +1292,8 @@ def _run_single_bio(ctx: _RunContext, logger: Logger, report: Callable) -> dict[
     report("bio", 1, 1, "Fetching biography…", {})
     from src.scraper import parse_core
 
-    data_cleanup = parse_core.DataCleanup(logger)
-    biography = parse_core.Biography(logger, data_cleanup)
+    data_cleanup = parse_core.DataCleanup()
+    biography = parse_core.Biography(data_cleanup)
     bio_success_count = 0
     bio_error_count = 0
     bio_errors: list[dict[str, str]] = []
@@ -1175,7 +1315,6 @@ def _run_single_bio(ctx: _RunContext, logger: Logger, report: Callable) -> dict[
     except Exception as e:
         bio_error_count = 1
         bio_errors.append({"url": wiki_url, "error": str(e)})
-    logger.close()
     return {
         "office_count": 0,
         "terms_parsed": 0,
@@ -1190,13 +1329,12 @@ def _run_single_bio(ctx: _RunContext, logger: Logger, report: Callable) -> dict[
     }
 
 
-def _run_selected_bios(ctx: _RunContext, logger: Logger, report: Callable) -> dict[str, Any]:
+def _run_selected_bios(ctx: _RunContext, report: Callable) -> dict[str, Any]:
     """Run biography fetch for a specific set of individual IDs (selected_bios mode)."""
     from src.scraper import parse_core
 
     selected_ids = sorted({int(i) for i in (ctx.individual_ids or []) if int(i) > 0})
     if not selected_ids:
-        logger.close()
         return {
             "office_count": 0,
             "terms_parsed": 0,
@@ -1210,15 +1348,15 @@ def _run_selected_bios(ctx: _RunContext, logger: Logger, report: Callable) -> di
             "living_errors": [],
             "message": "No individuals selected.",
         }
-    data_cleanup = parse_core.DataCleanup(logger)
-    biography = parse_core.Biography(logger, data_cleanup)
+    data_cleanup = parse_core.DataCleanup()
+    biography = parse_core.Biography(data_cleanup)
     bio_success_count = 0
     bio_error_count = 0
     bio_errors: list[dict[str, str]] = []
     total_bios = len(selected_ids)
     for bio_idx, individual_id in enumerate(selected_ids):
         if ctx.cancel_check and ctx.cancel_check():
-            logger.log("Selected bios run cancelled by user.", True)
+            _log.info("Selected bios run cancelled by user.")
             break
         report(
             "bio",
@@ -1263,7 +1401,6 @@ def _run_selected_bios(ctx: _RunContext, logger: Logger, report: Callable) -> di
         except Exception as e:
             bio_error_count += 1
             bio_errors.append({"url": wiki_url, "error": str(e)})
-    logger.close()
     return {
         "office_count": 0,
         "terms_parsed": 0,
@@ -1281,12 +1418,12 @@ def _run_selected_bios(ctx: _RunContext, logger: Logger, report: Callable) -> di
     }
 
 
-def _run_bios_only(ctx: _RunContext, logger: Logger, report: Callable) -> dict[str, Any]:
+def _run_bios_only(ctx: _RunContext, report: Callable) -> dict[str, Any]:
     """Refresh biography data for every individual in the DB (bios_only mode)."""
     from src.scraper import parse_core
 
-    data_cleanup = parse_core.DataCleanup(logger)
-    biography = parse_core.Biography(logger, data_cleanup)
+    data_cleanup = parse_core.DataCleanup()
+    biography = parse_core.Biography(data_cleanup)
     to_fetch = list(db_individuals.get_all_individual_wiki_urls())
     to_fetch = [u for u in to_fetch if (u or "").strip()]
     total_bios = len(to_fetch)
@@ -1313,8 +1450,7 @@ def _run_bios_only(ctx: _RunContext, logger: Logger, report: Callable) -> dict[s
         report("bio", done, total, "Updating all individuals…", {"current": done, "total": total})
 
     if _fetch_bio_batch(unique_to_fetch, biography, ctx.cancel_check, _progress, _success, _error):
-        logger.log("Bios only run cancelled by user.", True)
-    logger.close()
+        _log.info("Bios only run cancelled by user.")
     return {
         "office_count": 0,
         "terms_parsed": 0,
@@ -1332,7 +1468,7 @@ def _run_bios_only(ctx: _RunContext, logger: Logger, report: Callable) -> dict[s
     }
 
 
-def _run_insufficient_vitals(ctx: _RunContext, logger: Logger, report: Callable) -> dict[str, Any]:
+def _run_insufficient_vitals(ctx: _RunContext, report: Callable) -> dict[str, Any]:
     """Fetch bios for today's 1/30 slice of individuals missing birth/death dates.
 
     Batch assignment: id % 30 (computed in DB; never stored).
@@ -1352,8 +1488,8 @@ def _run_insufficient_vitals(ctx: _RunContext, logger: Logger, report: Callable)
     bio_errors: list[dict[str, str]] = []
     _counts = [0, 0]  # [success, error]
 
-    data_cleanup = parse_core.DataCleanup(logger)
-    biography = parse_core.Biography(logger, data_cleanup)
+    data_cleanup = parse_core.DataCleanup()
+    biography = parse_core.Biography(data_cleanup)
 
     def _success(wiki_url: str, bio_info: dict) -> None:
         bio_info["wiki_url"] = wiki_url
@@ -1387,8 +1523,7 @@ def _run_insufficient_vitals(ctx: _RunContext, logger: Logger, report: Callable)
 
     report("bio", 0, total, f"Insufficient vitals batch {today_batch}: {total} to check", {})
     if _fetch_bio_batch(unique_to_fetch, biography, ctx.cancel_check, _progress, _success, _error):
-        logger.log("Insufficient vitals run cancelled.", True)
-    logger.close()
+        _log.info("Insufficient vitals run cancelled.")
     return {
         "office_count": 0,
         "terms_parsed": 0,
@@ -1408,7 +1543,7 @@ def _run_insufficient_vitals(ctx: _RunContext, logger: Logger, report: Callable)
     }
 
 
-def _run_gemini_vitals_research(ctx: _RunContext, logger, report: Callable) -> dict[str, Any]:
+def _run_gemini_vitals_research(ctx: _RunContext, report: Callable) -> dict[str, Any]:
     """Use Gemini API to research vitals for today's batch of individuals.
 
     Batch assignment: id % 30 (computed in DB). 90-day cooldown per individual.
@@ -1425,8 +1560,7 @@ def _run_gemini_vitals_research(ctx: _RunContext, logger, report: Callable) -> d
 
     researcher = get_gemini_researcher()
     if researcher is None:
-        logger.log("Gemini research skipped: GEMINI_OFFICE_HOLDER not configured.", True)
-        logger.close()
+        _log.debug("Gemini research skipped: GEMINI_OFFICE_HOLDER not configured.")
         return {
             "office_count": 0,
             "terms_parsed": 0,
@@ -1462,7 +1596,7 @@ def _run_gemini_vitals_research(ctx: _RunContext, logger, report: Callable) -> d
 
     for i, row in enumerate(candidates):
         if ctx.cancel_check and ctx.cancel_check():
-            logger.log("Gemini research cancelled.", True)
+            _log.info("Gemini research cancelled.")
             break
 
         ind_id = row["id"]
@@ -1574,7 +1708,6 @@ def _run_gemini_vitals_research(ctx: _RunContext, logger, report: Callable) -> d
             {"batch": today_batch, "current": i + 1, "total": total},
         )
 
-    logger.close()
     return {
         "office_count": 0,
         "terms_parsed": 0,
@@ -1596,7 +1729,7 @@ def _run_gemini_vitals_research(ctx: _RunContext, logger, report: Callable) -> d
     }
 
 
-def _run_dead_link_research(ctx: _RunContext, logger, report: Callable) -> dict[str, Any]:
+def _run_dead_link_research(ctx: _RunContext, report: Callable) -> dict[str, Any]:
     """Use Gemini API to research dead-link individuals (is_dead_link=1 or 'No link:').
 
     Same two-stage pipeline as _run_gemini_vitals_research but targets individuals
@@ -1613,8 +1746,7 @@ def _run_dead_link_research(ctx: _RunContext, logger, report: Callable) -> dict[
 
     researcher = get_gemini_researcher()
     if researcher is None:
-        logger.log("Dead-link research skipped: GEMINI_OFFICE_HOLDER not configured.", True)
-        logger.close()
+        _log.debug("Dead-link research skipped: GEMINI_OFFICE_HOLDER not configured.")
         return {
             "office_count": 0,
             "terms_parsed": 0,
@@ -1655,7 +1787,7 @@ def _run_dead_link_research(ctx: _RunContext, logger, report: Callable) -> dict[
 
     for i, row in enumerate(candidates):
         if ctx.cancel_check and ctx.cancel_check():
-            logger.log("Dead-link research cancelled.", True)
+            _log.info("Dead-link research cancelled.")
             break
 
         ind_id = row["id"]
@@ -1762,7 +1894,6 @@ def _run_dead_link_research(ctx: _RunContext, logger, report: Callable) -> dict[
             {"batch": today_batch, "current": i + 1, "total": total},
         )
 
-    logger.close()
     return {
         "office_count": 0,
         "terms_parsed": 0,
@@ -1784,7 +1915,7 @@ def _run_dead_link_research(ctx: _RunContext, logger, report: Callable) -> dict[
     }
 
 
-def _run_data_quality(ctx: _RunContext, logger, report: Callable) -> dict[str, Any]:
+def _run_data_quality(ctx: _RunContext, report: Callable) -> dict[str, Any]:
     """Run data quality checks on eligible DB records (manual mode).
 
     This mode runs the full AI pipeline (OpenAI → Gemini → Claude) on records
@@ -1803,8 +1934,7 @@ def _run_data_quality(ctx: _RunContext, logger, report: Callable) -> dict[str, A
         os.environ.get(k) for k in ("OPENAI_API_KEY", "GEMINI_OFFICE_HOLDER", "ANTHROPIC_API_KEY")
     )
     if not has_ai_keys:
-        logger.log("Data quality manual run skipped: no AI API keys configured.", True)
-        logger.close()
+        _log.debug("Data quality manual run skipped: no AI API keys configured.")
         return {
             "office_count": 0,
             "terms_parsed": 0,
@@ -1829,16 +1959,15 @@ def _run_data_quality(ctx: _RunContext, logger, report: Callable) -> dict[str, A
     try:
         results = checker.run_manual(conn=conn)
     except Exception as e:
-        logger.log(f"Data quality manual run failed: {e}", True)
+        _log.error(f"Data quality manual run failed: {e}")
         results = []
     finally:
         conn.close()
 
     flagged = len(results)
-    logger.log(f"Data quality: checked eligible records, {flagged} issue(s) flagged.", True)
+    _log.info(f"Data quality: checked eligible records, {flagged} issue(s) flagged.")
 
     report("complete", 1, 1, "Done", {"data_quality_flagged": flagged})
-    logger.close()
 
     return {
         "office_count": 0,
@@ -1932,7 +2061,7 @@ def _get_office_context_for_individual(individual_id: int) -> dict[str, str]:
     return context
 
 
-def _run_auto_fix(ctx: _RunContext, logger, report: Callable) -> dict[str, Any]:
+def _run_auto_fix(ctx: _RunContext, report: Callable) -> dict[str, Any]:
     """Scan open parser-bug issues and auto-fix qualifying ones via Claude API.
 
     For each issue: criteria check → Claude API → create branch → open draft PR.
@@ -1944,7 +2073,7 @@ def _run_auto_fix(ctx: _RunContext, logger, report: Callable) -> dict[str, Any]:
     try:
         results = process_open_parser_bug_issues()
     except Exception as exc:
-        logger.log(f"Auto-fix failed: {exc}", True)
+        _log.warning(f"Auto-fix failed: {exc}")
         results = []
 
     pr_count = sum(1 for r in results if r.get("status") == "pr_created")
@@ -1958,7 +2087,6 @@ def _run_auto_fix(ctx: _RunContext, logger, report: Callable) -> dict[str, Any]:
         f"Auto-fix complete: {pr_count} PRs, {skip_count} skipped, {error_count} errors",
         {},
     )
-    logger.close()
 
     return {
         "office_count": 0,
@@ -2007,239 +2135,641 @@ def run_with_db(
     init_db()
     log_dir = get_log_dir()
     run_type = "test run" if test_run else "full run"
-    logger = Logger(run_type, "Office", log_dir=log_dir)
+    _file_handler = configure_run_logging(run_type, "Office", log_dir=log_dir)
 
-    def report(phase: str, current: int, total: int, message: str, extra: dict | None = None):
-        if progress_callback:
-            progress_callback(phase, current, total, message, extra or {})
-
-    ctx = _RunContext(
-        run_mode=run_mode,
-        run_bio=run_bio,
-        run_office_bio=run_office_bio,
-        refresh_table_cache=refresh_table_cache,
-        dry_run=dry_run,
-        test_run=test_run,
-        max_rows_per_table=max_rows_per_table,
-        office_ids=office_ids,
-        individual_ref=individual_ref,
-        individual_ids=individual_ids,
-        cancel_check=cancel_check,
-        force_replace_office_ids=force_replace_office_ids,
-        force_overwrite=force_overwrite,
-        bio_batch=bio_batch,
-    )
-
-    # Dispatch short-circuit modes that don't need office table parsing.
-    if run_mode == "single_bio":
-        return _run_single_bio(ctx, logger, report)
-    if run_mode == "selected_bios":
-        return _run_selected_bios(ctx, logger, report)
-    if run_mode == "bios_only":
-        return _run_bios_only(ctx, logger, report)
-    if run_mode == "delta_insufficient_vitals":
-        return _run_insufficient_vitals(ctx, logger, report)
-    if run_mode == "gemini_vitals_research":
-        return _run_gemini_vitals_research(ctx, logger, report)
-    if run_mode == "dead_link_research":
-        return _run_dead_link_research(ctx, logger, report)
-    if run_mode == "data_quality":
-        return _run_data_quality(ctx, logger, report)
-    if run_mode == "auto_fix":
-        return _run_auto_fix(ctx, logger, report)
-
-    # Main loop modes (full | delta | live_person): load offices and dispatch.
-    party_list = db_parties.get_party_list_for_scraper()
-    offices = db_offices.list_runnable_units()
-    if not offices:
-        offices = [o for o in db_offices.list_offices() if o.get("enabled", 1) == 1]
-    if office_ids:
-        offices = [o for o in offices if o["id"] in office_ids]
-    if not offices:
-        logger.log("No offices to process.", True)
-        logger.close()
-        return {"office_count": 0, "message": "No offices to process."}
-
-    report("init", 0, len(offices), "Starting…", {"total_offices": len(offices)})
-
-    # We need the actual parsing logic. Use the sample script's classes by loading
-    # a modified copy that has no Colab/Sheets. Create that copy on the fly.
-    from src.scraper import parse_core  # noqa: F401
-
-    # Build parse error reporter (disabled if GITHUB_TOKEN or OPENAI_API_KEY not set)
     try:
-        from src.services.parse_error_reporter import ParseErrorReporter
-        from src.services.github_client import get_github_client
 
-        _reporter = ParseErrorReporter() if get_github_client() is not None else None
-    except Exception as _reporter_init_err:
-        logger.log(
-            f"ParseErrorReporter init failed (reporting disabled for this run): {_reporter_init_err}",
-            True,
+        def report(phase: str, current: int, total: int, message: str, extra: dict | None = None):
+            if progress_callback:
+                progress_callback(phase, current, total, message, extra or {})
+
+        ctx = _RunContext(
+            run_mode=run_mode,
+            run_bio=run_bio,
+            run_office_bio=run_office_bio,
+            refresh_table_cache=refresh_table_cache,
+            dry_run=dry_run,
+            test_run=test_run,
+            max_rows_per_table=max_rows_per_table,
+            office_ids=office_ids,
+            individual_ref=individual_ref,
+            individual_ids=individual_ids,
+            cancel_check=cancel_check,
+            force_replace_office_ids=force_replace_office_ids,
+            force_overwrite=force_overwrite,
+            bio_batch=bio_batch,
         )
-        _reporter = None
 
-    # Build data quality checker (deterministic-only in auto mode; gated by env var)
-    _quality_checker = None
-    if os.environ.get("DATA_QUALITY_ENABLED") == "1":
+        # Dispatch short-circuit modes that don't need office table parsing.
+        if run_mode == "single_bio":
+            return _run_single_bio(ctx, report)
+        if run_mode == "selected_bios":
+            return _run_selected_bios(ctx, report)
+        if run_mode == "bios_only":
+            return _run_bios_only(ctx, report)
+        if run_mode == "delta_insufficient_vitals":
+            return _run_insufficient_vitals(ctx, report)
+        if run_mode == "gemini_vitals_research":
+            return _run_gemini_vitals_research(ctx, report)
+        if run_mode == "dead_link_research":
+            return _run_dead_link_research(ctx, report)
+        if run_mode == "data_quality":
+            return _run_data_quality(ctx, report)
+        if run_mode == "auto_fix":
+            return _run_auto_fix(ctx, report)
+
+        # Main loop modes (full | delta | live_person): load offices and dispatch.
+        party_list = db_parties.get_party_list_for_scraper()
+        offices = db_offices.list_runnable_units()
+        if not offices:
+            offices = [o for o in db_offices.list_offices() if o.get("enabled", 1) == 1]
+        if office_ids:
+            offices = [o for o in offices if o["id"] in office_ids]
+        if not offices:
+            _log.warning("No offices to process.")
+            return {"office_count": 0, "message": "No offices to process."}
+
+        report("init", 0, len(offices), "Starting…", {"total_offices": len(offices)})
+
+        # We need the actual parsing logic. Use the sample script's classes by loading
+        # a modified copy that has no Colab/Sheets. Create that copy on the fly.
+        from src.scraper import parse_core  # noqa: F401
+
+        # Build parse error reporter (disabled if GITHUB_TOKEN or OPENAI_API_KEY not set)
         try:
-            from src.services.data_quality_checker import DataQualityChecker
+            from src.services.parse_error_reporter import ParseErrorReporter
+            from src.services.github_client import get_github_client
 
-            _quality_checker = DataQualityChecker()
-        except Exception as _dq_init_err:
-            logger.log(
-                f"DataQualityChecker init failed (quality checks disabled): {_dq_init_err}",
-                True,
+            _reporter = ParseErrorReporter() if get_github_client() is not None else None
+        except Exception as _reporter_init_err:
+            _log.warning(
+                f"ParseErrorReporter init failed (reporting disabled for this run): {_reporter_init_err}"
             )
+            _reporter = None
 
-    data_cleanup = parse_core.DataCleanup(logger, reporter=_reporter)
-    biography = parse_core.Biography(logger, data_cleanup, reporter=_reporter)
-    offices_parser = parse_core.Offices(logger, biography, data_cleanup, reporter=_reporter)
+        # Build data quality checker (deterministic-only in auto mode; gated by env var)
+        _quality_checker = None
+        if os.environ.get("DATA_QUALITY_ENABLED") == "1":
+            try:
+                from src.services.data_quality_checker import DataQualityChecker
 
-    # Full run: purge office_terms first (FK constraint), then individuals; terms are re-populated per-office
-    if run_mode == "full" and not dry_run and not test_run:
-        db_office_terms.purge_all_office_terms()
-        db_individuals.purge_all_individuals()
-        existing_individual_wiki_urls: set[str] = set()
-    else:
-        existing_individual_wiki_urls = db_individuals.get_all_individual_wiki_urls()
+                _quality_checker = DataQualityChecker()
+            except Exception as _dq_init_err:
+                _log.warning(
+                    f"DataQualityChecker init failed (quality checks disabled): {_dq_init_err}"
+                )
 
-    total_terms = 0
-    unique_wiki_urls: set[str] = set()
-    all_office_data: list[dict] = []
-    replaceable_office_ids: set[int] = set()
-    revalidate_failed_offices: list[tuple[int, str]] = []
-    revalidate_missing_holders_list: list[list[str]] = (
-        []
-    )  # full list per office when failure is "missing holders"
-    office_errors: list[dict[str, Any]] = []  # offices that raised; run continues for others
-    cancelled_early = False
-    offices_unchanged = 0
-    html_hashes_to_update: dict[int, str] = {}
-    bio_success_count = 0
-    bio_error_count = 0
-    bio_errors: list[dict[str, str]] = []
-    bio_skipped_count = 0
-    living_success_count = 0
-    living_error_count = 0
-    living_errors: list[dict[str, str]] = []
-    bio_cancelled = False
+        data_cleanup = parse_core.DataCleanup(reporter=_reporter)
+        biography = parse_core.Biography(data_cleanup, reporter=_reporter)
+        offices_parser = parse_core.Offices(biography, data_cleanup, reporter=_reporter)
 
-    run_cache = RunPageCache()
-    run_cfg = _RunConfig(
-        run_mode=run_mode,
-        refresh_table_cache=refresh_table_cache,
-        dry_run=dry_run,
-        test_run=test_run,
-        party_list=party_list,
-        offices_parser=offices_parser,
-        force_replace_office_ids=force_replace_office_ids,
-        force_overwrite=force_overwrite,
-        max_rows_per_table=max_rows_per_table,
-        cancel_check=cancel_check,
-        logger=logger,
-        report=report,
-        run_cache=run_cache,
-        bio_batch=bio_batch,
-    )
+        # Full run: purge office_terms first (FK constraint), then individuals; terms are re-populated per-office
+        if run_mode == "full" and not dry_run and not test_run:
+            db_office_terms.purge_all_office_terms()
+            db_individuals.purge_all_individuals()
+            existing_individual_wiki_urls: set[str] = set()
+        else:
+            existing_individual_wiki_urls = db_individuals.get_all_individual_wiki_urls()
 
-    for idx, office_row in enumerate(offices):
-        office_index = idx + 1
-        office_total = len(offices)
-        if cancel_check and cancel_check():
-            logger.log("Run cancelled by user.", True)
-            report("office", idx, office_total, "Cancelled", {"terms_so_far": total_terms})
-            # Build partial result (no DB write or bio after cancel)
-            preview_rows = _build_preview_rows(all_office_data) if (dry_run or test_run) else None
-            logger.close()
-            rf = len(revalidate_failed_offices) > 0
-            rm = revalidate_failed_offices[0][1] if revalidate_failed_offices else None
-            r_missing = (
-                revalidate_missing_holders_list[0] if revalidate_missing_holders_list else None
-            )
-            return _build_result_dict(
-                office_count=idx,
-                offices_unchanged=offices_unchanged,
-                total_terms=total_terms,
-                unique_wiki_urls=unique_wiki_urls,
-                bio_success_count=0,
-                bio_error_count=0,
-                bio_errors=[],
-                bio_skipped_count=0,
-                living_success_count=0,
-                living_error_count=0,
-                living_errors=[],
-                dry_run=dry_run,
-                test_run=test_run,
-                preview_rows=preview_rows,
-                revalidate_failed=rf,
-                revalidate_message=rm,
-                revalidate_missing_holders=r_missing,
-                office_errors=office_errors,
-                cancelled=True,
-                message=f"Stopped after {idx} offices.",
-            )
+        total_terms = 0
+        unique_wiki_urls: set[str] = set()
+        all_office_data: list[dict] = []
+        replaceable_office_ids: set[int] = set()
+        revalidate_failed_offices: list[tuple[int, str]] = []
+        revalidate_missing_holders_list: list[list[str]] = (
+            []
+        )  # full list per office when failure is "missing holders"
+        office_errors: list[dict[str, Any]] = []  # offices that raised; run continues for others
+        cancelled_early = False
+        offices_unchanged = 0
+        html_hashes_to_update: dict[int, str] = {}
+        fill_rates_to_update: dict[int, float] = {}
+        bio_success_count = 0
+        bio_error_count = 0
+        bio_errors: list[dict[str, str]] = []
+        bio_skipped_count = 0
+        living_success_count = 0
+        living_error_count = 0
+        living_errors: list[dict[str, str]] = []
+        bio_cancelled = False
 
-        office_id = office_row["id"]
-        result = _process_single_office(office_row, run_cfg, office_index, office_total)
+        run_cache = RunPageCache()
+        run_cfg = _RunConfig(
+            run_mode=run_mode,
+            refresh_table_cache=refresh_table_cache,
+            dry_run=dry_run,
+            test_run=test_run,
+            party_list=party_list,
+            offices_parser=offices_parser,
+            force_replace_office_ids=force_replace_office_ids,
+            force_overwrite=force_overwrite,
+            max_rows_per_table=max_rows_per_table,
+            cancel_check=cancel_check,
+            report=report,
+            run_cache=run_cache,
+            bio_batch=bio_batch,
+        )
 
-        if result.cancel:
-            cancelled_early = True
-            break
-        if result.offices_unchanged_inc:
-            offices_unchanged += 1
+        for idx, office_row in enumerate(offices):
+            office_index = idx + 1
+            office_total = len(offices)
+            if cancel_check and cancel_check():
+                _log.info("Run cancelled by user.")
+                report("office", idx, office_total, "Cancelled", {"terms_so_far": total_terms})
+                # Build partial result (no DB write or bio after cancel)
+                preview_rows = (
+                    _build_preview_rows(all_office_data) if (dry_run or test_run) else None
+                )
+                rf = len(revalidate_failed_offices) > 0
+                rm = revalidate_failed_offices[0][1] if revalidate_failed_offices else None
+                r_missing = (
+                    revalidate_missing_holders_list[0] if revalidate_missing_holders_list else None
+                )
+                return _build_result_dict(
+                    office_count=idx,
+                    offices_unchanged=offices_unchanged,
+                    total_terms=total_terms,
+                    unique_wiki_urls=unique_wiki_urls,
+                    bio_success_count=0,
+                    bio_error_count=0,
+                    bio_errors=[],
+                    bio_skipped_count=0,
+                    living_success_count=0,
+                    living_error_count=0,
+                    living_errors=[],
+                    dry_run=dry_run,
+                    test_run=test_run,
+                    preview_rows=preview_rows,
+                    revalidate_failed=rf,
+                    revalidate_message=rm,
+                    revalidate_missing_holders=r_missing,
+                    office_errors=office_errors,
+                    cancelled=True,
+                    message=f"Stopped after {idx} offices.",
+                )
+
+            office_id = office_row["id"]
+            result = _process_single_office(office_row, run_cfg, office_index, office_total)
+
+            if result.cancel:
+                cancelled_early = True
+                break
+            if result.offices_unchanged_inc:
+                offices_unchanged += 1
+                if result.html_hash:
+                    html_hashes_to_update[office_id] = result.html_hash
+                continue
+            if result.revalidate_failure:
+                revalidate_failed_offices.append(result.revalidate_failure)
+            if result.missing_holders is not None:
+                revalidate_missing_holders_list.append(result.missing_holders)
+            if result.skip:
+                continue
             if result.html_hash:
                 html_hashes_to_update[office_id] = result.html_hash
-            continue
-        if result.revalidate_failure:
-            revalidate_failed_offices.append(result.revalidate_failure)
-        if result.missing_holders is not None:
-            revalidate_missing_holders_list.append(result.missing_holders)
-        if result.skip:
-            continue
-        if result.html_hash:
-            html_hashes_to_update[office_id] = result.html_hash
-        if result.replaceable:
-            replaceable_office_ids.add(office_id)
+            if result.link_fill_rate is not None:
+                fill_rates_to_update[office_id] = result.link_fill_rate
+                _check_fill_rate_drop(office_row, result.link_fill_rate)
+            if result.replaceable:
+                replaceable_office_ids.add(office_id)
 
-        for row in result.rows:
-            wiki_link = row.get("Wiki Link")
-            if wiki_link and wiki_link != "No link":
-                unique_wiki_urls.add(wiki_link)
-            row["_office_id"] = office_id
-            if office_row.get("office_details_id") is not None:
-                row["_office_details_id"] = office_row["office_details_id"]
-                row["_office_table_config_id"] = (
-                    office_row.get("office_table_config_id") or office_id
+            for row in result.rows:
+                wiki_link = row.get("Wiki Link")
+                if wiki_link and wiki_link != "No link":
+                    unique_wiki_urls.add(wiki_link)
+                row["_office_id"] = office_id
+                if office_row.get("office_details_id") is not None:
+                    row["_office_details_id"] = office_row["office_details_id"]
+                    row["_office_table_config_id"] = (
+                        office_row.get("office_table_config_id") or office_id
+                    )
+                    row["_country_id"] = office_row.get("country_id")
+                row["_years_only"] = bool(office_row.get("years_only"))
+                all_office_data.append(row)
+            total_terms += len(result.rows)
+
+        if cancelled_early:
+            report("office", idx, len(offices), "Cancelled", {"terms_so_far": total_terms})
+            if dry_run or test_run:
+                # Dry/test runs have no write phase — return immediately with what was collected
+                preview_rows = _build_preview_rows(all_office_data)
+                rf = len(revalidate_failed_offices) > 0
+                rm = revalidate_failed_offices[0][1] if revalidate_failed_offices else None
+                r_missing = (
+                    revalidate_missing_holders_list[0] if revalidate_missing_holders_list else None
                 )
-                row["_country_id"] = office_row.get("country_id")
-            row["_years_only"] = bool(office_row.get("years_only"))
-            all_office_data.append(row)
-        total_terms += len(result.rows)
+                return _build_result_dict(
+                    office_count=idx,
+                    offices_unchanged=offices_unchanged,
+                    total_terms=total_terms,
+                    unique_wiki_urls=unique_wiki_urls,
+                    bio_success_count=0,
+                    bio_error_count=0,
+                    bio_errors=[],
+                    bio_skipped_count=0,
+                    living_success_count=0,
+                    living_error_count=0,
+                    living_errors=[],
+                    dry_run=dry_run,
+                    test_run=test_run,
+                    preview_rows=preview_rows,
+                    revalidate_failed=rf,
+                    revalidate_message=rm,
+                    revalidate_missing_holders=r_missing,
+                    office_errors=office_errors,
+                    cancelled=True,
+                    message=f"Stopped after {idx} offices.",
+                )
+            # Live run: fall through to write what was collected so far
 
-    if cancelled_early:
-        report("office", idx, len(offices), "Cancelled", {"terms_so_far": total_terms})
-        if dry_run or test_run:
-            # Dry/test runs have no write phase — return immediately with what was collected
-            preview_rows = _build_preview_rows(all_office_data)
-            logger.close()
+        report(
+            "office",
+            len(offices),
+            len(offices),
+            "All offices parsed",
+            {"terms_so_far": total_terms},
+        )
+
+        # Write to DB unless dry_run or test_run (same filter/normalize as preview via _normalize_row_for_import)
+        if not dry_run and not test_run and not all_office_data and not html_hashes_to_update:
+            _log.info(
+                f"Nothing written to DB — all {len(offices)} office(s) were skipped "
+                f"(unchanged HTML/holders or validation failures). "
+                f"Revalidation failures: {len(revalidate_failed_offices)}. "
+                f"Offices unchanged: {offices_unchanged}."
+            )
+        if not dry_run and not test_run and (all_office_data or html_hashes_to_update):
+            report("saving", 0, 1, "Writing to database…", {"terms": total_terms})
+            conn = get_connection()
+            try:
+                for oid in replaceable_office_ids:
+                    db_office_terms.delete_office_terms_for_office(oid, conn=conn)
+
+                for row in all_office_data:
+                    office_id = row.get("_office_id")
+                    if office_id is None:
+                        continue
+                    normalized = _normalize_row_for_import(row)
+                    # Include "No link" rows that have a name (e.g. Charles W. Wright) as dead-link individuals
+                    if (
+                        normalized is None
+                        and (row.get("Wiki Link") or "") in ("", "No link")
+                        and row.get("_name_from_table")
+                    ):
+                        normalized = _normalize_row_for_import(row, include_no_link=True)
+                    if normalized is None:
+                        continue
+                    (
+                        _,
+                        term_start_val,
+                        term_end_val,
+                        term_start_imp,
+                        term_end_imp,
+                        term_start_year,
+                        term_end_year,
+                    ) = normalized
+                    wiki_url = row.get("Wiki Link") or ""
+                    no_link_placeholder = wiki_url in ("", "No link") and row.get(
+                        "_name_from_table"
+                    )
+                    if no_link_placeholder:
+                        wiki_url = (
+                            "No link:"
+                            + str(office_id)
+                            + ":"
+                            + (row.get("_name_from_table") or "Unknown")
+                        )
+
+                    # Suspect record gate: run deterministic patterns → 3-AI vote before insertion
+                    _should_insert, _flag_id = _suspect_gate(
+                        full_name=row.get("_name_from_table"),
+                        wiki_url=wiki_url,
+                        office_id=office_id,
+                        conn=conn,
+                    )
+                    if not _should_insert:
+                        continue
+
+                    # Resolve or create individual
+                    ind = db_individuals.get_individual_by_wiki_url(wiki_url, conn=conn)
+                    individual_id = ind["id"] if ind else None
+                    if not ind:
+                        # Create placeholder or dead-link individual so we can link office_term
+                        payload = {
+                            "wiki_url": wiki_url,
+                            "page_path": wiki_url.split("/")[-1] if "/" in wiki_url else None,
+                        }
+                        if row.get("_dead_link") or no_link_placeholder:
+                            payload["full_name"] = row.get("_name_from_table")
+                            payload["is_dead_link"] = 1
+                        individual_id = db_individuals.upsert_individual(payload, conn=conn)
+
+                    # No-link lifecycle: if this is a real-URL individual (not a placeholder),
+                    # check whether a "No link:{office_id}:{name}" placeholder exists for the
+                    # same person. If so, reassign its office_terms and retire it.
+                    if not no_link_placeholder and individual_id and row.get("_name_from_table"):
+                        _maybe_supersede_nolink(
+                            office_id=office_id,
+                            name=row["_name_from_table"],
+                            new_individual_id=individual_id,
+                            new_wiki_url=wiki_url,
+                            conn=conn,
+                        )
+                    party_text = row.get("Party")
+                    od_id = row.get("_office_details_id")
+                    tc_id = row.get("_office_table_config_id")
+                    country_id = row.get("_country_id")
+                    if od_id is not None and tc_id is not None and country_id is not None:
+                        party_id = db_parties.resolve_party_id_by_country(
+                            country_id, party_text, conn=conn
+                        )
+                        db_office_terms.insert_office_term(
+                            office_details_id=od_id,
+                            office_table_config_id=tc_id,
+                            individual_id=individual_id,
+                            wiki_url=wiki_url,
+                            party_id=party_id,
+                            district=row.get("District"),
+                            term_start=term_start_val,
+                            term_end=term_end_val,
+                            term_start_year=term_start_year,
+                            term_end_year=term_end_year,
+                            term_start_imprecise=term_start_imp,
+                            term_end_imprecise=term_end_imp,
+                            conn=conn,
+                        )
+                    else:
+                        party_id = db_parties.resolve_party_id(office_id, party_text, conn=conn)
+                        db_office_terms.insert_office_term(
+                            office_id=office_id,
+                            individual_id=individual_id,
+                            wiki_url=wiki_url,
+                            party_id=party_id,
+                            district=row.get("District"),
+                            term_start=term_start_val,
+                            term_end=term_end_val,
+                            term_start_year=term_start_year,
+                            term_end_year=term_end_year,
+                            term_start_imprecise=term_start_imp,
+                            term_end_imprecise=term_end_imp,
+                            conn=conn,
+                        )
+                    if individual_id:
+                        db_individuals._recompute_is_living_for_individual(individual_id, conn)
+                    # Collect records for quality checking (auto mode)
+                    if _quality_checker and individual_id:
+                        _quality_checker.collect(
+                            "individual",
+                            {
+                                "record_type": "individual",
+                                "record_id": individual_id,
+                                "wiki_url": wiki_url,
+                                "full_name": row.get("_name_from_table"),
+                            },
+                        )
+                        _quality_checker.collect(
+                            "office_term",
+                            {
+                                "record_type": "office_term",
+                                "record_id": individual_id,
+                                "term_start_year": term_start_year,
+                                "term_end_year": term_end_year,
+                                "party_text": party_text,
+                                "party_id": party_id,
+                            },
+                        )
+                for tc_id, h in html_hashes_to_update.items():
+                    db_offices.update_html_hash(tc_id, h, conn=conn)
+                for tc_id, rate in fill_rates_to_update.items():
+                    db_offices.update_link_fill_rate(tc_id, rate, conn=conn)
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+            finally:
+                conn.close()
+
+        # Bio run (new individuals only): only fetch bio for people not already in the individuals table.
+        # Full/delta: to_fetch = unique_wiki_urls - existing_individual_wiki_urls. Report skipped count.
+        # Skip entirely when run_office_bio is False (office-only run).
+        if not dry_run and not test_run and run_office_bio:
+            if run_mode == "live_person":
+                # Live person mode: only refresh bios for living individuals (no new-individual bio).
+                to_fetch = list(db_individuals.get_living_individual_wiki_urls()) if run_bio else []
+                bio_skipped_count = 0
+                total_bios = len(to_fetch)
+                unique_living = list(dict.fromkeys(to_fetch))
+                _lp_counts = [0, 0]  # [success, error]
+
+                def _lp_success(wiki_url: str, bio_info: dict) -> None:
+                    bio_info["wiki_url"] = wiki_url
+                    bd, bd_imp = normalize_date(bio_info.get("birth_date"))
+                    dd, dd_imp = normalize_date(bio_info.get("death_date"))
+                    bio_info["birth_date"] = bd
+                    bio_info["death_date"] = dd
+                    bio_info["birth_date_imprecise"] = bd_imp
+                    bio_info["death_date_imprecise"] = dd_imp
+                    db_individuals.upsert_individual(bio_info)
+                    _lp_counts[0] += 1
+
+                def _lp_error(wiki_url: str, err: str) -> None:
+                    _lp_counts[1] += 1
+                    _log.warning(f"Living update failed for {wiki_url}: {err}")
+                    living_errors.append({"url": wiki_url, "error": err})
+
+                def _lp_progress(done: int, total: int) -> None:
+                    report(
+                        "living",
+                        done,
+                        total,
+                        "Updating living individuals…",
+                        {"current": done, "total": total},
+                    )
+
+                if _fetch_bio_batch(
+                    unique_living, biography, cancel_check, _lp_progress, _lp_success, _lp_error
+                ):
+                    _log.info("Run cancelled by user (during living update).")
+                    bio_cancelled = True
+                living_success_count += _lp_counts[0]
+                living_error_count += _lp_counts[1]
+            else:
+                # Full/delta: bio only for new individuals (not already in DB).
+                to_fetch = list(unique_wiki_urls - existing_individual_wiki_urls)
+                bio_skipped_count = len(unique_wiki_urls) - len(to_fetch)
+                if bio_skipped_count > 0:
+                    _log.debug(
+                        f"Skipping {bio_skipped_count} individuals (already in DB); fetching bio for {len(to_fetch)} new."
+                    )
+                    report(
+                        "bio",
+                        0,
+                        len(to_fetch),
+                        f"Skipped {bio_skipped_count} (in DB). Fetching {len(to_fetch)} new…",
+                        {"bio_skipped": bio_skipped_count},
+                    )
+                total_bios = len(to_fetch)
+                # Build bio cache from table parse so we skip re-fetch when find_date_in_infobox was used (key by normalized URL)
+                bio_cache: dict[str, dict] = {}
+                for row in all_office_data:
+                    wiki_url_row = row.get("Wiki Link")
+                    if wiki_url_row and wiki_url_row != "No link" and row.get("_bio_details"):
+                        key = normalize_wiki_url(wiki_url_row) or wiki_url_row
+                        if key not in bio_cache:
+                            bio_cache[key] = row["_bio_details"]
+                # Split: bio_cache hits (no HTTP) vs URLs that need HTTP fetch.
+                cache_hits = [u for u in to_fetch if (normalize_wiki_url(u) or u) in bio_cache]
+                http_urls = [u for u in to_fetch if (normalize_wiki_url(u) or u) not in bio_cache]
+                # Process bio_cache hits sequentially (no rate limiting needed).
+                for wiki_url in cache_hits:
+                    bio_cache_key = normalize_wiki_url(wiki_url) or wiki_url
+                    bio_info = dict(bio_cache[bio_cache_key])
+                    bio_info["wiki_url"] = wiki_url
+                    if bio_info.get("page_path") is None:
+                        bio_info["page_path"] = (wiki_url or "").rstrip("/").split("/")[-1] or ""
+                    bd, bd_imp = normalize_date(bio_info.get("birth_date"))
+                    dd, dd_imp = normalize_date(bio_info.get("death_date"))
+                    bio_info["birth_date"] = bd
+                    bio_info["death_date"] = dd
+                    bio_info["birth_date_imprecise"] = bd_imp
+                    bio_info["death_date_imprecise"] = dd_imp
+                    db_individuals.upsert_individual(bio_info)
+                    bio_success_count += 1
+                # Fetch remaining URLs in parallel (rate-limited via wiki_throttle in biography_extract).
+                _new_bio_counts = [0, 0]
+                _new_bio_done = [len(cache_hits)]
+
+                def _new_bio_success(wiki_url: str, bio_info: dict) -> None:
+                    bio_info["wiki_url"] = wiki_url
+                    bd, bd_imp = normalize_date(bio_info.get("birth_date"))
+                    dd, dd_imp = normalize_date(bio_info.get("death_date"))
+                    bio_info["birth_date"] = bd
+                    bio_info["death_date"] = dd
+                    bio_info["birth_date_imprecise"] = bd_imp
+                    bio_info["death_date_imprecise"] = dd_imp
+                    db_individuals.upsert_individual(bio_info)
+                    _new_bio_counts[0] += 1
+
+                def _new_bio_error(wiki_url: str, err: str) -> None:
+                    _new_bio_counts[1] += 1
+                    _log.warning(f"Bio failed for {wiki_url}: {err}")
+                    bio_errors.append({"url": wiki_url, "error": err})
+
+                def _new_bio_progress(done: int, total: int) -> None:
+                    combined = _new_bio_done[0] + done
+                    report(
+                        "bio",
+                        combined,
+                        total_bios,
+                        "Fetching biographies (new individuals)…",
+                        {
+                            "current": combined,
+                            "total": total_bios,
+                            "bio_skipped": bio_skipped_count,
+                        },
+                    )
+
+                unique_http_urls = list(dict.fromkeys(http_urls))
+                if _fetch_bio_batch(
+                    unique_http_urls,
+                    biography,
+                    cancel_check,
+                    _new_bio_progress,
+                    _new_bio_success,
+                    _new_bio_error,
+                ):
+                    _log.info("Run cancelled by user (during bio fetch).")
+                    bio_cancelled = True
+                bio_success_count += _new_bio_counts[0]
+                bio_error_count += _new_bio_counts[1]
+
+                # Optional second pass: update living individuals (death_date null). Full refresh of bio fields.
+                if run_bio:
+                    if bio_batch is not None:
+                        to_fetch_living = db_individuals.get_living_individuals_for_batch(bio_batch)
+                    else:
+                        to_fetch_living = []
+                    total_living = len(to_fetch_living)
+                    if total_living > 0:
+                        _log.info(
+                            f"Update living individuals: refreshing bio for {total_living} people (death_date null)."
+                        )
+                        report(
+                            "living",
+                            0,
+                            total_living,
+                            f"Updating {total_living} living individuals…",
+                            {},
+                        )
+                        unique_living2 = list(dict.fromkeys(to_fetch_living))
+                        _liv2_counts = [0, 0]
+
+                        def _liv2_success(wiki_url: str, bio_info: dict) -> None:
+                            bio_info["wiki_url"] = wiki_url
+                            bd, bd_imp = normalize_date(bio_info.get("birth_date"))
+                            dd, dd_imp = normalize_date(bio_info.get("death_date"))
+                            bio_info["birth_date"] = bd
+                            bio_info["death_date"] = dd
+                            bio_info["birth_date_imprecise"] = bd_imp
+                            bio_info["death_date_imprecise"] = dd_imp
+                            db_individuals.upsert_individual(bio_info)
+                            db_individuals.mark_bio_refreshed(wiki_url)
+                            _liv2_counts[0] += 1
+
+                        def _liv2_error(wiki_url: str, err: str) -> None:
+                            _liv2_counts[1] += 1
+                            _log.warning(f"Living update failed for {wiki_url}: {err}")
+                            living_errors.append({"url": wiki_url, "error": err})
+
+                        def _liv2_progress(done: int, total: int) -> None:
+                            report(
+                                "living",
+                                done,
+                                total,
+                                "Updating living individuals…",
+                                {"current": done, "total": total},
+                            )
+
+                        if _fetch_bio_batch(
+                            unique_living2,
+                            biography,
+                            cancel_check,
+                            _liv2_progress,
+                            _liv2_success,
+                            _liv2_error,
+                            run_cache=run_cache,
+                        ):
+                            _log.info("Run cancelled by user (during living update).")
+                            bio_cancelled = True
+                        living_success_count += _liv2_counts[0]
+                        living_error_count += _liv2_counts[1]
+
+        if bio_cancelled:
+            report(
+                "complete",
+                1,
+                1,
+                "Stopped (bio)",
+                {"terms_parsed": total_terms, "unique_wiki_urls": len(unique_wiki_urls)},
+            )
+            preview_rows = _build_preview_rows(all_office_data) if (dry_run or test_run) else None
             rf = len(revalidate_failed_offices) > 0
             rm = revalidate_failed_offices[0][1] if revalidate_failed_offices else None
             r_missing = (
                 revalidate_missing_holders_list[0] if revalidate_missing_holders_list else None
             )
             return _build_result_dict(
-                office_count=idx,
+                office_count=len(offices),
                 offices_unchanged=offices_unchanged,
                 total_terms=total_terms,
                 unique_wiki_urls=unique_wiki_urls,
-                bio_success_count=0,
-                bio_error_count=0,
-                bio_errors=[],
-                bio_skipped_count=0,
-                living_success_count=0,
-                living_error_count=0,
-                living_errors=[],
+                bio_success_count=bio_success_count,
+                bio_error_count=bio_error_count,
+                bio_errors=bio_errors,
+                bio_skipped_count=bio_skipped_count,
+                living_success_count=living_success_count,
+                living_error_count=living_error_count,
+                living_errors=living_errors,
                 dry_run=dry_run,
                 test_run=test_run,
                 preview_rows=preview_rows,
@@ -2248,353 +2778,46 @@ def run_with_db(
                 revalidate_missing_holders=r_missing,
                 office_errors=office_errors,
                 cancelled=True,
-                message=f"Stopped after {idx} offices.",
+                message="Stopped during bio/living update.",
             )
-        # Live run: fall through to write what was collected so far
 
-    report(
-        "office", len(offices), len(offices), "All offices parsed", {"terms_so_far": total_terms}
-    )
-
-    # Write to DB unless dry_run or test_run (same filter/normalize as preview via _normalize_row_for_import)
-    if not dry_run and not test_run and not all_office_data and not html_hashes_to_update:
-        logger.log(
-            f"Nothing written to DB — all {len(offices)} office(s) were skipped "
-            f"(unchanged HTML/holders or validation failures). "
-            f"Revalidation failures: {len(revalidate_failed_offices)}. "
-            f"Offices unchanged: {offices_unchanged}.",
-            True,
-        )
-    if not dry_run and not test_run and (all_office_data or html_hashes_to_update):
-        report("saving", 0, 1, "Writing to database…", {"terms": total_terms})
-        conn = get_connection()
-        try:
-            for oid in replaceable_office_ids:
-                db_office_terms.delete_office_terms_for_office(oid, conn=conn)
-
-            for row in all_office_data:
-                office_id = row.get("_office_id")
-                if office_id is None:
-                    continue
-                normalized = _normalize_row_for_import(row)
-                # Include "No link" rows that have a name (e.g. Charles W. Wright) as dead-link individuals
-                if (
-                    normalized is None
-                    and (row.get("Wiki Link") or "") in ("", "No link")
-                    and row.get("_name_from_table")
-                ):
-                    normalized = _normalize_row_for_import(row, include_no_link=True)
-                if normalized is None:
-                    continue
-                (
-                    _,
-                    term_start_val,
-                    term_end_val,
-                    term_start_imp,
-                    term_end_imp,
-                    term_start_year,
-                    term_end_year,
-                ) = normalized
-                wiki_url = row.get("Wiki Link") or ""
-                no_link_placeholder = wiki_url in ("", "No link") and row.get("_name_from_table")
-                if no_link_placeholder:
-                    wiki_url = (
-                        "No link:"
-                        + str(office_id)
-                        + ":"
-                        + (row.get("_name_from_table") or "Unknown")
-                    )
-                # Resolve or create individual
-                ind = db_individuals.get_individual_by_wiki_url(wiki_url, conn=conn)
-                individual_id = ind["id"] if ind else None
-                if not ind:
-                    # Create placeholder or dead-link individual so we can link office_term
-                    payload = {
-                        "wiki_url": wiki_url,
-                        "page_path": wiki_url.split("/")[-1] if "/" in wiki_url else None,
-                    }
-                    if row.get("_dead_link") or no_link_placeholder:
-                        payload["full_name"] = row.get("_name_from_table")
-                        payload["is_dead_link"] = 1
-                    individual_id = db_individuals.upsert_individual(payload, conn=conn)
-                party_text = row.get("Party")
-                od_id = row.get("_office_details_id")
-                tc_id = row.get("_office_table_config_id")
-                country_id = row.get("_country_id")
-                if od_id is not None and tc_id is not None and country_id is not None:
-                    party_id = db_parties.resolve_party_id_by_country(
-                        country_id, party_text, conn=conn
-                    )
-                    db_office_terms.insert_office_term(
-                        office_details_id=od_id,
-                        office_table_config_id=tc_id,
-                        individual_id=individual_id,
-                        wiki_url=wiki_url,
-                        party_id=party_id,
-                        district=row.get("District"),
-                        term_start=term_start_val,
-                        term_end=term_end_val,
-                        term_start_year=term_start_year,
-                        term_end_year=term_end_year,
-                        term_start_imprecise=term_start_imp,
-                        term_end_imprecise=term_end_imp,
-                        conn=conn,
-                    )
-                else:
-                    party_id = db_parties.resolve_party_id(office_id, party_text, conn=conn)
-                    db_office_terms.insert_office_term(
-                        office_id=office_id,
-                        individual_id=individual_id,
-                        wiki_url=wiki_url,
-                        party_id=party_id,
-                        district=row.get("District"),
-                        term_start=term_start_val,
-                        term_end=term_end_val,
-                        term_start_year=term_start_year,
-                        term_end_year=term_end_year,
-                        term_start_imprecise=term_start_imp,
-                        term_end_imprecise=term_end_imp,
-                        conn=conn,
-                    )
-                if individual_id:
-                    db_individuals._recompute_is_living_for_individual(individual_id, conn)
-                # Collect records for quality checking (auto mode)
-                if _quality_checker and individual_id:
-                    _quality_checker.collect(
-                        "individual",
-                        {
-                            "record_type": "individual",
-                            "record_id": individual_id,
-                            "wiki_url": wiki_url,
-                            "full_name": row.get("_name_from_table"),
-                        },
-                    )
-                    _quality_checker.collect(
-                        "office_term",
-                        {
-                            "record_type": "office_term",
-                            "record_id": individual_id,
-                            "term_start_year": term_start_year,
-                            "term_end_year": term_end_year,
-                            "party_text": party_text,
-                            "party_id": party_id,
-                        },
-                    )
-            for tc_id, h in html_hashes_to_update.items():
-                db_offices.update_html_hash(tc_id, h, conn=conn)
-            conn.commit()
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            conn.close()
-
-    # Bio run (new individuals only): only fetch bio for people not already in the individuals table.
-    # Full/delta: to_fetch = unique_wiki_urls - existing_individual_wiki_urls. Report skipped count.
-    # Skip entirely when run_office_bio is False (office-only run).
-    if not dry_run and not test_run and run_office_bio:
-        if run_mode == "live_person":
-            # Live person mode: only refresh bios for living individuals (no new-individual bio).
-            to_fetch = list(db_individuals.get_living_individual_wiki_urls()) if run_bio else []
-            bio_skipped_count = 0
-            total_bios = len(to_fetch)
-            unique_living = list(dict.fromkeys(to_fetch))
-            _lp_counts = [0, 0]  # [success, error]
-
-            def _lp_success(wiki_url: str, bio_info: dict) -> None:
-                bio_info["wiki_url"] = wiki_url
-                bd, bd_imp = normalize_date(bio_info.get("birth_date"))
-                dd, dd_imp = normalize_date(bio_info.get("death_date"))
-                bio_info["birth_date"] = bd
-                bio_info["death_date"] = dd
-                bio_info["birth_date_imprecise"] = bd_imp
-                bio_info["death_date_imprecise"] = dd_imp
-                db_individuals.upsert_individual(bio_info)
-                _lp_counts[0] += 1
-
-            def _lp_error(wiki_url: str, err: str) -> None:
-                _lp_counts[1] += 1
-                logger.log(f"Living update failed for {wiki_url}: {err}", True)
-                living_errors.append({"url": wiki_url, "error": err})
-
-            def _lp_progress(done: int, total: int) -> None:
-                report(
-                    "living",
-                    done,
-                    total,
-                    "Updating living individuals…",
-                    {"current": done, "total": total},
+        if _reporter is not None:
+            try:
+                _reporter.flush()
+            except Exception as _flush_err:
+                _log.warning(
+                    f"ParseErrorReporter flush failed (run result not affected): {_flush_err}"
                 )
-
-            if _fetch_bio_batch(
-                unique_living, biography, cancel_check, _lp_progress, _lp_success, _lp_error
-            ):
-                logger.log("Run cancelled by user (during living update).", True)
-                bio_cancelled = True
-            living_success_count += _lp_counts[0]
-            living_error_count += _lp_counts[1]
-        else:
-            # Full/delta: bio only for new individuals (not already in DB).
-            to_fetch = list(unique_wiki_urls - existing_individual_wiki_urls)
-            bio_skipped_count = len(unique_wiki_urls) - len(to_fetch)
-            if bio_skipped_count > 0:
-                logger.log(
-                    f"Skipping {bio_skipped_count} individuals (already in DB); fetching bio for {len(to_fetch)} new.",
-                    True,
-                )
-                report(
-                    "bio",
-                    0,
-                    len(to_fetch),
-                    f"Skipped {bio_skipped_count} (in DB). Fetching {len(to_fetch)} new…",
-                    {"bio_skipped": bio_skipped_count},
-                )
-            total_bios = len(to_fetch)
-            # Build bio cache from table parse so we skip re-fetch when find_date_in_infobox was used (key by normalized URL)
-            bio_cache: dict[str, dict] = {}
-            for row in all_office_data:
-                wiki_url_row = row.get("Wiki Link")
-                if wiki_url_row and wiki_url_row != "No link" and row.get("_bio_details"):
-                    key = normalize_wiki_url(wiki_url_row) or wiki_url_row
-                    if key not in bio_cache:
-                        bio_cache[key] = row["_bio_details"]
-            # Split: bio_cache hits (no HTTP) vs URLs that need HTTP fetch.
-            cache_hits = [u for u in to_fetch if (normalize_wiki_url(u) or u) in bio_cache]
-            http_urls = [u for u in to_fetch if (normalize_wiki_url(u) or u) not in bio_cache]
-            # Process bio_cache hits sequentially (no rate limiting needed).
-            for wiki_url in cache_hits:
-                bio_cache_key = normalize_wiki_url(wiki_url) or wiki_url
-                bio_info = dict(bio_cache[bio_cache_key])
-                bio_info["wiki_url"] = wiki_url
-                if bio_info.get("page_path") is None:
-                    bio_info["page_path"] = (wiki_url or "").rstrip("/").split("/")[-1] or ""
-                bd, bd_imp = normalize_date(bio_info.get("birth_date"))
-                dd, dd_imp = normalize_date(bio_info.get("death_date"))
-                bio_info["birth_date"] = bd
-                bio_info["death_date"] = dd
-                bio_info["birth_date_imprecise"] = bd_imp
-                bio_info["death_date_imprecise"] = dd_imp
-                db_individuals.upsert_individual(bio_info)
-                bio_success_count += 1
-            # Fetch remaining URLs in parallel (rate-limited via wiki_throttle in biography_extract).
-            _new_bio_counts = [0, 0]
-            _new_bio_done = [len(cache_hits)]
-
-            def _new_bio_success(wiki_url: str, bio_info: dict) -> None:
-                bio_info["wiki_url"] = wiki_url
-                bd, bd_imp = normalize_date(bio_info.get("birth_date"))
-                dd, dd_imp = normalize_date(bio_info.get("death_date"))
-                bio_info["birth_date"] = bd
-                bio_info["death_date"] = dd
-                bio_info["birth_date_imprecise"] = bd_imp
-                bio_info["death_date_imprecise"] = dd_imp
-                db_individuals.upsert_individual(bio_info)
-                _new_bio_counts[0] += 1
-
-            def _new_bio_error(wiki_url: str, err: str) -> None:
-                _new_bio_counts[1] += 1
-                logger.log(f"Bio failed for {wiki_url}: {err}", True)
-                bio_errors.append({"url": wiki_url, "error": err})
-
-            def _new_bio_progress(done: int, total: int) -> None:
-                combined = _new_bio_done[0] + done
-                report(
-                    "bio",
-                    combined,
-                    total_bios,
-                    "Fetching biographies (new individuals)…",
-                    {"current": combined, "total": total_bios, "bio_skipped": bio_skipped_count},
-                )
-
-            unique_http_urls = list(dict.fromkeys(http_urls))
-            if _fetch_bio_batch(
-                unique_http_urls,
-                biography,
-                cancel_check,
-                _new_bio_progress,
-                _new_bio_success,
-                _new_bio_error,
-            ):
-                logger.log("Run cancelled by user (during bio fetch).", True)
-                bio_cancelled = True
-            bio_success_count += _new_bio_counts[0]
-            bio_error_count += _new_bio_counts[1]
-
-            # Optional second pass: update living individuals (death_date null). Full refresh of bio fields.
-            if run_bio:
-                if bio_batch is not None:
-                    to_fetch_living = db_individuals.get_living_individuals_for_batch(bio_batch)
-                else:
-                    to_fetch_living = []
-                total_living = len(to_fetch_living)
-                if total_living > 0:
-                    logger.log(
-                        f"Update living individuals: refreshing bio for {total_living} people (death_date null).",
-                        True,
+        if _quality_checker is not None:
+            try:
+                quality_results = _quality_checker.flush(deterministic_only=True)
+                if quality_results:
+                    _log.info(
+                        f"Data quality: {len(quality_results)} issue(s) flagged (deterministic)."
                     )
-                    report(
-                        "living",
-                        0,
-                        total_living,
-                        f"Updating {total_living} living individuals…",
-                        {},
-                    )
-                    unique_living2 = list(dict.fromkeys(to_fetch_living))
-                    _liv2_counts = [0, 0]
-
-                    def _liv2_success(wiki_url: str, bio_info: dict) -> None:
-                        bio_info["wiki_url"] = wiki_url
-                        bd, bd_imp = normalize_date(bio_info.get("birth_date"))
-                        dd, dd_imp = normalize_date(bio_info.get("death_date"))
-                        bio_info["birth_date"] = bd
-                        bio_info["death_date"] = dd
-                        bio_info["birth_date_imprecise"] = bd_imp
-                        bio_info["death_date_imprecise"] = dd_imp
-                        db_individuals.upsert_individual(bio_info)
-                        db_individuals.mark_bio_refreshed(wiki_url)
-                        _liv2_counts[0] += 1
-
-                    def _liv2_error(wiki_url: str, err: str) -> None:
-                        _liv2_counts[1] += 1
-                        logger.log(f"Living update failed for {wiki_url}: {err}", True)
-                        living_errors.append({"url": wiki_url, "error": err})
-
-                    def _liv2_progress(done: int, total: int) -> None:
-                        report(
-                            "living",
-                            done,
-                            total,
-                            "Updating living individuals…",
-                            {"current": done, "total": total},
-                        )
-
-                    if _fetch_bio_batch(
-                        unique_living2,
-                        biography,
-                        cancel_check,
-                        _liv2_progress,
-                        _liv2_success,
-                        _liv2_error,
-                        run_cache=run_cache,
-                    ):
-                        logger.log("Run cancelled by user (during living update).", True)
-                        bio_cancelled = True
-                    living_success_count += _liv2_counts[0]
-                    living_error_count += _liv2_counts[1]
-
-    if bio_cancelled:
-        logger.close()
+            except Exception as _dq_flush_err:
+                _log.warning(
+                    f"DataQualityChecker flush failed (run result not affected): {_dq_flush_err}"
+                )
         report(
             "complete",
             1,
             1,
-            "Stopped (bio)",
+            "Done",
             {"terms_parsed": total_terms, "unique_wiki_urls": len(unique_wiki_urls)},
         )
+
+        # Preview rows: same filter/normalize as import so UI shows exactly what would be in the table (include dead-link / name-only rows)
         preview_rows = _build_preview_rows(all_office_data) if (dry_run or test_run) else None
-        rf = len(revalidate_failed_offices) > 0
-        rm = revalidate_failed_offices[0][1] if revalidate_failed_offices else None
-        r_missing = revalidate_missing_holders_list[0] if revalidate_missing_holders_list else None
+
+        revalidate_failed = len(revalidate_failed_offices) > 0
+        revalidate_message = revalidate_failed_offices[0][1] if revalidate_failed_offices else None
+        if revalidate_failed and len(revalidate_failed_offices) > 1:
+            revalidate_message = f"{len(revalidate_failed_offices)} office(s) skipped (validation failed). {revalidate_message}"
+        revalidate_missing_holders = (
+            revalidate_missing_holders_list[0] if revalidate_missing_holders_list else None
+        )
+
         return _build_result_dict(
             office_count=len(offices),
             offices_unchanged=offices_unchanged,
@@ -2610,74 +2833,15 @@ def run_with_db(
             dry_run=dry_run,
             test_run=test_run,
             preview_rows=preview_rows,
-            revalidate_failed=rf,
-            revalidate_message=rm,
-            revalidate_missing_holders=r_missing,
+            revalidate_failed=revalidate_failed,
+            revalidate_message=revalidate_message,
+            revalidate_missing_holders=revalidate_missing_holders,
             office_errors=office_errors,
-            cancelled=True,
-            message="Stopped during bio/living update.",
         )
-
-    if _reporter is not None:
-        try:
-            _reporter.flush()
-        except Exception as _flush_err:
-            logger.log(
-                f"ParseErrorReporter flush failed (run result not affected): {_flush_err}", True
-            )
-    if _quality_checker is not None:
-        try:
-            quality_results = _quality_checker.flush(deterministic_only=True)
-            if quality_results:
-                logger.log(
-                    f"Data quality: {len(quality_results)} issue(s) flagged (deterministic).",
-                    True,
-                )
-        except Exception as _dq_flush_err:
-            logger.log(
-                f"DataQualityChecker flush failed (run result not affected): {_dq_flush_err}",
-                True,
-            )
-    logger.close()
-    report(
-        "complete",
-        1,
-        1,
-        "Done",
-        {"terms_parsed": total_terms, "unique_wiki_urls": len(unique_wiki_urls)},
-    )
-
-    # Preview rows: same filter/normalize as import so UI shows exactly what would be in the table (include dead-link / name-only rows)
-    preview_rows = _build_preview_rows(all_office_data) if (dry_run or test_run) else None
-
-    revalidate_failed = len(revalidate_failed_offices) > 0
-    revalidate_message = revalidate_failed_offices[0][1] if revalidate_failed_offices else None
-    if revalidate_failed and len(revalidate_failed_offices) > 1:
-        revalidate_message = f"{len(revalidate_failed_offices)} office(s) skipped (validation failed). {revalidate_message}"
-    revalidate_missing_holders = (
-        revalidate_missing_holders_list[0] if revalidate_missing_holders_list else None
-    )
-
-    return _build_result_dict(
-        office_count=len(offices),
-        offices_unchanged=offices_unchanged,
-        total_terms=total_terms,
-        unique_wiki_urls=unique_wiki_urls,
-        bio_success_count=bio_success_count,
-        bio_error_count=bio_error_count,
-        bio_errors=bio_errors,
-        bio_skipped_count=bio_skipped_count,
-        living_success_count=living_success_count,
-        living_error_count=living_error_count,
-        living_errors=living_errors,
-        dry_run=dry_run,
-        test_run=test_run,
-        preview_rows=preview_rows,
-        revalidate_failed=revalidate_failed,
-        revalidate_message=revalidate_message,
-        revalidate_missing_holders=revalidate_missing_holders,
-        office_errors=office_errors,
-    )
+    finally:
+        if _file_handler is not None:
+            logging.getLogger("src.scraper").removeHandler(_file_handler)
+            _file_handler.close()
 
 
 def preview_with_config(
@@ -2697,117 +2861,125 @@ def preview_with_config(
     """
     init_db()
     log_dir = get_log_dir()
-    logger = Logger("preview", "Office", log_dir=log_dir)
-    party_list = db_parties.get_party_list_for_scraper()
-    data_cleanup = parse_core.DataCleanup(logger)
-    biography = parse_core.Biography(logger, data_cleanup)
-    offices_parser = parse_core.Offices(logger, biography, data_cleanup)
-
-    url = (office_row.get("url") or "").strip()
-    if not url:
-        return {"preview_rows": [], "raw_table_preview": None, "error": "No URL configured"}
-
-    table_no = int(office_row.get("table_no") or 1)
-    use_full_page = bool(office_row.get("use_full_page_for_table"))
-    cache_result = get_table_html_cached(url, table_no, refresh=False, use_full_page=use_full_page)
-    if "error" in cache_result:
-        return {"preview_rows": [], "raw_table_preview": None, "error": cache_result["error"]}
-    html_content = cache_result.get("html") or ""
-    cached_table_html = html_content if html_content else None
-
+    _fh = configure_run_logging("preview", "Office", log_dir=log_dir)
     try:
-        table_data = _parse_office_html(
-            office_row,
-            html_content,
-            url,
-            party_list,
-            offices_parser,
-            cached_table_html=cached_table_html,
-            progress_callback=progress_callback,
-            max_rows=max_rows,
-        )
-        if bool(office_row.get("remove_duplicates")):
-            table_data = _dedupe_parsed_rows(
-                table_data, years_only=bool(office_row.get("years_only"))
-            )
-    except Exception as e:
-        raw_max = max_rows if max_rows is not None else 100
-        raw = get_raw_table_preview(url, int(office_row.get("table_no") or 1), raw_max)
-        return {"preview_rows": [], "raw_table_preview": raw, "error": str(e)}
+        party_list = db_parties.get_party_list_for_scraper()
+        data_cleanup = parse_core.DataCleanup()
+        biography = parse_core.Biography(data_cleanup)
+        offices_parser = parse_core.Offices(biography, data_cleanup)
 
-    # Same filter/normalize as import: only rows that would be inserted (include dead-link / name-only rows)
-    years_only = bool(office_row.get("years_only"))
-    preview_rows = []
-    for row in table_data:
-        normalized = _normalize_row_for_import(row, years_only=years_only)
-        if (
-            normalized is None
-            and (row.get("Wiki Link") or "") in ("", "No link")
-            and row.get("_name_from_table")
-        ):
-            normalized = _normalize_row_for_import(row, years_only=years_only, include_no_link=True)
-        if normalized is None:
-            continue
-        _, term_start_val, term_end_val, _ts_imp, _te_imp, term_start_year, term_end_year = (
-            normalized
-        )
-        wiki_link = row.get("Wiki Link") or ""
-        dead_link = bool(
-            row.get("_dead_link") or (wiki_link in ("", "No link") and row.get("_name_from_table"))
-        )
-        preview_rows.append(
-            {
-                "Wiki Link": wiki_link,
-                "Party": row.get("Party") or "",
-                "District": row.get("District") or "",
-                "Term Start": term_start_val if term_start_val else "",
-                "Term End": term_end_val if term_end_val else "",
-                "Term Start Year": term_start_year,
-                "Term End Year": term_end_year,
-                "Dead link": dead_link,
-                "Name (no link)": (
-                    row.get("_name_from_table")
-                    if dead_link and wiki_link in ("", "No link")
-                    else None
-                ),
-            }
-        )
-    if max_rows is not None:
-        preview_rows = preview_rows[:max_rows]
+        url = (office_row.get("url") or "").strip()
+        if not url:
+            return {"preview_rows": [], "raw_table_preview": None, "error": "No URL configured"}
 
-    revalidate_failed = False
-    revalidate_missing_holders = None
-    revalidate_message = None
-    tc_id = office_row.get("office_table_config_id") or office_row.get("id")
-    if tc_id:
+        table_no = int(office_row.get("table_no") or 1)
+        use_full_page = bool(office_row.get("use_full_page_for_table"))
+        cache_result = get_table_html_cached(
+            url, table_no, refresh=False, use_full_page=use_full_page
+        )
+        if "error" in cache_result:
+            return {"preview_rows": [], "raw_table_preview": None, "error": cache_result["error"]}
+        html_content = cache_result.get("html") or ""
+        cached_table_html = html_content if html_content else None
+
         try:
-            existing_terms = db_office_terms.get_existing_terms_for_office(int(tc_id))
-        except Exception:
-            existing_terms = []
-        if existing_terms and table_data:
-            missing = _missing_holder_keys(
-                existing_terms, table_data, int(tc_id), years_only, key_years_only=False
+            table_data = _parse_office_html(
+                office_row,
+                html_content,
+                url,
+                party_list,
+                offices_parser,
+                cached_table_html=cached_table_html,
+                progress_callback=progress_callback,
+                max_rows=max_rows,
             )
-            if missing:
-                revalidate_failed = True
-                revalidate_message = (
-                    "New list found. Existing office holders are missing from this preview list."
+            if bool(office_row.get("remove_duplicates")):
+                table_data = _dedupe_parsed_rows(
+                    table_data, years_only=bool(office_row.get("years_only"))
                 )
-                revalidate_missing_holders = _missing_holders_display(
-                    existing_terms, missing, _holder_key_from_existing_term
-                )
+        except Exception as e:
+            raw_max = max_rows if max_rows is not None else 100
+            raw = get_raw_table_preview(url, int(office_row.get("table_no") or 1), raw_max)
+            return {"preview_rows": [], "raw_table_preview": raw, "error": str(e)}
 
-    raw_table_preview = None
-    if not preview_rows and not table_data:
-        raw_max = max_rows if max_rows is not None else 100
-        raw_table_preview = get_raw_table_preview(
-            url, int(office_row.get("table_no") or 1), raw_max
-        )
-    return {
-        "preview_rows": preview_rows,
-        "raw_table_preview": raw_table_preview,
-        "error": None,
-        "revalidate_failed": revalidate_failed,
-        "revalidate_message": revalidate_message,
-        "revalidate_missing_holders": revalidate_missing_holders,
-    }
+        # Same filter/normalize as import: only rows that would be inserted (include dead-link / name-only rows)
+        years_only = bool(office_row.get("years_only"))
+        preview_rows = []
+        for row in table_data:
+            normalized = _normalize_row_for_import(row, years_only=years_only)
+            if (
+                normalized is None
+                and (row.get("Wiki Link") or "") in ("", "No link")
+                and row.get("_name_from_table")
+            ):
+                normalized = _normalize_row_for_import(
+                    row, years_only=years_only, include_no_link=True
+                )
+            if normalized is None:
+                continue
+            _, term_start_val, term_end_val, _ts_imp, _te_imp, term_start_year, term_end_year = (
+                normalized
+            )
+            wiki_link = row.get("Wiki Link") or ""
+            dead_link = bool(
+                row.get("_dead_link")
+                or (wiki_link in ("", "No link") and row.get("_name_from_table"))
+            )
+            preview_rows.append(
+                {
+                    "Wiki Link": wiki_link,
+                    "Party": row.get("Party") or "",
+                    "District": row.get("District") or "",
+                    "Term Start": term_start_val if term_start_val else "",
+                    "Term End": term_end_val if term_end_val else "",
+                    "Term Start Year": term_start_year,
+                    "Term End Year": term_end_year,
+                    "Dead link": dead_link,
+                    "Name (no link)": (
+                        row.get("_name_from_table")
+                        if dead_link and wiki_link in ("", "No link")
+                        else None
+                    ),
+                }
+            )
+        if max_rows is not None:
+            preview_rows = preview_rows[:max_rows]
+
+        revalidate_failed = False
+        revalidate_missing_holders = None
+        revalidate_message = None
+        tc_id = office_row.get("office_table_config_id") or office_row.get("id")
+        if tc_id:
+            try:
+                existing_terms = db_office_terms.get_existing_terms_for_office(int(tc_id))
+            except Exception:
+                existing_terms = []
+            if existing_terms and table_data:
+                missing = _missing_holder_keys(
+                    existing_terms, table_data, int(tc_id), years_only, key_years_only=False
+                )
+                if missing:
+                    revalidate_failed = True
+                    revalidate_message = "New list found. Existing office holders are missing from this preview list."
+                    revalidate_missing_holders = _missing_holders_display(
+                        existing_terms, missing, _holder_key_from_existing_term
+                    )
+
+        raw_table_preview = None
+        if not preview_rows and not table_data:
+            raw_max = max_rows if max_rows is not None else 100
+            raw_table_preview = get_raw_table_preview(
+                url, int(office_row.get("table_no") or 1), raw_max
+            )
+        return {
+            "preview_rows": preview_rows,
+            "raw_table_preview": raw_table_preview,
+            "error": None,
+            "revalidate_failed": revalidate_failed,
+            "revalidate_message": revalidate_message,
+            "revalidate_missing_holders": revalidate_missing_holders,
+        }
+    finally:
+        if _fh is not None:
+            logging.getLogger("src.scraper").removeHandler(_fh)
+            _fh.close()
