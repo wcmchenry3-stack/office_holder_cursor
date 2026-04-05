@@ -23,7 +23,37 @@ Wikipedia REST API      SQLite file
 
 **Auth:** Google OAuth via `authlib`. `require_login()` middleware gates all routes except `/login`, `/auth/google*`, `/static`. When `GOOGLE_CLIENT_ID` is not set, auth is fully bypassed (local dev).
 
-**Async jobs:** Runs, bulk imports, previews, and UI tests each use an in-memory job store (`_run_job_store`, `_populate_job_store`, etc.) + background thread. Single-process only — no task queue. Job stores are lost on server restart.
+**Async jobs — two execution models:**
+
+| Job type | Execution model | Why |
+|---|---|---|
+| Scheduled jobs (`daily_delta`, `delta_insufficient_vitals`, `gemini_vitals_research`, `daily_page_quality`) | **Child subprocess** via `subprocess.run([sys.executable, "-c", payload])` | Memory is fully reclaimed after the job ends — critical on Render starter plan |
+| Manual/UI-triggered jobs (`POST /api/run`) | **Background thread** in the FastAPI worker process | No persistent disk + faster startup; memory not reclaimed until server restart |
+
+**Subprocess job flow:** Parent serializes `run_with_db()` call params into a Python one-liner, captures stdout/stderr, parses the JSON result printed to stdout. Non-zero exit, empty stdout, or invalid JSON → `finish_run(status="error")`. The child initializes its own Sentry SDK with `sentry_sdk.set_tag("subprocess_job", ...)` and `sentry_sdk.set_context("subprocess", {...})`.
+
+**In-memory job stores** (`_run_job_store`, `_populate_job_store`, etc.) are lost on server restart. The `scraper_jobs` DB table provides a persistent fallback for UI-triggered jobs.
+
+**UI pages:**
+
+| URL | Description |
+|---|---|
+| `/run` | Trigger scraper runs; select run mode, office category, individual ref |
+| `/offices` | List and search offices (legacy flat table) |
+| `/offices/<id>` | Edit individual office config |
+| `/source-pages` | List source pages (Wikipedia URLs) in the hierarchy |
+| `/data/individuals` | Filterable table of all individuals with batch bio-refresh action |
+| `/data/scheduled-jobs` | View/pause/resume scheduled jobs; edit cron times and operational settings inline |
+| `/data/scheduled-job-runs` | APScheduler execution history with per-run result summaries |
+| `/data/scraper-jobs` | Manual + queued scraper job history |
+| `/data/runner-registry` | Static registry of run modes and expiry thresholds |
+| `/data/ai-decisions` | AI decision log across data quality, parse errors, page quality, suspect flags |
+| `/data/wiki-drafts` | Wikipedia draft proposals; list view |
+| `/data/wiki-drafts/<id>` | Draft proposal detail; submit button |
+| `/gemini-research` | Interactive Gemini+OpenAI vitals research test page |
+| `/ai-offices` | AI batch office creation via OpenAI |
+| `/refs` | Reference data index (countries, states, cities, levels, branches, parties, etc.) |
+| `/refs/parties` | Party CRUD |
 
 ---
 
@@ -81,10 +111,30 @@ office_holder_cursor/
 │   ├── test_run.db                # Test database (used by scenario runner)
 │   ├── logs/                      # Log files from scraper runs
 │   └── wiki_cache/                # Gzip cache of fetched Wikipedia HTML tables
-├── render.yaml                    # Deployment manifest (dev + prd services)
+├── render.yaml                    # Deployment manifest: PostgreSQL service (office-holder-pg, starter plan);
+│                                  #   web service with 1 GB persistent disk mounted at /data
+│                                  #   (logs + wiki_cache survive deploys); DATABASE_URL auto-wired;
+│                                  #   SECRET_KEY auto-generated; DATA_QUALITY_ENABLED=0 by default
 ├── requirements.txt               # Python dependencies
 └── runner_head.py                 # UTF-16 encoded backup of runner.py — NOT used at runtime
 ```
+
+---
+
+## SQLite / PostgreSQL Dual Backend
+
+The app supports two database backends selected by the `DATABASE_URL` env var:
+
+| Environment | Backend | Schema constant | Connection |
+|---|---|---|---|
+| Local dev / CI | SQLite | `SCHEMA_SQL` in `schema.py` | `sqlite3`, file at `data/office_holder.db` |
+| Production (Render) | PostgreSQL | `SCHEMA_PG_SQL` in `schema.py` | `psycopg2`, URL from `DATABASE_URL` |
+
+**Key abstractions:**
+- `_PGConnWrapper` — thin shim that gives psycopg2 connections a sqlite3-compatible `.execute("?")` API (converts `?` → `%s` placeholders and `.lastrowid` → `.fetchone()[0]`)
+- `is_postgres()` — used throughout the DB layer to gate PostgreSQL-specific behavior (e.g. `RETURNING id`, `ON CONFLICT DO UPDATE`)
+- `_run_pg_migrations()` — runs PostgreSQL-only `ALTER TABLE` migrations at startup (idempotent, tracked in `schema_migrations` table). **Rule: when adding a column, update both `SCHEMA_SQL` and `SCHEMA_PG_SQL`, and add an entry to `_run_pg_migrations()`.**
+- `src/db/test_schema_sync.py` — CI check that fails if the two schemas drift; enforces the add-to-both rule
 
 ---
 
@@ -121,6 +171,7 @@ Auth is bypassed locally when `GOOGLE_CLIENT_ID` is not set. Database is created
 | `EMAIL_APP_PASSWORD` | For email | — | Gmail App Password for daily run summary email (myaccount.google.com/apppasswords) |
 | `EMAIL_FROM` | No | `wcmchenry3@gmail.com` | Sender address for summary email |
 | `EMAIL_TO` | No | `wcmchenry3@gmail.com` | Recipient address for summary email |
+| `DAILY_DELTA_ENABLED` | Legacy/render.yaml | `1` | Present in `render.yaml` (value `"1"`) but **not read by any current Python source**. Kept in render.yaml as a placeholder; `RUNNERS_ENABLED` is the active kill switch for all scheduled jobs. |
 | `GEMINI_OFFICE_HOLDER` | For Gemini | — | Google Gemini API key for deep vitals research (Feature C). If unset, Gemini research is silently disabled. |
 | `OPENAI_API_KEY` | For OpenAI | — | OpenAI API key for AI office builder and consensus voter. If unset, OpenAI provider is skipped in consensus votes; AI office builder is disabled. |
 | `ANTHROPIC_API_KEY` | For Claude | — | Anthropic API key for parser auto-fix and consensus voter. If unset, Claude provider is skipped in consensus votes; auto-fix is silently disabled. |

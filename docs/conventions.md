@@ -3,6 +3,7 @@
 ## Key Conventions
 
 - **Migrations:** Always idempotent. Check `PRAGMA table_info(...)` or `PRAGMA index_list(...)` before altering. Never alter schema manually — always add a function to `migrate_to_fk()` in `src/db/migrate.py`.
+- **Dual backend schema rule:** When adding a column or table, update **both** `SCHEMA_SQL` (SQLite, `src/db/schema.py`) **and** `SCHEMA_PG_SQL` (PostgreSQL, same file), **and** add an entry to `_run_pg_migrations()` in `src/db/connection.py`. `test_schema_sync.py` in CI will fail if the two schemas drift.
 - **DB rows:** `sqlite3.Row` with `row_factory` — access columns by name like a dict. Passed around as `dict[str, Any]`.
 - **Party matching:** By `country_id` + `party_name` or `party_link`. Unmatched parties stored as text; matched parties get `party_id` FK.
 - **Office row helpers:** Always use `db_offices.office_row_to_table_config()` and `office_row_to_office_details()` to convert a flat `offices` row into structured dicts for the parser. Don't build config dicts manually.
