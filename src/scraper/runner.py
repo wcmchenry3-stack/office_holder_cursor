@@ -39,6 +39,8 @@ import os
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+import sentry_sdk
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
@@ -1313,6 +1315,7 @@ def _run_single_bio(ctx: _RunContext, report: Callable) -> dict[str, Any]:
             bio_error_count = 1
             bio_errors.append({"url": wiki_url, "error": "No bio data extracted"})
     except Exception as e:
+        sentry_sdk.capture_exception(e)
         bio_error_count = 1
         bio_errors.append({"url": wiki_url, "error": str(e)})
     return {
@@ -1399,6 +1402,7 @@ def _run_selected_bios(ctx: _RunContext, report: Callable) -> dict[str, Any]:
                 bio_error_count += 1
                 bio_errors.append({"url": wiki_url, "error": "No bio data extracted"})
         except Exception as e:
+            sentry_sdk.capture_exception(e)
             bio_error_count += 1
             bio_errors.append({"url": wiki_url, "error": str(e)})
     return {
@@ -1644,6 +1648,7 @@ def _run_gemini_vitals_research(ctx: _RunContext, report: Callable) -> dict[str,
             try:
                 db_individuals.upsert_individual(update_data)
             except Exception as exc:
+                sentry_sdk.capture_exception(exc)
                 errors.append({"url": wiki_url, "error": f"upsert failed: {exc}"})
 
         # Store sources
@@ -1665,6 +1670,7 @@ def _run_gemini_vitals_research(ctx: _RunContext, report: Callable) -> dict[str,
                     origin="nightly",
                 )
             except Exception as exc:
+                sentry_sdk.capture_exception(exc)
                 errors.append({"url": wiki_url, "error": f"source insert failed: {exc}"})
 
         # Notability gate → OpenAI polish → wiki draft
@@ -1695,6 +1701,7 @@ def _run_gemini_vitals_research(ctx: _RunContext, report: Callable) -> dict[str,
                     )
                     articles_count += 1
             except Exception as exc:
+                sentry_sdk.capture_exception(exc)
                 errors.append({"url": wiki_url, "error": f"OpenAI polish failed: {exc}"})
 
         # Mark checked regardless of outcome
@@ -1832,6 +1839,7 @@ def _run_dead_link_research(ctx: _RunContext, report: Callable) -> dict[str, Any
             try:
                 db_individuals.upsert_individual(update_data)
             except Exception as exc:
+                sentry_sdk.capture_exception(exc)
                 errors.append({"url": wiki_url, "error": f"upsert failed: {exc}"})
 
         import json as _json
@@ -1852,6 +1860,7 @@ def _run_dead_link_research(ctx: _RunContext, report: Callable) -> dict[str, Any
                     origin="nightly",
                 )
             except Exception as exc:
+                sentry_sdk.capture_exception(exc)
                 errors.append({"url": wiki_url, "error": f"source insert failed: {exc}"})
 
         # Notability gate → OpenAI polish → wiki draft
@@ -1882,6 +1891,7 @@ def _run_dead_link_research(ctx: _RunContext, report: Callable) -> dict[str, Any
                     )
                     articles_count += 1
             except Exception as exc:
+                sentry_sdk.capture_exception(exc)
                 errors.append({"url": wiki_url, "error": f"OpenAI polish failed: {exc}"})
 
         db_individuals.mark_gemini_research_checked(ind_id)
