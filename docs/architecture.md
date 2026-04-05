@@ -122,6 +122,17 @@ Auth is bypassed locally when `GOOGLE_CLIENT_ID` is not set. Database is created
 | `EMAIL_FROM` | No | `wcmchenry3@gmail.com` | Sender address for summary email |
 | `EMAIL_TO` | No | `wcmchenry3@gmail.com` | Recipient address for summary email |
 | `GEMINI_OFFICE_HOLDER` | For Gemini | — | Google Gemini API key for deep vitals research (Feature C). If unset, Gemini research is silently disabled. |
+| `OPENAI_API_KEY` | For OpenAI | — | OpenAI API key for AI office builder and consensus voter. If unset, OpenAI provider is skipped in consensus votes; AI office builder is disabled. |
+| `ANTHROPIC_API_KEY` | For Claude | — | Anthropic API key for parser auto-fix and consensus voter. If unset, Claude provider is skipped in consensus votes; auto-fix is silently disabled. |
+| `GITHUB_TOKEN` | For GitHub | — | GitHub personal access token for opening auto-fix and page-quality PRs/issues. If unset, GitHub integration is silently disabled. |
+| `GITHUB_REPO` | For GitHub | `wcmchenry3-stack/office_holder_cursor` | `owner/repo` slug for GitHub API calls (issues, PRs). Only needed if `GITHUB_TOKEN` is set. |
+| `RUNNERS_ENABLED` | No | `1` | Set to `0`, `false`, `no`, or `off` to globally disable all scheduled and user-triggered scraper jobs without a redeploy. Checked at job start time. |
+| `DATA_QUALITY_ENABLED` | No | (unset = disabled) | Set to `1` to enable the `SuspectRecordFlagger` data quality gate during delta/full runs. Off by default; enable in production once baseline is established. |
+| `DATABASE_URL` | Prod (PG) | — | PostgreSQL connection URL (e.g. `postgresql://user:pass@host/db`). If set, the app uses PostgreSQL instead of SQLite. |
+| `LOG_DIR` | No | `data/logs` | Override the directory where per-run scraper log files are written. Must be an absolute path on Render persistent disk. |
+| `WIKI_CACHE_DIR` | No | `data/wiki_cache` | Override the directory for cached Wikipedia HTML. Set to a path on Render persistent disk to survive deploys. |
+| `WIKI_FETCH_WORKERS` | No | `1` | Number of parallel threads for Wikipedia infobox fetches. Increase with caution — Wikimedia rate limits apply. |
+| `SCRAPER_LOG_LEVEL` | No | `INFO` | Log level for the scraper module (`DEBUG`, `INFO`, `WARNING`, `ERROR`). |
 | `WIKIPEDIA_BOT_USERNAME` | For wiki submit | — | Wikipedia bot account username for article submission via MediaWiki Action API. If unset, submit is disabled. |
 | `WIKIPEDIA_BOT_PASSWORD` | For wiki submit | — | Wikipedia bot account password. If unset, submit is disabled. |
 | `APP_ENVIRONMENT` | No | `dev` | Environment name (`dev` or `prd`). Used by Sentry and logging. |
