@@ -822,7 +822,9 @@ def test_short_row_logs_warning(caplog):
         "office_notes": "",
     }
     with caplog.at_level(logging.WARNING, logger="src.scraper.table_parser"):
-        offices.process_table(html, table_config, office_details, "https://en.example.org/wiki/Test", [])
-    assert any("issue with table rows" in r.message for r in caplog.records), (
-        "Expected a WARNING about too-few rows"
-    )
+        offices.process_table(
+            html, table_config, office_details, "https://en.example.org/wiki/Test", []
+        )
+    assert any(
+        "issue with table rows" in r.message for r in caplog.records
+    ), "Expected a WARNING about too-few rows"
