@@ -78,6 +78,7 @@ One row per Wikipedia URL.
 | `allow_reuse_tables` | INTEGER | Allow multiple offices to share the same `table_no` |
 | `disable_auto_table_update` | INTEGER | Skip auto-table-update algorithm for this page |
 | `last_scraped_at` | TEXT | ISO datetime |
+| `last_quality_checked_at` | TEXT/TIMESTAMPTZ | Set after each page quality inspection; used by `pick_next_page()` for LRU selection |
 
 ### `office_details`
 One row per logical office on a page (e.g. "Governor of Alaska").
@@ -148,6 +149,9 @@ One row per person, keyed by `wiki_url`.
 | `death_place` | TEXT | |
 | `is_dead_link` | INTEGER | 1 if Wikipedia link is a dead/red link |
 | `is_living` | INTEGER | 1 if person believed to be living |
+| `insufficient_vitals_checked_at` | TEXT/TIMESTAMPTZ | Cooldown timestamp for the insufficient vitals job |
+| `gemini_research_checked_at` | TEXT/TIMESTAMPTZ | 90-day cooldown for Gemini deep research (Feature C) |
+| `superseded_by_individual_id` | INTEGER FK → individuals | Set when a no-link placeholder is retired; points to the linked replacement |
 
 ### `office_terms`
 One row per scraped term (a person holding an office for a period).
@@ -205,6 +209,7 @@ Each filter can be scoped to specific countries/levels/branches via `infobox_rol
 | `source_url` | TEXT NOT NULL | URL of the research source |
 | `source_type` | TEXT | government, academic, genealogical, news, other |
 | `found_data_json` | TEXT | JSON with birth_date, death_date, notes |
+| `origin` | TEXT DEFAULT 'manual' | `'manual'` = interactive UI; `'pipeline'` = automated research job |
 | `created_at` | TIMESTAMP | |
 
 ### `wiki_draft_proposals`
@@ -214,6 +219,7 @@ Each filter can be scoped to specific countries/levels/branches via `infobox_rol
 | `individual_id` | INTEGER FK → individuals | |
 | `proposal_text` | TEXT NOT NULL | Wikitext article draft |
 | `status` | TEXT DEFAULT 'pending' | pending, submitted, published, rejected |
+| `origin` | TEXT DEFAULT 'manual' | `'manual'` = interactive UI; `'pipeline'` = automated research job |
 | `created_at` | TIMESTAMP | |
 
 ### `reference_documents`
@@ -226,10 +232,151 @@ Each filter can be scoped to specific countries/levels/branches via `infobox_rol
 | `created_at` | TIMESTAMP | |
 | `updated_at` | TIMESTAMP | |
 
-### Column added to `individuals`
+---
+
+## Quality & AI Tables
+
+### `data_quality_reports`
+Fingerprinted record-level data quality flags. Prevents duplicate issue creation across runs.
+
 | Column | Type | Notes |
 |---|---|---|
-| `gemini_research_checked_at` | TIMESTAMP | 90-day cooldown for Gemini deep research |
+| `id` | INTEGER PK | |
+| `fingerprint` | TEXT UNIQUE | Hash of `(record_type, record_id, check_type)` |
+| `record_type` | TEXT | e.g. `'individual'` |
+| `record_id` | INTEGER | FK to the flagged record |
+| `check_type` | TEXT | e.g. `'name_check'` |
+| `flagged_by` | TEXT | `'openai'`, `'gemini'`, `'claude'`, or `'deterministic'` |
+| `concern_details` | TEXT | Human-readable concern description |
+| `github_issue_url` | TEXT | URL of created GitHub issue (if any) |
+| `github_issue_number` | INTEGER | |
+| `created_at` | TEXT/TIMESTAMPTZ | |
+
+### `parse_error_reports`
+Fingerprinted parser error deduplication. Prevents creating a new GitHub issue every run for the same recurring parser failure.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | INTEGER PK | |
+| `fingerprint` | TEXT UNIQUE | Hash of `(function_name, error_type, wiki_url, office_name)` |
+| `function_name` | TEXT | Parser function where the error occurred |
+| `error_type` | TEXT | Exception class name |
+| `wiki_url` | TEXT | Source Wikipedia URL (nullable) |
+| `office_name` | TEXT | Office name (nullable) |
+| `github_issue_url` | TEXT | |
+| `github_issue_number` | INTEGER | |
+| `created_at` | TEXT/TIMESTAMPTZ | |
+
+### `page_quality_checks`
+One row per scheduled page quality inspection run.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | INTEGER PK | |
+| `source_page_id` | INTEGER FK → source_pages | |
+| `checked_at` | TEXT/TIMESTAMPTZ | When the check was performed |
+| `html_char_count` | INTEGER | Character count of fetched Wikipedia HTML |
+| `office_terms_count` | INTEGER | Number of `office_terms` rows in our DB for this page |
+| `ai_votes` | TEXT | JSON array of per-provider votes |
+| `result` | TEXT | `ok`, `reparse_ok`, `gh_issue`, `manual_review`, `no_data`, `fetch_failed` |
+| `gh_issue_url` | TEXT | URL of created GitHub issue (if any) |
+| `created_at` | TEXT/TIMESTAMPTZ | |
+
+### `suspect_record_flags`
+Audit log for the pre-insertion suspect pattern gate (`SuspectRecordFlagger`).
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | INTEGER PK | |
+| `individual_id` | INTEGER FK → individuals | Nullable (set after insert if `allowed`) |
+| `office_id` | INTEGER | |
+| `full_name` | TEXT | |
+| `wiki_url` | TEXT | |
+| `flag_reasons` | TEXT | JSON list of triggered pattern names |
+| `ai_votes` | TEXT | JSON array of per-provider votes |
+| `result` | TEXT | `allowed`, `skipped`, `gh_issue` |
+| `gh_issue_url` | TEXT | URL of created GitHub issue (if any) |
+| `created_at` | TEXT/TIMESTAMPTZ | |
+
+---
+
+## Operational Tables
+
+### `scraper_jobs`
+Persistent job records for scraper runs — both manual UI-triggered jobs and queued jobs. Survives server restart.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | TEXT PK | UUID |
+| `type` | TEXT | Run mode (e.g. `'delta'`, `'full'`) |
+| `status` | TEXT | `queued`, `running`, `complete`, `error`, `expired`, `cancelled` |
+| `queued_at` | TEXT/TIMESTAMPTZ | When the job entered the queue |
+| `job_params_json` | TEXT | JSON of run parameters |
+| `created_at` | TEXT/TIMESTAMPTZ | |
+| `updated_at` | TEXT/TIMESTAMPTZ | |
+| `result_json` | TEXT | JSON result from `run_with_db()` |
+
+### `scheduled_job_runs`
+One row per APScheduler job execution (daily_delta, insufficient_vitals, gemini_research, etc.).
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | INTEGER PK | |
+| `job_name` | TEXT | APScheduler job ID |
+| `started_at` | TEXT/TIMESTAMPTZ | |
+| `finished_at` | TEXT/TIMESTAMPTZ | Nullable (NULL while running) |
+| `status` | TEXT | `running`, `complete`, `error` |
+| `duration_s` | NUMERIC | Wall-clock seconds |
+| `result_json` | TEXT | JSON summary (terms_parsed, bio counts, page quality result, etc.) |
+| `error` | TEXT | Traceback if `status='error'` |
+
+Surfaced at `/data/scheduled-job-runs`.
+
+### `scheduler_settings`
+Per-job pause state. Survives server restart.
+
+| Column | Type | Notes |
+|---|---|---|
+| `job_id` | TEXT PK | APScheduler job ID |
+| `paused` | INTEGER/BOOLEAN | |
+| `updated_at` | TEXT/TIMESTAMPTZ | |
+
+### `app_settings`
+Operational constants editable via the `/data/scheduled-jobs` UI without a code change.
+
+| Column | Type | Notes |
+|---|---|---|
+| `key` | TEXT PK | Setting name (e.g. `expiry_hours_queued`) |
+| `value` | TEXT | String representation of the value |
+| `value_type` | TEXT | `int`, `float`, or `str` |
+| `description` | TEXT | Human-readable description |
+| `updated_at` | TEXT/TIMESTAMPTZ | |
+
+See `docs/operational-settings.md` for all 12 keys and their defaults.
+
+### `nolink_supersede_log`
+Audit trail for no-link placeholder lifecycle events (when a `wiki_url=NULL` placeholder is retired after the holder gains a Wikipedia link).
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | INTEGER PK | |
+| `old_individual_id` | INTEGER FK → individuals | The retired placeholder |
+| `new_individual_id` | INTEGER FK → individuals | The linked replacement |
+| `office_id` | INTEGER | |
+| `old_wiki_url` | TEXT | NULL / placeholder key |
+| `new_wiki_url` | TEXT | Real Wikipedia URL |
+| `office_terms_reassigned` | INTEGER | Number of `office_terms` rows moved to the new individual |
+| `created_at` | TEXT/TIMESTAMPTZ | |
+
+### `schema_migrations`
+PostgreSQL-only table tracking which `_run_pg_migrations()` entries have been applied. Prevents re-running migrations on subsequent startups.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | TEXT PK | Migration name string |
+| `applied_at` | TIMESTAMPTZ | |
+
+SQLite uses a different mechanism (`PRAGMA table_info` / `PRAGMA index_list` in `migrate.py`).
 
 ---
 
@@ -262,3 +409,30 @@ All migrations are in `src/db/migrate.py`, called via `migrate_to_fk()` at start
 | 21 | `_migrate_infobox_role_key_filter_role_key_format` | Normalize role_key format |
 | 22 | `_migrate_city` | Create cities table; add source_pages.city_id |
 | 23 | `_migrate_source_pages_disable_auto_table_update` | Add disable_auto_table_update flag to source_pages |
+
+The following are **PostgreSQL-only inline migrations** applied at startup via `_run_pg_migrations()` in `src/db/connection.py`. They use the `schema_migrations` table for idempotency.
+
+| Name | What changed |
+|---|---|
+| `pg_drop_office_terms_office_id_fkey` | Drop stale FK constraint (office_terms.office_id stores office_table_config_id values in hierarchy mode) |
+| `pg_source_pages_dedup` / `_delete` / `_url_unique` | Deduplicate source_pages; add UNIQUE constraint on url |
+| `pg_create_parse_error_reports` | Add `parse_error_reports` table |
+| `pg_scraper_jobs_queued_at` | Add `queued_at` column to `scraper_jobs` |
+| `pg_scraper_jobs_job_params_json` | Add `job_params_json` column to `scraper_jobs` |
+| `pg_individuals_insufficient_vitals_checked_at` | Add cooldown timestamp for vitals job |
+| `pg_individuals_gemini_research_checked_at` | Add 90-day cooldown for Gemini research |
+| `pg_create_individual_research_sources` | Add `individual_research_sources` table |
+| `pg_create_wiki_draft_proposals` | Add `wiki_draft_proposals` table |
+| `pg_research_sources_origin` | Add `origin` column to `individual_research_sources` |
+| `pg_wiki_drafts_origin` | Add `origin` column to `wiki_draft_proposals` |
+| `pg_create_reference_documents` | Add `reference_documents` table |
+| `pg_create_data_quality_reports` | Add `data_quality_reports` table |
+| `pg_source_pages_last_quality_checked_at` | Add `last_quality_checked_at` to `source_pages` |
+| `pg_create_page_quality_checks` | Add `page_quality_checks` table |
+| `pg_create_suspect_record_flags` | Add `suspect_record_flags` table |
+| `pg_office_table_config_last_link_fill_rate` | Add `last_link_fill_rate` to `office_table_config` |
+| `pg_individuals_superseded_by_individual_id` | Add `superseded_by_individual_id` FK to `individuals` |
+| `pg_create_scheduled_job_runs` | Add `scheduled_job_runs` table + index |
+| `pg_create_nolink_supersede_log` | Add `nolink_supersede_log` table |
+| `pg_create_scheduler_settings` | Add `scheduler_settings` table |
+| `pg_create_app_settings` | Add `app_settings` table |
