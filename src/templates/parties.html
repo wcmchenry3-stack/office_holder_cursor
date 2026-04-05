@@ -5,8 +5,8 @@
 {% if saved %}<div class="alert alert-success">Saved to local database (data/office_holder.db).</div>{% endif %}
 {% if imported %}<div class="alert alert-success">Imported {{ imported_count }} parties. {{ imported_errors }} errors.</div>{% endif %}
 <div class="actions">
-  <a href="/parties/new" class="btn">Add party</a>
-  <a href="/parties/import" class="btn btn-secondary">Bulk import</a>
+  <a href="/refs/parties/new" class="btn">Add party</a>
+  <a href="/refs/parties/import" class="btn btn-secondary">Bulk import</a>
 </div>
 {% if parties %}
 <table>
@@ -17,11 +17,11 @@
     {% for p in parties %}
     <tr>
       <td>{{ p.country_name or '—' }}</td>
-      <td><a href="/parties/{{ p.id }}">{{ p.party_name or '—' }}</a></td>
+      <td><a href="/refs/parties/{{ p.id }}">{{ p.party_name or '—' }}</a></td>
       <td>{% if p.party_link %}<a href="{{ p.party_link }}" target="_blank" rel="noopener">{{ (p.party_link[:40] + '…') if p.party_link|length > 40 else p.party_link }}</a>{% else %}—{% endif %}</td>
       <td>
-        <a href="/parties/{{ p.id }}" class="btn btn-sm btn-secondary">Edit</a>
-        <form action="/parties/{{ p.id }}/delete" method="post" style="display:inline;" onsubmit="return confirm('Delete?');">
+        <a href="/refs/parties/{{ p.id }}" class="btn btn-sm btn-secondary">Edit</a>
+        <form action="/refs/parties/{{ p.id }}/delete" method="post" style="display:inline;" onsubmit="return confirm('Delete?');">
           <button type="submit" class="btn btn-sm btn-danger">Delete</button>
         </form>
       </td>
@@ -30,6 +30,6 @@
   </tbody>
 </table>
 {% else %}
-<p>No parties yet. <a href="/parties/new">Add one</a>.</p>
+<p>No parties yet. <a href="/refs/parties/new">Add one</a>.</p>
 {% endif %}
 {% endblock %}

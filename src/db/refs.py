@@ -118,7 +118,7 @@ def update_country(country_id: int, name: str, conn=None) -> bool:
 
 
 def delete_country(country_id: int, conn=None) -> None:
-    """Delete country. Raises ValueError if still in use by source_pages, offices, parties, or states."""
+    """Delete country. Raises ValueError if still in use by source_pages, parties, or states."""
     own = conn is None
     if own:
         conn = get_connection()
@@ -131,11 +131,6 @@ def delete_country(country_id: int, conn=None) -> None:
                 in_use.append("states")
             if _count_refs(conn, "parties", "country_id", country_id) > 0:
                 in_use.append("parties")
-        except _DB_OPERATIONAL_ERRORS:
-            pass
-        try:
-            if _count_refs(conn, "offices", "country_id", country_id) > 0:
-                in_use.append("offices")
         except _DB_OPERATIONAL_ERRORS:
             pass
         if in_use:
@@ -231,7 +226,7 @@ def update_state(state_id: int, country_id: int, name: str, conn=None) -> bool:
 
 
 def delete_state(state_id: int, conn=None) -> None:
-    """Delete state. Raises ValueError if still in use by source_pages, offices, or cities."""
+    """Delete state. Raises ValueError if still in use by source_pages or cities."""
     own = conn is None
     if own:
         conn = get_connection()
@@ -240,8 +235,6 @@ def delete_state(state_id: int, conn=None) -> None:
         try:
             if _count_refs(conn, "source_pages", "state_id", state_id) > 0:
                 in_use.append("source pages")
-            if _count_refs(conn, "offices", "state_id", state_id) > 0:
-                in_use.append("offices")
             if _count_refs(conn, "cities", "state_id", state_id) > 0:
                 in_use.append("cities")
         except _DB_OPERATIONAL_ERRORS:
@@ -514,7 +507,7 @@ def update_level(level_id: int, name: str, conn=None) -> bool:
 
 
 def delete_level(level_id: int, conn=None) -> None:
-    """Delete level. Raises ValueError if still in use by source_pages or offices."""
+    """Delete level. Raises ValueError if still in use by source_pages."""
     own = conn is None
     if own:
         conn = get_connection()
@@ -523,8 +516,6 @@ def delete_level(level_id: int, conn=None) -> None:
         try:
             if _count_refs(conn, "source_pages", "level_id", level_id) > 0:
                 in_use.append("source pages")
-            if _count_refs(conn, "offices", "level_id", level_id) > 0:
-                in_use.append("offices")
         except _DB_OPERATIONAL_ERRORS:
             pass
         if in_use:
@@ -579,7 +570,7 @@ def update_branch(branch_id: int, name: str, conn=None) -> bool:
 
 
 def delete_branch(branch_id: int, conn=None) -> None:
-    """Delete branch. Raises ValueError if still in use by source_pages or offices."""
+    """Delete branch. Raises ValueError if still in use by source_pages."""
     own = conn is None
     if own:
         conn = get_connection()
@@ -588,8 +579,6 @@ def delete_branch(branch_id: int, conn=None) -> None:
         try:
             if _count_refs(conn, "source_pages", "branch_id", branch_id) > 0:
                 in_use.append("source pages")
-            if _count_refs(conn, "offices", "branch_id", branch_id) > 0:
-                in_use.append("offices")
         except _DB_OPERATIONAL_ERRORS:
             pass
         if in_use:

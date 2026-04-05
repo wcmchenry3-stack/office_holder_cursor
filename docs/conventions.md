@@ -3,6 +3,7 @@
 ## Key Conventions
 
 - **Migrations:** Always idempotent. Check `PRAGMA table_info(...)` or `PRAGMA index_list(...)` before altering. Never alter schema manually — always add a function to `migrate_to_fk()` in `src/db/migrate.py`.
+- **Dual backend schema rule:** When adding a column or table, update **both** `SCHEMA_SQL` (SQLite, `src/db/schema.py`) **and** `SCHEMA_PG_SQL` (PostgreSQL, same file), **and** add an entry to `_run_pg_migrations()` in `src/db/connection.py`. `test_schema_sync.py` in CI will fail if the two schemas drift.
 - **DB rows:** `sqlite3.Row` with `row_factory` — access columns by name like a dict. Passed around as `dict[str, Any]`.
 - **Party matching:** By `country_id` + `party_name` or `party_link`. Unmatched parties stored as text; matched parties get `party_id` FK.
 - **Office row helpers:** Always use `db_offices.office_row_to_table_config()` and `office_row_to_office_details()` to convert a flat `offices` row into structured dicts for the parser. Don't build config dicts manually.
@@ -13,6 +14,10 @@
 - **Notability threshold:** Deterministic gate in `individual_research_sources.check_notability_threshold()` — requires ≥2 independent sources (Wikipedia mirrors excluded), ≥1 government/academic source, and verifiable term dates. Applied before wiki draft generation in both nightly and interactive flows.
 - **Claude auto-fix:** All Claude API calls go through `src/services/claude_client.py`. API key from `ANTHROPIC_API_KEY` env var (never hardcoded). Exponential backoff on HTTP 429. `max_tokens=4096` on every call. Auto-fix proposals are gated by 7 deterministic minimal-risk criteria in `src/services/auto_fix.py` before any PR is created. PRs are always opened as draft.
 - **No DB write in dry_run/test_run:** `run_with_db(dry_run=True)` or `test_run=True` skips all DB writes.
+- **Job store pattern — when to use each:**
+  - *In-memory only* (`ai_offices`, `gemini_research`, `populate` preview): job state lives only in `_job_store` dict + lock + `_evict_old_jobs()`. Appropriate for ephemeral UI-feedback jobs where loss on server restart is tolerable.
+  - *In-memory + persistent DB* (`run_scraper` via `scraper_jobs` table): state also written to DB. Required when jobs queue, need dequeue-on-restart, or need an audit trail. The DB record is the source of truth after a restart; in-memory is the source of truth during the same process lifetime.
+- **`_PGSavepointContext` rule:** DB module functions that run INSERT/UPDATE on a **caller-owned connection** (`own_conn=False`) must wrap the operation in a savepoint to avoid poisoning the outer PostgreSQL transaction on constraint violations (e.g. `UniqueViolation`). Without this, a nested `UniqueViolation` aborts the entire outer transaction, causing all subsequent writes to fail silently (production incident — fixed in PR #268). Usage: `with _PGSavepointContext(conn, "savepoint_name"): conn.execute("INSERT INTO ...")`. SQLite connections are unaffected (savepoints are no-ops there).
 
 ---
 
@@ -58,9 +63,14 @@ See [~/.claude/standards/testing.md](~/.claude/standards/testing.md) for univers
 
 **Scenario tests as a PR expectation:** The `/run-scenarios-test` UI button has been removed from the nav. Scenario test cases (`tests/test_scenarios.py`) are expected as part of every PR that introduces new parsing functionality. Building the test case is part of the feature development, not a separate step — run them locally with `pytest tests/test_scenarios.py`.
 
-**Unit tests:** Scattered across `src/scraper/test_*.py` and `src/db/test_*.py`. No shared `conftest.py` yet.
+**Test location convention:**
+- Co-located unit tests: `src/scraper/test_*.py`, `src/db/test_*.py` — alongside the module they test
+- Integration and router tests: `tests/` — full request/response tests against a live TestClient
+- AI service tests (consensus voter, auto-fix, page quality inspector): `tests/` — mock external APIs
 
-**Playwright tests:** `src/test_ui_edit_office_playwright.py`. Require manual `PLAYWRIGHT_*` env var setup. Not currently wired into CI.
+**Unit tests:** Scattered across `src/scraper/test_*.py` and `src/db/test_*.py`. Shared fixtures for integration tests live in `tests/conftest.py`.
+
+**Playwright tests:** `src/test_ui_edit_office_playwright.py`, `src/test_ui_offices_list_playwright.py`, `src/test_ui_run_playwright.py`. Run automatically on every PR via the `ui-tests` CI job. CI starts a fresh server against a temp DB (`/tmp/playwright_ci.db`) and requires only `PLAYWRIGHT_BASE_URL`. The `PLAYWRIGHT_EDIT_OFFICE_ID` / `PLAYWRIGHT_OFFICE_A_ID` / etc. vars are only needed for local runs against a pre-seeded database.
 
 ---
 
@@ -69,8 +79,5 @@ See [~/.claude/standards/testing.md](~/.claude/standards/testing.md) for univers
 | Item | Detail | Planned fix |
 |---|---|---|
 | `runner_head.py` | UTF-16 encoded duplicate of `runner.py`. Not imported anywhere. | Delete |
-| `pytest` missing | Tests exist but `pytest` is not in `requirements.txt`. | Phase 4 |
 | Dual schema | Flat `offices` table + `source_pages → office_details → office_table_config` coexist. All runs still read from `offices`. New fields must go in both. | Phase 6 (Refactor) |
-| No `conftest.py` | Tests lack shared fixtures; each file manages its own DB setup. | Phase 4 |
-| Playwright not in CI | Requires manual env setup and a running server. | Phase 4 |
-| In-memory job stores | `_run_job_store` etc. in `main.py` are lost on server restart; in-flight runs abandoned silently. | Phase 6 |
+| In-memory job stores | In-memory-only job stores (`_run_job_store` etc.) are lost on server restart; in-flight jobs show as abandoned. `scraper_jobs` table mitigates this for UI-triggered runs. | Phase 6 |

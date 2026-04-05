@@ -7,6 +7,11 @@
   <a href="?days=90">90d</a> |
   <a href="?days=365">365d</a>
 </p>
+{% if runs and runs[0].status == 'error' %}
+<div class="error-banner" role="alert">
+  <strong>Most recent run failed:</strong> {{ runs[0].job_name }} — check the error column below.
+</div>
+{% endif %}
 {% if runs %}
 <table>
   <thead>
@@ -17,6 +22,7 @@
       <th>Finished</th>
       <th>Duration</th>
       <th>Status</th>
+      <th>Summary</th>
       <th>Error</th>
     </tr>
   </thead>
@@ -25,10 +31,40 @@
     <tr>
       <td>{{ r.id }}</td>
       <td>{{ r.job_name }}</td>
-      <td>{{ r.started_at or '—' }}</td>
-      <td>{{ r.finished_at or '—' }}</td>
+      <td>{{ (r.started_at or '')[:19] }}</td>
+      <td>{{ (r.finished_at or '')[:19] or '—' }}</td>
       <td>{% if r.duration_s is not none %}{{ "%.0f"|format(r.duration_s) }}s{% else %}—{% endif %}</td>
       <td class="status-{{ r.status }}">{{ r.status }}</td>
+      <td>
+        {% if r.result %}
+          {% if r.result.terms_parsed is defined %}
+            {{ r.result.terms_parsed }} terms,
+            {{ r.result.bio_success_count if r.result.bio_success_count is defined else 0 }} bio ok,
+            {{ r.result.bio_error_count if r.result.bio_error_count is defined else 0 }} bio err
+            {% if r.result.cache_deleted is defined and r.result.cache_deleted %}
+              <span style="color:var(--text-muted);font-size:0.85em">({{ r.result.cache_deleted }} cache del)</span>
+            {% endif %}
+          {% elif r.result.result is defined %}
+            {% set pq = r.result.result %}
+            {% if pq in ('ok', 'reparse_ok', 'allowed') %}
+              <span class="badge badge-ok">{{ pq }}</span>
+            {% elif pq in ('gh_issue', 'skipped', 'manual_review', 'no_data', 'skipped_no_data', 'no_pages') %}
+              <span class="badge badge-warn">{{ pq }}</span>
+            {% elif pq in ('fetch_failed', 'error') %}
+              <span class="badge badge-error">{{ pq }}</span>
+            {% else %}
+              <span class="badge badge-grey">{{ pq }}</span>
+            {% endif %}
+            {% if r.result.attempts is defined %}
+              <span style="color:var(--text-muted);font-size:0.85em">× {{ r.result.attempts }}</span>
+            {% endif %}
+          {% else %}
+            —
+          {% endif %}
+        {% else %}
+          —
+        {% endif %}
+      </td>
       <td>{% if r.error %}<pre class="error-snippet">{{ r.error[:300] }}</pre>{% else %}—{% endif %}</td>
     </tr>
     {% endfor %}

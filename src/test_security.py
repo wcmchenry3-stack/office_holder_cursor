@@ -196,10 +196,10 @@ def test_sql_injection_in_offices_query_params(client):
 
 @pytest.mark.security
 def test_csv_upload_rejects_non_csv_extension(client):
-    """Uploading a non-CSV file to /parties/import must be rejected gracefully."""
+    """Uploading a non-CSV file to /refs/parties/import must be rejected gracefully."""
     fake_exe = io.BytesIO(b"MZ\x90\x00")  # PE header magic bytes
     resp = client.post(
-        "/parties/import",
+        "/refs/parties/import",
         files={"file": ("malware.exe", fake_exe, "application/octet-stream")},
     )
     # Must not be a 500; should be 200 (error page) or 400/422

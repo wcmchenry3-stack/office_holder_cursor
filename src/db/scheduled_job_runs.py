@@ -94,6 +94,28 @@ def finish_run(
             conn.close()
 
 
+def get_last_run_for_job(job_name: str, conn=None) -> dict | None:
+    """Return the most recent run record for a given job_name, or None."""
+    own_conn = conn is None
+    if own_conn:
+        conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT id, job_name, started_at, finished_at, status, duration_s, error"
+            " FROM scheduled_job_runs"
+            " WHERE job_name = %s"
+            " ORDER BY started_at DESC, id DESC LIMIT 1",
+            (job_name,),
+        ).fetchone()
+        if row is None:
+            return None
+        cols = ("id", "job_name", "started_at", "finished_at", "status", "duration_s", "error")
+        return dict(zip(cols, row))
+    finally:
+        if own_conn:
+            conn.close()
+
+
 def list_recent_runs(days: int = 90, conn=None) -> list[dict]:
     """Return runs from the last *days* days, newest first."""
     own_conn = conn is None
@@ -105,7 +127,7 @@ def list_recent_runs(days: int = 90, conn=None) -> list[dict]:
             "SELECT id, job_name, started_at, finished_at, status, duration_s, result_json, error"
             " FROM scheduled_job_runs"
             " WHERE started_at >= %s"
-            " ORDER BY started_at DESC",
+            " ORDER BY started_at DESC, id DESC",
             (cutoff,),
         ).fetchall()
         cols = (

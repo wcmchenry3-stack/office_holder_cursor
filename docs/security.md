@@ -43,16 +43,26 @@ python -m pytest                            # included in full suite
 - **Policy**: All subprocess calls must use list-based arguments (no `shell=True`). Wikipedia fetch
   URLs must be validated through `normalize_wiki_url()` before any HTTP call. The Datasette
   instance is bound to `127.0.0.1` only and mounted read-only (`--immutable`).
+- **Rate limiting**: All API endpoints are rate-limited via SlowAPI (`slowapi`). Limits are keyed by authenticated user email (or client IP for unauthenticated routes):
+  - Global default: `200/minute`
+  - `POST /auth/google`, `GET /auth/google/callback`: `10/minute`
+  - `POST /api/run`: `20/minute`
+  - `POST /api/ai-offices/batch`: `10/minute`
+  - `POST /api/gemini-research/run`: `10/minute`
+- **Middleware ordering**: `SlowAPIMiddleware` must be added to the Starlette middleware stack **before** `SessionMiddleware`. FastAPI processes middleware in LIFO order — adding SlowAPIMiddleware last means it runs first on the request path. Reversing this order breaks rate limiting silently.
+- **Request body size**: `limit_request_body_size` middleware caps request bodies at **1 MB** and returns HTTP 413 for oversized requests.
 - **Test**: Covered by existing integration tests; `test_run_api_invalid_run_mode_does_not_crash`
-  fuzzes the `run_mode` field with an XSS payload.
+  fuzzes the `run_mode` field with an XSS payload; `test_request_body_size_limit` tests the 1 MB cap; `test_rate_limit_handler_registered` asserts the SlowAPI handler is installed.
 
 ### A05 — Security Misconfiguration
-- **Policy**: Every HTTP response must carry:
+- **Policy**: Every HTTP response must carry the following headers, added by `add_security_headers` middleware in `src/main.py`:
   - `X-Frame-Options: DENY`
   - `X-Content-Type-Options: nosniff`
   - `Referrer-Policy: strict-origin-when-cross-origin`
-  These are added by the `add_security_headers` middleware in `src/main.py`.
-- **Test**: `test_security_headers_present`
+  - `Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:`
+  - `Permissions-Policy: geolocation=(), microphone=(), camera=()`
+  - `Strict-Transport-Security: max-age=31536000; includeSubDomains` (HTTPS connections only)
+- **Test**: `test_security_headers_present`, `test_csp_header_present`
 
 ### A06 — Vulnerable and Outdated Components
 - **Policy**: Dependencies are pinned in `requirements.txt`. Run `pip list --outdated` before
@@ -89,8 +99,11 @@ python -m pytest                            # included in full suite
   `src/services/claude_client.py` only (`ANTHROPIC_API_KEY` never hardcoded, `max_tokens=4096`,
   exponential backoff on 429). Auto-fix proposals are gated by 7 deterministic criteria before
   any PR is created; PRs are always opened as draft.
+- **AI batch endpoint**: `POST /api/ai-offices/batch` enforces per-URL validation via `validate_and_normalize_wiki_url()` before any HTTP call: max **20 URLs** per request, max **500 characters** per URL, `wikipedia.org` domain only.
 - **Test**: `test_run_api_requires_individual_ref_for_single_bio_mode` (boundary check);
-  full URL validation tested in `src/scraper/test_wiki_fetch.py` if present.
+  `test_ssrf_non_wikipedia_url_rejected` asserts non-Wikipedia URLs are rejected;
+  `test_ai_batch_too_many_urls_rejected` asserts the 20-URL limit;
+  full URL validation tested in `src/scraper/test_wiki_fetch.py`.
 - **Gemini API note**: Google retains prompts and responses for 55 days for abuse monitoring.
   Do not submit sensitive or personal data via the Gemini API on the free tier.
 
@@ -122,3 +135,5 @@ Before opening a PR:
 - [ ] No raw f-string SQL queries introduced
 - [ ] No new public routes added without updating `_PUBLIC_PATHS` intentionally
 - [ ] `SECRET_KEY` and `GOOGLE_CLIENT_ID` confirmed set in deployment environment
+- [ ] New API endpoints have rate limits applied (`@limiter.limit(...)`)
+- [ ] Middleware ordering not changed (SlowAPIMiddleware before SessionMiddleware)

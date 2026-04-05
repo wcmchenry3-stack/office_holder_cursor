@@ -31,6 +31,47 @@ def is_postgres() -> bool:
     return bool(os.environ.get("DATABASE_URL"))
 
 
+class _PGSavepointContext:
+    """Context manager for a PostgreSQL savepoint within a shared transaction.
+
+    Use this to wrap an INSERT that may raise a UniqueViolation inside a function
+    that accepts a caller-owned connection.  Without a savepoint, any error puts
+    the entire outer transaction in an aborted state and all subsequent statements
+    fail with InFailedSqlTransaction.
+
+    SQLite does NOT need this: an IntegrityError on SQLite does not abort the
+    surrounding connection.  The context manager is a no-op when is_postgres()
+    is False so the same calling code works for both backends.
+
+    Usage::
+
+        with _PGSavepointContext(conn, "_my_insert"):
+            conn.execute("INSERT ...")
+            # If UniqueViolation is raised here the savepoint is rolled back;
+            # the outer transaction continues unharmed.
+        # After the with-block the savepoint is released (success path).
+    """
+
+    def __init__(self, conn, name: str) -> None:
+        self._conn = conn
+        self._name = name
+        self._active = is_postgres()
+
+    def __enter__(self) -> "_PGSavepointContext":
+        if self._active:
+            self._conn.execute(f"SAVEPOINT {self._name}")
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
+        if self._active:
+            if exc_type is None:
+                self._conn.execute(f"RELEASE SAVEPOINT {self._name}")
+            else:
+                self._conn.execute(f"ROLLBACK TO SAVEPOINT {self._name}")
+                self._conn.execute(f"RELEASE SAVEPOINT {self._name}")
+        return False  # never suppress the exception
+
+
 def get_db_path() -> Path:
     """Return the SQLite DB path (test use only). Uses OFFICE_HOLDER_DB_PATH env var when set."""
     env_path = os.environ.get("OFFICE_HOLDER_DB_PATH")
@@ -277,6 +318,14 @@ def _init_postgres() -> None:
 
         _run_pg_migrations(conn)
 
+        from .scheduler_settings import seed_scheduler_settings
+
+        seed_scheduler_settings(conn=conn)
+
+        from .app_settings import seed_app_settings
+
+        seed_app_settings(conn=conn)
+
         # migrate_to_fk() is deliberately NOT called — PostgreSQL starts with the final schema
     finally:
         conn.close()
@@ -522,6 +571,82 @@ def _run_pg_migrations(conn) -> None:
         " office_terms_reassigned INTEGER NOT NULL DEFAULT 0,"
         " created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())",
     )
+    _apply(
+        "pg_create_scheduler_settings",
+        "CREATE TABLE IF NOT EXISTS scheduler_settings ("
+        " job_id TEXT PRIMARY KEY,"
+        " paused BOOLEAN NOT NULL DEFAULT FALSE,"
+        " updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())",
+    )
+    _apply(
+        "pg_create_app_settings",
+        "CREATE TABLE IF NOT EXISTS app_settings ("
+        " key TEXT PRIMARY KEY,"
+        " value TEXT NOT NULL,"
+        " value_type TEXT NOT NULL DEFAULT 'int',"
+        " description TEXT,"
+        " updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())",
+    )
+
+    # Migrate alt_links off the legacy offices table (issue #311).
+    # Step 1 — backfill office_details_id for any pre-M14 rows that still carry
+    # only office_id.  The mapping is: offices.url → source_pages.url →
+    # office_details.source_page_id, with offices.name = office_details.name.
+    # Abort if any rows cannot be resolved so that no link paths are silently lost.
+    _apply(
+        "pg_alt_links_backfill_office_details_id",
+        """
+        DO $$
+        DECLARE before_count INTEGER;
+        DECLARE unmapped INTEGER;
+        BEGIN
+            SELECT COUNT(*) INTO before_count
+            FROM alt_links WHERE office_id IS NOT NULL AND office_details_id IS NULL;
+            RAISE NOTICE 'pg_alt_links_backfill: % rows to backfill', before_count;
+
+            UPDATE alt_links al
+            SET office_details_id = od.id
+            FROM offices o
+            JOIN source_pages sp ON sp.url = o.url
+            JOIN office_details od ON od.source_page_id = sp.id AND od.name = o.name
+            WHERE al.office_id = o.id AND al.office_details_id IS NULL;
+
+            SELECT COUNT(*) INTO unmapped
+            FROM alt_links WHERE office_id IS NOT NULL AND office_details_id IS NULL;
+            IF unmapped > 0 THEN
+                RAISE EXCEPTION
+                    'pg_alt_links_backfill: % rows could not be mapped to office_details — aborting',
+                    unmapped;
+            END IF;
+        END $$
+        """,
+    )
+    # Step 2 — drop the old UNIQUE(office_id, link_path) constraint and index,
+    # then drop the office_id column itself.
+    _apply(
+        "pg_alt_links_drop_unique_constraint",
+        "ALTER TABLE alt_links DROP CONSTRAINT IF EXISTS alt_links_office_id_link_path_key",
+    )
+    _apply(
+        "pg_alt_links_drop_office_id_index",
+        "DROP INDEX IF EXISTS idx_alt_links_office_id",
+    )
+    _apply(
+        "pg_alt_links_drop_office_id",
+        "ALTER TABLE alt_links DROP COLUMN IF EXISTS office_id",
+    )
+    # Step 3 — enforce NOT NULL and add the new unique constraint.
+    # If any office_details_id is still NULL at this point the SET NOT NULL will
+    # fail, acting as a final assertion that the backfill was complete.
+    _apply(
+        "pg_alt_links_office_details_id_not_null",
+        "ALTER TABLE alt_links ALTER COLUMN office_details_id SET NOT NULL",
+    )
+    _apply(
+        "pg_alt_links_add_unique_office_details_link_path",
+        "ALTER TABLE alt_links ADD CONSTRAINT alt_links_office_details_id_link_path_key"
+        " UNIQUE (office_details_id, link_path)",
+    )
 
 
 def _sqlite_add_columns_if_missing(conn) -> None:
@@ -564,6 +689,13 @@ def _init_sqlite(path: Path | None = None) -> None:
         seed_reference_data(conn=conn)
         seed_wikipedia_mos(conn=conn)
         db_test_scripts.seed_db_from_manifest_if_empty(conn=conn)
+        from .scheduler_settings import seed_scheduler_settings
+
+        seed_scheduler_settings(conn=conn)
+
+        from .app_settings import seed_app_settings
+
+        seed_app_settings(conn=conn)
         conn.commit()
     finally:
         conn.close()

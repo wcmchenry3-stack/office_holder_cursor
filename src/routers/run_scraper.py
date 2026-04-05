@@ -3,6 +3,7 @@
 
 import json
 import logging
+import os
 import time
 import threading
 import uuid
@@ -24,6 +25,8 @@ from src.scraper.config_test import get_table_html
 
 router = APIRouter()
 
+logger = logging.getLogger(__name__)
+
 # ---------------------------------------------------------------------------
 # In-memory job store
 # ---------------------------------------------------------------------------
@@ -32,6 +35,13 @@ _run_job_store: dict = {}
 _run_job_lock = threading.Lock()
 
 _JOB_MAX_AGE_SECONDS = 2 * 3600  # 2 hours
+_MAX_QUEUED_JOBS = 1  # Render memory constraint: one queued job at a time
+
+
+def _is_runners_enabled() -> bool:
+    """Return False if the RUNNERS_ENABLED env var is set to a false-like value."""
+    raw = os.environ.get("RUNNERS_ENABLED", "1").strip().lower()
+    return raw not in {"0", "false", "no", "off"}
 
 
 def _evict_old_jobs() -> None:
@@ -61,7 +71,12 @@ def _maybe_start_next_queued_job() -> None:
         try:
             params = json.loads(next_job.get("job_params_json") or "{}")
         except (ValueError, TypeError):
-            params = {}
+            logger.error("Queued job %s has malformed job_params_json — marking as error", job_id)
+            try:
+                db_scraper_jobs.update_job(job_id, "error", {"error": "malformed job_params_json"})
+            except Exception:
+                pass
+            return
         with _run_job_lock:
             _run_job_store[job_id] = {
                 "status": "running",
@@ -316,13 +331,33 @@ async def api_run(
         run_bio = False
         run_office_bio = False
         refresh_table_cache = False
+    if not _is_runners_enabled():
+        return JSONResponse(
+            {"error": "Runner jobs are globally disabled (RUNNERS_ENABLED=false)"},
+            status_code=503,
+        )
+
     _evict_old_jobs()
     with _run_job_lock:
-        has_running = any(job.get("status") == "running" for job in _run_job_store.values())
+        has_running_in_memory = any(
+            job.get("status") == "running" for job in _run_job_store.values()
+        )
+
+    # Also check DB — running jobs are invisible to in-memory store after a server restart.
+    has_running_in_db = False
+    try:
+        has_running_in_db = db_scraper_jobs.count_active_jobs() > 0
+    except Exception:
+        logger.warning("Could not check DB active jobs (non-fatal)", exc_info=True)
+
+    has_running = has_running_in_memory or has_running_in_db
 
     if has_running:
         queue_depth = db_scraper_jobs.count_queued_jobs()
-        if queue_depth >= 1:
+        from src.db.app_settings import get_setting
+
+        max_queued = get_setting("max_queued_jobs", default=_MAX_QUEUED_JOBS)
+        if queue_depth >= max_queued:
             return JSONResponse({"queued": False, "reason": "queue_full"}, status_code=202)
         job_id = str(uuid.uuid4())
         job_params = json.dumps(
@@ -341,14 +376,15 @@ async def api_run(
         try:
             db_scraper_jobs.enqueue_job(job_id, mode, job_params)
         except Exception:
-            pass
+            logger.warning("Failed to enqueue job %s", job_id, exc_info=True)
+            return JSONResponse({"error": "Failed to enqueue job"}, status_code=500)
         return JSONResponse({"queued": True, "job_id": job_id}, status_code=202)
 
     job_id = str(uuid.uuid4())
     try:
         db_scraper_jobs.create_job(job_id, mode)
     except Exception:
-        pass
+        logger.warning("Failed to create job record %s", job_id, exc_info=True)
     with _run_job_lock:
         _run_job_store[job_id] = {
             "status": "running",
@@ -387,6 +423,20 @@ async def api_run(
     )
     thread.start()
     return JSONResponse({"job_id": job_id, "queued": False}, status_code=202)
+
+
+@router.post("/api/run/force-expire-stale")
+async def api_force_expire_stale():
+    """Manually expire any stale running/queued jobs. For operator recovery."""
+    expired = db_scraper_jobs.expire_stale_jobs(cancel_callback=_cancel_in_memory_job)
+    return JSONResponse({"expired": expired, "count": len(expired)})
+
+
+def _cancel_in_memory_job(job_id: str) -> None:
+    """Set the cancelled flag in the in-memory store for a given job ID."""
+    with _run_job_lock:
+        if job_id in _run_job_store:
+            _run_job_store[job_id]["cancelled"] = True
 
 
 @router.get("/api/run/matching-individuals")

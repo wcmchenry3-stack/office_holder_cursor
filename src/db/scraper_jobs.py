@@ -6,6 +6,22 @@ Each job represents one run_scraper or preview run.  The table is the durable
 backing store; the routers keep an in-memory dict for live progress updates.
 
 Status lifecycle: running → complete | cancelled | error
+
+--- Two-table design ---
+
+scraper_jobs (this module)
+    Records every *user-triggered* job: full runs, delta runs, single-bio, preview, etc.
+    Supports queuing (status='queued'), live cancellation, and stale-job expiry.
+    Consumed by /data/scraper-jobs in the UI and by the in-memory run_scraper router.
+
+scheduled_job_runs (src/db/scheduled_job_runs.py)
+    Records every *APScheduler* job execution: daily_delta, insufficient_vitals, etc.
+    Rows are written by the scheduled task functions, never by the user-facing router.
+    Consumed by /data/scheduled-job-runs and /data/scheduled-jobs in the UI.
+
+The separation is intentional: user-triggered and scheduler-triggered runs have
+different lifecycles, queue semantics, and UI surfaces.  Merging them would require
+complex filtering on every query and obscure the queue-depth checks that gate new runs.
 """
 
 from __future__ import annotations
@@ -164,8 +180,8 @@ def pop_next_queued_job(conn=None) -> dict | None:
             return None
         job_id = row[0]
         conn.execute(
-            "UPDATE scraper_jobs SET status = %s, updated_at = NOW() WHERE id = %s",
-            ("running", job_id),
+            "UPDATE scraper_jobs SET status = %s, updated_at = %s WHERE id = %s",
+            ("running", _now_iso(), job_id),
         )
         if own_conn:
             conn.commit()
@@ -191,13 +207,19 @@ def count_queued_jobs(conn=None) -> int:
             conn.close()
 
 
-def expire_stale_jobs(conn=None) -> list[dict]:
+def expire_stale_jobs(cancel_callback=None, conn=None) -> list[dict]:
     """Mark stale running/queued jobs as 'error' and return details of expired jobs.
 
     Expiry rules:
     - Queued jobs older than 12 hours → expired
     - Running jobs older than 8 hours → expired (except type='full')
     - Running 'full' jobs older than 24 hours → expired
+
+    Args:
+        cancel_callback: Optional callable(job_id) invoked for each expired job so the
+            caller can signal in-memory threads to stop (e.g. set cancelled=True).
+        conn: Optional shared DB connection; if None, a new connection is opened and
+            committed by this function.
     """
     own_conn = conn is None
     if own_conn:
@@ -206,11 +228,16 @@ def expire_stale_jobs(conn=None) -> list[dict]:
         from datetime import timedelta
 
         now = datetime.now(timezone.utc)
-        # Fetch all running/queued jobs
         rows = conn.execute(
             "SELECT id, type, status, created_at FROM scraper_jobs WHERE status IN (%s, %s)",
             ("running", "queued"),
         ).fetchall()
+
+        from src.db.app_settings import get_setting
+
+        hours_queued = get_setting("expiry_hours_queued", default=12)
+        hours_running_full = get_setting("expiry_hours_running_full", default=24)
+        hours_running_other = get_setting("expiry_hours_running_other", default=8)
 
         expired = []
         for row in rows:
@@ -229,11 +256,19 @@ def expire_stale_jobs(conn=None) -> list[dict]:
                     continue
             age = now - created_at
             reason = None
-            if status == "queued" and age > timedelta(hours=12):
+            if status == "queued" and age > timedelta(hours=hours_queued):
                 reason = f"Queued job expired after {age}"
-            elif status == "running" and job_type == "full" and age > timedelta(hours=24):
+            elif (
+                status == "running"
+                and job_type == "full"
+                and age > timedelta(hours=hours_running_full)
+            ):
                 reason = f"Full run expired after {age}"
-            elif status == "running" and job_type != "full" and age > timedelta(hours=8):
+            elif (
+                status == "running"
+                and job_type != "full"
+                and age > timedelta(hours=hours_running_other)
+            ):
                 reason = f"Running job expired after {age}"
 
             if reason:
@@ -242,8 +277,13 @@ def expire_stale_jobs(conn=None) -> list[dict]:
                     ("error", now.strftime("%Y-%m-%dT%H:%M:%SZ"), job_id),
                 )
                 expired.append({"id": job_id, "type": job_type, "status": status, "reason": reason})
+                if cancel_callback is not None:
+                    try:
+                        cancel_callback(job_id)
+                    except Exception:
+                        pass
 
-        if expired and own_conn:
+        if own_conn:
             conn.commit()
         return expired
     finally:

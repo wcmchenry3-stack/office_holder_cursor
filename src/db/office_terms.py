@@ -236,7 +236,7 @@ def list_office_terms(
     if own_conn:
         conn = get_connection()
     try:
-        if office_id is not None and _has_hierarchy_terms(conn):
+        if office_id is not None:
             cur = conn.execute(
                 """SELECT ot.id, ot.office_details_id AS office_id, ot.individual_id, ot.party_id, ot.district,
                           ot.term_start, ot.term_end, ot.term_start_year, ot.term_end_year,
@@ -253,23 +253,7 @@ def list_office_terms(
                    ORDER BY COALESCE(ot.term_start, ot.term_start_year::TEXT) DESC LIMIT %s OFFSET %s""",
                 (office_id, limit, offset),
             )
-        elif office_id is not None:
-            cur = conn.execute(
-                """SELECT ot.id, ot.office_id, ot.individual_id, ot.party_id, ot.district,
-                          ot.term_start, ot.term_end, ot.term_start_year, ot.term_end_year,
-                          ot.term_start_imprecise, ot.term_end_imprecise,
-                          ot.wiki_url, ot.scraped_at,
-                          o.name AS office_name, c.name AS country,
-                          p.party_name AS party_display
-                   FROM office_terms ot
-                   JOIN offices o ON o.id = ot.office_id
-                   LEFT JOIN countries c ON c.id = o.country_id
-                   LEFT JOIN parties p ON p.id = ot.party_id
-                   WHERE ot.office_id = %s
-                   ORDER BY COALESCE(ot.term_start, ot.term_start_year::TEXT) DESC LIMIT %s OFFSET %s""",
-                (office_id, limit, offset),
-            )
-        elif _has_hierarchy_terms(conn):
+        else:
             cur = conn.execute(
                 """SELECT ot.id, ot.office_details_id AS office_id, ot.individual_id, ot.party_id, ot.district,
                           ot.term_start, ot.term_end, ot.term_start_year, ot.term_end_year,
@@ -281,21 +265,6 @@ def list_office_terms(
                    LEFT JOIN office_details od ON od.id = ot.office_details_id
                    LEFT JOIN source_pages sp ON sp.id = od.source_page_id
                    LEFT JOIN countries c ON c.id = sp.country_id
-                   LEFT JOIN parties p ON p.id = ot.party_id
-                   ORDER BY ot.scraped_at DESC LIMIT %s OFFSET %s""",
-                (limit, offset),
-            )
-        else:
-            cur = conn.execute(
-                """SELECT ot.id, ot.office_id, ot.individual_id, ot.party_id, ot.district,
-                          ot.term_start, ot.term_end, ot.term_start_year, ot.term_end_year,
-                          ot.term_start_imprecise, ot.term_end_imprecise,
-                          ot.wiki_url, ot.scraped_at,
-                          o.name AS office_name, c.name AS country,
-                          p.party_name AS party_display
-                   FROM office_terms ot
-                   JOIN offices o ON o.id = ot.office_id
-                   LEFT JOIN countries c ON c.id = o.country_id
                    LEFT JOIN parties p ON p.id = ot.party_id
                    ORDER BY ot.scraped_at DESC LIMIT %s OFFSET %s""",
                 (limit, offset),

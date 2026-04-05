@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Scraper Jobs – Office Holder{% endblock %}
+{% block content %}
+<h1>Scraper Jobs</h1>
+<p>User-triggered job history (most recent {{ limit }}).
+  <a href="?limit=50">50</a> |
+  <a href="?limit=100">100</a> |
+  <a href="?limit=200">200</a>
+</p>
+<p>
+  <button id="force-expire-btn" onclick="forceExpire()">Force expire stale jobs</button>
+  <span id="force-expire-result" style="margin-left:1em;"></span>
+</p>
+{% if jobs %}
+<table>
+  <thead>
+    <tr>
+      <th>ID</th>
+      <th>Type</th>
+      <th>Status</th>
+      <th>Created</th>
+      <th>Updated</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for j in jobs %}
+    <tr>
+      <td><code>{{ j.id[:8] }}…</code></td>
+      <td>{{ j.type }}</td>
+      <td class="status-{{ j.status }}">{{ j.status }}</td>
+      <td>{{ j.created_at or '—' }}</td>
+      <td>{{ j.updated_at or '—' }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>No scraper jobs found.</p>
+{% endif %}
+<script>
+function forceExpire() {
+  var btn = document.getElementById('force-expire-btn');
+  var result = document.getElementById('force-expire-result');
+  btn.disabled = true;
+  result.textContent = 'Running…';
+  fetch('/api/run/force-expire-stale', {method: 'POST'})
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      result.textContent = data.count + ' job(s) expired.';
+      if (data.count > 0) { setTimeout(function() { location.reload(); }, 1000); }
+    })
+    .catch(function(e) { result.textContent = 'Error: ' + e; })
+    .finally(function() { btn.disabled = false; });
+}
+</script>
+{% endblock %}

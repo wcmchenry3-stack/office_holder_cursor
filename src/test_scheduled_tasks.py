@@ -125,16 +125,44 @@ def test_run_daily_delta_sends_crash_email_on_exception(monkeypatch):
     assert "FAILED" in raw_msg
 
 
-def test_is_daily_delta_enabled_parses_false_values(monkeypatch):
-    from src.scheduled_tasks import is_daily_delta_enabled
+def test_is_runners_enabled_parses_false_values(monkeypatch):
+    from src.scheduled_tasks import is_runners_enabled
 
     for raw in ("0", "false", "False", "NO", "off"):
-        monkeypatch.setenv("DAILY_DELTA_ENABLED", raw)
-        assert is_daily_delta_enabled() is False
+        monkeypatch.setenv("RUNNERS_ENABLED", raw)
+        assert is_runners_enabled() is False
 
 
-def test_run_daily_delta_skips_when_disabled(monkeypatch):
-    monkeypatch.setenv("DAILY_DELTA_ENABLED", "0")
+def test_run_daily_delta_skips_when_runners_disabled(monkeypatch):
+    monkeypatch.setenv("RUNNERS_ENABLED", "0")
+
+    called = {"subprocess": False}
+
+    def _should_not_run(**kwargs):
+        called["subprocess"] = True
+        return {}
+
+    monkeypatch.setattr("src.scheduled_tasks._run_daily_delta_in_subprocess", _should_not_run)
+
+    from src.scheduled_tasks import run_daily_delta
+
+    run_daily_delta()
+    assert not called["subprocess"]
+
+    assert called["subprocess"] is False
+
+
+# ---------------------------------------------------------------------------
+# Active-job skip logic
+# ---------------------------------------------------------------------------
+
+
+def test_run_daily_delta_skips_when_active_job_running(monkeypatch):
+    """run_daily_delta returns early without calling the subprocess when a job is active."""
+    monkeypatch.setenv("RUNNERS_ENABLED", "1")
+    monkeypatch.setattr("src.db.scheduler_settings.is_job_paused", lambda *a, **kw: False)
+    monkeypatch.setattr("src.db.scraper_jobs.count_active_jobs", lambda: 1)
+    monkeypatch.setattr("src.scheduled_tasks._expire_stale_jobs_with_email", lambda: None)
 
     called = {"subprocess": False}
 
@@ -148,7 +176,217 @@ def test_run_daily_delta_skips_when_disabled(monkeypatch):
 
     run_daily_delta()
 
-    assert called["subprocess"] is False
+    assert not called["subprocess"]
+
+
+def test_run_daily_delta_calls_expire_before_active_check(monkeypatch):
+    """_expire_stale_jobs_with_email is called before the active-job count check."""
+    monkeypatch.setenv("RUNNERS_ENABLED", "1")
+    monkeypatch.setattr("src.db.scheduler_settings.is_job_paused", lambda *a, **kw: False)
+
+    call_order: list[str] = []
+
+    monkeypatch.setattr(
+        "src.scheduled_tasks._expire_stale_jobs_with_email",
+        lambda: call_order.append("expire"),
+    )
+    # Return 1 active job (triggers skip) AND record the call order
+    monkeypatch.setattr(
+        "src.db.scraper_jobs.count_active_jobs",
+        lambda: call_order.append("count") or 1,
+    )
+
+    from src.scheduled_tasks import run_daily_delta
+
+    run_daily_delta()
+
+    assert "expire" in call_order
+    assert "count" in call_order
+    assert call_order.index("expire") < call_order.index("count")
+
+
+# ---------------------------------------------------------------------------
+# run_daily_maintenance
+# ---------------------------------------------------------------------------
+
+
+def test_run_daily_maintenance_always_calls_expiry(monkeypatch):
+    """run_daily_maintenance calls _expire_stale_jobs_with_email even when RUNNERS_ENABLED=0."""
+    monkeypatch.setenv("RUNNERS_ENABLED", "0")
+
+    called = {"expire": False}
+    monkeypatch.setattr(
+        "src.scheduled_tasks._expire_stale_jobs_with_email",
+        lambda: called.__setitem__("expire", True),
+    )
+
+    from src.scheduled_tasks import run_daily_maintenance
+
+    run_daily_maintenance()
+
+    assert called["expire"]
+
+
+def test_run_daily_maintenance_ignores_job_pause_state(monkeypatch):
+    """run_daily_maintenance never checks is_job_paused — it always runs."""
+    pause_checked = {"checked": False}
+
+    def _should_not_check(*a, **kw):
+        pause_checked["checked"] = True
+        return True  # paused — but maintenance should still run
+
+    monkeypatch.setattr("src.db.scheduler_settings.is_job_paused", _should_not_check)
+    monkeypatch.setattr("src.scheduled_tasks._expire_stale_jobs_with_email", lambda: None)
+
+    from src.scheduled_tasks import run_daily_maintenance
+
+    run_daily_maintenance()
+
+    assert not pause_checked["checked"]
+
+
+# ---------------------------------------------------------------------------
+# run_daily_page_quality
+# ---------------------------------------------------------------------------
+
+
+def _patch_page_quality_deps(monkeypatch, inspect_side_effect):
+    """Patch all DB/external deps for run_daily_page_quality tests."""
+    monkeypatch.setenv("RUNNERS_ENABLED", "1")
+    monkeypatch.setattr("src.db.scheduler_settings.is_job_paused", lambda *a, **kw: False)
+    monkeypatch.setattr("src.db.scheduled_job_runs.create_run", lambda *a, **kw: 1)
+    monkeypatch.setattr("src.db.scheduled_job_runs.finish_run", lambda *a, **kw: None)
+    monkeypatch.setattr("src.services.page_quality_inspector.inspect_one_page", inspect_side_effect)
+
+
+def test_run_daily_page_quality_records_run_in_db(monkeypatch):
+    """run_daily_page_quality calls create_run and finish_run so the run is visible in the UI."""
+    create_calls = []
+    finish_calls = []
+
+    monkeypatch.setenv("RUNNERS_ENABLED", "1")
+    monkeypatch.setattr("src.db.scheduler_settings.is_job_paused", lambda *a, **kw: False)
+    monkeypatch.setattr(
+        "src.db.scheduled_job_runs.create_run",
+        lambda job_id, **kw: create_calls.append(job_id) or 1,
+    )
+    monkeypatch.setattr(
+        "src.db.scheduled_job_runs.finish_run",
+        lambda run_id, **kw: finish_calls.append(kw),
+    )
+    monkeypatch.setattr(
+        "src.services.page_quality_inspector.inspect_one_page",
+        lambda: {
+            "result": "ok",
+            "source_page_id": 1,
+            "check_id": 1,
+            "html_char_count": 100,
+            "office_terms_count": 5,
+        },
+    )
+
+    from src.scheduled_tasks import run_daily_page_quality
+
+    run_daily_page_quality()
+
+    assert create_calls == ["daily_page_quality"]
+    assert len(finish_calls) == 1
+    assert finish_calls[0]["status"] == "complete"
+
+
+def test_run_daily_page_quality_skips_no_data_pages_and_retries(monkeypatch):
+    """When inspect_one_page returns no_data, run_daily_page_quality tries the next page."""
+    call_count = {"n": 0}
+
+    def _inspect():
+        call_count["n"] += 1
+        if call_count["n"] < 3:
+            return {
+                "result": "no_data",
+                "source_page_id": call_count["n"],
+                "check_id": call_count["n"],
+            }
+        return {
+            "result": "ok",
+            "source_page_id": 99,
+            "check_id": 99,
+            "html_char_count": 200,
+            "office_terms_count": 3,
+        }
+
+    finish_calls = []
+    monkeypatch.setenv("RUNNERS_ENABLED", "1")
+    monkeypatch.setattr("src.db.scheduler_settings.is_job_paused", lambda *a, **kw: False)
+    monkeypatch.setattr("src.db.scheduled_job_runs.create_run", lambda *a, **kw: 1)
+    monkeypatch.setattr(
+        "src.db.scheduled_job_runs.finish_run",
+        lambda run_id, **kw: finish_calls.append(kw),
+    )
+    monkeypatch.setattr("src.services.page_quality_inspector.inspect_one_page", _inspect)
+
+    from src.scheduled_tasks import run_daily_page_quality
+
+    run_daily_page_quality()
+
+    assert call_count["n"] == 3
+    assert finish_calls[0]["status"] == "complete"
+    assert finish_calls[0]["result"]["result"] == "ok"
+    assert finish_calls[0]["result"]["attempts"] == 3
+
+
+def test_run_daily_page_quality_records_skipped_no_data_after_max_attempts(monkeypatch):
+    """If all 10 pages have no data, result is skipped_no_data — no crash, no wasted tokens."""
+    from src.scheduled_tasks import _PAGE_QUALITY_MAX_ATTEMPTS
+
+    finish_calls = []
+    monkeypatch.setenv("RUNNERS_ENABLED", "1")
+    monkeypatch.setattr("src.db.scheduler_settings.is_job_paused", lambda *a, **kw: False)
+    monkeypatch.setattr("src.db.scheduled_job_runs.create_run", lambda *a, **kw: 1)
+    monkeypatch.setattr(
+        "src.db.scheduled_job_runs.finish_run",
+        lambda run_id, **kw: finish_calls.append(kw),
+    )
+    call_count = {"n": 0}
+
+    def _always_no_data():
+        call_count["n"] += 1
+        return {"result": "no_data", "source_page_id": call_count["n"], "check_id": call_count["n"]}
+
+    monkeypatch.setattr("src.services.page_quality_inspector.inspect_one_page", _always_no_data)
+
+    from src.scheduled_tasks import run_daily_page_quality
+
+    run_daily_page_quality()
+
+    assert call_count["n"] == _PAGE_QUALITY_MAX_ATTEMPTS
+    assert finish_calls[0]["result"]["result"] == "skipped_no_data"
+    assert finish_calls[0]["result"]["attempts"] == _PAGE_QUALITY_MAX_ATTEMPTS
+
+
+def test_run_daily_page_quality_stops_on_none_result(monkeypatch):
+    """If inspect_one_page returns None (error/no pages), stop immediately."""
+    call_count = {"n": 0}
+
+    def _inspect():
+        call_count["n"] += 1
+        return None
+
+    finish_calls = []
+    monkeypatch.setenv("RUNNERS_ENABLED", "1")
+    monkeypatch.setattr("src.db.scheduler_settings.is_job_paused", lambda *a, **kw: False)
+    monkeypatch.setattr("src.db.scheduled_job_runs.create_run", lambda *a, **kw: 1)
+    monkeypatch.setattr(
+        "src.db.scheduled_job_runs.finish_run",
+        lambda run_id, **kw: finish_calls.append(kw),
+    )
+    monkeypatch.setattr("src.services.page_quality_inspector.inspect_one_page", _inspect)
+
+    from src.scheduled_tasks import run_daily_page_quality
+
+    run_daily_page_quality()
+
+    assert call_count["n"] == 1
+    assert finish_calls[0]["result"]["result"] == "no_pages"
 
 
 # ---------------------------------------------------------------------------

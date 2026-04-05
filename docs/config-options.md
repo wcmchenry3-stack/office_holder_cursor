@@ -82,11 +82,16 @@ Example: `filter_column=3, filter_criteria="Governor"` keeps only rows where col
 
 ---
 
-## Infobox Role Key Filter
+## Infobox Role Key
+
+Two systems exist for filtering infobox entries. The FK-based system (`infobox_role_key_filter_id`) is preferred for new configs.
 
 | Field | Default | Description |
 |---|---|---|
-| `infobox_role_key_filter_id` | NULL | FK to `infobox_role_key_filter.id`; when set, filters which infobox role entries are used for date extraction |
+| `infobox_role_key_filter_id` | NULL | FK to `infobox_role_key_filter.id`; when set, filters which infobox role entries are used for date extraction (preferred) |
+| `infobox_role_key` | `""` | Legacy free-text role key; a substring to match against infobox role entry keys. Predates the FK-based system. Still active on older records; new configs should use `infobox_role_key_filter_id` instead |
+
+If both are set, `infobox_role_key_filter_id` takes precedence.
 
 ### Query Syntax (`role_key` field)
 
@@ -105,6 +110,17 @@ Rules:
 - Include terms are OR'd; a row matches if it contains any include term
 - Exclude terms are AND'd; a row is excluded if it matches any exclude term
 - Exclusions take priority over inclusions
+
+---
+
+## Computed / Cache Fields (read-only)
+
+These fields are written by the scraper after each run. They are not user-configurable.
+
+| Field | Description |
+|---|---|
+| `last_html_hash` | SHA-256 hash of the last fetched table HTML. If the hash matches on the next run, the page is skipped entirely (no parse, no DB write). |
+| `last_link_fill_rate` | Fraction (0.0–1.0) of parsed holder rows that had a Wikipedia link. Stored after each parse. A drop of >30 percentage points triggers a structural-change GitHub issue. See `docs/parser.md`. |
 
 ---
 

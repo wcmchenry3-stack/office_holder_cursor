@@ -235,15 +235,13 @@ CREATE TABLE IF NOT EXISTS offices (
 );
 
 -- Alt links: one row per office alternate infobox link (offices may have many)
--- office_id is nullable: hierarchy entries use office_details_id and leave office_id NULL
 CREATE TABLE IF NOT EXISTS alt_links (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    office_id INTEGER REFERENCES offices(id),
-    office_details_id INTEGER REFERENCES office_details(id),
+    office_details_id INTEGER NOT NULL REFERENCES office_details(id),
     link_path TEXT NOT NULL,
-    UNIQUE(office_id, link_path)
+    UNIQUE(office_details_id, link_path)
 );
-CREATE INDEX IF NOT EXISTS idx_alt_links_office_id ON alt_links(office_id);
+CREATE INDEX IF NOT EXISTS idx_alt_links_office_details_id ON alt_links(office_details_id);
 
 -- Parties: party list for resolving party links (before office_terms for FK)
 CREATE TABLE IF NOT EXISTS parties (
@@ -435,6 +433,22 @@ CREATE TABLE IF NOT EXISTS scheduled_job_runs (
     error TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_scheduled_job_runs_started ON scheduled_job_runs (started_at DESC);
+
+-- Scheduler settings: per-job pause state managed via the UI.
+CREATE TABLE IF NOT EXISTS scheduler_settings (
+    job_id TEXT PRIMARY KEY,
+    paused INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- App settings: operational constants editable via the UI (expiry thresholds, queue depth, cron times).
+CREATE TABLE IF NOT EXISTS app_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    value_type TEXT NOT NULL DEFAULT 'int',
+    description TEXT,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 
 -- schema_migrations: tracks applied PostgreSQL-only corrections (used by _run_pg_migrations)
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -687,15 +701,13 @@ CREATE TABLE IF NOT EXISTS offices (
 );
 
 -- Alt links
--- office_id is nullable: hierarchy entries use office_details_id and leave office_id NULL
 CREATE TABLE IF NOT EXISTS alt_links (
     id SERIAL PRIMARY KEY,
-    office_id INTEGER REFERENCES offices(id),
-    office_details_id INTEGER REFERENCES office_details(id),
+    office_details_id INTEGER NOT NULL REFERENCES office_details(id),
     link_path TEXT NOT NULL,
-    UNIQUE(office_id, link_path)
+    UNIQUE(office_details_id, link_path)
 );
-CREATE INDEX IF NOT EXISTS idx_alt_links_office_id ON alt_links(office_id);
+CREATE INDEX IF NOT EXISTS idx_alt_links_office_details_id ON alt_links(office_details_id);
 
 -- Parties
 CREATE TABLE IF NOT EXISTS parties (
@@ -874,6 +886,22 @@ CREATE TABLE IF NOT EXISTS scheduled_job_runs (
     error TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_scheduled_job_runs_started ON scheduled_job_runs (started_at DESC);
+
+-- Scheduler settings: per-job pause state managed via the UI.
+CREATE TABLE IF NOT EXISTS scheduler_settings (
+    job_id TEXT PRIMARY KEY,
+    paused BOOLEAN NOT NULL DEFAULT FALSE,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- App settings: operational constants editable via the UI (expiry thresholds, queue depth, cron times).
+CREATE TABLE IF NOT EXISTS app_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    value_type TEXT NOT NULL DEFAULT 'int',
+    description TEXT,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 """
 
 # Same index SQL works for both backends (standard SQL).

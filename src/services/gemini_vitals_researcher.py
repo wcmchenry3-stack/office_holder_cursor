@@ -290,9 +290,20 @@ class GeminiVitalsResearcher:
                     raise
         raise RuntimeError("unreachable")
 
-    def check_data_quality(self, prompt: str) -> dict | None:
-        """Run a data quality check via Gemini. Returns parsed JSON dict or None."""
+    def check_data_quality(self, prompt: str, system_prompt: str | None = None) -> dict | None:
+        """Run a data quality check via Gemini. Returns parsed JSON dict or None.
+
+        Args:
+            system_prompt: Override the default system instruction. Pass
+                consensus_voter._SYSTEM_PROMPT when used for page-level checks
+                so Gemini uses the same framing as OpenAI and Claude.
+        """
         from google.genai import types, errors
+
+        _default_instruction = (
+            "You are a data quality analyst. Assess the record and return JSON: "
+            '{"is_valid": bool, "concerns": [str], "confidence": "high"|"medium"|"low"}'
+        )
 
         backoff = 1.0
         for attempt in range(3):
@@ -306,10 +317,7 @@ class GeminiVitalsResearcher:
                         ),
                     ],
                     config=types.GenerateContentConfig(
-                        system_instruction=(
-                            "You are a data quality analyst. Assess the record and return JSON: "
-                            '{"is_valid": bool, "concerns": [str], "confidence": "high"|"medium"|"low"}'
-                        ),
+                        system_instruction=system_prompt or _default_instruction,
                         max_output_tokens=512,
                         response_mime_type="application/json",
                     ),

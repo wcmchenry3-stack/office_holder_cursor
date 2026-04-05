@@ -148,7 +148,7 @@ def _vote_gemini(prompt: str, context: dict) -> AIVote:
         if researcher is None:
             return AIVote(provider="gemini", is_valid=None, error="client not configured")
 
-        result = researcher.check_data_quality(prompt)
+        result = researcher.check_data_quality(prompt, system_prompt=_SYSTEM_PROMPT)
         if result is None:
             return AIVote(provider="gemini", is_valid=None, error="empty response")
 
@@ -172,7 +172,7 @@ def _vote_claude(prompt: str, context: dict) -> AIVote:
         if client is None:
             return AIVote(provider="claude", is_valid=None, error="client not configured")
 
-        result = client.check_data_quality(prompt, context)
+        result = client.check_data_quality(prompt, context, system_prompt=_SYSTEM_PROMPT)
         return AIVote(
             provider="claude",
             is_valid=result.is_valid,
