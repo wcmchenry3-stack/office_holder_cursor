@@ -65,7 +65,7 @@ See [~/.claude/standards/testing.md](~/.claude/standards/testing.md) for univers
 
 **Unit tests:** Scattered across `src/scraper/test_*.py` and `src/db/test_*.py`. Shared fixtures for integration tests live in `tests/conftest.py`.
 
-**Playwright tests:** `src/test_ui_edit_office_playwright.py`, `src/test_ui_offices_list_playwright.py`, `src/test_ui_run_playwright.py`. Run automatically on every PR via the `ui-tests` CI job. CI starts a fresh server against a temp DB — no office-ID vars required for CI. The `PLAYWRIGHT_EDIT_OFFICE_ID` / `PLAYWRIGHT_OFFICE_A_ID` / etc. vars are only needed for local runs against a pre-seeded database.
+**Playwright tests:** `src/test_ui_edit_office_playwright.py`, `src/test_ui_offices_list_playwright.py`, `src/test_ui_run_playwright.py`. Run automatically on every PR via the `ui-tests` CI job. CI starts a fresh server against a temp DB (`/tmp/playwright_ci.db`) and requires only `PLAYWRIGHT_BASE_URL`. The `PLAYWRIGHT_EDIT_OFFICE_ID` / `PLAYWRIGHT_OFFICE_A_ID` / etc. vars are only needed for local runs against a pre-seeded database.
 
 ---
 
