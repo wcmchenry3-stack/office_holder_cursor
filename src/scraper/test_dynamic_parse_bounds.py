@@ -1,3 +1,10 @@
+"""
+Note: wikipedia.org URL strings below are test input values only.
+No HTTP requests to Wikipedia are made here.
+All actual Wikipedia HTTP requests go through wiki_fetch.py (wiki_session)
+which sets the required User-Agent header and enforces rate limiting / retry/backoff logic.
+"""
+
 from bs4 import BeautifulSoup
 
 from src.scraper.table_parser import Offices, DataCleanup

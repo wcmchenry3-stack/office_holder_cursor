@@ -1,5 +1,10 @@
 """Coverage-gap tests for table_parser.py.
 
+Note: wikipedia.org URL strings below are test input values only.
+No HTTP requests to Wikipedia are made here.
+All actual Wikipedia HTTP requests go through wiki_fetch.py (wiki_session)
+which sets the required User-Agent header and enforces rate limiting / retry/backoff logic.
+
 Targets branches not exercised by the existing test suite:
   - _parse_date: datetime instance and parse-failure paths
   - _dates_from_cell_data_sort_value: None cell, single value, multiple values
