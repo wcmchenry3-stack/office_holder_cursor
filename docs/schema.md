@@ -13,18 +13,16 @@ countries ──┬── states ── cities
             │                       │            └── alt_links
             │                   (office_category)
             │
-            ├── offices (LEGACY flat table — still in active use)
-            │
             ├── parties
             │
             └── (via office_terms)
                     ↓
-              office_terms ──→ offices (legacy)
-                    ↓               ↓
-              individuals       parties
+              office_terms ──→ office_table_config (via office_id)
+                    ↓
+              individuals    parties
 ```
 
-**Key:** `office_terms` links to the legacy `offices` table (not `office_table_config`). All scraper run results write to `office_terms` via the legacy `office_id`.
+**Key:** `office_terms.office_id` stores the `office_table_config.id` value in hierarchy mode.
 
 ---
 
@@ -110,13 +108,6 @@ One row per HTML table being parsed for an office.
 
 ---
 
-## Legacy Flat Table
-
-### `offices`
-The original flat design. Still used by all scraper runs. Contains all fields from `source_pages` + `office_details` + `office_table_config` in one row.
-
-**Important:** When adding new config fields, they must be added to `offices` AND `office_table_config` (with a migration for each).
-
 ### `alt_links`
 | Column | Type | Notes |
 |---|---|---|
@@ -158,7 +149,7 @@ One row per scraped term (a person holding an office for a period).
 | Column | Type | Notes |
 |---|---|---|
 | `id` | INTEGER PK | |
-| `office_id` | INTEGER FK → offices | Legacy office ID |
+| `office_id` | INTEGER (office_table_config.id in hierarchy mode) | Scraper output key |
 | `individual_id` | FK → individuals | Nullable (if no wiki link) |
 | `party_id` | FK → parties | Nullable |
 | `district` | TEXT | |
@@ -435,3 +426,12 @@ The following are **PostgreSQL-only inline migrations** applied at startup via `
 | `pg_create_nolink_supersede_log` | Add `nolink_supersede_log` table |
 | `pg_create_scheduler_settings` | Add `scheduler_settings` table |
 | `pg_create_app_settings` | Add `app_settings` table |
+| `pg_alt_links_backfill_office_details_id` | Backfill `alt_links.office_details_id` from legacy `office_id` via offices→source_pages mapping |
+| `pg_alt_links_drop_unique_constraint` | Drop old UNIQUE(office_id, link_path) constraint |
+| `pg_alt_links_drop_office_id_index` | Drop index on `alt_links.office_id` |
+| `pg_alt_links_drop_office_id` | Drop `alt_links.office_id` column |
+| `pg_alt_links_office_details_id_not_null` | Set `alt_links.office_details_id` NOT NULL |
+| `pg_alt_links_dedup_before_unique` | Remove duplicate `(office_details_id, link_path)` rows, keeping max-id row per pair (issue #311/#317) |
+| `pg_alt_links_add_unique_office_details_link_path` | Add UNIQUE(office_details_id, link_path) to `alt_links` |
+| `pg_drop_offices_indexes` | Drop indexes on legacy `offices` table columns |
+| `pg_drop_offices_table` | Drop legacy `offices` table (issue #313) |
