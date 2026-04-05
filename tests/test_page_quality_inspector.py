@@ -37,6 +37,11 @@ from src.db.connection import _SQLiteConnWrapper
 from src.db import page_quality_checks as db_pqc
 from src.services.consensus_voter import AIVote, ConsensusVerdict, Verdict
 
+# Reusable non-empty record for tests that need to reach the AI vote path
+_ONE_RECORD = [
+    {"name": "Alice", "wiki_url": "x", "term_start_year": 2000, "term_end_year": 2004, "party": "R"}
+]
+
 # ---------------------------------------------------------------------------
 # SQLite fixture
 # ---------------------------------------------------------------------------
@@ -268,6 +273,18 @@ class TestInspectOnePage:
                 return_value={"id": page_id, "url": "https://en.wikipedia.org/wiki/Test"},
             ),
             patch("src.services.page_quality_inspector._fetch_html", return_value=None),
+            patch(
+                "src.services.page_quality_inspector._load_our_data",
+                return_value=[
+                    {
+                        "name": "Alice",
+                        "wiki_url": "x",
+                        "term_start_year": 2000,
+                        "term_end_year": 2004,
+                        "party": "R",
+                    }
+                ],
+            ),
             patch("src.services.page_quality_inspector._create_gh_issue", return_value=None),
         ):
             from src.services.page_quality_inspector import inspect_one_page
@@ -340,7 +357,7 @@ class TestInspectOnePage:
             ),
             patch(
                 "src.services.page_quality_inspector._load_our_data",
-                return_value=[],
+                return_value=_ONE_RECORD,
             ),
             patch("src.services.page_quality_inspector._trigger_reparse", return_value=True),
             patch("src.services.page_quality_inspector.ConsensusVoter", return_value=mock_voter),
@@ -372,7 +389,7 @@ class TestInspectOnePage:
             ),
             patch(
                 "src.services.page_quality_inspector._load_our_data",
-                return_value=[],
+                return_value=_ONE_RECORD,
             ),
             patch("src.services.page_quality_inspector._trigger_reparse", return_value=False),
             patch(
@@ -407,7 +424,7 @@ class TestInspectOnePage:
             ),
             patch(
                 "src.services.page_quality_inspector._load_our_data",
-                return_value=[],
+                return_value=_ONE_RECORD,
             ),
             patch(
                 "src.services.page_quality_inspector._create_gh_issue",
@@ -439,7 +456,7 @@ class TestInspectOnePage:
             ),
             patch(
                 "src.services.page_quality_inspector._load_our_data",
-                return_value=[],
+                return_value=_ONE_RECORD,
             ),
             patch(
                 "src.services.page_quality_inspector._create_gh_issue",
@@ -452,6 +469,126 @@ class TestInspectOnePage:
             result = inspect_one_page(conn=conn)
 
         assert result["result"] == "manual_review"
+
+    def test_no_data_skips_ai_vote_and_creates_gh_issue(self, tmp_path):
+        """When our DB has zero records for a page, skip AI vote and create a GH issue."""
+        conn = _conn(tmp_path)
+        page_id = _seed_page(conn)
+
+        with (
+            patch(
+                "src.services.page_quality_inspector.db_pqc.pick_next_page",
+                return_value={"id": page_id, "url": "https://en.wikipedia.org/wiki/Test"},
+            ),
+            patch("src.services.page_quality_inspector._load_our_data", return_value=[]),
+            patch(
+                "src.services.page_quality_inspector._create_gh_issue",
+                return_value="https://github.com/org/repo/issues/77",
+            ),
+            patch("src.services.page_quality_inspector.ConsensusVoter") as mock_voter_cls,
+        ):
+            from src.services.page_quality_inspector import inspect_one_page
+
+            result = inspect_one_page(conn=conn)
+
+        assert result["result"] == "no_data"
+        mock_voter_cls.assert_not_called()
+        rows = db_pqc.list_recent(conn=conn)
+        assert rows[0]["result"] == "no_data"
+        assert rows[0]["gh_issue_url"] == "https://github.com/org/repo/issues/77"
+
+    def test_load_our_data_error_returns_fetch_failed(self, tmp_path):
+        """When _load_our_data returns None (DB error), inspect_one_page returns fetch_failed
+        without running the AI vote — distinguishing a DB error from a page with zero records."""
+        conn = _conn(tmp_path)
+        page_id = _seed_page(conn)
+
+        with (
+            patch(
+                "src.services.page_quality_inspector.db_pqc.pick_next_page",
+                return_value={"id": page_id, "url": "https://en.wikipedia.org/wiki/Test"},
+            ),
+            patch("src.services.page_quality_inspector._load_our_data", return_value=None),
+            patch("src.services.page_quality_inspector.ConsensusVoter") as mock_voter_cls,
+        ):
+            from src.services.page_quality_inspector import inspect_one_page
+
+            result = inspect_one_page(conn=conn)
+
+        assert result is not None
+        assert result["result"] == "fetch_failed"
+        # AI voter must NOT be instantiated — no vote on a DB error
+        mock_voter_cls.assert_not_called()
+        # Check is recorded in DB
+        rows = db_pqc.list_recent(conn=conn)
+        assert len(rows) == 1
+        assert rows[0]["result"] == "fetch_failed"
+
+    def test_load_our_data_error_does_not_skip_page_check(self, tmp_path):
+        """A DB error on _load_our_data should NOT mark the page as checked
+        (we want it retried next cycle once the DB recovers)."""
+        conn = _conn(tmp_path)
+        page_id = _seed_page(conn)
+
+        with (
+            patch(
+                "src.services.page_quality_inspector.db_pqc.pick_next_page",
+                return_value={"id": page_id, "url": "https://en.wikipedia.org/wiki/Test"},
+            ),
+            patch("src.services.page_quality_inspector._load_our_data", return_value=None),
+        ):
+            from src.services.page_quality_inspector import inspect_one_page
+
+            inspect_one_page(conn=conn)
+
+        row = conn.execute(
+            "SELECT last_quality_checked_at FROM source_pages WHERE id = ?", (page_id,)
+        ).fetchone()
+        assert row[0] is None, "Page should not be marked checked after a DB error"
+
+    def test_reparse_db_error_on_fresh_load_creates_gh_issue(self, tmp_path):
+        """If _load_our_data returns None during the re-parse re-vote, we still
+        create a GH issue rather than crashing or silently skipping."""
+        conn = _conn(tmp_path)
+        page_id = _seed_page(conn)
+
+        mock_voter = MagicMock()
+        mock_voter.vote.return_value = _make_verdict(Verdict.INVALID)
+
+        load_calls = {"count": 0}
+
+        def _load_side_effect(*args, **kwargs):
+            load_calls["count"] += 1
+            if load_calls["count"] == 1:
+                return _ONE_RECORD  # initial load succeeds
+            return None  # re-load after re-parse fails
+
+        with (
+            patch(
+                "src.services.page_quality_inspector.db_pqc.pick_next_page",
+                return_value={"id": page_id, "url": "https://en.wikipedia.org/wiki/Test"},
+            ),
+            patch(
+                "src.services.page_quality_inspector._fetch_html",
+                return_value="<html>content</html>",
+            ),
+            patch(
+                "src.services.page_quality_inspector._load_our_data", side_effect=_load_side_effect
+            ),
+            patch("src.services.page_quality_inspector._trigger_reparse", return_value=True),
+            patch(
+                "src.services.page_quality_inspector._create_gh_issue",
+                return_value="https://github.com/org/repo/issues/99",
+            ),
+            patch("src.services.page_quality_inspector.ConsensusVoter", return_value=mock_voter),
+        ):
+            from src.services.page_quality_inspector import inspect_one_page
+
+            result = inspect_one_page(conn=conn)
+
+        assert result["result"] == "gh_issue"
+        rows = db_pqc.list_recent(conn=conn)
+        assert rows[0]["gh_issue_url"] == "https://github.com/org/repo/issues/99"
 
     def test_unexpected_exception_returns_none(self, tmp_path):
         conn = _conn(tmp_path)
@@ -480,7 +617,7 @@ class TestInspectOnePage:
                 "src.services.page_quality_inspector._fetch_html",
                 return_value="<html>test</html>",
             ),
-            patch("src.services.page_quality_inspector._load_our_data", return_value=[]),
+            patch("src.services.page_quality_inspector._load_our_data", return_value=_ONE_RECORD),
             patch("src.services.page_quality_inspector.ConsensusVoter", return_value=mock_voter),
         ):
             from src.services.page_quality_inspector import inspect_one_page
@@ -518,6 +655,30 @@ def test_build_prompt_contains_page_url():
     assert "https://en.wikipedia.org/wiki/Test" in prompt
     assert "Alice" in prompt
     assert "is_valid" in prompt
+
+
+def test_build_prompt_includes_record_count():
+    from src.services.page_quality_inspector import _build_prompt
+
+    data = [
+        {
+            "name": f"Person {i}",
+            "wiki_url": f"x{i}",
+            "term_start_year": 2000,
+            "term_end_year": 2004,
+            "party": "R",
+        }
+        for i in range(7)
+    ]
+    prompt = _build_prompt("https://en.wikipedia.org/wiki/Test", "<html/>", data)
+    assert "7 records" in prompt
+
+
+def test_build_prompt_zero_records_shown():
+    from src.services.page_quality_inspector import _build_prompt
+
+    prompt = _build_prompt("https://en.wikipedia.org/wiki/Test", "<html/>", [])
+    assert "0 records" in prompt
 
 
 # ---------------------------------------------------------------------------
@@ -579,3 +740,41 @@ class TestFetchHtml:
 
             result = _fetch_html("https://en.wikipedia.org/wiki/Test")
         assert result is None
+
+
+# ---------------------------------------------------------------------------
+# _load_our_data
+# ---------------------------------------------------------------------------
+
+
+class TestLoadOurData:
+    def test_returns_list_on_success(self, tmp_path):
+        conn = _conn(tmp_path)
+        page_id = _seed_page(conn)
+        # No office_terms seeded — should return empty list, not None
+        from src.services.page_quality_inspector import _load_our_data
+
+        result = _load_our_data(page_id, conn)
+        assert result == []
+
+    def test_returns_none_on_db_error(self, tmp_path):
+        conn = _conn(tmp_path)
+        bad_conn = MagicMock()
+        bad_conn.execute.side_effect = Exception("connection lost")
+
+        from src.services.page_quality_inspector import _load_our_data
+
+        result = _load_our_data(1, bad_conn)
+        assert result is None
+
+    def test_empty_list_not_confused_with_none(self, tmp_path):
+        """A page with no office_terms must return [] (falsy but not None),
+        so callers that do `if our_data is None` don't mistake it for a DB error."""
+        conn = _conn(tmp_path)
+        page_id = _seed_page(conn)
+
+        from src.services.page_quality_inspector import _load_our_data
+
+        result = _load_our_data(page_id, conn)
+        assert result is not None
+        assert result == []

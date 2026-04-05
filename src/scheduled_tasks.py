@@ -486,8 +486,19 @@ def run_daily_gemini_research() -> None:
     _send_job_summary_email("Gemini Research", result, duration_s, run_start)
 
 
+_PAGE_QUALITY_MAX_ATTEMPTS = 10
+
+
 def run_daily_page_quality() -> None:
-    """Entry point called by APScheduler at 09:00 UTC each day."""
+    """Entry point called by APScheduler at 09:00 UTC each day.
+
+    Picks one source page and runs the AI quality vote.  If that page has no
+    records in our DB (no_data), it keeps trying up to _PAGE_QUALITY_MAX_ATTEMPTS
+    pages — no point sending empty data to three AIs.  If all attempts are no_data,
+    the run is recorded as 'skipped_no_data' so the UI shows it happened.
+
+    All runs are recorded in scheduled_job_runs so they appear in the job runner UI.
+    """
     sentry_sdk.set_tag("scheduled_task", "page_quality")
     if not is_runners_enabled():
         logger.info("Page quality run skipped: RUNNERS_ENABLED is disabled")
@@ -506,21 +517,62 @@ def run_daily_page_quality() -> None:
         "Page quality inspection starting at %s UTC",
         run_start.strftime("%Y-%m-%d %H:%M:%S"),
     )
+
+    from src.db import scheduled_job_runs as db_job_runs
+
+    run_id = db_job_runs.create_run("daily_page_quality")
+
     try:
         from src.services.page_quality_inspector import inspect_one_page
 
-        result = inspect_one_page()
-        if result is None:
-            logger.info("Page quality inspection: no pages to inspect or error occurred")
-        else:
+        result = None
+        attempts = 0
+
+        for attempt in range(1, _PAGE_QUALITY_MAX_ATTEMPTS + 1):
+            attempts = attempt
+            result = inspect_one_page()
+
+            if result is None:
+                # Error or no enabled pages exist at all — stop searching
+                break
+
+            if result.get("result") != "no_data":
+                # Ran the AI vote (ok / gh_issue / manual_review / reparse_ok / fetch_failed)
+                break
+
             logger.info(
-                "Page quality inspection complete: result=%s source_page_id=%s",
+                "Page quality: source_page_id=%s has no data, trying another " "(attempt %d/%d)",
+                result.get("source_page_id"),
+                attempt,
+                _PAGE_QUALITY_MAX_ATTEMPTS,
+            )
+
+        if result is None:
+            final_result: dict = {"result": "no_pages", "attempts": attempts}
+            logger.info("Page quality inspection: no pages available after %d attempt(s)", attempts)
+        elif result.get("result") == "no_data":
+            final_result = {"result": "skipped_no_data", "attempts": attempts}
+            logger.info(
+                "Page quality inspection: all %d pages had no data — skipping for today",
+                attempts,
+            )
+        else:
+            final_result = {**result, "attempts": attempts}
+            logger.info(
+                "Page quality inspection complete: result=%s source_page_id=%s attempts=%d",
                 result.get("result"),
                 result.get("source_page_id"),
+                attempts,
             )
+
+        duration_s = (datetime.now(timezone.utc) - run_start).total_seconds()
+        db_job_runs.finish_run(run_id, status="complete", result=final_result)
+        logger.info("Page quality run recorded in %.0fs", duration_s)
+
     except Exception:
         sentry_sdk.capture_exception()
         logger.exception("Page quality inspection crashed")
+        db_job_runs.finish_run(run_id, status="error", error=traceback.format_exc())
 
 
 def _format_duration(seconds: float) -> str:
