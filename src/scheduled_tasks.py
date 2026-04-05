@@ -176,6 +176,8 @@ def _send_expiry_email(job: dict) -> None:
 
 def run_daily_delta() -> None:
     """Entry point called by APScheduler at 06:00 UTC each day."""
+    from src.db import scheduled_job_runs as db_job_runs
+
     sentry_sdk.set_tag("scheduled_task", "daily_delta")
     if not is_daily_delta_enabled():
         logger.info("Daily delta run skipped because DAILY_DELTA_ENABLED is disabled")
@@ -207,6 +209,8 @@ def run_daily_delta() -> None:
         today_batch,
     )
 
+    run_id = db_job_runs.create_run("daily_delta")
+
     try:
         cache_deleted = _cleanup_disk_cache(max_age_days=30)
     except Exception as e:
@@ -229,10 +233,12 @@ def run_daily_delta() -> None:
         sentry_sdk.capture_exception()
         tb = traceback.format_exc()
         logger.error("Daily run crashed:\n%s", tb)
+        db_job_runs.finish_run(run_id, status="error", error=tb)
         _send_summary_email(None, 0.0, run_start, error=tb, cache_deleted=cache_deleted)
         return
 
     duration_s = (datetime.now(timezone.utc) - run_start).total_seconds()
+    db_job_runs.finish_run(run_id, status="complete", result=result)
     logger.info("Daily run complete in %.0fs — sending summary email", duration_s)
     _send_summary_email(result, duration_s, run_start)
 
@@ -287,6 +293,8 @@ except Exception as _exc:
 
 def run_daily_insufficient_vitals() -> None:
     """Entry point called by APScheduler at 07:00 UTC each day."""
+    from src.db import scheduled_job_runs as db_job_runs
+
     sentry_sdk.set_tag("scheduled_task", "insufficient_vitals")
     _expire_stale_jobs_with_email()
 
@@ -312,22 +320,28 @@ def run_daily_insufficient_vitals() -> None:
         today_batch,
     )
 
+    run_id = db_job_runs.create_run("insufficient_vitals")
+
     try:
         result = _run_mode_in_subprocess("delta_insufficient_vitals", today_batch)
     except Exception:
         sentry_sdk.capture_exception()
         tb = traceback.format_exc()
         logger.error("Insufficient vitals run crashed:\n%s", tb)
+        db_job_runs.finish_run(run_id, status="error", error=tb)
         _send_job_summary_email("Insufficient Vitals", None, 0.0, run_start, error=tb)
         return
 
     duration_s = (datetime.now(timezone.utc) - run_start).total_seconds()
+    db_job_runs.finish_run(run_id, status="complete", result=result)
     logger.info("Insufficient vitals run complete in %.0fs", duration_s)
     _send_job_summary_email("Insufficient Vitals", result, duration_s, run_start)
 
 
 def run_daily_gemini_research() -> None:
     """Entry point called by APScheduler at 08:00 UTC each day."""
+    from src.db import scheduled_job_runs as db_job_runs
+
     sentry_sdk.set_tag("scheduled_task", "gemini_research")
     _expire_stale_jobs_with_email()
 
@@ -353,12 +367,15 @@ def run_daily_gemini_research() -> None:
         today_batch,
     )
 
+    run_id = db_job_runs.create_run("gemini_research")
+
     try:
         result = _run_mode_in_subprocess("gemini_vitals_research", today_batch)
     except Exception:
         sentry_sdk.capture_exception()
         tb = traceback.format_exc()
         logger.error("Gemini research run crashed:\n%s", tb)
+        db_job_runs.finish_run(run_id, status="error", error=tb)
         # Detect model deprecation from subprocess traceback
         if "GeminiModelDeprecatedError" in tb:
             _send_model_deprecated_email("gemini-3.1-pro-preview", tb)
@@ -366,6 +383,7 @@ def run_daily_gemini_research() -> None:
         return
 
     duration_s = (datetime.now(timezone.utc) - run_start).total_seconds()
+    db_job_runs.finish_run(run_id, status="complete", result=result)
     logger.info("Gemini research run complete in %.0fs", duration_s)
     _send_job_summary_email("Gemini Research", result, duration_s, run_start)
 

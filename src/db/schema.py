@@ -423,6 +423,19 @@ CREATE TABLE IF NOT EXISTS nolink_supersede_log (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Scheduled job run history: one row per APScheduler job execution.
+CREATE TABLE IF NOT EXISTS scheduled_job_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_name TEXT NOT NULL,
+    started_at TEXT NOT NULL,
+    finished_at TEXT,
+    status TEXT NOT NULL DEFAULT 'running',
+    duration_s REAL,
+    result_json TEXT,
+    error TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_scheduled_job_runs_started ON scheduled_job_runs (started_at DESC);
+
 -- schema_migrations: tracks applied PostgreSQL-only corrections (used by _run_pg_migrations)
 CREATE TABLE IF NOT EXISTS schema_migrations (
     id TEXT PRIMARY KEY,
@@ -848,6 +861,19 @@ CREATE TABLE IF NOT EXISTS nolink_supersede_log (
     office_terms_reassigned INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Scheduled job run history: one row per APScheduler job execution.
+CREATE TABLE IF NOT EXISTS scheduled_job_runs (
+    id SERIAL PRIMARY KEY,
+    job_name TEXT NOT NULL,
+    started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    finished_at TIMESTAMPTZ,
+    status TEXT NOT NULL DEFAULT 'running',
+    duration_s NUMERIC(10,2),
+    result_json TEXT,
+    error TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_scheduled_job_runs_started ON scheduled_job_runs (started_at DESC);
 """
 
 # Same index SQL works for both backends (standard SQL).

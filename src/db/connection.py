@@ -497,6 +497,20 @@ def _run_pg_migrations(conn) -> None:
         " superseded_by_individual_id INTEGER REFERENCES individuals(id)",
     )
     _apply(
+        "pg_create_scheduled_job_runs",
+        "CREATE TABLE IF NOT EXISTS scheduled_job_runs ("
+        " id SERIAL PRIMARY KEY,"
+        " job_name TEXT NOT NULL,"
+        " started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),"
+        " finished_at TIMESTAMPTZ,"
+        " status TEXT NOT NULL DEFAULT 'running',"
+        " duration_s NUMERIC(10,2),"
+        " result_json TEXT,"
+        " error TEXT);"
+        "CREATE INDEX IF NOT EXISTS idx_scheduled_job_runs_started"
+        " ON scheduled_job_runs (started_at DESC)",
+    )
+    _apply(
         "pg_create_nolink_supersede_log",
         "CREATE TABLE IF NOT EXISTS nolink_supersede_log ("
         " id SERIAL PRIMARY KEY,"

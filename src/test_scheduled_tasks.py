@@ -111,6 +111,8 @@ def test_run_daily_delta_sends_crash_email_on_exception(monkeypatch):
         raise RuntimeError("scraper exploded")
 
     monkeypatch.setattr("src.scheduled_tasks._run_daily_delta_in_subprocess", _explode)
+    monkeypatch.setattr("src.db.scheduled_job_runs.create_run", lambda *a, **kw: 1)
+    monkeypatch.setattr("src.db.scheduled_job_runs.finish_run", lambda *a, **kw: None)
 
     from src.scheduled_tasks import run_daily_delta
 

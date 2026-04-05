@@ -491,5 +491,7 @@ class TestSchedulerSkipsWhenActive:
             patch("src.scheduled_tasks._send_summary_email"),
             patch("src.scraper.runner._cleanup_disk_cache", return_value=0),
             patch.object(db_scraper_jobs, "delete_jobs_older_than", return_value=0),
+            patch("src.db.scheduled_job_runs.create_run", return_value=1),
+            patch("src.db.scheduled_job_runs.finish_run"),
         ):
             run_daily_delta()
