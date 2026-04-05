@@ -8,7 +8,7 @@
   Update the env var in Render and redeploy to re-enable.
 </div>
 {% endif %}
-<p>Pause/resume individual jobs below. The maintenance job cannot be paused.</p>
+<p>Pause/resume individual jobs below. The maintenance job cannot be paused. Cron time changes take effect on next restart.</p>
 <table>
   <thead>
     <tr>
@@ -23,9 +23,26 @@
   </thead>
   <tbody>
     {% for j in jobs %}
+    {% set h_key = 'cron_' ~ j.job_id ~ '_hour' %}
+    {% set m_key = 'cron_' ~ j.job_id ~ '_minute' %}
     <tr id="row-{{ j.job_id }}">
       <td>{{ j.label }}</td>
-      <td><code>{{ j.cron }}</code></td>
+      <td>
+        {% if h_key in app_settings %}
+        <form class="cron-form" data-job="{{ j.job_id }}" style="display:inline-flex;gap:4px;align-items:center">
+          <input type="number" name="hour" min="0" max="23" value="{{ app_settings[h_key]['value'] }}"
+                 style="width:3.5rem" aria-label="Hour (UTC)" required>
+          <span>:</span>
+          <input type="number" name="minute" min="0" max="59" value="{{ app_settings[m_key]['value'] }}"
+                 style="width:3.5rem" aria-label="Minute (UTC)" required>
+          <button type="submit" aria-label="Save cron time for {{ j.label }}">Save</button>
+          <span class="cron-status" aria-live="polite"></span>
+        </form>
+        <small style="color:#888;display:block">⚠ Takes effect on next restart</small>
+        {% else %}
+        <code>{{ j.cron }}</code>
+        {% endif %}
+      </td>
       <td>{{ j.description }}</td>
       <td>{{ j.last_run.started_at if j.last_run else '—' }}</td>
       <td>{% if j.last_run %}<span class="status-{{ j.last_run.status }}">{{ j.last_run.status }}</span>{% else %}—{% endif %}</td>
@@ -47,6 +64,41 @@
     {% endfor %}
   </tbody>
 </table>
+
+<h2 style="margin-top:2rem">Expiry Thresholds &amp; Queue</h2>
+<p style="color:#888;margin-bottom:1rem">Changes take effect immediately on the next expiry check.</p>
+<table>
+  <thead>
+    <tr>
+      <th>Setting</th>
+      <th>Value</th>
+      <th></th>
+      <th>Status</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% set op_settings = [
+      ('expiry_hours_queued',       'Queued job expires after',         'hours', 1, 168),
+      ('expiry_hours_running_full', 'Running full job expires after',    'hours', 1, 168),
+      ('expiry_hours_running_other','Other running job expires after',   'hours', 1, 168),
+      ('max_queued_jobs',           'Max queued jobs',                   '',      1, 10),
+    ] %}
+    {% for key, label, unit, lo, hi in op_settings %}
+    <tr>
+      <td>{{ label }}</td>
+      <td>
+        <input type="number" id="input-{{ key }}" min="{{ lo }}" max="{{ hi }}"
+               value="{{ app_settings[key]['value'] if key in app_settings else '' }}"
+               style="width:5rem" aria-label="{{ label }}">
+        {% if unit %}<span>{{ unit }}</span>{% endif %}
+      </td>
+      <td><button onclick="saveAppSetting('{{ key }}')">Save</button></td>
+      <td><span id="status-{{ key }}" aria-live="polite"></span></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
 <script>
 function setJobPaused(jobId, paused) {
   var action = paused ? 'pause' : 'resume';
@@ -55,5 +107,72 @@ function setJobPaused(jobId, paused) {
     .then(function() { location.reload(); })
     .catch(function(e) { alert('Error: ' + e); });
 }
+
+function saveAppSetting(key) {
+  var input = document.getElementById('input-' + key);
+  var status = document.getElementById('status-' + key);
+  status.textContent = 'Saving…';
+  status.style.color = '';
+  fetch('/api/app-settings/' + encodeURIComponent(key), {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({value: input.value})
+  })
+    .then(function(r) {
+      if (!r.ok) return r.json().then(function(d) { throw new Error(d.detail || r.statusText); });
+      return r.json();
+    })
+    .then(function(d) {
+      input.value = d.value;
+      status.textContent = 'Saved';
+      status.style.color = 'green';
+      setTimeout(function() { status.textContent = ''; }, 3000);
+    })
+    .catch(function(e) {
+      status.textContent = 'Error: ' + e.message;
+      status.style.color = 'red';
+    });
+}
+
+document.querySelectorAll('.cron-form').forEach(function(form) {
+  form.addEventListener('submit', function(e) {
+    e.preventDefault();
+    var jobId = form.dataset.job;
+    var hourInput = form.querySelector('input[name=hour]');
+    var minInput = form.querySelector('input[name=minute]');
+    var statusEl = form.querySelector('.cron-status');
+    var hKey = 'cron_' + jobId + '_hour';
+    var mKey = 'cron_' + jobId + '_minute';
+    statusEl.textContent = 'Saving…';
+    statusEl.style.color = '';
+    Promise.all([
+      fetch('/api/app-settings/' + encodeURIComponent(hKey), {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({value: hourInput.value})
+      }),
+      fetch('/api/app-settings/' + encodeURIComponent(mKey), {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({value: minInput.value})
+      })
+    ])
+      .then(function(responses) {
+        return Promise.all(responses.map(function(r) {
+          if (!r.ok) return r.json().then(function(d) { throw new Error(d.detail || r.statusText); });
+          return r.json();
+        }));
+      })
+      .then(function() {
+        statusEl.textContent = 'Saved';
+        statusEl.style.color = 'green';
+        setTimeout(function() { statusEl.textContent = ''; }, 3000);
+      })
+      .catch(function(err) {
+        statusEl.textContent = 'Error: ' + err.message;
+        statusEl.style.color = 'red';
+      });
+  });
+});
 </script>
 {% endblock %}

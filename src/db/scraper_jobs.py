@@ -233,6 +233,12 @@ def expire_stale_jobs(cancel_callback=None, conn=None) -> list[dict]:
             ("running", "queued"),
         ).fetchall()
 
+        from src.db.app_settings import get_setting
+
+        hours_queued = get_setting("expiry_hours_queued", default=12)
+        hours_running_full = get_setting("expiry_hours_running_full", default=24)
+        hours_running_other = get_setting("expiry_hours_running_other", default=8)
+
         expired = []
         for row in rows:
             job_id, job_type, status, created_at_raw = row[0], row[1], row[2], row[3]
@@ -250,11 +256,19 @@ def expire_stale_jobs(cancel_callback=None, conn=None) -> list[dict]:
                     continue
             age = now - created_at
             reason = None
-            if status == "queued" and age > timedelta(hours=12):
+            if status == "queued" and age > timedelta(hours=hours_queued):
                 reason = f"Queued job expired after {age}"
-            elif status == "running" and job_type == "full" and age > timedelta(hours=24):
+            elif (
+                status == "running"
+                and job_type == "full"
+                and age > timedelta(hours=hours_running_full)
+            ):
                 reason = f"Full run expired after {age}"
-            elif status == "running" and job_type != "full" and age > timedelta(hours=8):
+            elif (
+                status == "running"
+                and job_type != "full"
+                and age > timedelta(hours=hours_running_other)
+            ):
                 reason = f"Running job expired after {age}"
 
             if reason:

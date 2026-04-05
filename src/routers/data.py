@@ -10,6 +10,7 @@ from src.db import offices as db_offices
 from src.db import office_terms as db_office_terms
 from src.db import reports as db_reports
 from src.db import individual_research_sources as db_research
+from src.db import app_settings as db_app_settings
 from src.db import scheduled_job_runs as db_job_runs
 from src.db import scraper_jobs as db_scraper_jobs
 from src.db import scheduler_settings as db_scheduler_settings
@@ -197,10 +198,11 @@ async def data_scheduled_jobs(request: Request):
         "no",
         "off",
     }
+    app_settings = {s["key"]: s for s in db_app_settings.list_all_settings()}
     return templates.TemplateResponse(
         request,
         "scheduled_jobs.html",
-        {"jobs": jobs, "runners_enabled": runners_enabled},
+        {"jobs": jobs, "runners_enabled": runners_enabled, "app_settings": app_settings},
     )
 
 
@@ -222,6 +224,60 @@ async def api_resume_job(job_id: str):
         raise HTTPException(status_code=400, detail=f"Job '{job_id}' is not pauseable")
     db_scheduler_settings.set_job_paused(job_id, False)
     return JSONResponse({"job_id": job_id, "paused": False})
+
+
+_APP_SETTINGS_RANGES: dict[str, tuple[int, int]] = {
+    "expiry_hours_queued": (1, 168),
+    "expiry_hours_running_full": (1, 168),
+    "expiry_hours_running_other": (1, 168),
+    "max_queued_jobs": (1, 10),
+    "cron_daily_maintenance_hour": (0, 23),
+    "cron_daily_maintenance_minute": (0, 59),
+    "cron_daily_delta_hour": (0, 23),
+    "cron_daily_delta_minute": (0, 59),
+    "cron_daily_insufficient_vitals_hour": (0, 23),
+    "cron_daily_insufficient_vitals_minute": (0, 59),
+    "cron_daily_gemini_research_hour": (0, 23),
+    "cron_daily_gemini_research_minute": (0, 59),
+    "cron_daily_page_quality_hour": (0, 23),
+    "cron_daily_page_quality_minute": (0, 59),
+}
+
+
+@router.post("/api/app-settings/{key}")
+async def api_update_app_setting(key: str, request: Request):
+    from src.db.app_settings import APP_SETTINGS_DEFAULTS, set_setting
+
+    known_keys = {row["key"] for row in APP_SETTINGS_DEFAULTS}
+    if key not in known_keys:
+        raise HTTPException(status_code=400, detail=f"Unknown setting key: '{key}'")
+
+    body = await request.json()
+    raw_value = body.get("value")
+    if raw_value is None:
+        raise HTTPException(status_code=400, detail="Missing 'value' in request body")
+
+    # All current settings are int — coerce and validate range.
+    try:
+        int_value = int(raw_value)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail=f"Value must be an integer, got: {raw_value!r}")
+
+    lo, hi = _APP_SETTINGS_RANGES.get(key, (None, None))
+    if lo is not None and not (lo <= int_value <= hi):
+        raise HTTPException(
+            status_code=400, detail=f"Value {int_value} out of range [{lo}, {hi}] for '{key}'"
+        )
+
+    set_setting(key, str(int_value))
+    row = db_app_settings.list_all_settings()
+    updated = next(
+        (r for r in row if r["key"] == key),
+        {"key": key, "value": str(int_value), "updated_at": None},
+    )
+    return JSONResponse(
+        {"key": updated["key"], "value": updated["value"], "updated_at": updated["updated_at"]}
+    )
 
 
 @router.get("/report/milestones", response_class=HTMLResponse)
