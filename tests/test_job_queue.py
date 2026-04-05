@@ -323,18 +323,20 @@ class TestMaybeStartNextQueuedJob:
                 assert "q1" in _run_job_store
                 assert _run_job_store["q1"]["status"] == "running"
 
-    def test_bad_json_params_does_not_crash(self):
+    def test_bad_json_params_marks_job_error_and_does_not_start_thread(self):
         next_job = {"id": "q1", "type": "delta", "job_params_json": "INVALID JSON!!!"}
         with (
             patch.object(db_scraper_jobs, "pop_next_queued_job", return_value=next_job),
+            patch.object(db_scraper_jobs, "update_job") as mock_update,
             patch("threading.Thread") as mock_thread,
         ):
             mock_thread.return_value = MagicMock()
             from src.routers.run_scraper import _maybe_start_next_queued_job
 
-            # Should not raise
+            # Should not raise, should not start a thread
             _maybe_start_next_queued_job()
-            mock_thread.assert_called_once()
+            mock_thread.assert_not_called()
+            mock_update.assert_called_once_with("q1", "error", {"error": "malformed job_params_json"})
 
 
 # ---------------------------------------------------------------------------
