@@ -20,6 +20,11 @@ from src.routers._deps import templates
 router = APIRouter()
 
 
+@router.get("/operations", response_class=HTMLResponse)
+async def operations_landing(request: Request):
+    return templates.TemplateResponse(request, "operations.html", {})
+
+
 @router.get("/data/individuals", response_class=HTMLResponse)
 async def data_individuals(
     request: Request,
