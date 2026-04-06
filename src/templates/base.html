@@ -34,20 +34,11 @@
   <nav>
     <ul>
       <li><a href="/offices">Offices</a></li>
-      <li><a href="/data/individuals">Individuals</a></li>
-      <li><a href="/data/office-terms">Office terms</a></li>
+      <li><a href="/reports">Reports</a></li>
       <li><a href="/operations">Operations</a></li>
       <li><a href="/refs">Reference data</a></li>
     </ul>
   </nav>
-  {% set git_sync = git_sync_status() %}
-  {% if git_sync.unsynced %}
-    <div class="sync-banner" role="alert">
-      <strong>Remote sync warning:</strong> {{ git_sync.message }}
-      {% if git_sync.branch %}<span class="sync-meta">Branch: <code>{{ git_sync.branch }}</code></span>{% endif %}
-      {% if git_sync.upstream %}<span class="sync-meta">Tracking: <code>{{ git_sync.upstream }}</code></span>{% endif %}
-    </div>
-  {% endif %}
   <main class="container{% block container_class %}{% endblock %}">
     {% block content %}{% endblock %}
     <p class="storage-note"><small>All data (offices, parties, individuals, office terms) is saved locally in <code>data/office_holder.db</code> and persists after you close the browser or restart the app.</small></p>
