@@ -8,6 +8,7 @@ required User-Agent header per Wikimedia API:Etiquette policy.
 
 Wikipedia policy compliance:
   - User-Agent: set via HTTP_USER_AGENT in wiki_fetch.py on every outbound request
+  - Rate limit / throttle: enforced by wiki_throttle() in wiki_fetch.py (≤1 req/s)
   - No live requests made in this test module
   See: https://www.mediawiki.org/wiki/API:Etiquette
 """
