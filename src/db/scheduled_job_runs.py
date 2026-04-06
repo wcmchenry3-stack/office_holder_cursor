@@ -25,7 +25,8 @@ def create_run(job_name: str, conn=None) -> int:
     try:
         now = _now_iso()
         cursor = conn.execute(
-            "INSERT INTO scheduled_job_runs (job_name, started_at, status)" " VALUES (%s, %s, %s)",
+            "INSERT INTO scheduled_job_runs (job_name, started_at, status)"
+            " VALUES (%s, %s, %s) RETURNING id",
             (job_name, now, "running"),
         )
         # PostgreSQL: use RETURNING; SQLite: use lastrowid
