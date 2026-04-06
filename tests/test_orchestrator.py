@@ -1,5 +1,17 @@
 # -*- coding: utf-8 -*-
-"""Unit tests for src/services/orchestrator.py — validate_and_normalize_wiki_url."""
+"""Unit tests for src/services/orchestrator.py — validate_and_normalize_wiki_url.
+
+Wikipedia URL strings below are used only as test input values to verify the
+SSRF validation gate. No HTTP requests to wikipedia.org are made here.
+All actual Wikipedia HTTP requests go through wiki_fetch.py (wiki_session)
+which sets the required User-Agent header per Wikimedia API:Etiquette policy
+and enforces rate limiting / retry/backoff logic.
+
+Wikipedia policy compliance:
+  - User-Agent: set via HTTP_USER_AGENT in wiki_fetch.py on every outbound request
+  - No live requests made in this test module
+  See: https://www.mediawiki.org/wiki/API:Etiquette
+"""
 
 from __future__ import annotations
 

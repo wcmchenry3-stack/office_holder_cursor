@@ -25,7 +25,6 @@ from src.services.quality_issue_reporter import (
 )
 from src.services.data_quality_checker import QualityCheckResult
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

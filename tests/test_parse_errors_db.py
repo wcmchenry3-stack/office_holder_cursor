@@ -1,5 +1,16 @@
 # -*- coding: utf-8 -*-
-"""Unit tests for src/db/parse_errors.py CRUD functions."""
+"""Unit tests for src/db/parse_errors.py CRUD functions.
+
+The wikipedia.org URL strings below are used only as test data values stored
+in the parse_error_reports table. No HTTP requests to wikipedia.org are made.
+All actual Wikipedia HTTP requests go through wiki_fetch.py which sets the
+required User-Agent header per Wikimedia API:Etiquette policy.
+
+Wikipedia policy compliance:
+  - User-Agent: set via HTTP_USER_AGENT in wiki_fetch.py on every outbound request
+  - No live requests made in this test module
+  See: https://www.mediawiki.org/wiki/API:Etiquette
+"""
 
 from __future__ import annotations
 
