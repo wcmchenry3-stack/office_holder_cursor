@@ -1,7 +1,17 @@
 # -*- coding: utf-8 -*-
 """Unit tests for src/services/wikipedia_submit.py.
 
-All tests mock requests.Session — no live HTTP to Wikipedia.
+All tests mock requests.Session — no live HTTP to Wikipedia is made.
+The module under test (wikipedia_submit.py) includes a descriptive User-Agent
+header on every request per Wikimedia API:Etiquette policy, sourced from
+src/scraper/logger.py (HTTP_USER_AGENT). Rate limiting is enforced by
+WikipediaSubmitter._throttle() (≥1 s between requests).
+
+Wikipedia policy compliance:
+  - User-Agent: set via HTTP_USER_AGENT in _HEADERS on every outbound request
+  - Rate limit: _throttle() enforces _MIN_REQUEST_INTERVAL = 1.0 s
+  - Auth: credentials read from env vars only (WIKIPEDIA_BOT_USERNAME/PASSWORD)
+  See: https://www.mediawiki.org/wiki/API:Etiquette
 """
 
 from __future__ import annotations
@@ -45,7 +55,9 @@ def test_get_submitter_returns_none_with_only_username(monkeypatch):
 def test_get_submitter_returns_none_when_login_fails(monkeypatch):
     monkeypatch.setenv("WIKIPEDIA_BOT_USERNAME", "bot_user")
     monkeypatch.setenv("WIKIPEDIA_BOT_PASSWORD", "bot_pass")
-    with patch("src.services.wikipedia_submit.WikipediaSubmitter.login", side_effect=Exception("fail")):
+    with patch(
+        "src.services.wikipedia_submit.WikipediaSubmitter.login", side_effect=Exception("fail")
+    ):
         result = get_submitter()
     assert result is None
 
