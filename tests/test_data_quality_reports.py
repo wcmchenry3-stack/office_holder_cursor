@@ -179,6 +179,45 @@ class TestListRecentReports:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# update_github_issue
+# ---------------------------------------------------------------------------
+
+
+class TestUpdateGithubIssue:
+    def test_update_sets_url_and_number(self, tmp_path):
+        conn = _make_conn(tmp_path)
+        fp = dqr.make_fingerprint("individual", 7, "missing_name")
+        dqr.insert_report(
+            fingerprint=fp,
+            record_type="individual",
+            record_id=7,
+            check_type="missing_name",
+            flagged_by="openai",
+            conn=conn,
+        )
+        updated = dqr.update_github_issue(
+            fp,
+            "https://github.com/org/repo/issues/77",
+            77,
+            conn=conn,
+        )
+        assert updated is True
+        found = dqr.find_by_fingerprint(fp, conn=conn)
+        assert found["github_issue_url"] == "https://github.com/org/repo/issues/77"
+        assert found["github_issue_number"] == 77
+
+    def test_update_missing_fingerprint_returns_false(self, tmp_path):
+        conn = _make_conn(tmp_path)
+        result = dqr.update_github_issue(
+            "dq-nonexistent000000",
+            "https://github.com/org/repo/issues/1",
+            1,
+            conn=conn,
+        )
+        assert result is False
+
+
 class TestCountByCheckType:
     def test_aggregation(self, tmp_path):
         conn = _make_conn(tmp_path)
