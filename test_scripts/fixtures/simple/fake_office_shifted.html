@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head><title>List of Fake Office Holders - Wikipedia</title></head>
+<body>
+<div id="mw-content-text">
+
+<!-- Table 1: NOW holds the real data (table shifted from position 2 to position 1) -->
+<table class="wikitable">
+  <tr>
+    <th>Name</th>
+    <th>Party</th>
+    <th>Took office</th>
+    <th>Left office</th>
+  </tr>
+  <tr>
+    <td><a href="/wiki/Alice_Holder">Alice Holder</a></td>
+    <td>Dem</td>
+    <td>2000</td>
+    <td>2004</td>
+  </tr>
+  <tr>
+    <td><a href="/wiki/Bob_Holder">Bob Holder</a></td>
+    <td>Rep</td>
+    <td>2004</td>
+    <td>2008</td>
+  </tr>
+  <tr>
+    <td><a href="/wiki/Carol_Holder">Carol Holder</a></td>
+    <td>Dem</td>
+    <td>2008</td>
+    <td>2012</td>
+  </tr>
+</table>
+
+<!-- Table 2: a different table now occupies position 2 — has one unrelated row so the
+     parser produces a non-empty result, but all original holders are "missing", which
+     triggers _try_auto_update_table_no to search other tables. -->
+<table class="wikitable">
+  <tr>
+    <th>Name</th>
+    <th>Party</th>
+    <th>Took office</th>
+    <th>Left office</th>
+  </tr>
+  <tr>
+    <td><a href="/wiki/Wrong_Holder">Wrong Holder</a></td>
+    <td>Ind</td>
+    <td>1990</td>
+    <td>1995</td>
+  </tr>
+</table>
+
+</div>
+</body>
+</html>
