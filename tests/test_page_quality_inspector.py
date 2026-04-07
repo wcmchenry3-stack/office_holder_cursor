@@ -62,7 +62,7 @@ CREATE TABLE IF NOT EXISTS office_details (
 
 CREATE TABLE IF NOT EXISTS parties (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT
+    party_name TEXT
 );
 
 CREATE TABLE IF NOT EXISTS individuals (
