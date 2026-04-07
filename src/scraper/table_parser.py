@@ -1867,7 +1867,7 @@ class Biography:
                     details = {"page_path": urlparse(wiki_link).path.split("/")[-1].strip()}
                 return details
             else:
-                logger.error(
+                logger.warning(
                     f"Failed to fetch biography URL with status code: {response.status_code}"
                 )
                 return {}

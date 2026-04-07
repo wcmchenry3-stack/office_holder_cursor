@@ -1,3 +1,4 @@
+{# Wikipedia requests use a descriptive User-Agent header per Wikimedia API etiquette. #}
 {% extends "base.html" %}
 {% block title %}Scheduled Jobs – Office Holder{% endblock %}
 {% block content %}
@@ -8,6 +9,14 @@
   Update the env var in Render and redeploy to re-enable.
 </div>
 {% endif %}
+
+<div id="activeJobBanner" style="display:none;margin-bottom:1rem;padding:0.75rem 1rem;background:var(--bg2);border:1px solid var(--border);border-radius:6px;">
+  <strong>Job running</strong> — <span id="activeJobId"></span>
+  <span id="activeJobMsg" style="margin-left:0.5rem;color:#888"></span>
+  <button id="stopJobBtn" style="margin-left:1rem;" class="btn btn-secondary btn-sm">Stop</button>
+  <span id="stopJobStatus" style="margin-left:0.5rem;color:#888"></span>
+</div>
+
 <p>Pause/resume individual jobs below. The maintenance job cannot be paused. Cron time changes take effect on next restart.</p>
 <table>
   <thead>
@@ -44,7 +53,7 @@
         {% endif %}
       </td>
       <td>{{ j.description }}</td>
-      <td>{{ j.last_run.started_at if j.last_run else '—' }}</td>
+      <td>{{ j.last_run.started_at.strftime('%Y-%m-%d %H:%M:%S') if j.last_run and j.last_run.started_at else '—' }}</td>
       <td>{% if j.last_run %}<span class="status-{{ j.last_run.status }}">{{ j.last_run.status }}</span>{% else %}—{% endif %}</td>
       <td>{% if j.last_run and j.last_run.duration_s is not none %}{{ "%.0f"|format(j.last_run.duration_s) }}s{% else %}—{% endif %}</td>
       <td>
@@ -99,6 +108,45 @@
   </tbody>
 </table>
 
+<h2 style="margin-top:2rem">Run a Job Manually</h2>
+<p style="color:#888;margin-bottom:1rem">Kick off a run now. The job starts in the background — you can navigate away immediately.</p>
+<div id="runJobResult" style="display:none;margin-bottom:1rem;padding:0.75rem 1rem;background:var(--bg2);border:1px solid var(--border);border-radius:6px;"></div>
+<form id="manualRunForm" style="max-width:480px">
+  <div class="form-group">
+    <label for="runMode">Run mode</label>
+    <select name="run_mode" id="runMode" style="width:100%">
+      <option value="delta" selected>Delta run</option>
+      <option value="full">Full run</option>
+      <option value="delta_live">Delta run + live person update</option>
+      <option value="full_no_bio">Full run (no bio)</option>
+      <option value="delta_no_bio">Delta run (no bio)</option>
+      <option value="bios_only">Bios only (update all individuals)</option>
+      <option value="single_bio">Re-run bio for one individual</option>
+      <option value="populate_category_terms">Populate terms for office category</option>
+      <option value="selected_bios_by_category">Run bios for selected office category</option>
+    </select>
+  </div>
+  <div class="form-group" id="individualRefGroup" style="display:none">
+    <label for="individualRef">Individual (ID or Wikipedia URL)</label>
+    <input type="text" name="individual_ref" id="individualRef" style="width:100%" placeholder="e.g. 42 or https://en.wikipedia.org/wiki/John_Doe">
+  </div>
+  <div class="form-group" id="officeCategoryGroup" style="display:none">
+    <label for="officeCategoryId">Office category</label>
+    <select name="office_category_id" id="officeCategoryId" style="width:100%">
+      <option value="">Select office category</option>
+      {% for oc in office_categories %}
+      <option value="{{ oc.id }}">{{ oc.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="form-group checkbox-group">
+    <label><input type="checkbox" name="force_overwrite" value="1"> Force update (overwrite existing data)</label>
+  </div>
+  <div class="actions">
+    <button type="submit" class="btn" id="manualRunBtn">Run now</button>
+  </div>
+</form>
+
 <script>
 function setJobPaused(jobId, paused) {
   var action = paused ? 'pause' : 'resume';
@@ -133,6 +181,84 @@ function saveAppSetting(key) {
       status.style.color = 'red';
     });
 }
+
+// ---- Active job banner + stop ----
+(function checkActiveJob() {
+  fetch('/api/run/active')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (!data || !data.job_id) return;
+      var banner = document.getElementById('activeJobBanner');
+      document.getElementById('activeJobId').textContent = 'Job ' + data.job_id;
+      document.getElementById('activeJobMsg').textContent = data.message || data.phase || '';
+      banner.style.display = 'block';
+    })
+    .catch(function() {});
+})();
+
+document.getElementById('stopJobBtn').addEventListener('click', function() {
+  var jobIdEl = document.getElementById('activeJobId');
+  var jobId = (jobIdEl.textContent || '').replace('Job ', '').trim();
+  if (!jobId) return;
+  var statusEl = document.getElementById('stopJobStatus');
+  this.disabled = true;
+  statusEl.textContent = 'Stopping…';
+  fetch('/api/run/cancel/' + encodeURIComponent(jobId), {method: 'POST'})
+    .then(function(r) { return r.json(); })
+    .then(function() {
+      statusEl.textContent = 'Stop requested — job will halt at next checkpoint.';
+    })
+    .catch(function(e) {
+      statusEl.textContent = 'Error: ' + e.message;
+      document.getElementById('stopJobBtn').disabled = false;
+    });
+});
+
+// ---- Manual run form ----
+var runMode = document.getElementById('runMode');
+var individualRefGroup = document.getElementById('individualRefGroup');
+var officeCategoryGroup = document.getElementById('officeCategoryGroup');
+
+function updateRunFormVisibility() {
+  var mode = runMode.value;
+  individualRefGroup.style.display = mode === 'single_bio' ? 'block' : 'none';
+  officeCategoryGroup.style.display =
+    (mode === 'populate_category_terms' || mode === 'selected_bios_by_category') ? 'block' : 'none';
+}
+runMode.addEventListener('change', updateRunFormVisibility);
+updateRunFormVisibility();
+
+document.getElementById('manualRunForm').addEventListener('submit', function(e) {
+  e.preventDefault();
+  var btn = document.getElementById('manualRunBtn');
+  var resultEl = document.getElementById('runJobResult');
+  btn.disabled = true;
+  resultEl.style.display = 'none';
+
+  fetch('/api/run', {method: 'POST', body: new FormData(e.target)})
+    .then(function(r) { return r.json().then(function(d) { return {ok: r.ok, status: r.status, data: d}; }); })
+    .then(function(res) {
+      if (!res.ok || !res.data.job_id) {
+        throw new Error(res.data.detail || res.data.error || 'Failed to start job');
+      }
+      resultEl.textContent = 'Job started — ID: ' + res.data.job_id + '. You can navigate away; it will run in the background.';
+      resultEl.style.background = 'var(--bg2)';
+      resultEl.style.borderColor = 'green';
+      resultEl.style.display = 'block';
+      // Refresh active job banner
+      document.getElementById('activeJobId').textContent = 'Job ' + res.data.job_id;
+      document.getElementById('activeJobMsg').textContent = 'just started';
+      document.getElementById('activeJobBanner').style.display = 'block';
+      document.getElementById('stopJobBtn').disabled = false;
+      document.getElementById('stopJobStatus').textContent = '';
+    })
+    .catch(function(err) {
+      resultEl.textContent = 'Error: ' + err.message;
+      resultEl.style.borderColor = 'red';
+      resultEl.style.display = 'block';
+    })
+    .finally(function() { btn.disabled = false; });
+});
 
 document.querySelectorAll('.cron-form').forEach(function(form) {
   form.addEventListener('submit', function(e) {

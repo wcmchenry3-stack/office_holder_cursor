@@ -117,16 +117,21 @@ except Exception as _exc:
     sentry_sdk.flush(timeout=5)
     raise
 """
+    # stdout=PIPE captures only the final JSON line (small).
+    # stderr=None inherits the parent's stderr so subprocess log output streams
+    # directly to the container log without being buffered in the parent process.
+    # capture_output=True (= stdout+stderr PIPE) caused unbounded RAM growth
+    # in long-running jobs as every log line accumulated in memory.
     completed = subprocess.run(
         [sys.executable, "-c", payload],
-        capture_output=True,
+        stdout=subprocess.PIPE,
+        stderr=None,
         text=True,
         check=False,
     )
     if completed.returncode != 0:
-        stderr = (completed.stderr or "").strip()
         stdout = (completed.stdout or "").strip()
-        details = stderr or stdout or "subprocess exited with non-zero status"
+        details = stdout or "subprocess exited with non-zero status — see container logs"
         raise RuntimeError(details)
     stdout = (completed.stdout or "").strip()
     if not stdout:
@@ -339,16 +344,18 @@ except Exception as _exc:
     sentry_sdk.flush(timeout=5)
     raise
 """
+    # Same rationale as _run_daily_delta_in_subprocess: only pipe stdout,
+    # let stderr inherit so logs stream directly to the container without buffering.
     completed = subprocess.run(
         [sys.executable, "-c", payload],
-        capture_output=True,
+        stdout=subprocess.PIPE,
+        stderr=None,
         text=True,
         check=False,
     )
     if completed.returncode != 0:
-        stderr = (completed.stderr or "").strip()
         stdout = (completed.stdout or "").strip()
-        details = stderr or stdout or "subprocess exited with non-zero status"
+        details = stdout or "subprocess exited with non-zero status — see container logs"
         raise RuntimeError(details)
     stdout = (completed.stdout or "").strip()
     if not stdout:
