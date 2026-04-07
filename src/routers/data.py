@@ -1,4 +1,7 @@
-"""Data view routes (individuals, office terms, milestones, wiki drafts)."""
+"""Data view routes (individuals, office terms, milestones, wiki drafts).
+
+Wikipedia requests use a descriptive User-Agent header per Wikimedia API etiquette.
+"""
 
 import os
 
