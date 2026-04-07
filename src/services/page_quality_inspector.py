@@ -103,7 +103,7 @@ def _load_our_data(source_page_id: int, conn) -> list[dict] | None:
     try:
         cur = conn.execute(
             "SELECT i.full_name, i.wiki_url, ot.term_start_year, ot.term_end_year,"
-            " p.name AS party"
+            " p.party_name AS party"
             " FROM office_terms ot"
             " JOIN office_details od ON od.id = ot.office_details_id"
             " JOIN individuals i ON i.id = ot.individual_id"
