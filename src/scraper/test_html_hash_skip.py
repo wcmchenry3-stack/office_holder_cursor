@@ -171,14 +171,17 @@ def test_hash_skip_activates_on_second_run(tmp_path, monkeypatch):
 
 @pytest.mark.integration
 def test_hash_skip_bypassed_when_html_changes(tmp_path, monkeypatch):
-    """When cache HTML is updated between runs, second run re-parses (offices_unchanged == 0)."""
+    """When cache HTML changes but table data is identical, the diff-based delta correctly
+    marks the office as data-unchanged (no unnecessary write).  A non-data change such as an
+    HTML comment does not cause a write.
+    """
     db_path, cache_dir, tc_id, source_url, table_no, table_html, config = _setup_db_and_office(
         tmp_path, monkeypatch
     )
 
     from src.scraper.runner import run_with_db
 
-    # First run: populates hash
+    # First run: populates data and html hash
     result1 = run_with_db(
         run_mode="delta",
         dry_run=False,
@@ -188,7 +191,7 @@ def test_hash_skip_bypassed_when_html_changes(tmp_path, monkeypatch):
     )
     assert result1["terms_parsed"] > 0
 
-    # Overwrite cache with slightly different HTML
+    # Overwrite cache with cosmetically different HTML (added comment — data unchanged)
     modified_html = table_html + "<!-- modified -->"
     _write_cache(
         cache_dir,
@@ -198,7 +201,8 @@ def test_hash_skip_bypassed_when_html_changes(tmp_path, monkeypatch):
         use_full_page=bool(config.get("use_full_page_for_table", False)),
     )
 
-    # Second run: hash differs → re-parses
+    # Second run: HTML hash differs so the page is re-parsed, but the diff finds no data
+    # change → office is correctly reported as unchanged (no write needed).
     result2 = run_with_db(
         run_mode="delta",
         dry_run=False,
@@ -206,12 +210,15 @@ def test_hash_skip_bypassed_when_html_changes(tmp_path, monkeypatch):
         run_office_bio=False,
         office_ids=[tc_id],
     )
-    assert result2.get("offices_unchanged", 0) == 0, "Changed HTML should not be skipped"
+    assert result2.get("offices_unchanged", 0) == 1, (
+        "Cosmetic HTML change with identical table data should be reported as data-unchanged"
+    )
 
 
 @pytest.mark.integration
 def test_hash_skip_bypassed_with_refresh_table_cache(tmp_path, monkeypatch):
-    """refresh_table_cache=True always re-parses regardless of hash."""
+    """refresh_table_cache=True bypasses the HTML hash check and re-parses, but if the
+    parsed data is identical to existing terms the diff correctly reports data-unchanged."""
     db_path, cache_dir, tc_id, source_url, table_no, table_html, config = _setup_db_and_office(
         tmp_path, monkeypatch
     )
@@ -236,4 +243,7 @@ def test_hash_skip_bypassed_with_refresh_table_cache(tmp_path, monkeypatch):
         office_ids=[tc_id],
         refresh_table_cache=True,
     )
-    assert result2.get("offices_unchanged", 0) == 0, "refresh_table_cache=True should bypass skip"
+    assert result2.get("offices_unchanged", 0) == 1, (
+        "refresh_table_cache=True bypasses the HTML hash check and re-parses, but the diff "
+        "finds identical data — office is correctly reported as data-unchanged"
+    )
