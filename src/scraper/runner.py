@@ -140,6 +140,7 @@ def _parse_office_html(
     progress_extra: dict[str, Any] | None = None,
     max_rows: int | None = None,
     run_cache: Any = None,
+    skip_infobox_for_urls: frozenset[str] | None = None,
 ) -> list[dict[str, Any]]:
     """Single code path: build config from office_row and run parser. Returns list of row dicts (parser output).
     When cached_table_html is provided, use it as the page content and table_no=1 (single table).
@@ -172,6 +173,7 @@ def _parse_office_html(
         progress_callback=infobox_progress if progress_callback else None,
         max_rows=max_rows,
         run_cache=run_cache,
+        skip_infobox_for_urls=skip_infobox_for_urls,
     )
 
 
@@ -311,6 +313,160 @@ def _holder_keys_from_parsed_rows(
 def _is_dead_wiki_url(url: str) -> bool:
     u = (url or "").lower()
     return "redlink=1" in u
+
+
+def _year_from_str(s: str | None) -> int | None:
+    """Extract the first 4-digit year from a date string like '1857-01-01' or 'January 1857'."""
+    if not s:
+        return None
+    s = s.strip()
+    if len(s) >= 4 and s[:4].isdigit():
+        return int(s[:4])
+    import re as _re
+
+    m = _re.search(r"\b(1[0-9]{3}|20[0-3][0-9])\b", s)
+    return int(m.group(1)) if m else None
+
+
+def _term_data_changed(
+    existing: dict[str, Any],
+    parsed_row: dict[str, Any],
+    years_only: bool,
+    use_infobox: bool,
+) -> bool:
+    """Return True if the parsed row has meaningfully different data than the existing term.
+
+    For infobox offices we compare at year granularity since the pre-parse gives table-level
+    approximate years while stored dates are precise infobox dates.  The key signal is an
+    active holder (term_end IS NULL and term_end_year IS NULL) gaining an end date.
+    """
+    if years_only:
+        return parsed_row.get("Term Start Year") != existing.get(
+            "term_start_year"
+        ) or parsed_row.get("Term End Year") != existing.get("term_end_year")
+
+    new_end_str = (parsed_row.get("Term End") or "").strip().lower()
+    new_end_year = _year_from_str(parsed_row.get("Term End") or "")
+    old_end = existing.get("term_end")
+    old_end_year = existing.get("term_end_year")
+    old_was_active = old_end is None and old_end_year is None
+
+    # Key signal: active holder (no end) now has an end date in the table
+    if (
+        old_was_active
+        and new_end_year is not None
+        and new_end_str not in ("present", "incumbent", "")
+    ):
+        return True
+
+    if use_infobox:
+        # Year-level comparison (table dates are approximate, stored dates are precise infobox dates)
+        new_start_year = _year_from_str(parsed_row.get("Term Start") or "")
+        old_start_year = _year_from_str(existing.get("term_start") or "")
+        if old_start_year is None:
+            old_start_year = existing.get("term_start_year")
+        old_end_year_derived = _year_from_str(old_end or "") if old_end else old_end_year
+        return new_start_year != old_start_year or new_end_year != old_end_year_derived
+
+    # Non-infobox: compare normalized full dates
+    new_start, _ = normalize_date(parsed_row.get("Term Start") or "")
+    new_end, _ = normalize_date(parsed_row.get("Term End") or "")
+    return new_start != existing.get("term_start") or new_end != existing.get("term_end")
+
+
+def _diff_office_table(
+    existing_terms: list[dict[str, Any]],
+    parsed_rows: list[dict[str, Any]],
+    office_id: int,
+    years_only: bool,
+    use_infobox: bool,
+) -> dict[str, Any]:
+    """Diff freshly parsed rows against existing office_terms.
+
+    Returns a dict with keys:
+      new_rows          – parsed rows whose wiki_url is not in any existing term
+      changed_rows      – parsed rows matching an existing term but with different dates;
+                          each dict has "_existing_term_id" set to the existing term's id
+      unchanged_rows    – parsed rows matching an existing term with identical dates;
+                          each dict has "_existing_term_id" set
+      vanished_real_ids – ids of existing terms for real people not in the new parse
+      placeholder_ids   – ids of existing terms for non-person placeholders (state pages etc.)
+    """
+    # Build lookup: canonical_url -> list[existing_term]
+    existing_by_url: dict[str, list[dict]] = {}
+    for term in existing_terms:
+        url = (term.get("wiki_url") or "").strip()
+        if not url or _is_dead_wiki_url(url) or url.startswith("No link:"):
+            continue
+        key = canonical_holder_url(url)
+        if key:
+            existing_by_url.setdefault(key, []).append(term)
+
+    new_rows: list[dict] = []
+    changed_rows: list[dict] = []
+    unchanged_rows: list[dict] = []
+    matched_term_ids: set[int] = set()
+
+    for row in parsed_rows:
+        raw_url = (row.get("Wiki Link") or "").strip()
+        if not raw_url or raw_url == "No link" or _is_dead_wiki_url(raw_url):
+            # No-link / dead-link rows: treat as new (or skip if no name)
+            new_rows.append(row)
+            continue
+
+        canon = canonical_holder_url(raw_url)
+        candidates = existing_by_url.get(canon or "", [])
+
+        if not candidates:
+            new_rows.append(row)
+            continue
+
+        # Match by closest start year when multiple existing terms for same person
+        best = candidates[0]
+        if len(candidates) > 1:
+            new_start_year = (
+                row.get("Term Start Year")
+                if years_only
+                else _year_from_str(row.get("Term Start") or "")
+            )
+            if new_start_year:
+
+                def _dist(t: dict) -> int:
+                    y = t.get("term_start_year") or _year_from_str(t.get("term_start") or "")
+                    return abs((y or 0) - new_start_year)
+
+                best = min(candidates, key=_dist)
+
+        matched_term_ids.add(best["id"])
+        if _term_data_changed(best, row, years_only, use_infobox):
+            row = {**row, "_existing_term_id": best["id"]}
+            changed_rows.append(row)
+        else:
+            row = {**row, "_existing_term_id": best["id"]}
+            unchanged_rows.append(row)
+
+    # Find vanished terms (existing but not matched by any parsed row)
+    vanished_real_ids: list[int] = []
+    placeholder_ids: list[int] = []
+    for term in existing_terms:
+        if term["id"] in matched_term_ids:
+            continue
+        url = (term.get("wiki_url") or "").strip()
+        # Dead-link or "No link:" entries are non-person placeholders safe to delete
+        if _is_dead_wiki_url(url) or url.startswith("No link:") or not url:
+            placeholder_ids.append(term["id"])
+        else:
+            # Any term with a real wiki_url is treated as a real holder (even if
+            # full_name is None — it may not have had bio fetched yet).
+            vanished_real_ids.append(term["id"])
+
+    return {
+        "new_rows": new_rows,
+        "changed_rows": changed_rows,
+        "unchanged_rows": unchanged_rows,
+        "vanished_real_ids": vanished_real_ids,
+        "placeholder_ids": placeholder_ids,
+    }
 
 
 _FILL_RATE_DROP_THRESHOLD = 0.30  # 30 percentage points
@@ -823,6 +979,9 @@ class _OfficeResult:
     revalidate_failure: tuple[int, str] | None = None  # (office_id, message) to append
     missing_holders: list[str] | None = None  # for revalidate_missing_holders_list
     replaceable: bool = False  # add office_id to replaceable set
+    term_ids_to_delete: list[int] = field(
+        default_factory=list
+    )  # targeted: delete these before insert
 
 
 def _process_single_office(
@@ -926,10 +1085,11 @@ def _process_single_office(
         )
         return _OfficeResult(offices_unchanged_inc=True)
 
-    # When office has existing terms and find_date_in_infobox is on: validate from
-    # table-only parse first so we don't fetch infoboxes only to fail validation later.
     use_infobox = bool(office_row.get("find_date_in_infobox"))
-    if has_existing and use_infobox:
+    years_only = bool(office_row.get("years_only"))
+
+    if has_existing:
+        # Pre-parse (no infobox) to diff against existing terms
         office_row_no_infobox = {**office_row, "find_date_in_infobox": False}
         table_data_pre = _parse_office_html(
             office_row_no_infobox,
@@ -942,94 +1102,131 @@ def _process_single_office(
             max_rows=cfg.max_rows_per_table,
             run_cache=cfg.run_cache,
         )
+
         if len(table_data_pre) == 0:
             _log.warning(
-                f"Repopulate validation failed for {office_name}: table parsed to zero rows (existing had {len(existing_terms)}). Keeping existing terms."
+                f"Repopulate validation failed for {office_name}: table parsed to zero rows "
+                f"(existing had {len(existing_terms)}). Keeping existing terms."
             )
             return _OfficeResult(
                 skip=True,
                 revalidate_failure=(office_id, "Table parsed to zero rows. Kept existing terms."),
             )
-        old_holders_years = _filtered_existing_holder_keys(
-            existing_terms, _holder_key_from_existing_term_years
+
+        diff = _diff_office_table(
+            existing_terms, table_data_pre, office_id, years_only, use_infobox
         )
-        years_only_pre = bool(office_row.get("years_only"))
-        new_holders_years = _holder_keys_from_parsed_rows(
-            table_data_pre, office_id, years_only_pre, key_years_only=True
+        new_rows = diff["new_rows"]
+        changed_rows = diff["changed_rows"]
+        unchanged_rows = diff["unchanged_rows"]
+        vanished_real_ids = diff["vanished_real_ids"]
+        placeholder_ids = diff["placeholder_ids"]
+
+        # Log vanished real holders (keep them — don't delete and don't block)
+        if vanished_real_ids:
+            _log.info(
+                f"{office_name}: {len(vanished_real_ids)} existing holder(s) not found in new "
+                f"parse — keeping their terms (use force-overwrite to replace)."
+            )
+
+        # If nothing changed: update hash and skip write (dry/test runs still fall through to show preview)
+        if (
+            not new_rows
+            and not changed_rows
+            and not placeholder_ids
+            and not cfg.dry_run
+            and not cfg.test_run
+        ):
+            _log.debug(
+                f"Skipped (data unchanged): {office_name} — no new, changed, or placeholder rows."
+            )
+            return _OfficeResult(offices_unchanged_inc=True, html_hash=html_hash)
+
+        # Build skip set for infobox optimization: unchanged rows don't need infobox re-fetch
+        skip_infobox_for_urls: frozenset[str] = frozenset(
+            u
+            for r in unchanged_rows
+            for u in [canonical_holder_url((r.get("Wiki Link") or "").strip())]
+            if u
+            and (r.get("Wiki Link") or "").strip() not in ("", "No link")
+            and not _is_dead_wiki_url((r.get("Wiki Link") or "").strip())
         )
-        missing_years = old_holders_years - new_holders_years
-        if missing_years:
-            if cfg.run_mode in ("full", "delta", "live_person"):
-                found_table_no, found_rows = _try_auto_update_table_no(
-                    office_row,
-                    existing_terms,
-                    cfg.party_list,
-                    cfg.offices_parser,
-                    refresh_table_cache=cfg.refresh_table_cache,
-                    years_only=years_only_pre,
-                    key_years_only=True,
-                    current_missing_count=len(missing_years),
-                )
-                if found_table_no and found_rows is not None:
-                    _log.info(
-                        f"Auto-updated table_no for {office_name}: {table_no} -> {found_table_no} based on validation match."
-                    )
-                    office_row["table_no"] = int(found_table_no)
-                    table_no = int(found_table_no)
-                    table_data_pre = found_rows
-                    missing_years = _missing_holder_keys(
-                        existing_terms,
-                        table_data_pre,
-                        office_id,
-                        years_only_pre,
-                        key_years_only=True,
-                    )
-                    if not (cfg.dry_run or cfg.test_run):
-                        od_id_for_tc = office_row.get("office_details_id")
-                        if od_id_for_tc is not None:
-                            with get_connection() as conn:
-                                db_offices._safe_renumber_table_nos(
-                                    int(od_id_for_tc),
-                                    {int(office_id): int(table_no)},
-                                    conn,
-                                )
-            missing_list = _missing_holders_display(
-                existing_terms, missing_years, _holder_key_from_existing_term_years
+
+        # Collect term IDs to delete: changed rows (will be re-inserted) + placeholder cleanup
+        term_ids_to_delete = [
+            r["_existing_term_id"] for r in changed_rows if r.get("_existing_term_id")
+        ] + placeholder_ids
+
+        # Auto-table-no: if majority of existing holders are vanished, try shifting table
+        if vanished_real_ids and len(vanished_real_ids) > len(existing_terms) * 0.4:
+            found_table_no, found_rows = _try_auto_update_table_no(
+                office_row,
+                existing_terms,
+                cfg.party_list,
+                cfg.offices_parser,
+                refresh_table_cache=cfg.refresh_table_cache,
+                years_only=years_only,
+                key_years_only=True,
+                current_missing_count=len(vanished_real_ids),
             )
-            missing_str = _format_missing_holders(missing_list)
-            force_replace_early = cfg.force_overwrite or (
-                cfg.force_replace_office_ids and office_id in cfg.force_replace_office_ids
-            )
-            if force_replace_early:
+            if found_table_no and found_rows is not None:
                 _log.info(
-                    f"Force overwrite for {office_name}: table-only check found new list missing {len(missing_years)} holder(s); replacing anyway. Missing: {missing_str}"
+                    f"Auto-updated table_no for {office_name}: {table_no} -> {found_table_no}."
                 )
-            elif missing_years:
-                _log.warning(
-                    f"Repopulate validation failed for {office_name}: table-only check found new list missing {len(missing_years)} office holder(s). Skipping infobox fetch. Keeping existing terms. Missing: {missing_str}"
+                office_row["table_no"] = int(found_table_no)
+                table_no = int(found_table_no)
+                # Re-run diff with updated table data
+                diff2 = _diff_office_table(
+                    existing_terms, found_rows, office_id, years_only, use_infobox
                 )
-                return _OfficeResult(
-                    skip=True,
-                    revalidate_failure=(
-                        office_id,
-                        "New list is missing office holders that were in existing data. Kept existing terms.",
-                    ),
-                    missing_holders=missing_list,
+                new_rows = diff2["new_rows"]
+                changed_rows = diff2["changed_rows"]
+                unchanged_rows = diff2["unchanged_rows"]
+                placeholder_ids = diff2["placeholder_ids"]
+                skip_infobox_for_urls = frozenset(
+                    u
+                    for r in unchanged_rows
+                    for u in [canonical_holder_url((r.get("Wiki Link") or "").strip())]
+                    if u and (r.get("Wiki Link") or "").strip() not in ("", "No link")
                 )
+                term_ids_to_delete = [
+                    r["_existing_term_id"] for r in changed_rows if r.get("_existing_term_id")
+                ] + diff2["placeholder_ids"]
+                if not (cfg.dry_run or cfg.test_run):
+                    od_id_for_tc = office_row.get("office_details_id")
+                    if od_id_for_tc is not None:
+                        with get_connection() as conn:
+                            db_offices._safe_renumber_table_nos(
+                                int(od_id_for_tc),
+                                {int(office_id): int(table_no)},
+                                conn,
+                            )
+                # After auto-update, if nothing changed, skip write (preserve existing)
+                # dry/test runs still fall through to show preview
+                if (
+                    not new_rows
+                    and not changed_rows
+                    and not diff2["placeholder_ids"]
+                    and not cfg.dry_run
+                    and not cfg.test_run
+                ):
+                    _log.debug(
+                        f"Skipped (data unchanged after table shift): {office_name} — "
+                        f"all holders present at new table {table_no}."
+                    )
+                    return _OfficeResult(offices_unchanged_inc=True, html_hash=html_hash)
+    else:
+        # No existing terms: everything is new
+        skip_infobox_for_urls = frozenset()
+        term_ids_to_delete = []
+        new_rows = None  # sentinel: will be set from full parse below
+        changed_rows = []
 
-        # Delta: if holder set is identical (no missing, no new), skip infobox — existing
-        # terms already have accurate dates from the previous infobox run.
-        if cfg.run_mode == "delta" and not missing_years:
-            current_new_holders_years = _holder_keys_from_parsed_rows(
-                table_data_pre, office_id, years_only_pre, key_years_only=True
-            )
-            if current_new_holders_years == old_holders_years:
-                _log.debug(
-                    f"Skipped (holders unchanged): {office_name} — holder set identical to existing terms. No write."
-                )
-                return _OfficeResult(offices_unchanged_inc=True, html_hash=html_hash)
+    if cfg.cancel_check and cfg.cancel_check():
+        _log.info("Run cancelled by user.")
+        return _OfficeResult(cancel=True)
 
-    # Parse table (shared code path); report infobox progress when find_date_in_infobox
+    # Full parse: with infobox (skipped for unchanged_rows via skip_infobox_for_urls)
     table_data = _parse_office_html(
         office_row,
         html_content,
@@ -1037,14 +1234,16 @@ def _process_single_office(
         cfg.party_list,
         cfg.offices_parser,
         cached_table_html=cached_table_html,
-        progress_callback=cfg.report,
-        progress_extra=table_progress_extra,
+        progress_callback=cfg.report if use_infobox else None,
+        progress_extra=table_progress_extra if use_infobox else None,
+        max_rows=cfg.max_rows_per_table,
         run_cache=cfg.run_cache,
+        skip_infobox_for_urls=skip_infobox_for_urls if has_existing else frozenset(),
     )
     if cfg.max_rows_per_table is not None and cfg.max_rows_per_table >= 0:
         table_data = table_data[: cfg.max_rows_per_table]
     if bool(office_row.get("remove_duplicates")):
-        table_data = _dedupe_parsed_rows(table_data, years_only=bool(office_row.get("years_only")))
+        table_data = _dedupe_parsed_rows(table_data, years_only=years_only)
 
     if has_existing and len(table_data) == 0:
         _log.warning(
@@ -1055,76 +1254,31 @@ def _process_single_office(
             revalidate_failure=(office_id, "Table parsed to zero rows. Kept existing terms."),
         )
 
-    replaceable = False
-    revalidate_failure = None
-    missing_holders_out: list[str] | None = None
-
-    if has_existing and table_data:
-        force_replace = (
-            cfg.force_replace_office_ids and office_id in cfg.force_replace_office_ids
-        ) or cfg.force_overwrite
-        old_holders = _filtered_existing_holder_keys(existing_terms, _holder_key_from_existing_term)
-        years_only = bool(office_row.get("years_only"))
-        new_holders = _holder_keys_from_parsed_rows(table_data, office_id, years_only)
-        missing = old_holders - new_holders
-        if missing:
-            if cfg.run_mode in ("full", "delta", "live_person"):
-                found_table_no, found_rows = _try_auto_update_table_no(
-                    office_row,
-                    existing_terms,
-                    cfg.party_list,
-                    cfg.offices_parser,
-                    refresh_table_cache=cfg.refresh_table_cache,
-                    years_only=years_only,
-                    key_years_only=False,
-                    current_missing_count=len(missing),
-                )
-                if found_table_no and found_rows is not None:
-                    _log.info(
-                        f"Auto-updated table_no for {office_name}: {table_no} -> {found_table_no} based on holder match."
-                    )
-                    office_row["table_no"] = int(found_table_no)
-                    table_no = int(found_table_no)
-                    table_data = found_rows
-                    missing = _missing_holder_keys(
-                        existing_terms, table_data, office_id, years_only
-                    )
-                    if not (cfg.dry_run or cfg.test_run):
-                        od_id_for_tc = office_row.get("office_details_id")
-                        if od_id_for_tc is not None:
-                            with get_connection() as conn:
-                                db_offices._safe_renumber_table_nos(
-                                    int(od_id_for_tc),
-                                    {int(office_id): int(table_no)},
-                                    conn,
-                                )
-            missing_list = _missing_holders_display(
-                existing_terms, missing, _holder_key_from_existing_term
-            )
-            missing_str = _format_missing_holders(missing_list)
-            if force_replace:
-                _log.info(
-                    f"Force override for {office_name}: replacing despite {len(missing)} holder(s) missing from new list. Missing: {missing_str}"
-                )
-                replaceable = True
-            elif missing:
-                _log.warning(
-                    f"Repopulate validation failed for {office_name}: new list is missing {len(missing)} office holder(s) that were in existing data. Keeping existing terms. Missing: {missing_str}"
-                )
-                revalidate_failure = (
-                    office_id,
-                    "New list is missing office holders that were in existing data. Kept existing terms.",
-                )
-                missing_holders_out = missing_list
-                return _OfficeResult(
-                    skip=True,
-                    revalidate_failure=revalidate_failure,
-                    missing_holders=missing_holders_out,
-                )
-            else:
-                replaceable = True
-        else:
-            replaceable = True
+    # force_overwrite: delete-all + insert-all (bypass targeted write path).
+    # For normal delta with has_existing, we use term_ids_to_delete (targeted path) instead.
+    force_replace = (
+        cfg.force_replace_office_ids and office_id in cfg.force_replace_office_ids
+    ) or cfg.force_overwrite
+    if force_replace:
+        # Delete-all will be done via replaceable_office_ids; clear targeted deletes
+        term_ids_to_delete = []
+        replaceable = True
+    elif not has_existing:
+        # First-time parse: insert all rows, no prior terms to worry about
+        replaceable = False
+    else:
+        # Delta targeted path: use term_ids_to_delete; don't delete all existing terms.
+        # Filter full parse results: only keep rows that need a write (new or changed).
+        # In dry/test runs keep all rows so the preview shows the complete table.
+        if skip_infobox_for_urls and not cfg.dry_run and not cfg.test_run:
+            table_data = [
+                r
+                for r in table_data
+                if canonical_holder_url((r.get("Wiki Link") or "").strip())
+                not in skip_infobox_for_urls
+                or (r.get("Wiki Link") or "").strip() in ("", "No link")
+            ]
+        replaceable = False
 
     if cfg.cancel_check and cfg.cancel_check():
         _log.info("Run cancelled by user.")
@@ -1142,6 +1296,7 @@ def _process_single_office(
         html_hash=html_hash,
         link_fill_rate=link_fill_rate,
         replaceable=replaceable,
+        term_ids_to_delete=term_ids_to_delete if has_existing else [],
     )
 
 
@@ -2245,6 +2400,7 @@ def run_with_db(
         unique_wiki_urls: set[str] = set()
         all_office_data: list[dict] = []
         replaceable_office_ids: set[int] = set()
+        all_term_ids_to_delete: list[int] = []
         revalidate_failed_offices: list[tuple[int, str]] = []
         revalidate_missing_holders_list: list[list[str]] = (
             []
@@ -2342,6 +2498,8 @@ def run_with_db(
                 _check_fill_rate_drop(office_row, result.link_fill_rate)
             if result.replaceable:
                 replaceable_office_ids.add(office_id)
+            if result.term_ids_to_delete:
+                all_term_ids_to_delete.extend(result.term_ids_to_delete)
 
             for row in result.rows:
                 wiki_link = row.get("Wiki Link")
@@ -2414,6 +2572,9 @@ def run_with_db(
             try:
                 for oid in replaceable_office_ids:
                     db_office_terms.delete_office_terms_for_office(oid, conn=conn)
+                # Targeted deletes: changed rows being replaced + placeholder cleanup
+                for tid in all_term_ids_to_delete:
+                    db_office_terms.delete_office_term_by_id(tid, conn=conn)
 
                 for row in all_office_data:
                     office_id = row.get("_office_id")

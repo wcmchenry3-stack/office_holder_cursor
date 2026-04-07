@@ -560,6 +560,7 @@ class Offices:
         progress_callback=None,
         max_rows=None,
         run_cache=None,
+        skip_infobox_for_urls=None,
     ):
         logger.debug(f"---------------\n\n Processing table with config: {table_config}")
 
@@ -579,6 +580,11 @@ class Offices:
         accumulated_results = []
         total_rows = len(rows)
         report_infobox = table_config.get("find_date_in_infobox") and progress_callback is not None
+        if skip_infobox_for_urls:
+            table_config = {
+                **table_config,
+                "skip_infobox_for_urls": frozenset(skip_infobox_for_urls),
+            }
 
         # Per-table cache so we only call find_term_dates once per wiki_link (same person in multiple rows)
         self._infobox_cache = {}
@@ -1275,6 +1281,20 @@ class Offices:
                     f" years_only: parsed year range {term_start_year}–{term_end_year} from {cell_text!r}"
                 )
                 return (None, None, term_start_year, term_end_year)
+
+            # Skip infobox for known-unchanged rows (delta optimization).
+            skip_infobox_for_urls = (
+                table_config_to_parse.get("skip_infobox_for_urls") or frozenset()
+            )
+            if (
+                table_config_to_parse.get("find_date_in_infobox")
+                and skip_infobox_for_urls
+                and wiki_link
+            ):
+                if canonical_holder_url(wiki_link) in skip_infobox_for_urls:
+                    cell_text = start_cell.get_text(separator=" ").strip() if start_cell else ""
+                    term_start_year, term_end_year = self.DataCleanup.parse_year_range(cell_text)
+                    return (None, None, term_start_year, term_end_year)
 
             # Find date in infobox: fetch full dates from person's bio; collect all matching terms from infobox
             if table_config_to_parse["find_date_in_infobox"] == True:
