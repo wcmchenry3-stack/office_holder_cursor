@@ -210,9 +210,9 @@ def test_hash_skip_bypassed_when_html_changes(tmp_path, monkeypatch):
         run_office_bio=False,
         office_ids=[tc_id],
     )
-    assert result2.get("offices_unchanged", 0) == 1, (
-        "Cosmetic HTML change with identical table data should be reported as data-unchanged"
-    )
+    assert (
+        result2.get("offices_unchanged", 0) == 1
+    ), "Cosmetic HTML change with identical table data should be reported as data-unchanged"
 
 
 @pytest.mark.integration

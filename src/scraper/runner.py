@@ -323,7 +323,8 @@ def _year_from_str(s: str | None) -> int | None:
     if len(s) >= 4 and s[:4].isdigit():
         return int(s[:4])
     import re as _re
-    m = _re.search(r'\b(1[0-9]{3}|20[0-3][0-9])\b', s)
+
+    m = _re.search(r"\b(1[0-9]{3}|20[0-3][0-9])\b", s)
     return int(m.group(1)) if m else None
 
 
@@ -340,10 +341,9 @@ def _term_data_changed(
     active holder (term_end IS NULL and term_end_year IS NULL) gaining an end date.
     """
     if years_only:
-        return (
-            parsed_row.get("Term Start Year") != existing.get("term_start_year")
-            or parsed_row.get("Term End Year") != existing.get("term_end_year")
-        )
+        return parsed_row.get("Term Start Year") != existing.get(
+            "term_start_year"
+        ) or parsed_row.get("Term End Year") != existing.get("term_end_year")
 
     new_end_str = (parsed_row.get("Term End") or "").strip().lower()
     new_end_year = _year_from_str(parsed_row.get("Term End") or "")
@@ -352,7 +352,11 @@ def _term_data_changed(
     old_was_active = old_end is None and old_end_year is None
 
     # Key signal: active holder (no end) now has an end date in the table
-    if old_was_active and new_end_year is not None and new_end_str not in ("present", "incumbent", ""):
+    if (
+        old_was_active
+        and new_end_year is not None
+        and new_end_str not in ("present", "incumbent", "")
+    ):
         return True
 
     if use_infobox:
@@ -426,9 +430,11 @@ def _diff_office_table(
                 else _year_from_str(row.get("Term Start") or "")
             )
             if new_start_year:
+
                 def _dist(t: dict) -> int:
                     y = t.get("term_start_year") or _year_from_str(t.get("term_start") or "")
                     return abs((y or 0) - new_start_year)
+
                 best = min(candidates, key=_dist)
 
         matched_term_ids.add(best["id"])
@@ -973,7 +979,9 @@ class _OfficeResult:
     revalidate_failure: tuple[int, str] | None = None  # (office_id, message) to append
     missing_holders: list[str] | None = None  # for revalidate_missing_holders_list
     replaceable: bool = False  # add office_id to replaceable set
-    term_ids_to_delete: list[int] = field(default_factory=list)  # targeted: delete these before insert
+    term_ids_to_delete: list[int] = field(
+        default_factory=list
+    )  # targeted: delete these before insert
 
 
 def _process_single_office(
@@ -1105,7 +1113,9 @@ def _process_single_office(
                 revalidate_failure=(office_id, "Table parsed to zero rows. Kept existing terms."),
             )
 
-        diff = _diff_office_table(existing_terms, table_data_pre, office_id, years_only, use_infobox)
+        diff = _diff_office_table(
+            existing_terms, table_data_pre, office_id, years_only, use_infobox
+        )
         new_rows = diff["new_rows"]
         changed_rows = diff["changed_rows"]
         unchanged_rows = diff["unchanged_rows"]
@@ -1120,7 +1130,13 @@ def _process_single_office(
             )
 
         # If nothing changed: update hash and skip write (dry/test runs still fall through to show preview)
-        if not new_rows and not changed_rows and not placeholder_ids and not cfg.dry_run and not cfg.test_run:
+        if (
+            not new_rows
+            and not changed_rows
+            and not placeholder_ids
+            and not cfg.dry_run
+            and not cfg.test_run
+        ):
             _log.debug(
                 f"Skipped (data unchanged): {office_name} — no new, changed, or placeholder rows."
             )
@@ -1137,10 +1153,9 @@ def _process_single_office(
         )
 
         # Collect term IDs to delete: changed rows (will be re-inserted) + placeholder cleanup
-        term_ids_to_delete = (
-            [r["_existing_term_id"] for r in changed_rows if r.get("_existing_term_id")]
-            + placeholder_ids
-        )
+        term_ids_to_delete = [
+            r["_existing_term_id"] for r in changed_rows if r.get("_existing_term_id")
+        ] + placeholder_ids
 
         # Auto-table-no: if majority of existing holders are vanished, try shifting table
         if vanished_real_ids and len(vanished_real_ids) > len(existing_terms) * 0.4:
@@ -1174,10 +1189,9 @@ def _process_single_office(
                     for u in [canonical_holder_url((r.get("Wiki Link") or "").strip())]
                     if u and (r.get("Wiki Link") or "").strip() not in ("", "No link")
                 )
-                term_ids_to_delete = (
-                    [r["_existing_term_id"] for r in changed_rows if r.get("_existing_term_id")]
-                    + diff2["placeholder_ids"]
-                )
+                term_ids_to_delete = [
+                    r["_existing_term_id"] for r in changed_rows if r.get("_existing_term_id")
+                ] + diff2["placeholder_ids"]
                 if not (cfg.dry_run or cfg.test_run):
                     od_id_for_tc = office_row.get("office_details_id")
                     if od_id_for_tc is not None:
@@ -1189,8 +1203,13 @@ def _process_single_office(
                             )
                 # After auto-update, if nothing changed, skip write (preserve existing)
                 # dry/test runs still fall through to show preview
-                if (not new_rows and not changed_rows and not diff2["placeholder_ids"]
-                        and not cfg.dry_run and not cfg.test_run):
+                if (
+                    not new_rows
+                    and not changed_rows
+                    and not diff2["placeholder_ids"]
+                    and not cfg.dry_run
+                    and not cfg.test_run
+                ):
                     _log.debug(
                         f"Skipped (data unchanged after table shift): {office_name} — "
                         f"all holders present at new table {table_no}."
@@ -1253,8 +1272,10 @@ def _process_single_office(
         # In dry/test runs keep all rows so the preview shows the complete table.
         if skip_infobox_for_urls and not cfg.dry_run and not cfg.test_run:
             table_data = [
-                r for r in table_data
-                if canonical_holder_url((r.get("Wiki Link") or "").strip()) not in skip_infobox_for_urls
+                r
+                for r in table_data
+                if canonical_holder_url((r.get("Wiki Link") or "").strip())
+                not in skip_infobox_for_urls
                 or (r.get("Wiki Link") or "").strip() in ("", "No link")
             ]
         replaceable = False
