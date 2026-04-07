@@ -185,6 +185,33 @@ def get_existing_terms_for_office(office_id: int, conn=None) -> list[dict[str, A
             conn.close()
 
 
+def delete_office_terms_for_offices(office_ids: list[int], conn=None) -> int:
+    """Delete all office_terms for multiple units in a single query. Returns count deleted."""
+    if not office_ids:
+        return 0
+    own_conn = conn is None
+    if own_conn:
+        conn = get_connection()
+    try:
+        placeholders = ",".join(["%s"] * len(office_ids))
+        if _has_hierarchy_terms(conn):
+            cur = conn.execute(
+                f"DELETE FROM office_terms WHERE office_table_config_id IN ({placeholders})",
+                office_ids,
+            )
+        else:
+            cur = conn.execute(
+                f"DELETE FROM office_terms WHERE office_id IN ({placeholders})",
+                office_ids,
+            )
+        if own_conn:
+            conn.commit()
+        return cur.rowcount
+    finally:
+        if own_conn:
+            conn.close()
+
+
 def delete_office_term_by_id(term_id: int, conn=None) -> None:
     """Delete one specific office_term by its primary key id."""
     own_conn = conn is None

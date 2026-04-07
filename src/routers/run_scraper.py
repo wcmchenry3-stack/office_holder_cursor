@@ -207,6 +207,15 @@ def _run_job_worker(
             return _run_job_store.get(job_id, {}).get("cancelled", False)
 
     sentry_sdk.set_context("scraper_job", {"job_id": job_id, "run_mode": run_mode})
+    _job_start = time.time()
+    logger.info(
+        "[JOB START] job_id=%s run_mode=%s dry_run=%s test_run=%s office_ids=%s",
+        job_id,
+        run_mode,
+        dry_run,
+        test_run,
+        office_id_list,
+    )
     try:
         result = run_with_db(
             run_mode=run_mode,
@@ -228,6 +237,13 @@ def _run_job_worker(
             if job_id in _run_job_store:
                 _run_job_store[job_id]["status"] = final_status
                 _run_job_store[job_id]["result"] = result
+        logger.info(
+            "[JOB END] job_id=%s run_mode=%s status=%s duration_s=%.1f",
+            job_id,
+            run_mode,
+            final_status,
+            time.time() - _job_start,
+        )
         try:
             db_scraper_jobs.update_job(job_id, final_status, result)
         except Exception:
@@ -240,6 +256,13 @@ def _run_job_worker(
             if job_id in _run_job_store:
                 _run_job_store[job_id]["status"] = "error"
                 _run_job_store[job_id]["error"] = str(e)
+        logger.info(
+            "[JOB END] job_id=%s run_mode=%s status=error duration_s=%.1f error=%r",
+            job_id,
+            run_mode,
+            time.time() - _job_start,
+            str(e),
+        )
         try:
             db_scraper_jobs.update_job(job_id, "error", {"error": str(e)})
         except Exception:

@@ -1,8 +1,12 @@
 """Database connection and initialization."""
 
+import logging
 import os
 import sqlite3
+import threading
 from pathlib import Path
+
+_log = logging.getLogger(__name__)
 
 # Exception type tuples for use in CRUD modules — work for both backends.
 # Catch _DB_UNIQUE_ERRORS and check "UNIQUE" / "duplicate key" in str(e).
@@ -17,6 +21,37 @@ try:
     _DB_OPERATIONAL_ERRORS = _DB_OPERATIONAL_ERRORS + (psycopg2.OperationalError,)
 except ImportError:
     pass
+
+# PostgreSQL connection pool — initialized lazily on first use.
+# SimpleConnectionPool is sufficient; the scraper runs single-threaded but the
+# web app serves concurrent requests via threads, so ThreadedConnectionPool is used.
+_pg_pool = None
+_pg_pool_lock = threading.Lock()
+_PG_POOL_MIN = 1
+_PG_POOL_MAX = 5
+
+
+def _get_pg_pool():
+    """Return the shared PostgreSQL connection pool, creating it if needed."""
+    global _pg_pool
+    if _pg_pool is None:
+        with _pg_pool_lock:
+            if _pg_pool is None:
+                import psycopg2.pool
+                import psycopg2.extras
+
+                _pg_pool = psycopg2.pool.ThreadedConnectionPool(
+                    _PG_POOL_MIN,
+                    _PG_POOL_MAX,
+                    os.environ["DATABASE_URL"],
+                    cursor_factory=psycopg2.extras.DictCursor,
+                )
+                _log.info(
+                    "PostgreSQL connection pool created (min=%d max=%d)",
+                    _PG_POOL_MIN,
+                    _PG_POOL_MAX,
+                )
+    return _pg_pool
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -109,8 +144,9 @@ class _PGConnWrapper:
     modules can call conn.execute() / conn.executemany() without changes.
     """
 
-    def __init__(self, conn):
+    def __init__(self, conn, pool=None):
         self._conn = conn
+        self._pool = pool
 
     def execute(self, sql, params=None):
         cur = self._conn.cursor()
@@ -135,7 +171,10 @@ class _PGConnWrapper:
         self._conn.rollback()
 
     def close(self):
-        self._conn.close()
+        if self._pool is not None:
+            self._pool.putconn(self._conn)
+        else:
+            self._conn.close()
 
     def cursor(self):
         return self._conn.cursor()
@@ -152,6 +191,7 @@ class _PGConnWrapper:
             self._conn.commit()
         else:
             self._conn.rollback()
+        self.close()
         return False  # do not suppress exceptions
 
 
@@ -272,14 +312,9 @@ def get_connection(path: Path | None = None):
     Tests (path provided, or DATABASE_URL not set): returns a _SQLiteConnWrapper.
     """
     if is_postgres() and path is None:
-        import psycopg2
-        import psycopg2.extras
-
-        conn = psycopg2.connect(
-            os.environ["DATABASE_URL"],
-            cursor_factory=psycopg2.extras.DictCursor,
-        )
-        return _PGConnWrapper(conn)
+        pool = _get_pg_pool()
+        conn = pool.getconn()
+        return _PGConnWrapper(conn, pool=pool)
 
     # Test-only: SQLite path — wrapped to accept PostgreSQL-style SQL from CRUD modules
     ensure_data_dir()

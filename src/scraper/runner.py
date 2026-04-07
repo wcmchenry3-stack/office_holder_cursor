@@ -2570,8 +2570,9 @@ def run_with_db(
             report("saving", 0, 1, "Writing to database…", {"terms": total_terms})
             conn = get_connection()
             try:
-                for oid in replaceable_office_ids:
-                    db_office_terms.delete_office_terms_for_office(oid, conn=conn)
+                db_office_terms.delete_office_terms_for_offices(
+                    list(replaceable_office_ids), conn=conn
+                )
                 # Targeted deletes: changed rows being replaced + placeholder cleanup
                 for tid in all_term_ids_to_delete:
                     db_office_terms.delete_office_term_by_id(tid, conn=conn)

@@ -238,6 +238,8 @@ class DataCleanup:
 
         # Never use today for missing parts: year-only must not become a full date; use imprecise path instead.
         s = date_str.strip() if date_str else ""
+        if not s:
+            return "Invalid date"
         if re.match(r"^\s*(17|18|19|20)\d{2}\s*$", s):
             logger.debug(
                 "year-only date in format_date; returning Invalid date so year+imprecise path is used"
