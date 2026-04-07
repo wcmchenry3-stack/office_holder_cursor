@@ -284,6 +284,72 @@ def _recompute_is_living_for_individual(individual_id: int, conn) -> None:
         )
 
 
+def recompute_is_living_batch(individual_ids: list[int], conn) -> int:
+    """Batch recompute is_living for a set of individuals. Returns count updated.
+
+    Equivalent to calling _recompute_is_living_for_individual for each id, but
+    uses two queries total (one SELECT, one bulk earliest-year query) instead of
+    two queries per individual.
+    """
+    if not individual_ids:
+        return 0
+
+    placeholders = ",".join(["%s"] * len(individual_ids))
+
+    # Load current is_living + death_date for all touched individuals in one query.
+    rows = conn.execute(
+        f"SELECT id, is_living, death_date FROM individuals WHERE id IN ({placeholders})",
+        individual_ids,
+    ).fetchall()
+
+    # Only consider individuals still marked living — never flip back.
+    living_ids = [
+        r["id"] for r in rows if r["is_living"] == 1 and not (r["death_date"] or "").strip()
+    ]
+    dead_by_death_date = [
+        r["id"] for r in rows if r["is_living"] == 1 and (r["death_date"] or "").strip()
+    ]
+
+    # Bulk earliest-term-year for still-living individuals (no death_date set).
+    earliest_by_id: dict[int, int] = {}
+    if living_ids:
+        lp = ",".join(["%s"] * len(living_ids))
+        if is_postgres():
+            year_expr = "EXTRACT(YEAR FROM term_start::date)::integer"
+        else:
+            year_expr = "CAST(strftime('%Y', term_start) AS INTEGER)"
+        for ey_row in conn.execute(
+            f"""SELECT individual_id,
+                       MIN(COALESCE(term_start_year, {year_expr})) AS y
+                FROM office_terms
+                WHERE individual_id IN ({lp})
+                GROUP BY individual_id""",
+            living_ids,
+        ).fetchall():
+            try:
+                if ey_row["y"] is not None:
+                    earliest_by_id[ey_row["individual_id"]] = int(ey_row["y"])
+            except (TypeError, ValueError):
+                pass
+
+    current_year = date.today().year
+    to_flip = list(dead_by_death_date)
+    for ind_id in living_ids:
+        earliest = earliest_by_id.get(ind_id)
+        if earliest is not None and current_year - earliest > 80:
+            to_flip.append(ind_id)
+
+    if not to_flip:
+        return 0
+
+    fp = ",".join(["%s"] * len(to_flip))
+    conn.execute(
+        f"UPDATE individuals SET is_living = 0 WHERE id IN ({fp})",
+        to_flip,
+    )
+    return len(to_flip)
+
+
 def get_living_individual_wiki_urls(conn=None) -> set[str]:
     """Return set of wiki_urls for individuals considered living (is_living = 1, not dead-link, not No link: placeholder)."""
     own_conn = conn is None

@@ -588,8 +588,10 @@ class Offices:
                 "skip_infobox_for_urls": frozenset(skip_infobox_for_urls),
             }
 
-        # Per-table cache so we only call find_term_dates once per wiki_link (same person in multiple rows)
-        self._infobox_cache = {}
+        # Run-level infobox cache: persists across tables for the same parser instance so the
+        # same individual appearing in multiple tables only pays one HTTP infobox call per run.
+        if not hasattr(self, "_infobox_cache"):
+            self._infobox_cache = {}
         # tracks the previous entry --> this helps the rowspan function track
         previous_row_wiki_link = None
         previous_row_district = None
