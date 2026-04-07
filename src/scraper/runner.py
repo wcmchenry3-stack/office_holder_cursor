@@ -2570,6 +2570,9 @@ def run_with_db(
             report("saving", 0, 1, "Writing to database…", {"terms": total_terms})
             conn = get_connection()
             try:
+                # Preload party lookup once per run to avoid per-row SELECT.
+                _party_cache = db_parties.load_all_as_lookup(conn=conn)
+
                 db_office_terms.delete_office_terms_for_offices(
                     list(replaceable_office_ids), conn=conn
                 )
@@ -2652,9 +2655,13 @@ def run_with_db(
                     tc_id = row.get("_office_table_config_id")
                     country_id = row.get("_country_id")
                     if od_id is not None and tc_id is not None and country_id is not None:
-                        party_id = db_parties.resolve_party_id_by_country(
-                            country_id, party_text, conn=conn
-                        )
+                        party_key = (country_id, party_text.strip()) if party_text else None
+                        party_id = _party_cache.get(party_key) if party_key else None
+                        if party_id is None and party_text:
+                            # Fallback for newly inserted parties not in the preloaded cache.
+                            party_id = db_parties.resolve_party_id_by_country(
+                                country_id, party_text, conn=conn
+                            )
                         db_office_terms.insert_office_term(
                             office_details_id=od_id,
                             office_table_config_id=tc_id,

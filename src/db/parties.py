@@ -95,6 +95,38 @@ def update_party(party_id: int, data: dict[str, Any], conn=None) -> bool:
             conn.close()
 
 
+def load_all_as_lookup(conn=None) -> dict[tuple[int, str], int]:
+    """Return a dict mapping (country_id, name_or_link) -> party_id for all parties.
+
+    Used to replace per-row resolve_party_id_by_country() calls with a single
+    preload query at run start.  Both party_name and party_link are indexed as keys
+    so the lookup matches the same rows the per-query path would find.
+    """
+    own_conn = conn is None
+    if own_conn:
+        conn = get_connection()
+    try:
+        cur = conn.execute("SELECT id, country_id, party_name, party_link FROM parties")
+        lookup: dict[tuple[int, str], int] = {}
+        for row in cur.fetchall():
+            pid, cid, name, link = (
+                row["id"],
+                row["country_id"],
+                row["party_name"],
+                row["party_link"],
+            )
+            if cid is None:
+                continue
+            if name:
+                lookup[(cid, name.strip())] = pid
+            if link and link != name:
+                lookup[(cid, link.strip())] = pid
+        return lookup
+    finally:
+        if own_conn:
+            conn.close()
+
+
 def resolve_party_id_by_country(
     country_id: int,
     party_name_or_link: str | None,
