@@ -2572,6 +2572,7 @@ def run_with_db(
             try:
                 # Preload party lookup once per run to avoid per-row SELECT.
                 _party_cache = db_parties.load_all_as_lookup(conn=conn)
+                _touched_individual_ids: list[int] = []
 
                 db_office_terms.delete_office_terms_for_offices(
                     list(replaceable_office_ids), conn=conn
@@ -2694,7 +2695,7 @@ def run_with_db(
                             conn=conn,
                         )
                     if individual_id:
-                        db_individuals._recompute_is_living_for_individual(individual_id, conn)
+                        _touched_individual_ids.append(individual_id)
                     # Collect records for quality checking (auto mode)
                     if _quality_checker and individual_id:
                         _quality_checker.collect(
@@ -2717,6 +2718,10 @@ def run_with_db(
                                 "party_id": party_id,
                             },
                         )
+                # Batch recompute is_living for all touched individuals after inserts complete.
+                db_individuals.recompute_is_living_batch(
+                    list(set(_touched_individual_ids)), conn=conn
+                )
                 for tc_id, h in html_hashes_to_update.items():
                     db_offices.update_html_hash(tc_id, h, conn=conn)
                 for tc_id, rate in fill_rates_to_update.items():
