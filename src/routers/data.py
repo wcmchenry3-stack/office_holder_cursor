@@ -14,6 +14,7 @@ from src.db import app_settings as db_app_settings
 from src.db import scheduled_job_runs as db_job_runs
 from src.db import scraper_jobs as db_scraper_jobs
 from src.db import scheduler_settings as db_scheduler_settings
+from src.db import office_category as db_office_category
 from src.db.runner_registry import RUNNER_REGISTRY
 from src.routers._deps import templates
 
@@ -209,10 +210,16 @@ async def data_scheduled_jobs(request: Request):
         "off",
     }
     app_settings = {s["key"]: s for s in db_app_settings.list_all_settings()}
+    office_categories = db_office_category.list_office_categories()
     return templates.TemplateResponse(
         request,
         "scheduled_jobs.html",
-        {"jobs": jobs, "runners_enabled": runners_enabled, "app_settings": app_settings},
+        {
+            "jobs": jobs,
+            "runners_enabled": runners_enabled,
+            "app_settings": app_settings,
+            "office_categories": office_categories,
+        },
     )
 
 
