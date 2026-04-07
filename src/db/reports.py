@@ -13,14 +13,16 @@ def get_recent_deaths(conn=None) -> list[dict[str, Any]]:
         conn = get_connection()
     try:
         if is_postgres():
-            since = "CURRENT_DATE - INTERVAL '90 days'"
-            date_col = "death_date::date"
+            # Guard the ::date cast — year-only values like '1891' raise InvalidDatetimeFormat.
+            where = (
+                "death_date ~ '^\\d{4}-\\d{2}-\\d{2}$'"
+                " AND death_date::date BETWEEN CURRENT_DATE - INTERVAL '90 days' AND CURRENT_DATE"
+            )
         else:
-            since = "date('now', '-90 days')"
-            date_col = "death_date"
+            where = "death_date BETWEEN date('now', '-90 days') AND CURRENT_DATE"
         cur = conn.execute(f"""SELECT full_name, birth_date, death_date
                FROM individuals
-               WHERE {date_col} BETWEEN {since} AND CURRENT_DATE
+               WHERE {where}
                ORDER BY death_date DESC""")
         return [_row_to_dict(r) for r in cur.fetchall()]
     finally:
@@ -35,11 +37,13 @@ def _term_report_query(
 ) -> list[dict[str, Any]]:
     """Shared logic: term report filtered by date_column (term_start or term_end), ordered by order_column."""
     if is_postgres():
-        since = "CURRENT_DATE - INTERVAL '90 days'"
-        date_col = f"ot.{date_column}::date"
+        # Guard the ::date cast — year-only values like '1891' raise InvalidDatetimeFormat.
+        where = (
+            f"ot.{date_column} ~ '^\\d{{4}}-\\d{{2}}-\\d{{2}}$'"
+            f" AND ot.{date_column}::date BETWEEN CURRENT_DATE - INTERVAL '90 days' AND CURRENT_DATE"
+        )
     else:
-        since = "date('now', '-90 days')"
-        date_col = f"ot.{date_column}"
+        where = f"ot.{date_column} BETWEEN date('now', '-90 days') AND CURRENT_DATE"
     cur = conn.execute(f"""
         SELECT
           i.full_name AS "Name",
@@ -59,7 +63,7 @@ def _term_report_query(
         LEFT JOIN states s ON s.id = sp.state_id
         LEFT JOIN levels l ON l.id = sp.level_id
         LEFT JOIN branches b ON b.id = sp.branch_id
-        WHERE {date_col} BETWEEN {since} AND CURRENT_DATE
+        WHERE {where}
         ORDER BY ot.{order_column} DESC
         """)
     return [_row_to_dict(r) for r in cur.fetchall()]
