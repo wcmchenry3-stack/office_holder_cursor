@@ -488,17 +488,17 @@ def list_runnable_units(conn: Any | None = None) -> list[dict[str, Any]]:
                ORDER BY p.id, od.id, tc.id"""
         )
         rows = cur.fetchall()
+        # Bulk-load all alt_links in a single query instead of one per office.
+        alt_links_by_od: dict[int, list[str]] = {}
+        for al_row in conn.execute(
+            "SELECT office_details_id, link_path FROM alt_links ORDER BY office_details_id, id"
+        ).fetchall():
+            alt_links_by_od.setdefault(al_row["office_details_id"], []).append(al_row["link_path"])
         out = []
         for r in rows:
             rd = _row_to_dict(r)
             od_id = rd["office_details_id"]
-            alt_links = [
-                row["link_path"]
-                for row in conn.execute(
-                    "SELECT link_path FROM alt_links WHERE office_details_id = %s ORDER BY id",
-                    (od_id,),
-                ).fetchall()
-            ]
+            alt_links = alt_links_by_od.get(od_id, [])
             c, s, lv, b = _ref_names(
                 conn,
                 rd.get("country_id"),

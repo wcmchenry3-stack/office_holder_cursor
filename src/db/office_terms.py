@@ -161,17 +161,66 @@ def get_existing_terms_for_office(office_id: int, conn=None) -> list[dict[str, A
     try:
         if _has_hierarchy_terms(conn):
             cur = conn.execute(
-                """SELECT id, office_id, office_details_id, office_table_config_id, individual_id, party_id, district, term_start, term_end, term_start_year, term_end_year, wiki_url
-                   FROM office_terms WHERE office_table_config_id = %s""",
+                """SELECT ot.id, ot.office_id, ot.office_details_id, ot.office_table_config_id,
+                          ot.individual_id, ot.party_id, ot.district, ot.term_start, ot.term_end,
+                          ot.term_start_year, ot.term_end_year, ot.wiki_url, i.full_name, i.is_dead_link
+                   FROM office_terms ot
+                   LEFT JOIN individuals i ON i.id = ot.individual_id
+                   WHERE ot.office_table_config_id = %s""",
                 (office_id,),
             )
         else:
             cur = conn.execute(
-                """SELECT id, office_id, individual_id, party_id, district, term_start, term_end, term_start_year, term_end_year, wiki_url
-                   FROM office_terms WHERE office_id = %s""",
+                """SELECT ot.id, ot.office_id, ot.individual_id, ot.party_id, ot.district,
+                          ot.term_start, ot.term_end, ot.term_start_year, ot.term_end_year, ot.wiki_url,
+                          i.full_name, i.is_dead_link
+                   FROM office_terms ot
+                   LEFT JOIN individuals i ON i.id = ot.individual_id
+                   WHERE ot.office_id = %s""",
                 (office_id,),
             )
         return [_row_to_dict(r) for r in cur.fetchall()]
+    finally:
+        if own_conn:
+            conn.close()
+
+
+def delete_office_terms_for_offices(office_ids: list[int], conn=None) -> int:
+    """Delete all office_terms for multiple units in a single query. Returns count deleted."""
+    if not office_ids:
+        return 0
+    own_conn = conn is None
+    if own_conn:
+        conn = get_connection()
+    try:
+        placeholders = ",".join(["%s"] * len(office_ids))
+        if _has_hierarchy_terms(conn):
+            cur = conn.execute(
+                f"DELETE FROM office_terms WHERE office_table_config_id IN ({placeholders})",
+                office_ids,
+            )
+        else:
+            cur = conn.execute(
+                f"DELETE FROM office_terms WHERE office_id IN ({placeholders})",
+                office_ids,
+            )
+        if own_conn:
+            conn.commit()
+        return cur.rowcount
+    finally:
+        if own_conn:
+            conn.close()
+
+
+def delete_office_term_by_id(term_id: int, conn=None) -> None:
+    """Delete one specific office_term by its primary key id."""
+    own_conn = conn is None
+    if own_conn:
+        conn = get_connection()
+    try:
+        conn.execute("DELETE FROM office_terms WHERE id = %s", (term_id,))
+        if own_conn:
+            conn.commit()
     finally:
         if own_conn:
             conn.close()
