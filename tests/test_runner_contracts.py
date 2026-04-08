@@ -209,6 +209,46 @@ class TestDiffOfficeTable:
         assert 7 in diff["vanished_real_ids"]
         assert 7 not in diff["placeholder_ids"]
 
+    def test_invalid_date_end_row_filtered(self):
+        """Rows with 'Invalid date' Term End (state/location links) are excluded from diff."""
+        r = _import_runner()
+        # Simulate a state-page row with valid start but unparseable end
+        parsed = [
+            {
+                "Wiki Link": "https://en.wiki/wiki/California",
+                "Term Start": "1981-01-23",
+                "Term End": "Invalid date",
+            },
+        ]
+        diff = r._diff_office_table([], parsed, office_id=1, years_only=False, use_infobox=False)
+        assert len(diff["new_rows"]) == 0, "state/location junk rows must be filtered before diff"
+
+    def test_both_dates_invalid_row_filtered(self):
+        """Rows with both Term Start and Term End invalid are excluded from diff."""
+        r = _import_runner()
+        parsed = [
+            {
+                "Wiki Link": "https://en.wiki/wiki/Virginia",
+                "Term Start": "Invalid date",
+                "Term End": "Invalid date",
+            },
+        ]
+        diff = r._diff_office_table([], parsed, office_id=1, years_only=False, use_infobox=False)
+        assert len(diff["new_rows"]) == 0
+
+    def test_valid_incumbent_not_filtered(self):
+        """Rows with a real start and 'Incumbent' end pass through the filter."""
+        r = _import_runner()
+        parsed = [
+            {
+                "Wiki Link": "https://en.wiki/wiki/Todd_Blanche",
+                "Term Start": "2026-04-02",
+                "Term End": "Incumbent",
+            },
+        ]
+        diff = r._diff_office_table([], parsed, office_id=1, years_only=False, use_infobox=False)
+        assert len(diff["new_rows"]) == 1, "incumbent holders must not be filtered"
+
 
 # ---------------------------------------------------------------------------
 # Bio URL guard contract: biography_extract never called with non-HTTP URL
