@@ -22,8 +22,14 @@ from fastapi.testclient import TestClient
 
 @pytest.fixture(autouse=True)
 def _clear_run_job_store():
-    """Clear the shared run-job store before each test to prevent 409 from a prior test's job."""
+    """Clear shared state before each test: in-memory store + DB scraper_jobs table.
+
+    Without the DB truncation, _maybe_start_next_queued_job picks up leftover
+    queued DB rows from prior tests, causing new jobs to land in 'queued' state
+    instead of starting immediately.
+    """
     import src.routers.run_scraper as rs
+    from src.db.connection import get_connection
 
     deadline = time.monotonic() + 5.0
     while time.monotonic() < deadline:
@@ -33,6 +39,14 @@ def _clear_run_job_store():
         time.sleep(0.05)
     with rs._run_job_lock:
         rs._run_job_store.clear()
+    # Also clear the DB queue so no leftover queued rows trigger auto-start.
+    try:
+        conn = get_connection()
+        conn.execute("DELETE FROM scraper_jobs")
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
     yield
 
 
