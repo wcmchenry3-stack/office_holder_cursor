@@ -407,8 +407,25 @@ def _diff_office_table(
     unchanged_rows: list[dict] = []
     matched_term_ids: set[int] = set()
 
+    _INVALID = (None, "Invalid date", "")
     for row in parsed_rows:
         raw_url = (row.get("Wiki Link") or "").strip()
+
+        # Skip rows whose dates are invalid — these are structural table artifacts
+        # (footnote links, location/state references) not real office holders.
+        # "Invalid date" (vs None) means the parser found unparseable content in the date
+        # cell — active holders always produce None/"present"/"Incumbent" as Term End,
+        # never "Invalid date". Rows with "Invalid date" end are parse failures.
+        ts = (row.get("Term Start") or "").strip() or None
+        te = (row.get("Term End") or "").strip() or None
+        if not years_only:
+            tsy = row.get("Term Start Year")
+            tey = row.get("Term End Year")
+            if ts in _INVALID and te in _INVALID and tsy is None and tey is None:
+                continue  # both completely invalid — structural artifact
+            if te == "Invalid date":
+                continue  # unparseable end date — not a valid holder row
+
         if not raw_url or raw_url == "No link" or _is_dead_wiki_url(raw_url):
             # No-link / dead-link rows: treat as new (or skip if no name)
             new_rows.append(row)
@@ -1040,12 +1057,26 @@ def _process_single_office(
     has_existing = len(existing_terms) > 0
 
     use_full_page = bool(office_row.get("use_full_page_for_table"))
+    # For delta runs, spread cache re-checks across 7 weekday batches so ~1/7 of
+    # offices get a conditional GET each day instead of all at once.
+    # cache_batch (0-6) is assigned on insert as id % 7; today's batch gets
+    # max_age_seconds=1d, which triggers a conditional GET when the cache is older
+    # than one day. All other batches use the cache as-is (max_age_seconds=None).
+    if cfg.run_mode == "delta":
+        import datetime as _dt
+
+        today_batch = _dt.date.today().weekday()  # 0=Monday … 6=Sunday
+        office_batch = int(office_row.get("cache_batch") or 0)
+        cache_max_age: int | None = 24 * 3600 if office_batch == today_batch else None
+    else:
+        cache_max_age = None
     cache_result = get_table_html_cached(
         url.strip(),
         table_no,
         refresh=cfg.refresh_table_cache,
         use_full_page=use_full_page,
         run_cache=cfg.run_cache,
+        max_age_seconds=cache_max_age,
     )
     if "error" in cache_result:
         _log.warning(f"Failed to get table for {url}: {cache_result['error']}")

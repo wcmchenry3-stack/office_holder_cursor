@@ -680,6 +680,14 @@ def _run_pg_migrations(conn) -> None:
         "pg_drop_offices_table",
         "DROP TABLE IF EXISTS offices",
     )
+    _apply(
+        "pg_office_table_config_cache_batch",
+        "ALTER TABLE office_table_config ADD COLUMN IF NOT EXISTS cache_batch INTEGER NOT NULL DEFAULT 0",
+    )
+    _apply(
+        "pg_office_table_config_cache_batch_backfill",
+        "UPDATE office_table_config SET cache_batch = id % 7 WHERE cache_batch = 0",
+    )
 
 
 def _sqlite_add_columns_if_missing(conn) -> None:
@@ -698,6 +706,7 @@ def _sqlite_add_columns_if_missing(conn) -> None:
         ("individuals", "superseded_by_individual_id", "INTEGER"),
         ("source_pages", "last_quality_checked_at", "TEXT"),
         ("office_table_config", "last_link_fill_rate", "REAL"),
+        ("office_table_config", "cache_batch", "INTEGER NOT NULL DEFAULT 0"),
     ]
     for table, column, col_type in migrations:
         try:
@@ -705,6 +714,17 @@ def _sqlite_add_columns_if_missing(conn) -> None:
             conn.commit()
         except Exception:
             pass  # Column already exists — safe to ignore
+    # Backfill cache_batch for any existing rows that still have the default 0
+    # (id % 7 can legitimately be 0, so only backfill where ALL rows are 0)
+    try:
+        count = conn.execute(
+            "SELECT COUNT(*) FROM office_table_config WHERE cache_batch != 0"
+        ).fetchone()[0]
+        if count == 0:
+            conn.execute("UPDATE office_table_config SET cache_batch = id % 7")
+            conn.commit()
+    except Exception:
+        pass
 
 
 def _init_sqlite(path: Path | None = None) -> None:
