@@ -50,7 +50,8 @@ def test_fresh_cache_served_without_fetch(tmp_path, monkeypatch):
 
     fetched: list[str] = []
 
-    def _fake_fetch(u, t, use_full_page=False, run_cache=None):
+    def _fake_fetch(u, t, use_full_page=False, run_cache=None,
+                    if_none_match=None, if_modified_since=None):
         fetched.append(u)
         return {"error": "should not reach HTTP"}
 
@@ -66,14 +67,14 @@ def test_fresh_cache_served_without_fetch(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_stale_cache_triggers_refetch(tmp_path, monkeypatch):
-    """If cache file is older than max_age_seconds, a fresh HTTP fetch is made."""
+def test_stale_cache_triggers_conditional_get(tmp_path, monkeypatch):
+    """Stale cache sends a conditional GET; 200 response replaces cache with fresh HTML."""
     from src.scraper import table_cache
 
     url = "https://en.wikipedia.org/wiki/Test_Page"
     table_no = 1
     cache_path = _make_cache_path(tmp_path, url, table_no)
-    _write_cache_file(cache_path, table_no, "<table>stale</table>")
+    _write_cache_file(cache_path, table_no, "<table>stale</table>", num_tables=5)
 
     # Backdate mtime by 8 days (> 7-day TTL)
     eight_days_ago = time.time() - 8 * 24 * 3600
@@ -81,17 +82,57 @@ def test_stale_cache_triggers_refetch(tmp_path, monkeypatch):
 
     monkeypatch.setattr(table_cache, "_cache_dir", lambda: tmp_path)
 
-    fetched: list[str] = []
+    calls: list[dict] = []
 
-    def _fake_fetch(u, t, use_full_page=False, run_cache=None):
-        fetched.append(u)
+    def _fake_fetch(u, t, use_full_page=False, run_cache=None,
+                    if_none_match=None, if_modified_since=None):
+        calls.append({"if_none_match": if_none_match, "if_modified_since": if_modified_since})
         return {"table_no": t, "num_tables": 5, "html": "<table>fresh</table>"}
 
     monkeypatch.setattr(table_cache, "_fetch_table_from_url", _fake_fetch)
 
     result = table_cache.get_table_html_cached(url, table_no, max_age_seconds=7 * 24 * 3600)
-    assert result.get("html") == "<table>fresh</table>", "Stale cache must be replaced by fresh fetch"
-    assert len(fetched) == 1, "Exactly one HTTP fetch must have been made"
+    assert result.get("html") == "<table>fresh</table>", "200 response must replace stale cache"
+    assert len(calls) == 1, "Exactly one conditional GET must have been made"
+
+
+def test_stale_cache_304_resets_ttl(tmp_path, monkeypatch):
+    """304 Not Modified: cached HTML is reused and cache mtime is touched to reset the TTL."""
+    from src.scraper import table_cache
+
+    url = "https://en.wikipedia.org/wiki/Test_Page"
+    table_no = 1
+    cache_path = _make_cache_path(tmp_path, url, table_no)
+    _write_cache_file(
+        cache_path, table_no, "<table>cached</table>", num_tables=5
+    )
+    # Add a stored ETag so the conditional GET can send it
+    import gzip, json
+    with gzip.open(cache_path, "rt", encoding="utf-8") as f:
+        data = json.load(f)
+    data["etag"] = '"abc123"'
+    with gzip.open(cache_path, "wt", encoding="utf-8") as f:
+        json.dump(data, f)
+
+    eight_days_ago = time.time() - 8 * 24 * 3600
+    os.utime(cache_path, (eight_days_ago, eight_days_ago))
+
+    monkeypatch.setattr(table_cache, "_cache_dir", lambda: tmp_path)
+
+    sent_etags: list[str | None] = []
+
+    def _fake_fetch(u, t, use_full_page=False, run_cache=None,
+                    if_none_match=None, if_modified_since=None):
+        sent_etags.append(if_none_match)
+        return {"not_modified": True}  # Wikipedia says page unchanged
+
+    monkeypatch.setattr(table_cache, "_fetch_table_from_url", _fake_fetch)
+
+    result = table_cache.get_table_html_cached(url, table_no, max_age_seconds=7 * 24 * 3600)
+    assert result.get("html") == "<table>cached</table>", "304 must return cached HTML"
+    assert sent_etags == ['"abc123"'], "ETag must have been sent in the conditional GET"
+    # mtime should be refreshed (within the last 5 seconds)
+    assert time.time() - cache_path.stat().st_mtime < 5, "Cache mtime must be touched after 304"
 
 
 def test_no_max_age_ignores_file_age(tmp_path, monkeypatch):
@@ -111,7 +152,8 @@ def test_no_max_age_ignores_file_age(tmp_path, monkeypatch):
 
     fetched: list[str] = []
 
-    def _fake_fetch(u, t, use_full_page=False, run_cache=None):
+    def _fake_fetch(u, t, use_full_page=False, run_cache=None,
+                    if_none_match=None, if_modified_since=None):
         fetched.append(u)
         return {"error": "should not reach HTTP"}
 
@@ -135,7 +177,8 @@ def test_refresh_true_bypasses_max_age(tmp_path, monkeypatch):
 
     fetched: list[str] = []
 
-    def _fake_fetch(u, t, use_full_page=False, run_cache=None):
+    def _fake_fetch(u, t, use_full_page=False, run_cache=None,
+                    if_none_match=None, if_modified_since=None):
         fetched.append(u)
         return {"table_no": t, "num_tables": 5, "html": "<table>fresh</table>"}
 
