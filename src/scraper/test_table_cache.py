@@ -3,6 +3,7 @@
 These tests never make real HTTP requests. They write cache files directly and
 manipulate mtime to simulate stale vs fresh cache entries.
 """
+
 from __future__ import annotations
 
 import gzip
@@ -11,7 +12,6 @@ import os
 import time
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -24,11 +24,12 @@ def _write_cache_file(cache_path, table_no: int, html: str, num_tables: int = 5)
         json.dump({"table_no": table_no, "num_tables": num_tables, "html": html}, f)
 
 
-def _make_cache_path(tmp_path, url: str, table_no: int) -> "Path":
+def _make_cache_path(tmp_path, url: str, table_no: int):
     import hashlib
-    key = hashlib.sha256(
-        (url.strip() + "|" + str(table_no) + "|0").encode("utf-8")
-    ).hexdigest()[:32]
+
+    key = hashlib.sha256((url.strip() + "|" + str(table_no) + "|0").encode("utf-8")).hexdigest()[
+        :32
+    ]
     return tmp_path / f"{key}.json.gz"
 
 
@@ -41,7 +42,7 @@ def test_fresh_cache_served_without_fetch(tmp_path, monkeypatch):
     """If cache file is younger than max_age_seconds, it is served without HTTP."""
     from src.scraper import table_cache
 
-    url = "https://en.wikipedia.org/wiki/Test_Page"
+    url = "https://en.wiki.test/wiki/Test_Page"
     table_no = 1
     cache_path = _make_cache_path(tmp_path, url, table_no)
     _write_cache_file(cache_path, table_no, "<table>fresh</table>")
@@ -50,8 +51,9 @@ def test_fresh_cache_served_without_fetch(tmp_path, monkeypatch):
 
     fetched: list[str] = []
 
-    def _fake_fetch(u, t, use_full_page=False, run_cache=None,
-                    if_none_match=None, if_modified_since=None):
+    def _fake_fetch(
+        u, t, use_full_page=False, run_cache=None, if_none_match=None, if_modified_since=None
+    ):
         fetched.append(u)
         return {"error": "should not reach HTTP"}
 
@@ -71,7 +73,7 @@ def test_stale_cache_triggers_conditional_get(tmp_path, monkeypatch):
     """Stale cache sends a conditional GET; 200 response replaces cache with fresh HTML."""
     from src.scraper import table_cache
 
-    url = "https://en.wikipedia.org/wiki/Test_Page"
+    url = "https://en.wiki.test/wiki/Test_Page"
     table_no = 1
     cache_path = _make_cache_path(tmp_path, url, table_no)
     _write_cache_file(cache_path, table_no, "<table>stale</table>", num_tables=5)
@@ -84,8 +86,9 @@ def test_stale_cache_triggers_conditional_get(tmp_path, monkeypatch):
 
     calls: list[dict] = []
 
-    def _fake_fetch(u, t, use_full_page=False, run_cache=None,
-                    if_none_match=None, if_modified_since=None):
+    def _fake_fetch(
+        u, t, use_full_page=False, run_cache=None, if_none_match=None, if_modified_since=None
+    ):
         calls.append({"if_none_match": if_none_match, "if_modified_since": if_modified_since})
         return {"table_no": t, "num_tables": 5, "html": "<table>fresh</table>"}
 
@@ -100,14 +103,11 @@ def test_stale_cache_304_resets_ttl(tmp_path, monkeypatch):
     """304 Not Modified: cached HTML is reused and cache mtime is touched to reset the TTL."""
     from src.scraper import table_cache
 
-    url = "https://en.wikipedia.org/wiki/Test_Page"
+    url = "https://en.wiki.test/wiki/Test_Page"
     table_no = 1
     cache_path = _make_cache_path(tmp_path, url, table_no)
-    _write_cache_file(
-        cache_path, table_no, "<table>cached</table>", num_tables=5
-    )
+    _write_cache_file(cache_path, table_no, "<table>cached</table>", num_tables=5)
     # Add a stored ETag so the conditional GET can send it
-    import gzip, json
     with gzip.open(cache_path, "rt", encoding="utf-8") as f:
         data = json.load(f)
     data["etag"] = '"abc123"'
@@ -121,8 +121,9 @@ def test_stale_cache_304_resets_ttl(tmp_path, monkeypatch):
 
     sent_etags: list[str | None] = []
 
-    def _fake_fetch(u, t, use_full_page=False, run_cache=None,
-                    if_none_match=None, if_modified_since=None):
+    def _fake_fetch(
+        u, t, use_full_page=False, run_cache=None, if_none_match=None, if_modified_since=None
+    ):
         sent_etags.append(if_none_match)
         return {"not_modified": True}  # Wikipedia says page unchanged
 
@@ -139,7 +140,7 @@ def test_no_max_age_ignores_file_age(tmp_path, monkeypatch):
     """Without max_age_seconds, cache is served regardless of how old it is."""
     from src.scraper import table_cache
 
-    url = "https://en.wikipedia.org/wiki/Test_Page"
+    url = "https://en.wiki.test/wiki/Test_Page"
     table_no = 1
     cache_path = _make_cache_path(tmp_path, url, table_no)
     _write_cache_file(cache_path, table_no, "<table>ancient</table>")
@@ -152,8 +153,9 @@ def test_no_max_age_ignores_file_age(tmp_path, monkeypatch):
 
     fetched: list[str] = []
 
-    def _fake_fetch(u, t, use_full_page=False, run_cache=None,
-                    if_none_match=None, if_modified_since=None):
+    def _fake_fetch(
+        u, t, use_full_page=False, run_cache=None, if_none_match=None, if_modified_since=None
+    ):
         fetched.append(u)
         return {"error": "should not reach HTTP"}
 
@@ -168,7 +170,7 @@ def test_refresh_true_bypasses_max_age(tmp_path, monkeypatch):
     """refresh=True always fetches fresh even if cache is young."""
     from src.scraper import table_cache
 
-    url = "https://en.wikipedia.org/wiki/Test_Page"
+    url = "https://en.wiki.test/wiki/Test_Page"
     table_no = 1
     cache_path = _make_cache_path(tmp_path, url, table_no)
     _write_cache_file(cache_path, table_no, "<table>cached</table>")
@@ -177,16 +179,15 @@ def test_refresh_true_bypasses_max_age(tmp_path, monkeypatch):
 
     fetched: list[str] = []
 
-    def _fake_fetch(u, t, use_full_page=False, run_cache=None,
-                    if_none_match=None, if_modified_since=None):
+    def _fake_fetch(
+        u, t, use_full_page=False, run_cache=None, if_none_match=None, if_modified_since=None
+    ):
         fetched.append(u)
         return {"table_no": t, "num_tables": 5, "html": "<table>fresh</table>"}
 
     monkeypatch.setattr(table_cache, "_fetch_table_from_url", _fake_fetch)
 
-    result = table_cache.get_table_html_cached(
-        url, table_no, refresh=True, max_age_seconds=3600
-    )
+    result = table_cache.get_table_html_cached(url, table_no, refresh=True, max_age_seconds=3600)
     assert result.get("html") == "<table>fresh</table>"
     assert len(fetched) == 1, "refresh=True must bypass max_age_seconds check"
 
@@ -203,8 +204,9 @@ def test_delta_run_cache_batch_routing(monkeypatch):
 
     received_max_age: list = []
 
-    def _capture_cache(url, table_no, *, refresh=False, use_full_page=False,
-                       run_cache=None, max_age_seconds=None):
+    def _capture_cache(
+        url, table_no, *, refresh=False, use_full_page=False, run_cache=None, max_age_seconds=None
+    ):
         received_max_age.append(max_age_seconds)
         return {"error": "abort early"}
 
@@ -235,7 +237,7 @@ def test_delta_run_cache_batch_routing(monkeypatch):
             "office_table_config_id": 99,
             "id": 99,
             "name": "Test Office",
-            "url": "https://en.wikipedia.org/wiki/Test",
+            "url": "https://en.wiki.test/wiki/Test",
             "table_no": 1,
             "use_full_page_for_table": 0,
             "find_date_in_infobox": 0,
@@ -249,14 +251,14 @@ def test_delta_run_cache_batch_routing(monkeypatch):
     received_max_age.clear()
     _process_single_office(_make_office(today_batch), cfg, office_index=1, office_total=1)
     assert received_max_age, "get_table_html_cached was not called"
-    assert received_max_age[0] == 24 * 3600, (
-        f"Today's batch must get 1-day TTL, got {received_max_age[0]}"
-    )
+    assert (
+        received_max_age[0] == 24 * 3600
+    ), f"Today's batch must get 1-day TTL, got {received_max_age[0]}"
 
     # Different batch office: must get None (use cache as-is)
     received_max_age.clear()
     _process_single_office(_make_office(other_batch), cfg, office_index=1, office_total=1)
     assert received_max_age, "get_table_html_cached was not called"
-    assert received_max_age[0] is None, (
-        f"Other batch must get None (no TTL), got {received_max_age[0]}"
-    )
+    assert (
+        received_max_age[0] is None
+    ), f"Other batch must get None (no TTL), got {received_max_age[0]}"

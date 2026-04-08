@@ -1064,6 +1064,7 @@ def _process_single_office(
     # than one day. All other batches use the cache as-is (max_age_seconds=None).
     if cfg.run_mode == "delta":
         import datetime as _dt
+
         today_batch = _dt.date.today().weekday()  # 0=Monday … 6=Sunday
         office_batch = int(office_row.get("cache_batch") or 0)
         cache_max_age: int | None = 24 * 3600 if office_batch == today_batch else None

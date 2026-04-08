@@ -194,7 +194,11 @@ def get_table_html_cached(
             try:
                 with gzip.open(cache_path, "rt", encoding="utf-8") as f:
                     cached_data = json.load(f)
-                if not (isinstance(cached_data, dict) and "html" in cached_data and "table_no" in cached_data):
+                if not (
+                    isinstance(cached_data, dict)
+                    and "html" in cached_data
+                    and "table_no" in cached_data
+                ):
                     cached_data = None
             except (OSError, json.JSONDecodeError, KeyError):
                 cached_data = None
@@ -240,7 +244,9 @@ def get_table_html_cached(
                 }
             if "error" in result:
                 # Conditional GET failed — fall back to cached HTML to avoid breaking the run.
-                logger.warning("Conditional GET failed for %s (%s) — using stale cache", url, result["error"])
+                logger.warning(
+                    "Conditional GET failed for %s (%s) — using stale cache", url, result["error"]
+                )
                 return {
                     "table_no": cached_data["table_no"],
                     "num_tables": cached_data.get("num_tables", 0),
