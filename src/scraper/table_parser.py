@@ -1845,7 +1845,7 @@ class Biography:
             logger.debug(f" full name {details['full_name']} ")
 
         details["birth_date"], details["death_date"] = self.DataCleanup.parse_date_info(
-            paragraph, "both"
+            paragraph.get_text(" ", strip=True), "both"
         )
 
         logger.debug(f"first paragraph details {details}")
