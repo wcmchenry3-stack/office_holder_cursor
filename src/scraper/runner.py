@@ -1057,10 +1057,18 @@ def _process_single_office(
     has_existing = len(existing_terms) > 0
 
     use_full_page = bool(office_row.get("use_full_page_for_table"))
-    # For delta runs, enforce a 7-day cache TTL so stale cached pages don't hide
-    # Wikipedia changes that occurred since the last time the page was fetched.
-    _DELTA_CACHE_MAX_AGE = 7 * 24 * 3600  # 7 days in seconds
-    cache_max_age = _DELTA_CACHE_MAX_AGE if cfg.run_mode == "delta" else None
+    # For delta runs, spread cache re-checks across 7 weekday batches so ~1/7 of
+    # offices get a conditional GET each day instead of all at once.
+    # cache_batch (0-6) is assigned on insert as id % 7; today's batch gets
+    # max_age_seconds=1d, which triggers a conditional GET when the cache is older
+    # than one day. All other batches use the cache as-is (max_age_seconds=None).
+    if cfg.run_mode == "delta":
+        import datetime as _dt
+        today_batch = _dt.date.today().weekday()  # 0=Monday … 6=Sunday
+        office_batch = int(office_row.get("cache_batch") or 0)
+        cache_max_age: int | None = 24 * 3600 if office_batch == today_batch else None
+    else:
+        cache_max_age = None
     cache_result = get_table_html_cached(
         url.strip(),
         table_no,

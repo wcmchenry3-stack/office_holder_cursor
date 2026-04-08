@@ -196,8 +196,9 @@ def test_refresh_true_bypasses_max_age(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_delta_run_passes_7day_ttl(monkeypatch):
-    """_process_one_office passes max_age_seconds=7d to get_table_html_cached during delta."""
+def test_delta_run_cache_batch_routing(monkeypatch):
+    """Delta run passes 1-day max_age for today's batch office, None for other batches."""
+    import datetime
     import src.scraper.runner as runner
 
     received_max_age: list = []
@@ -205,7 +206,7 @@ def test_delta_run_passes_7day_ttl(monkeypatch):
     def _capture_cache(url, table_no, *, refresh=False, use_full_page=False,
                        run_cache=None, max_age_seconds=None):
         received_max_age.append(max_age_seconds)
-        return {"error": "abort early"}  # short-circuit the rest of processing
+        return {"error": "abort early"}
 
     monkeypatch.setattr(runner, "get_table_html_cached", _capture_cache)
 
@@ -226,22 +227,36 @@ def test_delta_run_passes_7day_ttl(monkeypatch):
         report=lambda *a, **kw: None,
     )
 
-    office_row = {
-        "office_table_config_id": 99,
-        "id": 99,
-        "name": "Test Office",
-        "url": "https://en.wikipedia.org/wiki/Test",
-        "table_no": 1,
-        "use_full_page_for_table": 0,
-        "find_date_in_infobox": 0,
-        "years_only": 0,
-        "last_html_hash": None,
-        "office_details_id": 99,
-    }
+    today_batch = datetime.date.today().weekday()
+    other_batch = (today_batch + 1) % 7
 
-    _process_single_office(office_row, cfg, office_index=1, office_total=1)
+    def _make_office(batch):
+        return {
+            "office_table_config_id": 99,
+            "id": 99,
+            "name": "Test Office",
+            "url": "https://en.wikipedia.org/wiki/Test",
+            "table_no": 1,
+            "use_full_page_for_table": 0,
+            "find_date_in_infobox": 0,
+            "years_only": 0,
+            "last_html_hash": None,
+            "office_details_id": 99,
+            "cache_batch": batch,
+        }
 
+    # Today's batch office: must get 1-day TTL (triggers conditional GET)
+    received_max_age.clear()
+    _process_single_office(_make_office(today_batch), cfg, office_index=1, office_total=1)
     assert received_max_age, "get_table_html_cached was not called"
-    assert received_max_age[0] == 7 * 24 * 3600, (
-        f"Expected 7-day TTL (604800s), got {received_max_age[0]}"
+    assert received_max_age[0] == 24 * 3600, (
+        f"Today's batch must get 1-day TTL, got {received_max_age[0]}"
+    )
+
+    # Different batch office: must get None (use cache as-is)
+    received_max_age.clear()
+    _process_single_office(_make_office(other_batch), cfg, office_index=1, office_total=1)
+    assert received_max_age, "get_table_html_cached was not called"
+    assert received_max_age[0] is None, (
+        f"Other batch must get None (no TTL), got {received_max_age[0]}"
     )

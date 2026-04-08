@@ -479,7 +479,7 @@ def list_runnable_units(conn: Any | None = None) -> list[dict[str, Any]]:
                       tc.term_start_column, tc.term_end_column, tc.district_column, tc.filter_column, tc.filter_criteria, tc.dynamic_parse, tc.read_right_to_left,
                       tc.find_date_in_infobox, tc.parse_rowspan, tc.rep_link, tc.party_link, tc.enabled AS tc_enabled,
                       tc.use_full_page_for_table, tc.years_only, tc.term_dates_merged, tc.party_ignore, tc.district_ignore, tc.district_at_large, tc.ignore_non_links, tc.remove_duplicates,
-                      tc.consolidate_rowspan_terms, tc.infobox_role_key_filter_id, COALESCE(rkf.role_key, '') AS infobox_role_key, tc.notes AS tc_notes, tc.created_at, tc.last_html_hash, tc.last_link_fill_rate
+                      tc.consolidate_rowspan_terms, tc.infobox_role_key_filter_id, COALESCE(rkf.role_key, '') AS infobox_role_key, tc.notes AS tc_notes, tc.created_at, tc.last_html_hash, tc.last_link_fill_rate, tc.cache_batch
                FROM source_pages p
                JOIN office_details od ON od.source_page_id = p.id AND od.enabled = 1
                JOIN office_table_config tc ON tc.office_details_id = od.id AND tc.enabled = 1
@@ -557,6 +557,7 @@ def list_runnable_units(conn: Any | None = None) -> list[dict[str, Any]]:
                 "created_at": rd.get("created_at"),
                 "last_html_hash": rd.get("last_html_hash"),
                 "last_link_fill_rate": rd.get("last_link_fill_rate"),
+                "cache_batch": rd.get("cache_batch", 0),
             }
             flat = _flatten_hierarchy_row(p, od, tc, c, s, lv, b, alt_links)
             flat["id"] = rd["office_table_config_id"]
@@ -566,6 +567,7 @@ def list_runnable_units(conn: Any | None = None) -> list[dict[str, Any]]:
             flat["disable_auto_table_update"] = bool(rd.get("disable_auto_table_update"))
             flat["last_html_hash"] = rd.get("last_html_hash")
             flat["last_link_fill_rate"] = rd.get("last_link_fill_rate")
+            flat["cache_batch"] = rd.get("cache_batch", 0)
             out.append(flat)
         return out
     finally:
@@ -1291,14 +1293,15 @@ def search_pages_for_test_script_templates(
 
 
 def _insert_one_table_config(conn: Any, od_id: int, tc: dict[str, Any], enabled: int) -> None:
-    """Insert one office_table_config row from tc dict."""
+    """Insert one office_table_config row from tc dict. Sets cache_batch = id % 7 so
+    cache re-checks are spread evenly across weekdays rather than thundering-herding."""
     t_merged = _bool(tc, "term_dates_merged")
-    conn.execute(
+    cur = conn.execute(
         """INSERT INTO office_table_config (office_details_id, table_no, table_rows, link_column, party_column,
               term_start_column, term_end_column, district_column, filter_column, filter_criteria, dynamic_parse, read_right_to_left, find_date_in_infobox,
               parse_rowspan, rep_link, party_link, enabled, use_full_page_for_table, years_only,
               term_dates_merged, party_ignore, district_ignore, district_at_large, ignore_non_links, remove_duplicates, consolidate_rowspan_terms, infobox_role_key_filter_id, notes, name, created_at, updated_at)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())""",
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW()) RETURNING id""",
         (
             od_id,
             int(tc.get("table_no", 1)),
@@ -1330,6 +1333,11 @@ def _insert_one_table_config(conn: Any, od_id: int, tc: dict[str, Any], enabled:
             tc.get("notes") or "",
             tc.get("name") or "",
         ),
+    )
+    tc_id = cur.fetchone()["id"]
+    conn.execute(
+        "UPDATE office_table_config SET cache_batch = %s %% 7 WHERE id = %s",
+        (tc_id, tc_id),
     )
 
 
@@ -1845,7 +1853,12 @@ def update_office(
                             tc.get("name") or "",
                         ),
                     )
-                    kept_ids.append(cur.fetchone()["id"])
+                    new_tc_id = cur.fetchone()["id"]
+                    conn.execute(
+                        "UPDATE office_table_config SET cache_batch = %s %% 7 WHERE id = %s",
+                        (new_tc_id, new_tc_id),
+                    )
+                    kept_ids.append(new_tc_id)
             if kept_ids:
                 placeholders = ",".join(["%s"] * len(kept_ids))
                 conn.execute(
