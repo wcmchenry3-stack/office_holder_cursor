@@ -8,6 +8,7 @@ import gzip
 import hashlib
 import json
 import logging
+import time
 import threading
 import weakref
 from pathlib import Path
@@ -148,10 +149,13 @@ def get_table_html_cached(
     refresh: bool = False,
     use_full_page: bool = False,
     run_cache=None,
+    max_age_seconds: int | None = None,
 ) -> dict:
     """
     Return table HTML for (url, table_no). Uses local cache unless refresh=True or cache miss.
     Default: fetch via Wikipedia REST API. use_full_page=True: fetch full page URL (table indices match full page).
+    max_age_seconds: if set and the cached file is older than this many seconds, treat as a miss
+    and re-fetch. Prevents stale cached pages from masking Wikipedia changes across runs.
     Returns {"table_no", "num_tables", "html": "<table>...</table>"} or {"error": "..."}.
     """
 
@@ -165,17 +169,27 @@ def get_table_html_cached(
     with key_lock:
         if not refresh:
             if cache_path.exists():
-                try:
-                    with gzip.open(cache_path, "rt", encoding="utf-8") as f:
-                        data = json.load(f)
-                    if isinstance(data, dict) and "html" in data and "table_no" in data:
-                        return {
-                            "table_no": data["table_no"],
-                            "num_tables": data.get("num_tables", 0),
-                            "html": data["html"],
-                        }
-                except (OSError, json.JSONDecodeError, KeyError) as e:
-                    pass
+                cache_too_old = (
+                    max_age_seconds is not None
+                    and (time.time() - cache_path.stat().st_mtime) > max_age_seconds
+                )
+                if not cache_too_old:
+                    try:
+                        with gzip.open(cache_path, "rt", encoding="utf-8") as f:
+                            data = json.load(f)
+                        if isinstance(data, dict) and "html" in data and "table_no" in data:
+                            return {
+                                "table_no": data["table_no"],
+                                "num_tables": data.get("num_tables", 0),
+                                "html": data["html"],
+                                "cache_file": str(cache_path),
+                            }
+                    except (OSError, json.JSONDecodeError, KeyError) as e:
+                        pass
+                else:
+                    logger.debug(
+                        "Cache expired (age > %ds): %s — re-fetching", max_age_seconds, url
+                    )
             else:
                 pass  # cache miss — fall through to fetch
         result = _fetch_table_from_url(url, table_no, use_full_page, run_cache=run_cache)

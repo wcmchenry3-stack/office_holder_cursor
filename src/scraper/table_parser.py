@@ -1207,7 +1207,7 @@ class Offices:
                         return full_url
 
             except (ValueError, TypeError, IndexError, AttributeError) as e:
-                logger.warning(f"found error when finding url for {full_url} in {cells}")
+                logger.warning(f"found error when finding url in {cells}: {e}")
 
         # Fallback: wrong link column often points at footnote-only cells.
         # Only run fallback when configured column had link markup but no acceptable candidate.
