@@ -10,6 +10,7 @@ Shows:
 - Parsed rows from Wikipedia (live or cached)
 - Diff result (new/changed/unchanged/vanished)
 """
+
 from __future__ import annotations
 
 import argparse
@@ -34,10 +35,15 @@ from src.scraper import parse_core
 
 def main():
     parser = argparse.ArgumentParser(description="Diagnose office delta-run behaviour")
-    parser.add_argument("--office-id", type=int, required=True,
-                        help="office_table_config_id (= office_details_id for most offices)")
-    parser.add_argument("--fetch", action="store_true",
-                        help="Force fresh HTTP fetch instead of cached HTML")
+    parser.add_argument(
+        "--office-id",
+        type=int,
+        required=True,
+        help="office_table_config_id (= office_details_id for most offices)",
+    )
+    parser.add_argument(
+        "--fetch", action="store_true", help="Force fresh HTTP fetch instead of cached HTML"
+    )
     args = parser.parse_args()
 
     office_id = args.office_id
@@ -45,8 +51,14 @@ def main():
     # Load office config
     conn = get_connection()
     units = db_offices.list_runnable_units(conn=conn)
-    office_row = next((u for u in units if u.get("office_table_config_id") == office_id
-                       or u.get("id") == office_id), None)
+    office_row = next(
+        (
+            u
+            for u in units
+            if u.get("office_table_config_id") == office_id or u.get("id") == office_id
+        ),
+        None,
+    )
 
     if office_row is None:
         print(f"ERROR: office_table_config_id={office_id} not found in runnable units")
@@ -70,10 +82,12 @@ def main():
     existing_terms = db_office_terms.get_existing_terms_for_office(office_id)
     print(f"Existing terms in DB: {len(existing_terms)}")
     for t in existing_terms[-5:]:
-        print(f"  id={t['id']:6d}  {t.get('full_name') or '(no name)':30s}  "
-              f"start={t.get('term_start') or t.get('term_start_year')}  "
-              f"end={t.get('term_end') or t.get('term_end_year') or 'NULL'}  "
-              f"url={t.get('wiki_url', '')[:60]}")
+        print(
+            f"  id={t['id']:6d}  {t.get('full_name') or '(no name)':30s}  "
+            f"start={t.get('term_start') or t.get('term_start_year')}  "
+            f"end={t.get('term_end') or t.get('term_end_year') or 'NULL'}  "
+            f"url={t.get('wiki_url', '')[:60]}"
+        )
     if len(existing_terms) > 5:
         print(f"  ... ({len(existing_terms) - 5} more not shown)")
     print()
@@ -91,7 +105,9 @@ def main():
     if cache_result.get("cache_file"):
         print(f"Cache file: {cache_result['cache_file']}")
 
-    current_hash = hashlib.sha256(html_content.encode("utf-8")).hexdigest() if html_content else None
+    current_hash = (
+        hashlib.sha256(html_content.encode("utf-8")).hexdigest() if html_content else None
+    )
     print(f"Current HTML hash:  {'<none>' if not current_hash else current_hash[:16] + '...'}")
     print(f"Stored HTML hash:   {'<none>' if not stored_hash else stored_hash[:16] + '...'}")
     if current_hash and stored_hash:
@@ -127,10 +143,12 @@ def main():
     )
     print(f"Parsed rows: {len(table_data_pre)}")
     for row in table_data_pre[-10:]:
-        print(f"  {row.get('Name') or row.get('Wiki Link', '')[:40]:40s}  "
-              f"start={row.get('Term Start') or row.get('Term Start Year')}  "
-              f"end={row.get('Term End') or row.get('Term End Year') or 'None'}  "
-              f"link={row.get('Wiki Link', '')[:50]}")
+        print(
+            f"  {row.get('Name') or row.get('Wiki Link', '')[:40]:40s}  "
+            f"start={row.get('Term Start') or row.get('Term Start Year')}  "
+            f"end={row.get('Term End') or row.get('Term End Year') or 'None'}  "
+            f"link={row.get('Wiki Link', '')[:50]}"
+        )
     print()
 
     if not existing_terms:
@@ -139,19 +157,23 @@ def main():
 
     # Run diff
     diff = _diff_office_table(existing_terms, table_data_pre, office_id, years_only, use_infobox)
-    print(f"Diff result:")
+    print("Diff result:")
     print(f"  new_rows:          {len(diff['new_rows'])}")
     print(f"  changed_rows:      {len(diff['changed_rows'])}")
     print(f"  unchanged_rows:    {len(diff['unchanged_rows'])}")
-    print(f"  vanished_real_ids: {len(diff['vanished_real_ids'])} -> {diff['vanished_real_ids'][:5]}")
+    print(
+        f"  vanished_real_ids: {len(diff['vanished_real_ids'])} -> {diff['vanished_real_ids'][:5]}"
+    )
     print(f"  placeholder_ids:   {len(diff['placeholder_ids'])}")
     print()
 
     if diff["new_rows"]:
         print("NEW rows (would be inserted):")
         for row in diff["new_rows"]:
-            print(f"  {row.get('Name') or row.get('Wiki Link', '')[:40]}  "
-                  f"start={row.get('Term Start')}  end={row.get('Term End')}")
+            print(
+                f"  {row.get('Name') or row.get('Wiki Link', '')[:40]}  "
+                f"start={row.get('Term Start')}  end={row.get('Term End')}"
+            )
         print()
 
     if diff["changed_rows"]:
@@ -167,7 +189,9 @@ def main():
     if not diff["new_rows"] and not diff["changed_rows"] and not diff["placeholder_ids"]:
         print("*** DELTA RUN CONCLUSION: data unchanged — office skipped (no write) ***")
         if diff["vanished_real_ids"]:
-            print(f"    NOTE: {len(diff['vanished_real_ids'])} vanished holder(s) kept (not deleted by design)")
+            print(
+                f"    NOTE: {len(diff['vanished_real_ids'])} vanished holder(s) kept (not deleted by design)"
+            )
 
     conn.close()
 
