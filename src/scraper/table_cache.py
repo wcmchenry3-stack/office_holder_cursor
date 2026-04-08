@@ -125,8 +125,9 @@ def _fetch_table_from_url(
         return {"error": f"Table {table_no} not found (page has {num_tables} tables)"}
     target = tables[table_no - 1]
     result: dict = {"table_no": table_no, "num_tables": num_tables, "html": str(target)}
-    etag = resp.headers.get("ETag")
-    last_modified = resp.headers.get("Last-Modified")
+    resp_headers = getattr(resp, "headers", {}) or {}
+    etag = resp_headers.get("ETag")
+    last_modified = resp_headers.get("Last-Modified")
     if etag:
         result["etag"] = etag
     if last_modified:
