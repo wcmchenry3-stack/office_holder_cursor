@@ -166,10 +166,8 @@ class TestDiffOfficeTable:
 
     def test_unchanged_row_when_dates_match(self):
         r = _import_runner()
-        existing = [
-            self._existing_term(1, "https://en.wikipedia.org/wiki/Alice", term_start="2020-01-01")
-        ]
-        parsed = [self._parsed_row("https://en.wikipedia.org/wiki/Alice", "2020-01-01")]
+        existing = [self._existing_term(1, "https://en.wiki/wiki/Alice", term_start="2020-01-01")]
+        parsed = [self._parsed_row("https://en.wiki/wiki/Alice", "2020-01-01")]
         diff = r._diff_office_table(
             existing, parsed, office_id=1, years_only=False, use_infobox=False
         )
@@ -181,12 +179,10 @@ class TestDiffOfficeTable:
         r = _import_runner()
         existing = [
             self._existing_term(
-                1, "https://en.wikipedia.org/wiki/Alice", term_start="2020-01-01", term_end=None
+                1, "https://en.wiki/wiki/Alice", term_start="2020-01-01", term_end=None
             )
         ]
-        parsed = [
-            self._parsed_row("https://en.wikipedia.org/wiki/Alice", "2020-01-01", "2025-01-20")
-        ]
+        parsed = [self._parsed_row("https://en.wiki/wiki/Alice", "2020-01-01", "2025-01-20")]
         diff = r._diff_office_table(
             existing, parsed, office_id=1, years_only=False, use_infobox=False
         )
@@ -208,7 +204,7 @@ class TestDiffOfficeTable:
 
     def test_vanished_real_person_not_in_placeholder(self):
         r = _import_runner()
-        existing = [self._existing_term(7, "https://en.wikipedia.org/wiki/Alice")]
+        existing = [self._existing_term(7, "https://en.wiki/wiki/Alice")]
         diff = r._diff_office_table(existing, [], office_id=1, years_only=False, use_infobox=False)
         assert 7 in diff["vanished_real_ids"]
         assert 7 not in diff["placeholder_ids"]
@@ -223,8 +219,10 @@ class TestBioUrlGuard:
     @pytest.mark.parametrize(
         "wiki_url,should_reach_extract",
         [
-            ("https://en.wikipedia.org/wiki/Pam_Bondi", True),
-            ("http://en.wikipedia.org/wiki/Foo", True),
+            # Valid HTTP URLs — should reach biography_extract (no real HTTP calls made in tests)
+            ("https://en.wiki/wiki/Pam_Bondi", True),
+            ("http://en.wiki/wiki/Foo", True),
+            # Invalid / placeholder URLs — must be filtered before biography_extract
             ("", False),
             ("No link:7:Ted Sanders", False),
             ("No link:331:Acting", False),
