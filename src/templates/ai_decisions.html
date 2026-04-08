@@ -88,7 +88,7 @@
         {% endif %}
       </td>
       <td>{% if row.gh_issue_url %}<a href="{{ row.gh_issue_url }}" target="_blank" rel="noopener">issue</a>{% else %}—{% endif %}</td>
-      <td>{{ (row.created_at or '')[:19] }}</td>
+      <td>{{ row.created_at.strftime('%Y-%m-%d %H:%M:%S') if row.created_at else '—' }}</td>
     </tr>
     {% endfor %}
   </tbody>
