@@ -1541,6 +1541,10 @@ def _run_selected_bios(ctx: _RunContext, report: Callable) -> dict[str, Any]:
             bio_error_count += 1
             bio_errors.append({"url": str(individual_id), "error": "Missing wiki_url/page_path"})
             continue
+        if not wiki_url.startswith("http"):
+            bio_error_count += 1
+            bio_errors.append({"url": wiki_url, "error": "Not a valid URL (no-link placeholder)"})
+            continue
         try:
             bio_info = biography.biography_extract(wiki_url)
             if bio_info:
@@ -1584,7 +1588,7 @@ def _run_bios_only(ctx: _RunContext, report: Callable) -> dict[str, Any]:
     data_cleanup = parse_core.DataCleanup()
     biography = parse_core.Biography(data_cleanup)
     to_fetch = list(db_individuals.get_all_individual_wiki_urls())
-    to_fetch = [u for u in to_fetch if (u or "").strip()]
+    to_fetch = [u for u in to_fetch if (u or "").strip() and u.startswith("http")]
     total_bios = len(to_fetch)
     bio_errors: list[dict[str, str]] = []
     unique_to_fetch = list(dict.fromkeys(to_fetch))
