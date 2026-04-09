@@ -95,7 +95,52 @@ class TestClaudeStructuredOutput:
         assert "Birth date after death date" in result.concerns
         assert result.confidence == "high"
 
-    def test_non_json_response_returns_default(self):
+    def test_code_fenced_json_is_parsed_correctly(self):
+        """Claude sometimes wraps its JSON in ```json ... ``` — must be stripped."""
+        from src.services.claude_client import ClaudeClient
+
+        fenced = (
+            "```json\n"
+            + json.dumps({"is_valid": False, "concerns": ["year as name"], "confidence": "high"})
+            + "\n```"
+        )
+        mock_response = MagicMock()
+        mock_response.content = [MagicMock(text=fenced)]
+
+        with patch("anthropic.Anthropic") as mock_cls:
+            mock_client = mock_cls.return_value
+            mock_client.messages.create.return_value = mock_response
+            client = ClaudeClient(api_key="test")
+            result = client.check_data_quality("Check this record", {})
+
+        assert result is not None
+        assert result.is_valid is False
+        assert result.concerns == ["year as name"]
+        assert result.confidence == "high"
+
+    def test_code_fenced_json_no_language_tag(self):
+        """Strip ``` fences with no language tag."""
+        from src.services.claude_client import ClaudeClient
+
+        fenced = (
+            "```\n"
+            + json.dumps({"is_valid": True, "concerns": [], "confidence": "medium"})
+            + "\n```"
+        )
+        mock_response = MagicMock()
+        mock_response.content = [MagicMock(text=fenced)]
+
+        with patch("anthropic.Anthropic") as mock_cls:
+            mock_client = mock_cls.return_value
+            mock_client.messages.create.return_value = mock_response
+            client = ClaudeClient(api_key="test")
+            result = client.check_data_quality("Check this record", {})
+
+        assert result is not None
+        assert result.is_valid is True
+
+    def test_non_json_response_returns_none(self):
+        """Unparseable response returns None so caller excludes provider from quorum."""
         from src.services.claude_client import ClaudeClient
 
         mock_response = MagicMock()
@@ -107,9 +152,7 @@ class TestClaudeStructuredOutput:
             client = ClaudeClient(api_key="test")
             result = client.check_data_quality("Check this record", {})
 
-        assert result.is_valid is True
-        assert result.concerns == []
-        assert result.confidence == "low"
+        assert result is None
 
 
 # ---------------------------------------------------------------------------

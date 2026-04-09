@@ -83,7 +83,9 @@ _SYSTEM_PROMPT = (
     "You are a data quality analyst for a political office holders database. "
     "Assess the provided record or page data and return JSON with these fields: "
     '{"is_valid": bool, "concerns": [str], "confidence": "high"|"medium"|"low"}. '
-    "is_valid is true if the data appears correct and accurate."
+    "is_valid is true if the data appears correct and accurate. "
+    "IMPORTANT: A record where full_name is a 4-digit year (e.g. '1999', '2006') "
+    "is NEVER a valid person name — always return is_valid=false with high confidence."
 )
 
 # ---------------------------------------------------------------------------
@@ -173,6 +175,8 @@ def _vote_claude(prompt: str, context: dict) -> AIVote:
             return AIVote(provider="claude", is_valid=None, error="client not configured")
 
         result = client.check_data_quality(prompt, context, system_prompt=_SYSTEM_PROMPT)
+        if result is None:
+            return AIVote(provider="claude", is_valid=None, error="parse error")
         return AIVote(
             provider="claude",
             is_valid=result.is_valid,

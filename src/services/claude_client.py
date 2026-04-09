@@ -121,8 +121,13 @@ class ClaudeClient:
 
     def check_data_quality(
         self, prompt: str, context: dict, system_prompt: str | None = None
-    ) -> DataQualityResult:
-        """Assess data quality for a record or page. Returns structured result.
+    ) -> DataQualityResult | None:
+        """Assess data quality for a record or page. Returns structured result or None.
+
+        Returns None when the response cannot be parsed (e.g. Claude wraps JSON in
+        code fences and stripping still leaves unparseable text).  The caller
+        (_vote_claude in consensus_voter.py) treats None as provider unavailable and
+        excludes it from quorum rather than defaulting to is_valid=True.
 
         Args:
             system_prompt: Override the default individual-record system prompt.
@@ -134,7 +139,7 @@ class ClaudeClient:
             return self._call_claude(user_prompt, system_prompt=system_prompt or _SYSTEM_PROMPT)
         except Exception:
             logger.exception("Claude data quality check failed")
-            return DataQualityResult(is_valid=True, concerns=[], confidence="low")
+            return None
 
     def _build_prompt(self, prompt: str, context: dict) -> str:
         lines = [prompt]
@@ -146,10 +151,11 @@ class ClaudeClient:
 
     def _call_claude(
         self, user_prompt: str, system_prompt: str = _SYSTEM_PROMPT
-    ) -> DataQualityResult:
+    ) -> DataQualityResult | None:
         """Call Claude with exponential backoff on rate limit (HTTP 429).
 
         Retries up to 3 times, doubling the backoff delay each attempt (1 s → 2 s → 4 s).
+        Returns None when the response cannot be parsed (caller excludes from quorum).
         """
         import anthropic
 
@@ -181,14 +187,24 @@ class ClaudeClient:
                 backoff *= 2
         raise RuntimeError("unreachable")
 
-    def _parse_response(self, response) -> DataQualityResult:
-        """Parse Claude JSON response into DataQualityResult."""
+    def _parse_response(self, response) -> DataQualityResult | None:
+        """Parse Claude JSON response into DataQualityResult, or None on parse failure.
+
+        Claude sometimes wraps its JSON in markdown code fences (```json ... ```).
+        Strip them before parsing so the response is usable.  On any remaining
+        parse failure return None so the caller can exclude this provider from
+        quorum instead of defaulting to is_valid=True.
+        """
+        import re
+
         text = response.content[0].text if response.content else ""
+        # Strip optional markdown code fences: ```json ... ``` or ``` ... ```
+        stripped = re.sub(r"^```(?:json)?\s*|\s*```$", "", text.strip(), flags=re.MULTILINE)
         try:
-            data = json.loads(text)
+            data = json.loads(stripped)
         except json.JSONDecodeError:
             logger.warning("Claude returned non-JSON response: %s", text[:200])
-            return DataQualityResult(is_valid=True, concerns=[], confidence="low")
+            return None
 
         return DataQualityResult(
             is_valid=data.get("is_valid", True),
