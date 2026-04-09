@@ -1,4 +1,10 @@
-"""Tests for RunPageCache and its integration with _fetch_table_from_url."""
+"""Tests for RunPageCache and its integration with _fetch_table_from_url.
+
+RunPageCache is a read-through layer over Wikipedia REST API responses.
+Real HTTP calls (made via wiki_fetch) always include a descriptive User-Agent
+header and honour rate-limit / retry / backoff constraints per Wikimedia API
+policy — the cache itself never sends HTTP requests directly.
+"""
 
 from __future__ import annotations
 
@@ -7,6 +13,12 @@ import threading
 import pytest
 
 from src.scraper.run_cache import RunPageCache
+
+
+def test_run_cache_default_max_entries_is_100():
+    """Default cap is 100 entries (~8 MB). Raised from 300 to reduce peak RSS (#380)."""
+    cache = RunPageCache()
+    assert cache._max == 100
 
 
 def test_run_cache_miss_returns_none():

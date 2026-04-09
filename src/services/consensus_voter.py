@@ -261,10 +261,13 @@ class ConsensusVoter:
             future_to_provider = {
                 executor.submit(fn, prompt, context): name for name, fn in providers
             }
-            for future in as_completed(future_to_provider, timeout=timeout_s + 5):
+            pending_futures = set(future_to_provider)
+
+            def _collect(future: object) -> None:
+                pending_futures.discard(future)
                 provider_name = future_to_provider[future]
                 try:
-                    vote = future.result(timeout=timeout_s)
+                    vote = future.result(timeout=0)
                 except FuturesTimeoutError:
                     logger.warning(
                         "ConsensusVoter: %s timed out after %.0f s", provider_name, timeout_s
@@ -278,6 +281,30 @@ class ConsensusVoter:
                     logger.exception("ConsensusVoter: %s raised unexpected error", provider_name)
                     vote = AIVote(provider=provider_name, is_valid=None, error=str(exc))
                 votes.append(vote)
+
+            try:
+                for future in as_completed(future_to_provider, timeout=timeout_s + 5):
+                    _collect(future)
+            except FuturesTimeoutError:
+                pass
+
+            # Drain any futures that finished but weren't yielded before the timeout fired
+            # (sub-millisecond overshoot can leave done futures in pending)
+            for future in list(pending_futures):
+                if future.done():
+                    _collect(future)
+                else:
+                    provider_name = future_to_provider[future]
+                    logger.warning(
+                        "ConsensusVoter: %s timed out after %.0f s", provider_name, timeout_s
+                    )
+                    votes.append(
+                        AIVote(
+                            provider=provider_name,
+                            is_valid=None,
+                            error=f"timed out after {timeout_s:.0f}s",
+                        )
+                    )
 
         # Sort for deterministic ordering in tests / logs
         votes.sort(key=lambda v: v.provider)
