@@ -283,3 +283,30 @@ def test_upsert_individual_db_unique_constraint_enforced(tmp_db):
     )
     with pytest.raises(sqlite3.IntegrityError):
         tmp_db.execute("INSERT INTO individuals (wiki_url) VALUES (?)", ("/wiki/ConstraintCheck",))
+
+
+# ---------------------------------------------------------------------------
+# get_existing_wiki_urls — targeted URL lookup (#379)
+# ---------------------------------------------------------------------------
+
+
+def test_get_existing_wiki_urls_returns_known_subset(tmp_db):
+    """Only URLs already in the individuals table are returned."""
+    db_individuals.upsert_individual({"wiki_url": "/wiki/Known1"}, conn=tmp_db)
+    db_individuals.upsert_individual({"wiki_url": "/wiki/Known2"}, conn=tmp_db)
+
+    result = db_individuals.get_existing_wiki_urls(
+        {"/wiki/Known1", "/wiki/Known2", "/wiki/Unknown"},
+        conn=tmp_db,
+    )
+    assert result == {"/wiki/Known1", "/wiki/Known2"}
+
+
+def test_get_existing_wiki_urls_empty_input_returns_empty(tmp_db):
+    result = db_individuals.get_existing_wiki_urls(set(), conn=tmp_db)
+    assert result == set()
+
+
+def test_get_existing_wiki_urls_no_matches_returns_empty(tmp_db):
+    result = db_individuals.get_existing_wiki_urls({"/wiki/NobodyHere"}, conn=tmp_db)
+    assert result == set()

@@ -220,6 +220,30 @@ def get_all_individual_wiki_urls(conn=None) -> set[str]:
             conn.close()
 
 
+def get_existing_wiki_urls(wiki_urls: set[str], conn=None) -> set[str]:
+    """Return the subset of *wiki_urls* that already exist in the individuals table.
+
+    Use this instead of get_all_individual_wiki_urls() for delta/fresh runs where
+    only a small number of URLs were scraped — avoids loading the full ~50 K-row
+    set into memory.
+    """
+    if not wiki_urls:
+        return set()
+    own_conn = conn is None
+    if own_conn:
+        conn = get_connection()
+    try:
+        placeholders = ",".join(["%s"] * len(wiki_urls))
+        cur = conn.execute(
+            f"SELECT wiki_url FROM individuals WHERE wiki_url IN ({placeholders})",
+            list(wiki_urls),
+        )
+        return {row["wiki_url"] for row in cur.fetchall()}
+    finally:
+        if own_conn:
+            conn.close()
+
+
 def _earliest_term_year_for_individual(individual_id: int, conn) -> int | None:
     """Return earliest known term year for an individual (from office_terms), or None if none."""
     # Prefer term_start_year; fall back to year component of term_start (YYYY-MM-DD).
