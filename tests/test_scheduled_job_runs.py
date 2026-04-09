@@ -245,3 +245,108 @@ def test_run_daily_delta_finishes_with_error_on_crash(monkeypatch, tmp_path):
 
     assert len(finished) == 1
     assert finished[0] == (77, "error")
+
+
+# ---------------------------------------------------------------------------
+# expire_stale_scheduled_job_runs (#374)
+# ---------------------------------------------------------------------------
+
+
+class TestExpireStaleScheduledJobRuns:
+    def test_no_running_rows_returns_zero(self, tmp_path):
+        conn = _make_conn(tmp_path)
+        assert sjr.expire_stale_scheduled_job_runs(stale_hours=4, conn=conn) == 0
+
+    def test_one_stale_row_marked_error(self, tmp_path):
+        conn = _make_conn(tmp_path)
+        run_id = sjr.create_run("daily_delta", conn=conn)
+        conn.execute(
+            "UPDATE scheduled_job_runs SET started_at = %s WHERE id = %s",
+            ("2000-01-01T00:00:00Z", run_id),
+        )
+        conn.commit()
+
+        count = sjr.expire_stale_scheduled_job_runs(stale_hours=4, conn=conn)
+        assert count == 1
+
+        row = conn.execute(
+            "SELECT status, error FROM scheduled_job_runs WHERE id = %s", (run_id,)
+        ).fetchone()
+        assert row[0] == "error"
+        assert row[1] is not None
+
+    def test_multiple_stale_rows_all_expired(self, tmp_path):
+        conn = _make_conn(tmp_path)
+        id1 = sjr.create_run("daily_delta", conn=conn)
+        id2 = sjr.create_run("gemini_research", conn=conn)
+        for run_id in (id1, id2):
+            conn.execute(
+                "UPDATE scheduled_job_runs SET started_at = %s WHERE id = %s",
+                ("2000-01-01T00:00:00Z", run_id),
+            )
+        conn.commit()
+
+        count = sjr.expire_stale_scheduled_job_runs(stale_hours=4, conn=conn)
+        assert count == 2
+        for run_id in (id1, id2):
+            row = conn.execute(
+                "SELECT status FROM scheduled_job_runs WHERE id = %s", (run_id,)
+            ).fetchone()
+            assert row[0] == "error"
+
+    def test_fresh_running_row_not_touched(self, tmp_path):
+        conn = _make_conn(tmp_path)
+        run_id = sjr.create_run("daily_delta", conn=conn)
+
+        count = sjr.expire_stale_scheduled_job_runs(stale_hours=4, conn=conn)
+        assert count == 0
+
+        row = conn.execute(
+            "SELECT status FROM scheduled_job_runs WHERE id = %s", (run_id,)
+        ).fetchone()
+        assert row[0] == "running"
+
+    def test_stale_row_gets_finished_at(self, tmp_path):
+        conn = _make_conn(tmp_path)
+        run_id = sjr.create_run("daily_delta", conn=conn)
+        conn.execute(
+            "UPDATE scheduled_job_runs SET started_at = %s WHERE id = %s",
+            ("2000-01-01T00:00:00Z", run_id),
+        )
+        conn.commit()
+
+        sjr.expire_stale_scheduled_job_runs(stale_hours=4, conn=conn)
+        row = conn.execute(
+            "SELECT finished_at FROM scheduled_job_runs WHERE id = %s", (run_id,)
+        ).fetchone()
+        assert row[0] is not None
+
+
+# ---------------------------------------------------------------------------
+# lifespan startup wiring (#376)
+# ---------------------------------------------------------------------------
+
+
+def test_lifespan_calls_expire_stale_scheduled_job_runs_on_startup(monkeypatch, tmp_path):
+    """expire_stale_scheduled_job_runs must be called during lifespan startup (#376)."""
+    calls = {"count": 0}
+
+    def fake_expire():
+        calls["count"] += 1
+        return 0
+
+    monkeypatch.setattr("src.db.scheduled_job_runs.expire_stale_scheduled_job_runs", fake_expire)
+    monkeypatch.setattr("src.main.init_db", lambda: None)
+    monkeypatch.setattr("src.main.AsyncIOScheduler", MagicMock())
+    monkeypatch.setattr("src.db.app_settings.get_setting", lambda key, default=None: default)
+
+    import asyncio
+    from src.main import lifespan, app
+
+    async def _run():
+        async with lifespan(app):
+            pass
+
+    asyncio.run(_run())
+
+    assert calls["count"] == 1, "expire_stale_scheduled_job_runs must be called once at startup"

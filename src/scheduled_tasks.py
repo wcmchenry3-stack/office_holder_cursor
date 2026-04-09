@@ -242,6 +242,16 @@ def run_daily_maintenance() -> None:
     sentry_sdk.set_tag("scheduled_task", "daily_maintenance")
     _expire_stale_jobs_with_email()
 
+    from src.db.scheduled_job_runs import expire_stale_scheduled_job_runs
+
+    expired_count = expire_stale_scheduled_job_runs()
+    if expired_count:
+        logger.warning(
+            "daily_maintenance: expired %d stale scheduled_job_runs row(s)", expired_count
+        )
+    else:
+        logger.info("daily_maintenance: no stale scheduled_job_runs rows found")
+
 
 def run_daily_delta() -> None:
     """Entry point called by APScheduler at 06:00 UTC each day."""
