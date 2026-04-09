@@ -14,6 +14,5 @@ jobs:
     uses: wcmchenry3-stack/.github/.github/workflows/called-deploy-render.yml@main
     with:
       service-name: 'office-holder-cursor'
-      service-id: 'srv-d6ubbu24d50c73cpmgkg'
       zap-target-url: 'https://rulersai.buffingchi.com'
     secrets: inherit
