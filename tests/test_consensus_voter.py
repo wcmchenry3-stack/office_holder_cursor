@@ -439,6 +439,23 @@ class TestVoteClaude:
         assert vote.is_valid is False
         assert "suspicious" in vote.concerns
 
+    def test_none_result_returns_parse_error_unavailable(self):
+        """When check_data_quality returns None (e.g. code-fenced JSON that still
+        fails to parse), _vote_claude must return is_valid=None so the provider
+        is excluded from quorum rather than voting 'valid'."""
+        from src.services.consensus_voter import _vote_claude
+
+        mock_client = MagicMock()
+        mock_client.check_data_quality.return_value = None
+        with patch(
+            "src.services.claude_client.get_claude_client",
+            return_value=mock_client,
+        ):
+            vote = _vote_claude("prompt", {})
+        assert vote.provider == "claude"
+        assert vote.is_valid is None
+        assert vote.error == "parse error"
+
 
 # ---------------------------------------------------------------------------
 # Vote ordering is deterministic
@@ -470,6 +487,20 @@ class TestVoteOrdering:
 # ---------------------------------------------------------------------------
 # System prompt alignment — Claude and Gemini must receive _SYSTEM_PROMPT
 # ---------------------------------------------------------------------------
+
+
+class TestSystemPromptContent:
+    def test_system_prompt_contains_year_as_name_directive(self):
+        """_SYSTEM_PROMPT must explicitly instruct providers to reject year-as-name
+        records. Regression guard for Issue #398."""
+        from src.services.consensus_voter import _SYSTEM_PROMPT
+
+        assert "4-digit year" in _SYSTEM_PROMPT, (
+            "_SYSTEM_PROMPT must contain explicit year-as-name rejection rule"
+        )
+        assert "is_valid=false" in _SYSTEM_PROMPT, (
+            "_SYSTEM_PROMPT must explicitly say to return is_valid=false for year-as-name"
+        )
 
 
 class TestSystemPromptAlignment:
