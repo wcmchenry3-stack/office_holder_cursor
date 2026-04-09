@@ -217,14 +217,76 @@ def test_get_last_run_for_job_reflects_status(db_path):
 
 
 # ---------------------------------------------------------------------------
+# count_active_scheduled_runs  (use fresh conn to avoid shared-DB pollution)
+# ---------------------------------------------------------------------------
+
+
+def _fresh_conn(tmp_path_factory):
+    """Return a fresh in-memory-style SQLite conn with the scheduled_job_runs table."""
+    import sqlite3
+    from src.db.connection import _SQLiteConnWrapper
+
+    raw = sqlite3.connect(":memory:")
+    raw.row_factory = sqlite3.Row
+    conn = _SQLiteConnWrapper(raw)
+    conn.executescript("""
+        CREATE TABLE scheduled_job_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_name TEXT NOT NULL,
+            started_at TEXT NOT NULL,
+            finished_at TEXT,
+            status TEXT NOT NULL DEFAULT 'running',
+            duration_s REAL,
+            result_json TEXT,
+            error TEXT
+        );
+    """)
+    conn.commit()
+    return conn
+
+
+def test_count_active_no_rows(tmp_path_factory):
+    """Returns 0 when no running rows exist."""
+    conn = _fresh_conn(tmp_path_factory)
+    assert db_runs.count_active_scheduled_runs(conn=conn) == 0
+
+
+def test_count_active_counts_fresh_running_row(tmp_path_factory):
+    """A just-started running row is counted."""
+    conn = _fresh_conn(tmp_path_factory)
+    db_runs.create_run("daily_delta", conn=conn)
+    assert db_runs.count_active_scheduled_runs(active_hours=4, conn=conn) >= 1
+
+
+def test_count_active_ignores_stale_running_row(tmp_path_factory):
+    """A running row started >active_hours ago is not counted."""
+    conn = _fresh_conn(tmp_path_factory)
+    run_id = db_runs.create_run("daily_delta", conn=conn)
+    conn.execute(
+        "UPDATE scheduled_job_runs SET started_at = %s WHERE id = %s",
+        ("2000-01-01T00:00:00Z", run_id),
+    )
+    conn.commit()
+    assert db_runs.count_active_scheduled_runs(active_hours=4, conn=conn) == 0
+
+
+def test_count_active_ignores_completed_rows(tmp_path_factory):
+    """Rows with status='complete' or 'error' are not counted."""
+    conn = _fresh_conn(tmp_path_factory)
+    run_id = db_runs.create_run("daily_delta", conn=conn)
+    db_runs.finish_run(run_id, "complete", conn=conn)
+    assert db_runs.count_active_scheduled_runs(active_hours=4, conn=conn) == 0
+
+
+# ---------------------------------------------------------------------------
 # expire_stale_scheduled_job_runs
 # ---------------------------------------------------------------------------
 
 
-def test_expire_stale_no_running_rows(db_path):
+def test_expire_stale_no_running_rows(tmp_path_factory):
     """Returns 0 when there are no running rows."""
-    count = db_runs.expire_stale_scheduled_job_runs(stale_hours=4)
-    assert count == 0
+    conn = _fresh_conn(tmp_path_factory)
+    assert db_runs.expire_stale_scheduled_job_runs(stale_hours=4, conn=conn) == 0
 
 
 def test_expire_stale_one_stale_row(db_path):

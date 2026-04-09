@@ -117,6 +117,28 @@ def get_last_run_for_job(job_name: str, conn=None) -> dict | None:
             conn.close()
 
 
+def count_active_scheduled_runs(active_hours: int = 4, conn=None) -> int:
+    """Return the number of rows with status='running' started within *active_hours*.
+
+    Used by the linear scheduling guard to detect concurrent job invocations.
+    """
+    own_conn = conn is None
+    if own_conn:
+        conn = get_connection()
+    try:
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=active_hours)).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
+        row = conn.execute(
+            "SELECT COUNT(*) FROM scheduled_job_runs" " WHERE status = %s AND started_at >= %s",
+            ("running", cutoff),
+        ).fetchone()
+        return int(row[0]) if row else 0
+    finally:
+        if own_conn:
+            conn.close()
+
+
 def expire_stale_scheduled_job_runs(stale_hours: int = 4, conn=None) -> int:
     """Mark scheduled_job_runs rows stuck in 'running' as 'error' if older than *stale_hours*.
 

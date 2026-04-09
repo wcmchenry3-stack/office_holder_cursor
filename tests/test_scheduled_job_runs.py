@@ -189,6 +189,7 @@ def test_run_daily_delta_calls_create_and_finish_run(monkeypatch, tmp_path):
     )
     monkeypatch.setattr("src.db.scheduled_job_runs.create_run", _fake_create_run)
     monkeypatch.setattr("src.db.scheduled_job_runs.finish_run", _fake_finish_run)
+    monkeypatch.setattr("src.db.scheduled_job_runs.count_active_scheduled_runs", lambda **kw: 0)
 
     # Stub out the DB helpers that run_daily_delta also calls
     monkeypatch.setattr("src.scraper.runner._cleanup_disk_cache", lambda **_: 0)
@@ -229,6 +230,7 @@ def test_run_daily_delta_finishes_with_error_on_crash(monkeypatch, tmp_path):
     monkeypatch.setattr("src.scheduled_tasks._run_daily_delta_in_subprocess", _crash)
     monkeypatch.setattr("src.db.scheduled_job_runs.create_run", _fake_create_run)
     monkeypatch.setattr("src.db.scheduled_job_runs.finish_run", _fake_finish_run)
+    monkeypatch.setattr("src.db.scheduled_job_runs.count_active_scheduled_runs", lambda **kw: 0)
     monkeypatch.setattr("src.scraper.runner._cleanup_disk_cache", lambda **_: 0)
 
     try:
