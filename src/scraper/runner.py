@@ -33,6 +33,7 @@ Google Gemini API (via src/services/gemini_vitals_researcher.py):
 
 from __future__ import annotations
 
+import gc
 import hashlib
 import logging
 import os
@@ -2423,13 +2424,24 @@ def run_with_db(
         biography = parse_core.Biography(data_cleanup, reporter=_reporter)
         offices_parser = parse_core.Offices(biography, data_cleanup, reporter=_reporter)
 
+        # Delta/fresh runs: disable the run-level infobox cache.  The same individual
+        # rarely appears as changed across two different tables in a single delta, so
+        # the cache provides almost no deduplication benefit while holding 20-50 MB of
+        # parsed HTML in memory for the entire run.
+        if run_mode != "full":
+            offices_parser._infobox_cache = None
+
         # Full run: purge office_terms first (FK constraint), then individuals; terms are re-populated per-office
         if run_mode == "full" and not dry_run and not test_run:
             db_office_terms.purge_all_office_terms()
             db_individuals.purge_all_individuals()
             existing_individual_wiki_urls: set[str] = set()
         else:
-            existing_individual_wiki_urls = db_individuals.get_all_individual_wiki_urls()
+            # Defer the wiki-URL lookup until we know which URLs were actually scraped.
+            # get_all_individual_wiki_urls() loads the full ~50 K-row set up-front; for
+            # delta/fresh runs we only need the small intersection with unique_wiki_urls,
+            # which is computed in get_existing_wiki_urls() just before the bio phase.
+            existing_individual_wiki_urls = None  # type: ignore[assignment]
 
         total_terms = 0
         unique_wiki_urls: set[str] = set()
@@ -2471,9 +2483,23 @@ def run_with_db(
             bio_batch=bio_batch,
         )
 
+        _prev_office_url: str | None = None
         for idx, office_row in enumerate(offices):
             office_index = idx + 1
             office_total = len(offices)
+
+            # When we finish all tables for one Wikipedia page and move to the next,
+            # the BS4 parse trees from the previous page are no longer reachable.
+            # Python's cyclic GC may not reclaim them promptly (they contain reference
+            # cycles via BS4's parent/sibling pointers), so we nudge it explicitly.
+            _cur_office_url = office_row.get("url")
+            if (
+                _cur_office_url
+                and _cur_office_url != _prev_office_url
+                and _prev_office_url is not None
+            ):
+                gc.collect()
+            _prev_office_url = _cur_office_url
             if cancel_check and cancel_check():
                 _log.info("Run cancelled by user.")
                 report("office", idx, office_total, "Cancelled", {"terms_so_far": total_terms})
@@ -2814,6 +2840,12 @@ def run_with_db(
                 living_error_count += _lp_counts[1]
             else:
                 # Full/delta: bio only for new individuals (not already in DB).
+                # For delta/fresh runs existing_individual_wiki_urls was deferred; resolve
+                # it now using only the URLs we actually scraped (avoids loading ~50 K rows).
+                if existing_individual_wiki_urls is None:
+                    existing_individual_wiki_urls = db_individuals.get_existing_wiki_urls(
+                        unique_wiki_urls
+                    )
                 to_fetch = list(unique_wiki_urls - existing_individual_wiki_urls)
                 bio_skipped_count = len(unique_wiki_urls) - len(to_fetch)
                 if bio_skipped_count > 0:

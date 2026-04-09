@@ -9,6 +9,12 @@ import pytest
 from src.scraper.run_cache import RunPageCache
 
 
+def test_run_cache_default_max_entries_is_100():
+    """Default cap is 100 entries (~8 MB). Raised from 300 to reduce peak RSS (#380)."""
+    cache = RunPageCache()
+    assert cache._max == 100
+
+
 def test_run_cache_miss_returns_none():
     cache = RunPageCache()
     assert cache.get("https://example.com/page") is None

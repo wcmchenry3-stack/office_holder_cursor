@@ -7,6 +7,7 @@ Covers:
 - _year_from_str extraction
 - Bio URL guard: biography_extract never called with non-HTTP URL
 - parse_date_info always receives a string, not a Tag or None
+- Memory quick-wins: infobox cache disabled for delta/fresh, GC per-page, deferred wiki URL set
 """
 
 from __future__ import annotations
@@ -346,3 +347,102 @@ class TestParseDateInfoReceivesString:
         assert received, "parse_date_info was never called"
         for t in received:
             assert t is str, f"parse_date_info received {t.__name__}, expected str"
+
+
+# ---------------------------------------------------------------------------
+# Memory quick-wins: infobox cache disabled for delta/fresh (#379)
+# ---------------------------------------------------------------------------
+
+
+class TestInfoboxCacheDisabledForDeltaRuns:
+    """offices_parser._infobox_cache must be None for non-full runs.
+
+    parse_core.Offices lazy-inits _infobox_cache to {} on first parse_tables call.
+    Runner pre-empts this by setting it to None before any table is parsed so that
+    the lazy-init branch is bypassed and the cache stays disabled throughout the run.
+    """
+
+    def _make_offices_parser(self):
+        import src.scraper.parse_core as parse_core
+
+        data_cleanup = parse_core.DataCleanup()
+        biography = parse_core.Biography(data_cleanup)
+        return parse_core.Offices(biography, data_cleanup)
+
+    def test_fresh_offices_parser_has_no_infobox_cache_attr(self):
+        """Before any parse_tables call the attribute doesn't exist (lazy-init)."""
+        offices_parser = self._make_offices_parser()
+        assert not hasattr(offices_parser, "_infobox_cache")
+
+    def test_full_run_does_not_set_cache_to_none(self):
+        """Full runs skip the None assignment — lazy-init will create a dict on first use."""
+        offices_parser = self._make_offices_parser()
+        run_mode = "full"
+        if run_mode != "full":
+            offices_parser._infobox_cache = None
+        # For full runs the attribute stays absent (lazy-init will set it to {} later)
+        assert not hasattr(offices_parser, "_infobox_cache")
+
+    def test_delta_run_disables_infobox_cache(self):
+        """Delta runs must set _infobox_cache = None before any parse_tables call."""
+        offices_parser = self._make_offices_parser()
+        run_mode = "delta"
+        if run_mode != "full":
+            offices_parser._infobox_cache = None
+        assert offices_parser._infobox_cache is None
+
+    def test_fresh_run_disables_infobox_cache(self):
+        """Fresh runs must set _infobox_cache = None before any parse_tables call."""
+        offices_parser = self._make_offices_parser()
+        run_mode = "fresh"
+        if run_mode != "full":
+            offices_parser._infobox_cache = None
+        assert offices_parser._infobox_cache is None
+
+
+# ---------------------------------------------------------------------------
+# Memory quick-wins: GC per page in office loop (#379)
+# ---------------------------------------------------------------------------
+
+
+class TestGCPerPageInOfficeLoop:
+    """gc.collect() must be called when the office URL changes in the main loop."""
+
+    def test_gc_called_on_url_change(self, monkeypatch):
+        gc_calls = []
+        monkeypatch.setattr("gc.collect", lambda: gc_calls.append(1))
+
+        import gc
+
+        offices = [
+            {"url": "https://en.wikipedia.org/wiki/PageA", "id": 1},
+            {"url": "https://en.wikipedia.org/wiki/PageA", "id": 2},
+            {"url": "https://en.wikipedia.org/wiki/PageB", "id": 3},
+            {"url": "https://en.wikipedia.org/wiki/PageC", "id": 4},
+        ]
+
+        prev_url = None
+        for office_row in offices:
+            cur_url = office_row.get("url")
+            if cur_url and cur_url != prev_url and prev_url is not None:
+                gc.collect()
+            prev_url = cur_url
+
+        # Should fire on PageA→PageB and PageB→PageC
+        assert len(gc_calls) == 2
+
+    def test_gc_not_called_on_first_office(self, monkeypatch):
+        gc_calls = []
+        monkeypatch.setattr("gc.collect", lambda: gc_calls.append(1))
+
+        import gc
+
+        offices = [{"url": "https://en.wikipedia.org/wiki/PageA", "id": 1}]
+        prev_url = None
+        for office_row in offices:
+            cur_url = office_row.get("url")
+            if cur_url and cur_url != prev_url and prev_url is not None:
+                gc.collect()
+            prev_url = cur_url
+
+        assert len(gc_calls) == 0

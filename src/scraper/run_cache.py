@@ -7,14 +7,14 @@ from collections import OrderedDict
 
 
 class RunPageCache:
-    """Thread-safe LRU cache: {fetch_url: full_html_text}. Max 300 entries (~24MB).
+    """Thread-safe LRU cache: {fetch_url: full_html_text}. Max 100 entries (~8MB).
 
     Stores the full HTML response for a Wikipedia REST API URL so that multiple
     tables on the same page (or the same person's infobox fetched again during
     bio refresh) only require one HTTP call per run.
     """
 
-    def __init__(self, max_entries: int = 300):
+    def __init__(self, max_entries: int = 100):
         self._max = max_entries
         self._store: OrderedDict[str, str] = OrderedDict()
         self._lock = threading.Lock()
