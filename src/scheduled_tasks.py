@@ -146,6 +146,38 @@ except Exception as _exc:
     return parsed
 
 
+def _has_active_scheduled_run(job_name: str) -> bool:
+    """Return True if another scheduled job is currently running (started within 4 h).
+
+    Used as a linear scheduling guard: if any row in scheduled_job_runs has
+    status='running' and started_at within the last 4 hours, the calling job
+    should skip its invocation to prevent concurrent runs.
+
+    Re-entrancy safe: a job's own row does not exist yet when this guard fires
+    (create_run is called after the guard), so there is no risk of a job
+    blocking itself via its own row.
+    """
+    try:
+        from src.db.scheduled_job_runs import count_active_scheduled_runs
+
+        active = count_active_scheduled_runs()
+        if active > 0:
+            logger.warning(
+                "%s skipped: %d other scheduled job(s) running (linear scheduling guard)",
+                job_name,
+                active,
+            )
+            return True
+        return False
+    except Exception as exc:
+        logger.warning(
+            "Could not check for overlapping scheduled runs (%s), proceeding (non-fatal): %s",
+            job_name,
+            exc,
+        )
+        return False
+
+
 def _expire_stale_jobs_with_email() -> None:
     """Expire stale jobs and send an email notification for each expired job.
 
@@ -286,6 +318,9 @@ def run_daily_delta() -> None:
     except Exception as e:
         logger.warning("Could not check active jobs (non-fatal): %s", e)
 
+    if _has_active_scheduled_run("daily_delta"):
+        return
+
     from src.scraper.runner import _cleanup_disk_cache
 
     run_start = datetime.now(timezone.utc)
@@ -415,6 +450,9 @@ def run_daily_insufficient_vitals() -> None:
     except Exception as e:
         logger.warning("Could not check active jobs (non-fatal): %s", e)
 
+    if _has_active_scheduled_run("insufficient_vitals"):
+        return
+
     run_start = datetime.now(timezone.utc)
     today_batch = run_start.day % 30
     logger.info(
@@ -474,6 +512,9 @@ def run_daily_gemini_research() -> None:
     except Exception as e:
         logger.warning("Could not check active jobs (non-fatal): %s", e)
 
+    if _has_active_scheduled_run("gemini_research"):
+        return
+
     run_start = datetime.now(timezone.utc)
     today_batch = run_start.day % 30
     logger.info(
@@ -528,6 +569,9 @@ def run_daily_page_quality() -> None:
             return
     except Exception as e:
         logger.warning("Could not check pause state for daily_page_quality (non-fatal): %s", e)
+
+    if _has_active_scheduled_run("daily_page_quality"):
+        return
 
     run_start = datetime.now(timezone.utc)
     logger.info(
