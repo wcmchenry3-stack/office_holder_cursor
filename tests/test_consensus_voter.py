@@ -495,12 +495,12 @@ class TestSystemPromptContent:
         records. Regression guard for Issue #398."""
         from src.services.consensus_voter import _SYSTEM_PROMPT
 
-        assert "4-digit year" in _SYSTEM_PROMPT, (
-            "_SYSTEM_PROMPT must contain explicit year-as-name rejection rule"
-        )
-        assert "is_valid=false" in _SYSTEM_PROMPT, (
-            "_SYSTEM_PROMPT must explicitly say to return is_valid=false for year-as-name"
-        )
+        assert (
+            "4-digit year" in _SYSTEM_PROMPT
+        ), "_SYSTEM_PROMPT must contain explicit year-as-name rejection rule"
+        assert (
+            "is_valid=false" in _SYSTEM_PROMPT
+        ), "_SYSTEM_PROMPT must explicitly say to return is_valid=false for year-as-name"
 
 
 class TestSystemPromptAlignment:

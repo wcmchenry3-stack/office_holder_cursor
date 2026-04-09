@@ -99,7 +99,11 @@ class TestClaudeStructuredOutput:
         """Claude sometimes wraps its JSON in ```json ... ``` — must be stripped."""
         from src.services.claude_client import ClaudeClient
 
-        fenced = "```json\n" + json.dumps({"is_valid": False, "concerns": ["year as name"], "confidence": "high"}) + "\n```"
+        fenced = (
+            "```json\n"
+            + json.dumps({"is_valid": False, "concerns": ["year as name"], "confidence": "high"})
+            + "\n```"
+        )
         mock_response = MagicMock()
         mock_response.content = [MagicMock(text=fenced)]
 
@@ -118,7 +122,11 @@ class TestClaudeStructuredOutput:
         """Strip ``` fences with no language tag."""
         from src.services.claude_client import ClaudeClient
 
-        fenced = "```\n" + json.dumps({"is_valid": True, "concerns": [], "confidence": "medium"}) + "\n```"
+        fenced = (
+            "```\n"
+            + json.dumps({"is_valid": True, "concerns": [], "confidence": "medium"})
+            + "\n```"
+        )
         mock_response = MagicMock()
         mock_response.content = [MagicMock(text=fenced)]
 
