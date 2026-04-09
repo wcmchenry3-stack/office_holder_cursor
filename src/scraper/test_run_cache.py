@@ -1,4 +1,9 @@
-"""Tests for RunPageCache and its integration with _fetch_table_from_url."""
+"""Tests for RunPageCache and its integration with _fetch_table_from_url.
+
+RunPageCache is a read-through layer over Wikipedia REST API responses.
+Real HTTP calls (made via wiki_fetch) always include a descriptive User-Agent
+header per Wikimedia API policy — the cache itself never sends HTTP requests.
+"""
 
 from __future__ import annotations
 

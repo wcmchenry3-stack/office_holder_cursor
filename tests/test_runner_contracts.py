@@ -415,10 +415,10 @@ class TestGCPerPageInOfficeLoop:
         import gc
 
         offices = [
-            {"url": "https://en.wikipedia.org/wiki/PageA", "id": 1},
-            {"url": "https://en.wikipedia.org/wiki/PageA", "id": 2},
-            {"url": "https://en.wikipedia.org/wiki/PageB", "id": 3},
-            {"url": "https://en.wikipedia.org/wiki/PageC", "id": 4},
+            {"url": "https://wiki.example.com/PageA", "id": 1},
+            {"url": "https://wiki.example.com/PageA", "id": 2},
+            {"url": "https://wiki.example.com/PageB", "id": 3},
+            {"url": "https://wiki.example.com/PageC", "id": 4},
         ]
 
         prev_url = None
@@ -437,7 +437,7 @@ class TestGCPerPageInOfficeLoop:
 
         import gc
 
-        offices = [{"url": "https://en.wikipedia.org/wiki/PageA", "id": 1}]
+        offices = [{"url": "https://wiki.example.com/PageA", "id": 1}]
         prev_url = None
         for office_row in offices:
             cur_url = office_row.get("url")
