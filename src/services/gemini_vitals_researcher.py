@@ -318,14 +318,22 @@ class GeminiVitalsResearcher:
                     ],
                     config=types.GenerateContentConfig(
                         system_instruction=system_prompt or _default_instruction,
-                        max_output_tokens=512,
+                        max_output_tokens=1024,
                         response_mime_type="application/json",
                     ),
                 )
                 import json
 
                 text = response.text or ""
-                return json.loads(text)
+                try:
+                    return json.loads(text)
+                except json.JSONDecodeError:
+                    logger.warning(
+                        "check_data_quality: Gemini returned unparseable JSON (len=%d): %s",
+                        len(text),
+                        text[:120],
+                    )
+                    return None
             except errors.ClientError as exc:
                 if getattr(exc, "code", 0) == 429 or "RESOURCE_EXHAUSTED" in str(exc):
                     if attempt == 2:

@@ -502,3 +502,65 @@ class TestPolicyCompliance:
         service_path = Path("src/services/gemini_vitals_researcher.py")
         content = service_path.read_text()
         assert "max_output_tokens" in content
+
+
+# ---------------------------------------------------------------------------
+# check_data_quality — truncated / unparseable JSON handling (#399)
+# ---------------------------------------------------------------------------
+
+
+class TestCheckDataQuality:
+    """check_data_quality must return None on JSONDecodeError rather than raising,
+    so _vote_gemini in consensus_voter.py treats Gemini as unavailable instead of
+    propagating an exception."""
+
+    def _make_researcher(self, response_text: str):
+        """Return a GeminiVitalsResearcher with a mocked Gemini client."""
+        from src.services.gemini_vitals_researcher import GeminiVitalsResearcher
+
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.text = response_text
+        mock_client.models.generate_content.return_value = mock_response
+
+        researcher = GeminiVitalsResearcher.__new__(GeminiVitalsResearcher)
+        researcher._client = mock_client
+        researcher._model = "gemini-test"
+        return researcher
+
+    def test_valid_json_returned(self):
+        researcher = self._make_researcher(
+            json.dumps({"is_valid": False, "concerns": ["year as name"], "confidence": "high"})
+        )
+        result = researcher.check_data_quality("some prompt")
+        assert result is not None
+        assert result["is_valid"] is False
+        assert result["concerns"] == ["year as name"]
+
+    def test_truncated_json_returns_none(self):
+        """Gemini occasionally returns truncated JSON (e.g. cut off at 25 chars).
+        check_data_quality must return None rather than raising JSONDecodeError."""
+        researcher = self._make_researcher('{"is_val')
+        result = researcher.check_data_quality("some prompt")
+        assert result is None
+
+    def test_empty_response_returns_none(self):
+        researcher = self._make_researcher("")
+        result = researcher.check_data_quality("some prompt")
+        assert result is None
+
+    def test_max_output_tokens_1024_for_data_quality(self):
+        """data quality calls must use max_output_tokens=1024 (raised from 512)
+        to prevent truncation. Regression guard for Issue #399."""
+        researcher = self._make_researcher(
+            json.dumps({"is_valid": True, "concerns": [], "confidence": "low"})
+        )
+        researcher.check_data_quality("some prompt")
+        call_args = researcher._client.models.generate_content.call_args
+        config = call_args.kwargs.get("config") or (
+            call_args.args[1] if len(call_args.args) > 1 else None
+        )
+        assert config is not None
+        assert (
+            config.max_output_tokens == 1024
+        ), "max_output_tokens must be 1024 for data quality checks to avoid truncation"
