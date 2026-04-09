@@ -2,7 +2,8 @@
 
 RunPageCache is a read-through layer over Wikipedia REST API responses.
 Real HTTP calls (made via wiki_fetch) always include a descriptive User-Agent
-header per Wikimedia API policy — the cache itself never sends HTTP requests.
+header and honour rate-limit / retry / backoff constraints per Wikimedia API
+policy — the cache itself never sends HTTP requests directly.
 """
 
 from __future__ import annotations
