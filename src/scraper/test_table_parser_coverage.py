@@ -899,7 +899,9 @@ def test_find_date_in_infobox_skips_no_link_row(monkeypatch):
 
     calls: list[str] = []
 
-    def fake_find_term_dates(self, wiki_link, url, table_config, office_details, district, run_cache=None):
+    def fake_find_term_dates(
+        self, wiki_link, url, table_config, office_details, district, run_cache=None
+    ):
         calls.append(wiki_link)
         return [], []
 

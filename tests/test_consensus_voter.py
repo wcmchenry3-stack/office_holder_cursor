@@ -602,9 +602,7 @@ class TestConsensusVoterSubmsTimeoutDrain:
                 return_value=_valid_vote("claude"),
             ),
             patch("src.services.consensus_voter.as_completed", fake_as_completed),
-            patch(
-                "src.services.consensus_voter.ThreadPoolExecutor"
-            ) as mock_executor_cls,
+            patch("src.services.consensus_voter.ThreadPoolExecutor") as mock_executor_cls,
         ):
             # Build 3 pre-resolved futures for the first 2 providers + stuck for the 3rd
             done_f1: Future = Future()
@@ -627,8 +625,8 @@ class TestConsensusVoterSubmsTimeoutDrain:
 
             result = voter.vote("prompt", {})
 
-        assert len(result.votes) == 3, (
-            f"Expect 3 votes (2 valid + 1 timeout), got {len(result.votes)}"
-        )
+        assert (
+            len(result.votes) == 3
+        ), f"Expect 3 votes (2 valid + 1 timeout), got {len(result.votes)}"
         timeout_votes = [v for v in result.votes if v.error and "timed out" in v.error]
         assert len(timeout_votes) == 1, "Genuinely stuck future must produce a timeout vote"
