@@ -219,6 +219,7 @@ def test_run_daily_maintenance_always_calls_expiry(monkeypatch):
         "src.scheduled_tasks._expire_stale_jobs_with_email",
         lambda: called.__setitem__("expire", True),
     )
+    monkeypatch.setattr("src.db.scheduled_job_runs.expire_stale_scheduled_job_runs", lambda: 0)
 
     from src.scheduled_tasks import run_daily_maintenance
 
@@ -237,12 +238,34 @@ def test_run_daily_maintenance_ignores_job_pause_state(monkeypatch):
 
     monkeypatch.setattr("src.db.scheduler_settings.is_job_paused", _should_not_check)
     monkeypatch.setattr("src.scheduled_tasks._expire_stale_jobs_with_email", lambda: None)
+    monkeypatch.setattr("src.db.scheduled_job_runs.expire_stale_scheduled_job_runs", lambda: 0)
 
     from src.scheduled_tasks import run_daily_maintenance
 
     run_daily_maintenance()
 
     assert not pause_checked["checked"]
+
+
+def test_run_daily_maintenance_calls_expire_stale_scheduled_job_runs(monkeypatch):
+    """run_daily_maintenance must call expire_stale_scheduled_job_runs() (#375)."""
+    monkeypatch.setattr("src.scheduled_tasks._expire_stale_jobs_with_email", lambda: None)
+
+    called = {"count": 0}
+
+    def fake_expire():
+        called["count"] += 1
+        return 0
+
+    monkeypatch.setattr("src.db.scheduled_job_runs.expire_stale_scheduled_job_runs", fake_expire)
+
+    from src.scheduled_tasks import run_daily_maintenance
+
+    run_daily_maintenance()
+
+    assert (
+        called["count"] == 1
+    ), "expire_stale_scheduled_job_runs must be called once by maintenance"
 
 
 # ---------------------------------------------------------------------------

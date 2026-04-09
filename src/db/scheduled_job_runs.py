@@ -117,6 +117,62 @@ def get_last_run_for_job(job_name: str, conn=None) -> dict | None:
             conn.close()
 
 
+def expire_stale_scheduled_job_runs(stale_hours: int = 4, conn=None) -> int:
+    """Mark scheduled_job_runs rows stuck in 'running' as 'error' if older than *stale_hours*.
+
+    Mirrors expire_stale_jobs() in scraper_jobs.py but targets the scheduled_job_runs table.
+    Returns the count of rows expired.
+    """
+    own_conn = conn is None
+    if own_conn:
+        conn = get_connection()
+    try:
+        now = datetime.now(timezone.utc)
+        cutoff = now - timedelta(hours=stale_hours)
+        rows = conn.execute(
+            "SELECT id, started_at FROM scheduled_job_runs WHERE status = %s",
+            ("running",),
+        ).fetchall()
+
+        expired_ids = []
+        for row in rows:
+            run_id, started_at_raw = row[0], row[1]
+            if isinstance(started_at_raw, datetime):
+                started_at = (
+                    started_at_raw
+                    if started_at_raw.tzinfo
+                    else started_at_raw.replace(tzinfo=timezone.utc)
+                )
+            else:
+                try:
+                    started_at = datetime.strptime(started_at_raw, "%Y-%m-%dT%H:%M:%SZ").replace(
+                        tzinfo=timezone.utc
+                    )
+                except (ValueError, TypeError):
+                    continue
+            if started_at < cutoff:
+                expired_ids.append(run_id)
+
+        for run_id in expired_ids:
+            conn.execute(
+                "UPDATE scheduled_job_runs SET status = %s,"
+                " error = %s, finished_at = %s"
+                " WHERE id = %s",
+                (
+                    "error",
+                    f"Expired by stale-run cleanup after >{stale_hours}h in running state",
+                    now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    run_id,
+                ),
+            )
+        if own_conn:
+            conn.commit()
+        return len(expired_ids)
+    finally:
+        if own_conn:
+            conn.close()
+
+
 def list_recent_runs(days: int = 90, conn=None) -> list[dict]:
     """Return runs from the last *days* days, newest first."""
     own_conn = conn is None

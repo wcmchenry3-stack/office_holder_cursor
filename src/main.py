@@ -193,6 +193,17 @@ async def lifespan(app: FastAPI):
         f"[scheduler] Page quality inspection scheduled at {quality_h:02d}:{quality_m:02d} UTC"
     )
 
+    from src.db.scheduled_job_runs import expire_stale_scheduled_job_runs
+
+    expired_count = expire_stale_scheduled_job_runs()
+    if expired_count:
+        logger.warning(
+            "[startup] Cleared %d stale scheduled_job_runs row(s) left over from previous OOM kill",
+            expired_count,
+        )
+    else:
+        logger.info("[startup] No stale scheduled_job_runs rows found")
+
     scheduler.start()
     yield
     scheduler.shutdown(wait=False)

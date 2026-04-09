@@ -217,6 +217,83 @@ def test_get_last_run_for_job_reflects_status(db_path):
 
 
 # ---------------------------------------------------------------------------
+# expire_stale_scheduled_job_runs
+# ---------------------------------------------------------------------------
+
+
+def test_expire_stale_no_running_rows(db_path):
+    """Returns 0 when there are no running rows."""
+    count = db_runs.expire_stale_scheduled_job_runs(stale_hours=4)
+    assert count == 0
+
+
+def test_expire_stale_one_stale_row(db_path):
+    """A running row with started_at > 4 h ago is marked error and counted."""
+    run_id = db_runs.create_run("daily_delta")
+
+    # Backdate started_at to 5 hours ago
+    c = get_connection()
+    c.execute(
+        "UPDATE scheduled_job_runs SET started_at = %s WHERE id = %s",
+        ("2000-01-01T00:00:00Z", run_id),
+    )
+    c.commit()
+    c.close()
+
+    count = db_runs.expire_stale_scheduled_job_runs(stale_hours=4)
+    assert count == 1
+
+    c = get_connection()
+    row = c.execute(
+        "SELECT status, error FROM scheduled_job_runs WHERE id = %s", (run_id,)
+    ).fetchone()
+    c.close()
+    assert row[0] == "error"
+    assert row[1] is not None
+
+
+def test_expire_stale_multiple_stale_rows(db_path):
+    """All running rows older than the threshold are expired; count reflects all of them."""
+    id1 = db_runs.create_run("daily_delta")
+    id2 = db_runs.create_run("gemini_research")
+
+    c = get_connection()
+    for run_id in (id1, id2):
+        c.execute(
+            "UPDATE scheduled_job_runs SET started_at = %s WHERE id = %s",
+            ("2000-01-01T00:00:00Z", run_id),
+        )
+    c.commit()
+    c.close()
+
+    count = db_runs.expire_stale_scheduled_job_runs(stale_hours=4)
+    assert count >= 2
+
+    c = get_connection()
+    for run_id in (id1, id2):
+        row = c.execute("SELECT status FROM scheduled_job_runs WHERE id = %s", (run_id,)).fetchone()
+        assert row[0] == "error"
+    c.close()
+
+
+def test_expire_stale_fresh_running_row_not_touched(db_path):
+    """A running row started less than stale_hours ago must not be expired."""
+    run_id = db_runs.create_run("daily_delta")
+
+    count = db_runs.expire_stale_scheduled_job_runs(stale_hours=4)
+    # The fresh row must not be counted
+    assert count == 0
+
+    c = get_connection()
+    row = c.execute("SELECT status FROM scheduled_job_runs WHERE id = %s", (run_id,)).fetchone()
+    c.close()
+    assert row[0] == "running"
+
+    # Clean up so it doesn't pollute other tests
+    db_runs.finish_run(run_id, "complete")
+
+
+# ---------------------------------------------------------------------------
 # list_recent_runs
 # ---------------------------------------------------------------------------
 
