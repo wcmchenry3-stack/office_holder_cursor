@@ -219,6 +219,7 @@ def test_run_daily_maintenance_always_calls_expiry(monkeypatch):
         "src.scheduled_tasks._expire_stale_jobs_with_email",
         lambda: called.__setitem__("expire", True),
     )
+    monkeypatch.setattr("src.db.scheduled_job_runs.expire_stale_scheduled_job_runs", lambda: 0)
 
     from src.scheduled_tasks import run_daily_maintenance
 
