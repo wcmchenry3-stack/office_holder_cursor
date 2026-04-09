@@ -1301,7 +1301,12 @@ class Offices:
                     return (None, None, term_start_year, term_end_year)
 
             # Find date in infobox: fetch full dates from person's bio; collect all matching terms from infobox
-            if table_config_to_parse["find_date_in_infobox"] == True:
+            if (
+                table_config_to_parse["find_date_in_infobox"] == True
+                and wiki_link
+                and wiki_link != "No link"
+                and wiki_link.startswith("https://")
+            ):
                 logger.debug(
                     f" parse_table_row found TRUE in find_date_in_infobox \n\n about to process {start_cell}"
                 )

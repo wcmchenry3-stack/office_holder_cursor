@@ -520,3 +520,115 @@ class TestSystemPromptAlignment:
         assert (
             passed_system == _SYSTEM_PROMPT
         ), "Gemini must use the shared consensus _SYSTEM_PROMPT, not its vitals-research prompt"
+
+
+# ---------------------------------------------------------------------------
+# #373 — sub-millisecond overshoot: done futures not yielded by as_completed
+# must still be collected via the drain loop
+# ---------------------------------------------------------------------------
+
+
+class TestConsensusVoterSubmsTimeoutDrain:
+    """When as_completed raises TimeoutError due to a sub-ms clock overshoot,
+    any futures that are already done must be drained rather than silently dropped."""
+
+    def test_done_futures_drained_after_timeout_overshoot(self):
+        """as_completed yields 2 of 3 futures then raises TimeoutError; the 3rd
+        is already done — all 3 votes must appear in the result."""
+        from concurrent.futures import TimeoutError as FuturesTimeoutError
+
+        voter = ConsensusVoter()
+
+        def fake_as_completed(fs, timeout=None):
+            fs_list = list(fs)
+            # Yield all but the last, then simulate the sub-ms clock overshoot
+            for f in fs_list[:-1]:
+                yield f
+            raise FuturesTimeoutError("sub-ms overshoot simulation")
+
+        with (
+            patch(
+                "src.services.consensus_voter._vote_openai",
+                return_value=_valid_vote("openai"),
+            ),
+            patch(
+                "src.services.consensus_voter._vote_gemini",
+                return_value=_valid_vote("gemini"),
+            ),
+            patch(
+                "src.services.consensus_voter._vote_claude",
+                return_value=_valid_vote("claude"),
+            ),
+            patch("src.services.consensus_voter.as_completed", fake_as_completed),
+        ):
+            result = voter.vote("prompt", {})
+
+        assert len(result.votes) == 3, (
+            "All 3 votes must be collected even when as_completed raises TimeoutError "
+            f"due to sub-ms overshoot; got {len(result.votes)}"
+        )
+        assert result.verdict == Verdict.VALID
+
+    def test_truly_timed_out_futures_get_timeout_vote(self):
+        """Futures that are genuinely not done when TimeoutError fires must receive
+        a timeout AIVote rather than being silently dropped."""
+        from concurrent.futures import Future, TimeoutError as FuturesTimeoutError
+
+        voter = ConsensusVoter()
+
+        # A future that will never complete (simulates genuine timeout)
+        stuck_future: Future = Future()
+
+        original_submit_calls: list = []
+
+        def fake_as_completed(fs, timeout=None):
+            fs_list = list(fs)
+            # Yield the first two, leave the third (stuck_future) pending
+            for f in fs_list[:-1]:
+                yield f
+            raise FuturesTimeoutError("genuine timeout simulation")
+
+        with (
+            patch(
+                "src.services.consensus_voter._vote_openai",
+                return_value=_valid_vote("openai"),
+            ),
+            patch(
+                "src.services.consensus_voter._vote_gemini",
+                return_value=_valid_vote("gemini"),
+            ),
+            patch(
+                "src.services.consensus_voter._vote_claude",
+                return_value=_valid_vote("claude"),
+            ),
+            patch("src.services.consensus_voter.as_completed", fake_as_completed),
+            patch(
+                "src.services.consensus_voter.ThreadPoolExecutor"
+            ) as mock_executor_cls,
+        ):
+            # Build 3 pre-resolved futures for the first 2 providers + stuck for the 3rd
+            done_f1: Future = Future()
+            done_f1.set_result(_valid_vote("openai"))
+            done_f2: Future = Future()
+            done_f2.set_result(_valid_vote("gemini"))
+
+            submit_returns = [done_f1, done_f2, stuck_future]
+            submit_idx = [0]
+
+            mock_executor = MagicMock()
+            mock_executor_cls.return_value.__enter__.return_value = mock_executor
+
+            def fake_submit(fn, *args, **kwargs):
+                f = submit_returns[submit_idx[0]]
+                submit_idx[0] += 1
+                return f
+
+            mock_executor.submit.side_effect = fake_submit
+
+            result = voter.vote("prompt", {})
+
+        assert len(result.votes) == 3, (
+            f"Expect 3 votes (2 valid + 1 timeout), got {len(result.votes)}"
+        )
+        timeout_votes = [v for v in result.votes if v.error and "timed out" in v.error]
+        assert len(timeout_votes) == 1, "Genuinely stuck future must produce a timeout vote"

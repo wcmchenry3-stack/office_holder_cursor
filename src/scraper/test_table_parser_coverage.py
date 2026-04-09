@@ -828,3 +828,90 @@ def test_short_row_logs_warning(caplog):
     assert any(
         "issue with table rows" in r.message for r in caplog.records
     ), "Expected a WARNING about too-few rows"
+
+
+# ---------------------------------------------------------------------------
+# #372 — find_date_in_infobox guard: "No link" must not trigger HTTP call
+# ---------------------------------------------------------------------------
+
+
+def _table_html_no_link_row() -> str:
+    """HTML table whose data row has no <a> tag (produces wiki_link='No link')."""
+    return (
+        "<table>"
+        "<tr><th>Name</th><th>Party</th><th>Start</th><th>End</th></tr>"
+        "<tr><td>Jane Doe</td><td>Independent</td><td>2020</td><td>2024</td></tr>"
+        "</table>"
+    )
+
+
+def _infobox_table_config() -> dict:
+    """Minimal table_config with find_date_in_infobox=True."""
+    return {
+        "url": "https://en.example.org/wiki/Test",
+        "table_no": 1,
+        "table_rows": 4,
+        "link_column": 0,
+        "party_column": 1,
+        "term_start_column": 2,
+        "term_end_column": 3,
+        "district_column": 0,
+        "dynamic_parse": False,
+        "read_columns_right_to_left": False,
+        "find_date_in_infobox": True,
+        "years_only": False,
+        "parse_rowspan": False,
+        "consolidate_rowspan_terms": False,
+        "rep_link": False,
+        "party_link": False,
+        "alt_links": [],
+        "alt_link_include_main": False,
+        "use_full_page_for_table": False,
+        "term_dates_merged": False,
+        "party_ignore": False,
+        "district_ignore": False,
+        "district_at_large": False,
+        "ignore_non_links": False,
+        "infobox_role_key": "",
+        "row_filter_column": None,
+        "row_filter_criteria": "",
+        "run_dynamic_parse": False,
+        "skip_infobox_for_urls": None,
+        "existing_dates_lookup": {},
+    }
+
+
+def _office_details() -> dict:
+    return {
+        "office_country": "United States",
+        "office_level": "Federal",
+        "office_branch": "Legislative",
+        "office_department": "",
+        "office_name": "Test Office",
+        "office_state": "",
+        "office_notes": "",
+    }
+
+
+def test_find_date_in_infobox_skips_no_link_row(monkeypatch):
+    """When wiki_link=='No link' and find_date_in_infobox=True, find_term_dates must not be called."""
+    import src.scraper.table_parser as tp_mod
+
+    calls: list[str] = []
+
+    def fake_find_term_dates(self, wiki_link, url, table_config, office_details, district, run_cache=None):
+        calls.append(wiki_link)
+        return [], []
+
+    monkeypatch.setattr(tp_mod.Biography, "find_term_dates", fake_find_term_dates)
+
+    offices = _offices()
+    offices.process_table(
+        _table_html_no_link_row(),
+        _infobox_table_config(),
+        _office_details(),
+        "https://en.example.org/wiki/Test",
+        [],
+    )
+
+    assert calls == [], f"find_term_dates must not be called for 'No link' rows, got calls: {calls}"
