@@ -797,7 +797,9 @@ def _try_auto_update_table_no(
     except Exception:
         _log.debug(
             "_try_auto_update_table_no: error computing baseline for table %d of %s — using raw missing count",
-            current_table_no, url, exc_info=True,
+            current_table_no,
+            url,
+            exc_info=True,
         )
     for candidate_no in range(1, num_tables + 1):
         if candidate_no == current_table_no:
@@ -812,7 +814,11 @@ def _try_auto_update_table_no(
             html = candidate_result.get("html") or ""
             if not html:
                 continue
-            candidate_office = {**office_row, "table_no": candidate_no, "find_date_in_infobox": False}
+            candidate_office = {
+                **office_row,
+                "table_no": candidate_no,
+                "find_date_in_infobox": False,
+            }
             table_data = _parse_office_html(
                 candidate_office,
                 html,
@@ -861,7 +867,9 @@ def _try_auto_update_table_no(
         except Exception:
             _log.warning(
                 "_try_auto_update_table_no: error parsing candidate table %d for %s — skipping",
-                candidate_no, url, exc_info=True,
+                candidate_no,
+                url,
+                exc_info=True,
             )
             continue
     return (best_table_no, best_rows)
