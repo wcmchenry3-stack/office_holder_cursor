@@ -8,6 +8,8 @@ Covers:
 - GET /data/wiki-drafts/{proposal_id} — validation panel rendering
 
 No live HTTP requests are made to Wikipedia in these tests.
+All Wikipedia API calls in the production code (submit + preview) include a
+descriptive User-Agent header via HTTP_USER_AGENT per Wikimedia API etiquette.
 """
 
 from __future__ import annotations

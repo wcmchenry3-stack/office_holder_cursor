@@ -1,4 +1,6 @@
 {% extends "base.html" %}
+{# All Wikipedia API requests made by this app (submit + preview) include a descriptive
+   User-Agent header via HTTP_USER_AGENT per Wikimedia API:Etiquette policy. #}
 {% block title %}Wiki Draft #{{ draft.id }} – Office Holder{% endblock %}
 {% block content %}
 <p><a href="/data/wiki-drafts">&larr; Back to drafts</a></p>
