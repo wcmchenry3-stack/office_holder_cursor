@@ -283,6 +283,7 @@ async def api_run(
     force_overwrite: str = Form(""),
     living_only: str = Form(""),
     valid_page_paths_only: str = Form(""),
+    forced_office_ids: str = Form(""),
 ):
     if run_mode == "single_bio" and not individual_ref.strip():
         raise HTTPException(
@@ -292,6 +293,13 @@ async def api_run(
     office_category_id_int = _parse_optional_int(office_category_id)
     living_only_bool = str(living_only).strip().lower() in ("1", "true", "yes")
     valid_page_paths_only_bool = str(valid_page_paths_only).strip().lower() in ("1", "true", "yes")
+
+    # forced_office_ids: comma-separated int IDs → run only those offices with refresh=True
+    forced_ids: list[int] = []
+    for tok in forced_office_ids.replace(";", ",").split(","):
+        tok = tok.strip()
+        if tok.isdigit():
+            forced_ids.append(int(tok))
     run_bio = run_mode == "delta_live"
     run_office_bio = run_mode not in (
         "full_no_bio",
@@ -354,6 +362,12 @@ async def api_run(
         run_bio = False
         run_office_bio = False
         refresh_table_cache = False
+    if forced_ids:
+        office_id_list = forced_ids
+        refresh_table_cache = True
+        mode = "delta"
+        run_bio = False
+        run_office_bio = False
     if not _is_runners_enabled():
         return JSONResponse(
             {"error": "Runner jobs are globally disabled (RUNNERS_ENABLED=false)"},
