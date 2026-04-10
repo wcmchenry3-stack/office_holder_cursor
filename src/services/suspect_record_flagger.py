@@ -105,6 +105,8 @@ def _create_gh_issue(
     flag_reasons: list[str],
     verdict_name: str,
     ai_votes_summary: str,
+    source_page_url: str | None = None,
+    row_data: dict | None = None,
 ) -> str | None:
     """Create a GitHub issue for manual review. Returns the issue URL or None."""
     try:
@@ -115,6 +117,21 @@ def _create_gh_issue(
             return None
 
         title = f"[Suspect record] {full_name or wiki_url or 'unknown'} (office {office_id})"
+
+        source_section = ""
+        if source_page_url or row_data:
+            source_section = "\n\n### Source\n"
+            if source_page_url:
+                source_section += f"**Page URL:** {source_page_url}\n"
+            if row_data:
+                import json as _json
+
+                source_section += (
+                    "**Parsed row data:**\n```json\n"
+                    + _json.dumps(row_data, default=str, indent=2)
+                    + "\n```"
+                )
+
         body = (
             f"## Suspect record flagged at parse time\n\n"
             f"**Verdict:** {verdict_name}\n"
@@ -123,8 +140,9 @@ def _create_gh_issue(
             f"**wiki_url:** `{wiki_url}`\n\n"
             f"### Pattern triggers\n"
             + "\n".join(f"- {r}" for r in flag_reasons)
-            + f"\n\n### AI votes\n{ai_votes_summary}\n\n"
-            f"This record was **not inserted** into the database. "
+            + f"\n\n### AI votes\n{ai_votes_summary}"
+            + source_section
+            + "\n\nThis record was **not inserted** into the database. "
             f"Please investigate and re-scrape the office if the record is legitimate."
         )
         result = gh.create_issue(title=title, body=body, labels=[_GH_LABEL])
@@ -144,6 +162,8 @@ def check_and_gate(
     wiki_url: str | None,
     office_id: int,
     conn=None,
+    source_page_url: str | None = None,
+    row_data: dict | None = None,
 ) -> tuple[bool, int | None]:
     """Run the suspect record gate for one parsed row.
 
@@ -217,6 +237,8 @@ def check_and_gate(
                 flag_reasons=reasons,
                 verdict_name=verdict.value,
                 ai_votes_summary=ai_votes_summary,
+                source_page_url=source_page_url,
+                row_data=row_data,
             )
 
         flag_id = db_flags.insert_flag(

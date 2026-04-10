@@ -548,6 +548,8 @@ def _suspect_gate(
     wiki_url: str | None,
     office_id: int,
     conn,
+    source_page_url: str | None = None,
+    row_data: dict | None = None,
 ) -> tuple[bool, int | None]:
     """Thin wrapper around SuspectRecordFlagger.check_and_gate for the import loop.
 
@@ -560,6 +562,8 @@ def _suspect_gate(
         wiki_url=wiki_url,
         office_id=office_id,
         conn=conn,
+        source_page_url=source_page_url,
+        row_data=row_data,
     )
 
 
@@ -2567,6 +2571,7 @@ def run_with_db(
                 if wiki_link and wiki_link != "No link":
                     unique_wiki_urls.add(wiki_link)
                 row["_office_id"] = office_id
+                row["_source_page_url"] = office_row.get("url", "")
                 if office_row.get("office_details_id") is not None:
                     row["_office_details_id"] = office_row["office_details_id"]
                     row["_office_table_config_id"] = (
@@ -2683,6 +2688,8 @@ def run_with_db(
                         wiki_url=wiki_url,
                         office_id=office_id,
                         conn=conn,
+                        source_page_url=row.get("_source_page_url"),
+                        row_data={k: v for k, v in row.items() if not k.startswith("_")},
                     )
                     if not _should_insert:
                         continue
