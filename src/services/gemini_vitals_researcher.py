@@ -288,6 +288,23 @@ class GeminiVitalsResearcher:
                     backoff *= 2
                 else:
                     raise
+            except errors.ServerError as exc:
+                # 503 UNAVAILABLE / 500 INTERNAL — transient; retry with backoff
+                if attempt == 2:
+                    import sentry_sdk
+
+                    sentry_sdk.add_breadcrumb(
+                        message=f"Gemini server error after 3 retries: {exc}", level="error"
+                    )
+                    raise
+                logger.warning(
+                    "_call_gemini: server error (%s); retrying in %.0f s (attempt %d/3)",
+                    exc,
+                    backoff,
+                    attempt + 1,
+                )
+                time.sleep(backoff)
+                backoff *= 2
         raise RuntimeError("unreachable")
 
     def check_data_quality(self, prompt: str, system_prompt: str | None = None) -> dict | None:
