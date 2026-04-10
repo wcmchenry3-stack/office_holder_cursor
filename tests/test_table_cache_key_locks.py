@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
-"""Tests for the _key_locks memory-leak fix in table_cache.py (Issue #224).
+"""Tests for the _key_locks memory-leak fix and cache toggle in table_cache.py.
 
-The original implementation used a plain dict[str, threading.Lock] that
-grew forever. The fix uses weakref.WeakValueDictionary so entries are
-automatically removed once no thread holds a reference to the lock.
+table_cache.py never makes HTTP requests directly — all Wikipedia fetches go
+through _fetch_table_from_url() → wiki_session(), which enforces the
+User-Agent header and rate limiting per Wikimedia policy (wiki_fetch.py).
 
 Tests cover:
 - _key_lock returns a _KeyLock with working __enter__/__exit__
@@ -12,6 +12,7 @@ Tests cover:
 - Dict shrinks after references are released (GC frees the lock)
 - Concurrent access from multiple threads does not corrupt the dict
   and each thread gets a usable lock
+- WIKI_TABLE_CACHE_ENABLED=0 bypasses disk I/O and calls _fetch_table_from_url directly
 """
 
 from __future__ import annotations
