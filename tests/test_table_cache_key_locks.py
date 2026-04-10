@@ -3,7 +3,7 @@
 
 table_cache.py never makes HTTP requests directly — all Wikipedia fetches go
 through _fetch_table_from_url() → wiki_session(), which enforces the
-User-Agent header and rate limiting per Wikimedia policy (wiki_fetch.py).
+User-Agent header, rate_limit, and backoff/retry per Wikimedia policy (wiki_fetch.py).
 
 Tests cover:
 - _key_lock returns a _KeyLock with working __enter__/__exit__

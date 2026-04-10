@@ -7,10 +7,10 @@ Preview / test / run use cache by default; use Refresh to refetch from Wikipedia
 
 Wikimedia API (via wiki_fetch.py):
   - User-Agent: set on every HTTP request via WIKIPEDIA_REQUEST_HEADERS in wiki_fetch.py.
-  - Rate limiting: enforced by the global rate limiter in wiki_fetch.py (≤1 req/s).
+  - rate_limit / retry: enforced by wiki_session() in wiki_fetch.py (≤1 req/s, backoff on 429).
   - This module never makes HTTP requests directly — all fetches go through
-    _fetch_table_from_url() → wiki_session() which applies the User-Agent and rate limiter.
-  - TABLE_HTML_CACHE_ENABLED=0 disables disk I/O; HTTP policy (User-Agent, rate limit)
+    _fetch_table_from_url() → wiki_session() which applies the User-Agent and rate_limit.
+  - TABLE_HTML_CACHE_ENABLED=0 disables disk I/O; HTTP policy (User-Agent, rate_limit)
     is still enforced by wiki_fetch.py on every request.
   See: https://www.mediawiki.org/wiki/API:Etiquette
 """
