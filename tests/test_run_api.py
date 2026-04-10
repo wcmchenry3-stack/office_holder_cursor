@@ -245,3 +245,87 @@ def test_job_store_eviction_removes_old_completed_jobs(client, monkeypatch):
     status_resp = client.get(f"/api/run/status/{job_id}")
     assert status_resp.status_code == 200
     assert status_resp.json()["status"] == "complete"
+
+
+# ---------------------------------------------------------------------------
+# Force-run specific offices (#397)
+# ---------------------------------------------------------------------------
+
+
+def test_forced_office_ids_sets_office_id_list_and_refresh(client, monkeypatch):
+    """POST /api/run with forced_office_ids passes office_id_list and refresh_table_cache=True."""
+    import src.routers.run_scraper as rs
+
+    captured = {}
+
+    def _capture_run(**kwargs):
+        captured.update(kwargs)
+        return {"cancelled": False, "terms": 0}
+
+    monkeypatch.setattr(rs, "run_with_db", _capture_run)
+
+    resp = client.post("/api/run", data={"forced_office_ids": "220, 314"})
+    assert resp.status_code == 202
+
+    # Wait for the job to finish so captured is populated
+    job_id = resp.json()["job_id"]
+    for _ in range(40):
+        status = client.get(f"/api/run/status/{job_id}").json()
+        if status.get("status") != "running":
+            break
+        time.sleep(0.05)
+
+    assert set(captured.get("office_ids", [])) == {220, 314}
+    assert captured.get("refresh_table_cache") is True
+
+
+def test_forced_office_ids_ignores_non_numeric_tokens(client, monkeypatch):
+    """Non-numeric tokens in forced_office_ids are silently ignored."""
+    import src.routers.run_scraper as rs
+
+    captured = {}
+
+    def _capture_run(**kwargs):
+        captured.update(kwargs)
+        return {"cancelled": False, "terms": 0}
+
+    monkeypatch.setattr(rs, "run_with_db", _capture_run)
+
+    resp = client.post("/api/run", data={"forced_office_ids": "42, abc, , 99"})
+    assert resp.status_code == 202
+
+    job_id = resp.json()["job_id"]
+    for _ in range(40):
+        status = client.get(f"/api/run/status/{job_id}").json()
+        if status.get("status") != "running":
+            break
+        time.sleep(0.05)
+
+    assert set(captured.get("office_ids", [])) == {42, 99}
+
+
+def test_forced_office_ids_empty_string_does_not_override(client, monkeypatch):
+    """Empty forced_office_ids leaves office_ids and refresh_table_cache unchanged."""
+    import src.routers.run_scraper as rs
+
+    captured = {}
+
+    def _capture_run(**kwargs):
+        captured.update(kwargs)
+        return {"cancelled": False, "terms": 0}
+
+    monkeypatch.setattr(rs, "run_with_db", _capture_run)
+
+    resp = client.post("/api/run", data={"run_mode": "delta", "forced_office_ids": ""})
+    assert resp.status_code == 202
+
+    job_id = resp.json()["job_id"]
+    for _ in range(40):
+        status = client.get(f"/api/run/status/{job_id}").json()
+        if status.get("status") != "running":
+            break
+        time.sleep(0.05)
+
+    # No office_ids filter and no forced refresh
+    assert captured.get("office_ids") is None
+    assert captured.get("refresh_table_cache") is False
