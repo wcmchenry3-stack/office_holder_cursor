@@ -10,7 +10,7 @@ Wikimedia API (via wiki_fetch.py):
   - Rate limiting: enforced by the global rate limiter in wiki_fetch.py (≤1 req/s).
   - This module never makes HTTP requests directly — all fetches go through
     _fetch_table_from_url() → wiki_session() which applies the User-Agent and rate limiter.
-  - WIKI_TABLE_CACHE_ENABLED=0 disables disk I/O; HTTP policy (User-Agent, rate limit)
+  - TABLE_HTML_CACHE_ENABLED=0 disables disk I/O; HTTP policy (User-Agent, rate limit)
     is still enforced by wiki_fetch.py on every request.
   See: https://www.mediawiki.org/wiki/API:Etiquette
 """
@@ -159,7 +159,7 @@ def write_table_html_cache(
     Used by the AI office builder to prime the cache from already-fetched page HTML,
     so retry validations never re-fetch Wikipedia.
     """
-    if os.environ.get("WIKI_TABLE_CACHE_ENABLED", "1") == "0":
+    if os.environ.get("TABLE_HTML_CACHE_ENABLED", "1") == "0":
         return
     url = (url or "").strip()
     if not url or not html:
@@ -196,7 +196,7 @@ def get_table_html_cached(
     Returns {"table_no", "num_tables", "html": "<table>...</table>"} or {"error": "..."}.
     """
 
-    if os.environ.get("WIKI_TABLE_CACHE_ENABLED", "1") == "0":
+    if os.environ.get("TABLE_HTML_CACHE_ENABLED", "1") == "0":
         return _fetch_table_from_url(url, table_no, use_full_page, run_cache=None)
 
     url = (url or "").strip()

@@ -12,7 +12,7 @@ Tests cover:
 - Dict shrinks after references are released (GC frees the lock)
 - Concurrent access from multiple threads does not corrupt the dict
   and each thread gets a usable lock
-- WIKI_TABLE_CACHE_ENABLED=0 bypasses disk I/O and calls _fetch_table_from_url directly
+- TABLE_HTML_CACHE_ENABLED=0 bypasses disk I/O and calls _fetch_table_from_url directly
 """
 
 from __future__ import annotations
@@ -167,18 +167,18 @@ class TestThreadSafety:
 
 
 # ---------------------------------------------------------------------------
-# WIKI_TABLE_CACHE_ENABLED toggle (#396)
+# TABLE_HTML_CACHE_ENABLED toggle (#396)
 # ---------------------------------------------------------------------------
 
 
 class TestCacheToggle:
     def test_disabled_bypasses_disk_and_calls_fetch_directly(self):
-        """When WIKI_TABLE_CACHE_ENABLED=0, get_table_html_cached calls _fetch_table_from_url
+        """When TABLE_HTML_CACHE_ENABLED=0, get_table_html_cached calls _fetch_table_from_url
         directly with run_cache=None and skips all disk I/O."""
         from src.scraper import table_cache
 
         fake_result = {"table_no": 1, "num_tables": 1, "html": "<table></table>"}
-        with patch.dict("os.environ", {"WIKI_TABLE_CACHE_ENABLED": "0"}):
+        with patch.dict("os.environ", {"TABLE_HTML_CACHE_ENABLED": "0"}):
             with patch.object(
                 table_cache, "_fetch_table_from_url", return_value=fake_result
             ) as mock_fetch:
@@ -192,10 +192,10 @@ class TestCacheToggle:
         assert result == fake_result
 
     def test_disabled_write_is_noop(self, tmp_path):
-        """When WIKI_TABLE_CACHE_ENABLED=0, write_table_html_cache writes no files."""
+        """When TABLE_HTML_CACHE_ENABLED=0, write_table_html_cache writes no files."""
         from src.scraper import table_cache
 
-        with patch.dict("os.environ", {"WIKI_TABLE_CACHE_ENABLED": "0"}):
+        with patch.dict("os.environ", {"TABLE_HTML_CACHE_ENABLED": "0"}):
             with patch.object(table_cache, "_cache_dir", return_value=tmp_path):
                 table_cache.write_table_html_cache(
                     url="https://en.wikipedia.org/wiki/Test",
@@ -207,7 +207,7 @@ class TestCacheToggle:
         assert list(tmp_path.iterdir()) == []
 
     def test_enabled_by_default(self):
-        """Without WIKI_TABLE_CACHE_ENABLED set, normal disk-cache path is used."""
+        """Without TABLE_HTML_CACHE_ENABLED set, normal disk-cache path is used."""
         from src.scraper import table_cache
 
         fake_result = {"table_no": 1, "num_tables": 1, "html": "<table></table>"}
@@ -215,7 +215,7 @@ class TestCacheToggle:
             # Remove key if present to test default
             import os
 
-            os.environ.pop("WIKI_TABLE_CACHE_ENABLED", None)
+            os.environ.pop("TABLE_HTML_CACHE_ENABLED", None)
             with patch.object(
                 table_cache, "_fetch_table_from_url", return_value=fake_result
             ) as mock_fetch:
@@ -231,11 +231,11 @@ class TestCacheToggle:
         mock_fetch.assert_called_once()
 
     def test_explicit_enabled_uses_normal_path(self):
-        """WIKI_TABLE_CACHE_ENABLED=1 uses the normal disk-cache path."""
+        """TABLE_HTML_CACHE_ENABLED=1 uses the normal disk-cache path."""
         from src.scraper import table_cache
 
         fake_result = {"table_no": 1, "num_tables": 1, "html": "<table></table>"}
-        with patch.dict("os.environ", {"WIKI_TABLE_CACHE_ENABLED": "1"}):
+        with patch.dict("os.environ", {"TABLE_HTML_CACHE_ENABLED": "1"}):
             with patch.object(
                 table_cache, "_fetch_table_from_url", return_value=fake_result
             ) as mock_fetch:
