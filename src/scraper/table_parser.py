@@ -252,7 +252,7 @@ class DataCleanup:
             parsed = parse(s, default=_parse_default)
             if parsed:
                 return parsed.strftime("%Y-%m-%d")
-        except (ValueError, TypeError) as e:
+        except (ValueError, TypeError, OverflowError) as e:
             _emit_parse_failure(
                 self._reporter,
                 "DataCleanup.format_date",
