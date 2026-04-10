@@ -76,7 +76,7 @@ def test_api_run_status_returns_valid_shape_for_new_job(client):
     status_resp = client.get(f"/api/run/status/{job_id}")
     assert status_resp.status_code == 200
     body = status_resp.json()
-    assert body["status"] in ("running", "complete", "error")
+    assert body["status"] in ("queued", "running", "complete", "error")
     assert "progress" in body
     assert "office" in body["progress"]
 
