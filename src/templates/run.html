@@ -50,6 +50,16 @@
   </div>
 </form>
 
+<hr>
+<h2>Force-run specific offices</h2>
+<p class="muted">Immediately re-scrape one or more offices regardless of their scheduled batch day. Always fetches fresh HTML from Wikipedia (bypasses cache).</p>
+<div class="form-group">
+  <label for="forceRunIds">Office ID(s) <span class="muted">(comma-separated)</span></label>
+  <input type="text" id="forceRunIds" placeholder="e.g. 220, 314" style="width:220px;">
+  <button type="button" class="btn" id="forceRunBtn" style="margin-left:8px;">Force run</button>
+</div>
+<div id="forceRunError" class="alert alert-error" style="display:none;"></div>
+
 <div id="runningPanel" class="running-panel" style="display:none;">
   <div class="running-header">
     <span class="spinner" aria-hidden="true"></span>
@@ -358,6 +368,39 @@ if (_stopBtn) {
     } catch (_) {}
   });
 }
+
+// Force-run button
+document.getElementById('forceRunBtn').addEventListener('click', async () => {
+  const ids = document.getElementById('forceRunIds').value.trim();
+  const errEl = document.getElementById('forceRunError');
+  errEl.style.display = 'none';
+  if (!ids) {
+    errEl.textContent = 'Enter at least one office ID.';
+    errEl.style.display = 'block';
+    return;
+  }
+  const formData = new FormData();
+  formData.append('run_mode', 'delta');
+  formData.append('forced_office_ids', ids);
+  let jobId = null;
+  try {
+    const r = await fetch('/api/run', { method: 'POST', body: formData });
+    const data = await r.json();
+    if (r.status !== 202 || !data.job_id) {
+      throw new Error(data.detail || data.error || 'Failed to start job');
+    }
+    jobId = data.job_id;
+  } catch (err) {
+    errEl.textContent = 'Error: ' + err.message;
+    errEl.style.display = 'block';
+    return;
+  }
+  _resultEl.style.display = 'none';
+  _progressMessage.textContent = 'Starting force run…';
+  _resetProgressGroups();
+  _progressDetail.textContent = '';
+  _startPolling(jobId);
+});
 
 // Form submit
 document.getElementById('runForm').addEventListener('submit', async (e) => {

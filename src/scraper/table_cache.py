@@ -2,12 +2,24 @@
 """
 Local cache for Wikipedia table HTML. One file per (url, table_no); raw HTML stored in gzipped JSON.
 Preview / test / run use cache by default; use Refresh to refetch from Wikipedia.
+
+--- Policy compliance ---
+
+Wikimedia API (via wiki_fetch.py):
+  - User-Agent: set on every HTTP request via WIKIPEDIA_REQUEST_HEADERS in wiki_fetch.py.
+  - rate_limit / retry: enforced by wiki_session() in wiki_fetch.py (≤1 req/s, backoff on 429).
+  - This module never makes HTTP requests directly — all fetches go through
+    _fetch_table_from_url() → wiki_session() which applies the User-Agent and rate_limit.
+  - TABLE_HTML_CACHE_ENABLED=0 disables disk I/O; HTTP policy (User-Agent, rate_limit)
+    is still enforced by wiki_fetch.py on every request.
+  See: https://www.mediawiki.org/wiki/API:Etiquette
 """
 
 import gzip
 import hashlib
 import json
 import logging
+import os
 import time
 import threading
 import weakref
@@ -147,6 +159,8 @@ def write_table_html_cache(
     Used by the AI office builder to prime the cache from already-fetched page HTML,
     so retry validations never re-fetch Wikipedia.
     """
+    if os.environ.get("TABLE_HTML_CACHE_ENABLED", "1") == "0":
+        return
     url = (url or "").strip()
     if not url or not html:
         return
@@ -181,6 +195,9 @@ def get_table_html_cached(
     and re-fetch. Prevents stale cached pages from masking Wikipedia changes across runs.
     Returns {"table_no", "num_tables", "html": "<table>...</table>"} or {"error": "..."}.
     """
+
+    if os.environ.get("TABLE_HTML_CACHE_ENABLED", "1") == "0":
+        return _fetch_table_from_url(url, table_no, use_full_page, run_cache=None)
 
     url = (url or "").strip()
     if not url:
