@@ -20,6 +20,7 @@ from src.services.ai_office_builder import (
     AIOfficePageResponse,
     AITableConfig,
 )
+from src.services.gemini_vitals_researcher import SourceRecord, VitalsResearchResult
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -390,3 +391,173 @@ try:
 except Exception:
     # TestClient or app import may fail in CI without DB; skip gracefully
     pass
+
+
+# ---------------------------------------------------------------------------
+# polish_wiki_article — repair loop
+# ---------------------------------------------------------------------------
+
+_RESEARCH = VitalsResearchResult(
+    birth_date="1950-03-15",
+    birth_place="Springfield",
+    confidence="high",
+    biographical_notes="Long-serving politician known for public works.",
+    sources=[SourceRecord(url="https://example.com", source_type="government", notes="")],
+)
+
+_INVALID_ARTICLE = "Just plain text — no wikitext structure at all."
+
+_VALID_ARTICLE = """\
+{{Infobox officeholder
+| name       = Jane Politician
+| birth_date = {{birth date|1950|03|15}}
+}}
+Jane Politician was a politician.<ref>https://example.com</ref>
+==References==
+{{reflist}}
+[[Category:People]]
+"""
+
+
+def _make_text_completion(content: str) -> MagicMock:
+    msg = MagicMock()
+    msg.content = content
+    choice = MagicMock()
+    choice.message = msg
+    completion = MagicMock()
+    completion.choices = [choice]
+    return completion
+
+
+class TestPolishWikiArticleRepairLoop:
+    def test_no_repair_when_output_is_valid(self):
+        builder = AIOfficeBuilder(api_key="test-key")
+        with patch.object(
+            builder,
+            "_call_wiki_polish_openai",
+            return_value=_VALID_ARTICLE,
+        ) as mock_call:
+            result = builder.polish_wiki_article(
+                full_name="Jane Politician",
+                office_name="Mayor",
+                term_dates="2000-2004",
+                party="Independent",
+                location="Springfield",
+                research_result=_RESEARCH,
+            )
+        assert mock_call.call_count == 1
+        assert result == _VALID_ARTICLE
+
+    def test_repair_triggered_on_invalid_output(self):
+        builder = AIOfficeBuilder(api_key="test-key")
+        call_results = [_INVALID_ARTICLE, _VALID_ARTICLE]
+        with patch.object(
+            builder,
+            "_call_wiki_polish_openai",
+            side_effect=call_results,
+        ) as mock_call:
+            result = builder.polish_wiki_article(
+                full_name="Jane Politician",
+                office_name="Mayor",
+                term_dates="2000-2004",
+                party="Independent",
+                location="Springfield",
+                research_result=_RESEARCH,
+            )
+        assert mock_call.call_count == 2
+        assert result == _VALID_ARTICLE
+
+    def test_repair_call_includes_original_as_assistant_message(self):
+        builder = AIOfficeBuilder(api_key="test-key")
+        captured: list[list[dict]] = []
+
+        def side_effect(messages):
+            captured.append(list(messages))
+            if len(captured) == 1:
+                return _INVALID_ARTICLE
+            return _VALID_ARTICLE
+
+        with patch.object(builder, "_call_wiki_polish_openai", side_effect=side_effect):
+            builder.polish_wiki_article(
+                full_name="Jane Politician",
+                office_name="Mayor",
+                term_dates="2000-2004",
+                party="Independent",
+                location="Springfield",
+                research_result=_RESEARCH,
+            )
+
+        assert len(captured) == 2
+        repair_messages = captured[1]
+        roles = [m["role"] for m in repair_messages]
+        assert "assistant" in roles
+        assert roles[-1] == "user"
+        # The assistant message must be the first draft
+        assistant_msg = next(m for m in repair_messages if m["role"] == "assistant")
+        assert assistant_msg["content"] == _INVALID_ARTICLE
+
+    def test_first_draft_returned_if_repair_raises(self):
+        builder = AIOfficeBuilder(api_key="test-key")
+        call_count = 0
+
+        def side_effect(messages):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return _INVALID_ARTICLE
+            raise openai.RateLimitError("rate limit", response=MagicMock(), body={})
+
+        with patch.object(builder, "_call_wiki_polish_openai", side_effect=side_effect):
+            result = builder.polish_wiki_article(
+                full_name="Jane Politician",
+                office_name="Mayor",
+                term_dates="2000-2004",
+                party="Independent",
+                location="Springfield",
+                research_result=_RESEARCH,
+            )
+        assert result == _INVALID_ARTICLE
+
+    def test_no_repair_when_article_too_long(self):
+        """Articles >= 8000 chars skip the repair attempt."""
+        long_invalid = _INVALID_ARTICLE + ("x" * 8000)
+        builder = AIOfficeBuilder(api_key="test-key")
+        with patch.object(
+            builder,
+            "_call_wiki_polish_openai",
+            return_value=long_invalid,
+        ) as mock_call:
+            result = builder.polish_wiki_article(
+                full_name="Jane Politician",
+                office_name="Mayor",
+                term_dates="2000-2004",
+                party="Independent",
+                location="Springfield",
+                research_result=_RESEARCH,
+            )
+        assert mock_call.call_count == 1
+        assert result == long_invalid
+
+    def test_no_repair_when_only_warnings(self):
+        """Warnings (not errors) should not trigger a repair call."""
+        # Valid article structure but with an unmatched brace warning
+        warning_article = _VALID_ARTICLE + "\n{{"  # extra open brace = warning only? No, this
+        # creates unmatched_braces warning. Errors come from structure checks.
+        # We need an article that has warnings but no errors.
+        warning_only_article = _VALID_ARTICLE + "\n{{"  # unmatched braces → warning
+        builder = AIOfficeBuilder(api_key="test-key")
+        with patch.object(
+            builder,
+            "_call_wiki_polish_openai",
+            return_value=warning_only_article,
+        ) as mock_call:
+            result = builder.polish_wiki_article(
+                full_name="Jane Politician",
+                office_name="Mayor",
+                term_dates="2000-2004",
+                party="Independent",
+                location="Springfield",
+                research_result=_RESEARCH,
+            )
+        assert mock_call.call_count == 1
+        assert result == warning_only_article

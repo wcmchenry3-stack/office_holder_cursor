@@ -5,6 +5,7 @@ Wikipedia requests use a descriptive User-Agent header per Wikimedia API etiquet
 
 import os
 
+import requests as _requests
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
@@ -93,8 +94,13 @@ async def data_wiki_draft_detail(request: Request, proposal_id: int):
 
         return RedirectResponse("/data/wiki-drafts")
     sources = db_research.list_sources_for_individual(draft["individual_id"])
+    validation = None
+    if draft.get("proposal_text"):
+        from src.services.wikitext_validator import validate_wikitext
+
+        validation = validate_wikitext(draft["proposal_text"]).as_dict()
     return templates.TemplateResponse(
-        request, "wiki_draft_detail.html", {"draft": draft, "sources": sources}
+        request, "wiki_draft_detail.html", {"draft": draft, "sources": sources, "validation": validation}
     )
 
 
@@ -162,6 +168,118 @@ async def api_research_submit(individual_id: int):
     except WikipediaSubmitError as exc:
         db_research.update_wiki_draft_proposal_status(draft["id"], "rejected")
         raise HTTPException(502, f"Wikipedia submission failed: {exc}")
+
+
+@router.get("/api/wikipedia/status")
+async def api_wikipedia_status():
+    """Return whether Wikipedia bot credentials are configured.
+
+    Checks env vars only — does NOT attempt login, does NOT touch the
+    get_submitter() singleton (to avoid caching a failed login attempt).
+    """
+    username = os.environ.get("WIKIPEDIA_BOT_USERNAME", "").strip()
+    password = os.environ.get("WIKIPEDIA_BOT_PASSWORD", "").strip()
+    return JSONResponse({"configured": bool(username and password)})
+
+
+@router.post("/api/wiki-drafts/{proposal_id}/submit")
+async def api_submit_wiki_draft(proposal_id: int, request: Request):
+    """Submit a specific wiki draft proposal to Wikipedia.
+
+    Accepts optional JSON body: {"use_draft_namespace": true}
+    Default is Draft: namespace (safer — goes through AfC review).
+    Pass use_draft_namespace=false to target the main article namespace.
+
+    Returns 503 if bot credentials are not configured.
+    Returns 404 if draft not found.
+    Returns 409 if draft status is not 'pending'.
+    Returns 400 if individual has no name.
+    Returns 502 on Wikipedia API error (draft status set to 'rejected').
+    Returns 200 {"ok": true, "title": ..., "url": ...} on success.
+    """
+    from src.services.wikipedia_submit import get_submitter, WikipediaSubmitError
+
+    submitter = get_submitter()
+    if submitter is None:
+        raise HTTPException(
+            503,
+            "Wikipedia submit disabled — set WIKIPEDIA_BOT_USERNAME and WIKIPEDIA_BOT_PASSWORD",
+        )
+
+    draft = db_research.get_wiki_draft_proposal(proposal_id)
+    if draft is None:
+        raise HTTPException(404, "Draft not found")
+    if draft["status"] != "pending":
+        raise HTTPException(
+            409,
+            f"Draft status is '{draft['status']}' — only pending drafts can be submitted",
+        )
+
+    full_name = (draft.get("full_name") or "").strip()
+    if not full_name:
+        raise HTTPException(400, "Cannot determine article title — individual has no name")
+
+    body: dict = {}
+    try:
+        body = await request.json()
+    except Exception:
+        pass
+    use_draft_namespace: bool = body.get("use_draft_namespace", True)
+
+    title = f"Draft:{full_name}" if use_draft_namespace else full_name
+    article_url = f"https://en.wikipedia.org/wiki/{title.replace(' ', '_')}"
+
+    try:
+        submitter.submit_article(
+            title=title,
+            wikitext=draft["proposal_text"],
+            summary=f"New article: {full_name} — created from researched biographical sources",
+        )
+        db_research.update_wiki_draft_proposal_status(proposal_id, "submitted")
+        return JSONResponse({"ok": True, "title": title, "url": article_url})
+    except WikipediaSubmitError as exc:
+        db_research.update_wiki_draft_proposal_status(proposal_id, "rejected")
+        raise HTTPException(502, f"Wikipedia submission failed: {exc}")
+
+
+@router.get("/api/wiki-drafts/{proposal_id}/preview")
+async def api_wiki_draft_preview(proposal_id: int):
+    """Render a wiki draft's wikitext to HTML via the Wikipedia action=parse API.
+
+    Uses the Wikipedia public API (no auth required for rendering).
+    Returns {"html": "..."} on success or 503 on API failure.
+    Preview is best-effort and does not affect draft status.
+    """
+    from src.scraper.logger import HTTP_USER_AGENT
+
+    draft = db_research.get_wiki_draft_proposal(proposal_id)
+    if draft is None:
+        raise HTTPException(404, "Draft not found")
+
+    wikitext = draft.get("proposal_text") or ""
+    if not wikitext:
+        return JSONResponse({"html": "<p><em>No wikitext to preview.</em></p>"})
+
+    try:
+        resp = _requests.post(
+            "https://en.wikipedia.org/w/api.php",
+            data={
+                "action": "parse",
+                "format": "json",
+                "contentmodel": "wikitext",
+                "text": wikitext,
+                "disablelimitreport": "1",
+                "disableeditsection": "1",
+            },
+            headers={"User-Agent": HTTP_USER_AGENT},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        html = data.get("parse", {}).get("text", {}).get("*", "")
+        return JSONResponse({"html": html})
+    except Exception as exc:
+        raise HTTPException(503, f"Wikipedia preview unavailable: {exc}")
 
 
 @router.get("/data/scheduled-job-runs", response_class=HTMLResponse)

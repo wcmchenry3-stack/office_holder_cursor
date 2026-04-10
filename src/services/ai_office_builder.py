@@ -798,7 +798,43 @@ class AIOfficeBuilder:
             {"role": "user", "content": user_prompt},
         ]
 
-        return self._call_wiki_polish_openai(messages)
+        article = self._call_wiki_polish_openai(messages)
+        if article is None:
+            return None
+
+        # Validate and attempt one repair if critical format errors are found.
+        # Guard: skip repair for very long articles to stay within model context.
+        from src.services.wikitext_validator import validate_wikitext
+
+        validation = validate_wikitext(article)
+        if not validation.is_valid and len(article) < 8000:
+            logger.warning(
+                "polish_wiki_article: %d wikitext error(s) for %s — attempting repair",
+                len(validation.errors),
+                full_name,
+            )
+            repair_messages = messages + [
+                {"role": "assistant", "content": article},
+                {
+                    "role": "user",
+                    "content": (
+                        "The article you just wrote has the following wikitext format errors. "
+                        "Please rewrite it correcting all of these issues:\n"
+                        + "\n".join(f"- {e.message}" for e in validation.errors)
+                    ),
+                },
+            ]
+            try:
+                repaired = self._call_wiki_polish_openai(repair_messages)
+                if repaired:
+                    article = repaired
+            except Exception:
+                logger.warning(
+                    "polish_wiki_article: repair call failed for %s — using first draft",
+                    full_name,
+                )
+
+        return article
 
     def _call_wiki_polish_openai(self, messages: list[dict]) -> str | None:
         """Call OpenAI for wiki article polish with exponential backoff on RateLimitError.
