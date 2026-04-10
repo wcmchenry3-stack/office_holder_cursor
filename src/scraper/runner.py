@@ -795,65 +795,83 @@ def _try_auto_update_table_no(
                 )
             )
     except Exception:
-        pass
+        _log.debug(
+            "_try_auto_update_table_no: error computing baseline for table %d of %s — using raw missing count",
+            current_table_no,
+            url,
+            exc_info=True,
+        )
     for candidate_no in range(1, num_tables + 1):
         if candidate_no == current_table_no:
             continue
-        candidate_result = get_table_html_cached(
-            url,
-            candidate_no,
-            refresh=refresh_table_cache,
-            use_full_page=bool(office_row.get("use_full_page_for_table")),
-        )
-        html = candidate_result.get("html") or ""
-        if not html:
-            continue
-        candidate_office = {**office_row, "table_no": candidate_no, "find_date_in_infobox": False}
-        table_data = _parse_office_html(
-            candidate_office,
-            html,
-            url,
-            party_list,
-            offices_parser,
-            cached_table_html=html,
-            progress_callback=None,
-        )
-        if not table_data:
-            continue
-        missing = _missing_holder_keys(
-            existing_terms,
-            table_data,
-            int(office_row.get("id") or 0),
-            years_only,
-            key_years_only=key_years_only,
-        )
-        missing_exact = len(missing)
-        missing_years = len(
-            _missing_holder_keys(
+        try:
+            candidate_result = get_table_html_cached(
+                url,
+                candidate_no,
+                refresh=refresh_table_cache,
+                use_full_page=bool(office_row.get("use_full_page_for_table")),
+            )
+            html = candidate_result.get("html") or ""
+            if not html:
+                continue
+            candidate_office = {
+                **office_row,
+                "table_no": candidate_no,
+                "find_date_in_infobox": False,
+            }
+            table_data = _parse_office_html(
+                candidate_office,
+                html,
+                url,
+                party_list,
+                offices_parser,
+                cached_table_html=html,
+                progress_callback=None,
+            )
+            if not table_data:
+                continue
+            missing = _missing_holder_keys(
                 existing_terms,
                 table_data,
                 int(office_row.get("id") or 0),
                 years_only,
-                key_years_only=True,
+                key_years_only=key_years_only,
             )
-        )
-        improved = (
-            (missing_exact < best_missing)
-            or (missing_exact == best_missing and missing_years < current_missing_years)
-            or (
-                missing_exact == best_missing
-                and missing_years == current_missing_years
-                and best_rows is not None
-                and len(table_data) > len(best_rows)
+            missing_exact = len(missing)
+            missing_years = len(
+                _missing_holder_keys(
+                    existing_terms,
+                    table_data,
+                    int(office_row.get("id") or 0),
+                    years_only,
+                    key_years_only=True,
+                )
             )
-        )
-        if improved:
-            best_missing = missing_exact
-            current_missing_years = missing_years
-            best_table_no = candidate_no
-            best_rows = table_data
-            if best_missing == 0 and current_missing_years == 0:
-                break
+            improved = (
+                (missing_exact < best_missing)
+                or (missing_exact == best_missing and missing_years < current_missing_years)
+                or (
+                    missing_exact == best_missing
+                    and missing_years == current_missing_years
+                    and best_rows is not None
+                    and len(table_data) > len(best_rows)
+                )
+            )
+            if improved:
+                best_missing = missing_exact
+                current_missing_years = missing_years
+                best_table_no = candidate_no
+                best_rows = table_data
+                if best_missing == 0 and current_missing_years == 0:
+                    break
+        except Exception:
+            _log.warning(
+                "_try_auto_update_table_no: error parsing candidate table %d for %s — skipping",
+                candidate_no,
+                url,
+                exc_info=True,
+            )
+            continue
     return (best_table_no, best_rows)
 
 
@@ -1899,8 +1917,11 @@ def _run_gemini_vitals_research(ctx: _RunContext, report: Callable) -> dict[str,
                 sentry_sdk.capture_exception(exc)
                 errors.append({"url": wiki_url, "error": f"OpenAI polish failed: {exc}"})
 
-        # Mark checked regardless of outcome
-        db_individuals.mark_gemini_research_checked(ind_id)
+        # Only mark checked when research returned real data. If result is
+        # fully empty (transient API failure), leave the individual in the
+        # queue so the next nightly run retries.
+        if result.birth_date or result.death_date or result.sources or result.biographical_notes:
+            db_individuals.mark_gemini_research_checked(ind_id)
 
         report(
             "gemini",
@@ -2089,7 +2110,9 @@ def _run_dead_link_research(ctx: _RunContext, report: Callable) -> dict[str, Any
                 sentry_sdk.capture_exception(exc)
                 errors.append({"url": wiki_url, "error": f"OpenAI polish failed: {exc}"})
 
-        db_individuals.mark_gemini_research_checked(ind_id)
+        # Only mark checked when research returned real data (same logic as Gemini batch above).
+        if result.birth_date or result.death_date or result.sources or result.biographical_notes:
+            db_individuals.mark_gemini_research_checked(ind_id)
 
         report(
             "dead_link",
