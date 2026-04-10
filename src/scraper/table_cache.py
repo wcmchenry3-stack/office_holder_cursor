@@ -2,6 +2,17 @@
 """
 Local cache for Wikipedia table HTML. One file per (url, table_no); raw HTML stored in gzipped JSON.
 Preview / test / run use cache by default; use Refresh to refetch from Wikipedia.
+
+--- Policy compliance ---
+
+Wikimedia API (via wiki_fetch.py):
+  - User-Agent: set on every HTTP request via WIKIPEDIA_REQUEST_HEADERS in wiki_fetch.py.
+  - Rate limiting: enforced by the global rate limiter in wiki_fetch.py (≤1 req/s).
+  - This module never makes HTTP requests directly — all fetches go through
+    _fetch_table_from_url() → wiki_session() which applies the User-Agent and rate limiter.
+  - WIKI_TABLE_CACHE_ENABLED=0 disables disk I/O; HTTP policy (User-Agent, rate limit)
+    is still enforced by wiki_fetch.py on every request.
+  See: https://www.mediawiki.org/wiki/API:Etiquette
 """
 
 import gzip
