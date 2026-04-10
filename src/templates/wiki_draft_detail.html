@@ -1,4 +1,6 @@
 {% extends "base.html" %}
+{# All Wikipedia API requests made by this app (submit + preview) include a descriptive
+   User-Agent header via HTTP_USER_AGENT per Wikimedia API:Etiquette policy. #}
 {% block title %}Wiki Draft #{{ draft.id }} – Office Holder{% endblock %}
 {% block content %}
 <p><a href="/data/wiki-drafts">&larr; Back to drafts</a></p>
@@ -20,6 +22,52 @@
   <button class="btn status-btn" data-status="published" style="background:var(--success); color:#fff;">Published</button>
   <button class="btn status-btn" data-status="rejected" style="background:var(--danger); color:#fff;">Rejected</button>
   <span id="statusMsg" style="margin-left:0.5em;"></span>
+</div>
+
+<!-- Submit to Wikipedia section -->
+<div id="submitSection" style="display:none; margin:1em 0;">
+  <button id="submitBtn" class="btn" style="background:var(--accent); color:#fff;">
+    Submit to Wikipedia
+  </button>
+  <span id="submitMsg" style="margin-left:0.75em;"></span>
+</div>
+
+<div id="credentialHelp" style="display:none; margin:1em 0; padding:0.75rem 1rem; border-radius:4px; background:rgba(224,49,49,0.08); border:1px solid var(--danger); font-size:0.9rem;">
+  <strong>Wikipedia bot credentials not configured.</strong>
+  To enable submission, set two environment variables on the server:
+  <ol style="margin:0.5em 0; padding-left:1.5em;">
+    <li><code>WIKIPEDIA_BOT_USERNAME</code> — your Wikipedia bot account name (e.g. <code>MyAccount@MyBot</code>)</li>
+    <li><code>WIKIPEDIA_BOT_PASSWORD</code> — the bot password from
+      <a href="https://en.wikipedia.org/wiki/Special:BotPasswords" target="_blank" rel="noopener">Special:BotPasswords</a>
+      (grant: <em>Edit existing pages</em> and <em>Create, edit, and move pages</em>)
+    </li>
+  </ol>
+  Articles are submitted to the <code>Draft:</code> namespace by default and reviewed via
+  <a href="https://en.wikipedia.org/wiki/Wikipedia:Articles_for_creation" target="_blank" rel="noopener">Articles for Creation</a>
+  before appearing in main article space. No Wikipedia account yet?
+  <a href="https://en.wikipedia.org/wiki/Special:CreateAccount" target="_blank" rel="noopener">Create one here.</a>
+</div>
+
+<!-- Submit confirmation modal -->
+<div id="submitModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:1000; align-items:center; justify-content:center;">
+  <div style="background:var(--bg2); border:1px solid var(--border); border-radius:6px; padding:1.5rem; max-width:480px; width:90%;">
+    <h3 style="margin:0 0 0.75rem;">Confirm Wikipedia Submission</h3>
+    <p style="margin:0 0 0.5rem;">This will create a new article at:</p>
+    <p style="margin:0 0 0.75rem;"><strong id="modalTitle" style="color:var(--accent);"></strong></p>
+    <p style="font-size:0.875rem; color:var(--text-muted); margin:0 0 0.75rem;">
+      Articles in the <code>Draft:</code> namespace go through Wikipedia's Articles for Creation
+      review before appearing publicly. Uncheck below to submit directly to the main article space
+      (not recommended for first submissions).
+    </p>
+    <label style="display:flex; align-items:center; gap:0.5em; margin-bottom:1rem; font-size:0.875rem; cursor:pointer;">
+      <input type="checkbox" id="useDraftNs" checked>
+      Use <code>Draft:</code> namespace (recommended)
+    </label>
+    <div style="display:flex; gap:0.75rem; justify-content:flex-end;">
+      <button id="modalCancel" class="btn btn-secondary">Cancel</button>
+      <button id="modalConfirm" class="btn" style="background:var(--accent); color:#fff;">Submit</button>
+    </div>
+  </div>
 </div>
 
 <h2>Research Sources</h2>
@@ -44,12 +92,57 @@
 <p>No research sources recorded.</p>
 {% endif %}
 
-<h2>Article Draft (Wikitext)</h2>
-<pre style="background:var(--bg2); color:var(--text); padding:1em; overflow-x:auto; white-space:pre-wrap; border:1px solid var(--border);">{{ draft.proposal_text }}</pre>
+<!-- Wikitext validation panel -->
+{% if validation %}
+<div style="margin:1em 0; padding:0.75rem 1rem; border-radius:4px;
+  background:{% if validation.is_valid %}rgba(47,158,68,0.08){% else %}rgba(224,49,49,0.08){% endif %};
+  border:1px solid {% if validation.is_valid %}var(--success){% else %}var(--danger){% endif %};">
+  <strong>Wikitext Validation:
+    {% if validation.is_valid %}
+      <span style="color:var(--success);">PASS</span>
+    {% else %}
+      <span style="color:var(--danger);">{{ validation.errors|length }} error(s)</span>
+      {% if validation.warnings %}
+        &nbsp;·&nbsp;<span style="color:#e67700;">{{ validation.warnings|length }} warning(s)</span>
+      {% endif %}
+    {% endif %}
+  </strong>
+  {% if validation.errors %}
+  <ul style="margin:0.5em 0 0; padding-left:1.25em; color:var(--danger); font-size:0.875rem;">
+    {% for e in validation.errors %}<li>{{ e.message }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+  {% if validation.warnings %}
+  <ul style="margin:0.5em 0 0; padding-left:1.25em; color:#e67700; font-size:0.875rem;">
+    {% for w in validation.warnings %}<li>{{ w.message }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+</div>
+{% endif %}
+
+<h2>Article Draft</h2>
+
+<!-- Tab bar -->
+<div style="display:flex; border-bottom:2px solid var(--border); margin-bottom:1em;">
+  <button id="tabWikitext" onclick="switchTab('wikitext')" style="padding:0.4em 1.1em; border:none; border-bottom:2px solid var(--accent); background:none; cursor:pointer; font-weight:600; color:var(--accent); margin-bottom:-2px;">Wikitext</button>
+  <button id="tabPreview" onclick="switchTab('preview')" style="padding:0.4em 1.1em; border:none; border-bottom:2px solid transparent; background:none; cursor:pointer; color:var(--text-muted); margin-bottom:-2px;">Preview</button>
+</div>
+
+<div id="panelWikitext">
+  <pre style="background:var(--bg2); color:var(--text); padding:1em; overflow-x:auto; white-space:pre-wrap; border:1px solid var(--border);">{{ draft.proposal_text }}</pre>
+</div>
+
+<div id="panelPreview" style="display:none; border:1px solid var(--border); border-radius:4px; padding:1em; background:var(--bg2); overflow-x:auto;">
+  <span id="previewSpinner" style="display:none; color:var(--text-muted);">Loading preview from Wikipedia…</span>
+  <div id="previewContent"></div>
+</div>
 
 <script>
 (function() {
   const proposalId = {{ draft.id }};
+  const fullName = {{ draft.full_name | tojson }};
+
+  // ── Status change ────────────────────────────────────────────────────────
   document.querySelectorAll('.status-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       const newStatus = btn.dataset.status;
@@ -70,6 +163,99 @@
         msg.textContent = 'Error: ' + e.message;
       }
     });
+  });
+
+  // ── Tab switching ────────────────────────────────────────────────────────
+  let previewLoaded = false;
+
+  window.switchTab = function(tab) {
+    const isWikitext = tab === 'wikitext';
+    document.getElementById('panelWikitext').style.display = isWikitext ? 'block' : 'none';
+    document.getElementById('panelPreview').style.display = isWikitext ? 'none' : 'block';
+    document.getElementById('tabWikitext').style.cssText =
+      'padding:0.4em 1.1em; border:none; margin-bottom:-2px; background:none; cursor:pointer; font-weight:' +
+      (isWikitext ? '600; color:var(--accent); border-bottom:2px solid var(--accent);' : 'normal; color:var(--text-muted); border-bottom:2px solid transparent;');
+    document.getElementById('tabPreview').style.cssText =
+      'padding:0.4em 1.1em; border:none; margin-bottom:-2px; background:none; cursor:pointer; font-weight:' +
+      (!isWikitext ? '600; color:var(--accent); border-bottom:2px solid var(--accent);' : 'normal; color:var(--text-muted); border-bottom:2px solid transparent;');
+
+    if (!isWikitext && !previewLoaded) {
+      const spinner = document.getElementById('previewSpinner');
+      spinner.style.display = 'inline';
+      fetch('/api/wiki-drafts/' + proposalId + '/preview')
+        .then(r => r.json())
+        .then(d => {
+          spinner.style.display = 'none';
+          if (d.html) {
+            document.getElementById('previewContent').innerHTML = d.html;
+            previewLoaded = true;
+          } else {
+            document.getElementById('previewContent').textContent =
+              'Preview unavailable: ' + (d.detail || 'unknown error');
+          }
+        })
+        .catch(e => {
+          spinner.style.display = 'none';
+          document.getElementById('previewContent').textContent = 'Preview failed: ' + e.message;
+        });
+    }
+  };
+
+  // ── Wikipedia submit ─────────────────────────────────────────────────────
+  fetch('/api/wikipedia/status')
+    .then(r => r.json())
+    .then(data => {
+      if (data.configured) {
+        document.getElementById('submitSection').style.display = 'block';
+      } else {
+        document.getElementById('credentialHelp').style.display = 'block';
+      }
+    })
+    .catch(() => { /* silently hide submit — server unavailable */ });
+
+  function updateModalTitle() {
+    const useDraft = document.getElementById('useDraftNs').checked;
+    document.getElementById('modalTitle').textContent =
+      (useDraft ? 'Draft:' : '') + (fullName || '(unknown)');
+  }
+
+  document.getElementById('submitBtn').addEventListener('click', () => {
+    updateModalTitle();
+    const modal = document.getElementById('submitModal');
+    modal.style.display = 'flex';
+  });
+
+  document.getElementById('useDraftNs').addEventListener('change', updateModalTitle);
+
+  document.getElementById('modalCancel').addEventListener('click', () => {
+    document.getElementById('submitModal').style.display = 'none';
+  });
+
+  document.getElementById('submitModal').addEventListener('click', e => {
+    if (e.target === e.currentTarget) e.currentTarget.style.display = 'none';
+  });
+
+  document.getElementById('modalConfirm').addEventListener('click', async () => {
+    document.getElementById('submitModal').style.display = 'none';
+    const msg = document.getElementById('submitMsg');
+    msg.textContent = 'Submitting to Wikipedia…';
+    const useDraftNs = document.getElementById('useDraftNs').checked;
+    try {
+      const r = await fetch('/api/wiki-drafts/' + proposalId + '/submit', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({use_draft_namespace: useDraftNs}),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.detail || 'Submission failed');
+      msg.innerHTML = 'Submitted! Article: <a href="' + window.esc(d.url) +
+        '" target="_blank" rel="noopener">' + window.esc(d.title) + '</a>';
+      document.getElementById('statusBadge').textContent = 'submitted';
+      document.getElementById('statusBadge').className = 'badge badge-submitted';
+      document.getElementById('submitBtn').disabled = true;
+    } catch(e) {
+      msg.textContent = 'Error: ' + e.message;
+    }
   });
 })();
 </script>
