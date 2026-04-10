@@ -55,9 +55,7 @@ class TestValidationResult:
         assert r.is_valid is True
 
     def test_is_valid_false_when_errors_present(self):
-        r = WikitextValidationResult(
-            issues=[ValidationIssue(level="error", code="e", message="e")]
-        )
+        r = WikitextValidationResult(issues=[ValidationIssue(level="error", code="e", message="e")])
         assert r.is_valid is False
 
     def test_errors_property_filters_correctly(self):

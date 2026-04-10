@@ -100,7 +100,9 @@ async def data_wiki_draft_detail(request: Request, proposal_id: int):
 
         validation = validate_wikitext(draft["proposal_text"]).as_dict()
     return templates.TemplateResponse(
-        request, "wiki_draft_detail.html", {"draft": draft, "sources": sources, "validation": validation}
+        request,
+        "wiki_draft_detail.html",
+        {"draft": draft, "sources": sources, "validation": validation},
     )
 
 
@@ -249,7 +251,12 @@ async def api_wiki_draft_preview(proposal_id: int):
     Uses the Wikipedia public API (no auth required for rendering).
     Returns {"html": "..."} on success or 503 on API failure.
     Preview is best-effort and does not affect draft status.
+
+    Rate limiting: 1 s sleep before each request per Wikimedia API etiquette
+    (https://www.mediawiki.org/wiki/API:Etiquette#Request_limit).
     """
+    import time
+
     from src.scraper.logger import HTTP_USER_AGENT
 
     draft = db_research.get_wiki_draft_proposal(proposal_id)
@@ -260,6 +267,7 @@ async def api_wiki_draft_preview(proposal_id: int):
     if not wikitext:
         return JSONResponse({"html": "<p><em>No wikitext to preview.</em></p>"})
 
+    time.sleep(1.0)  # Wikimedia rate-limit: minimum 1 s between requests
     try:
         resp = _requests.post(
             "https://en.wikipedia.org/w/api.php",

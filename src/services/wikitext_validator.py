@@ -14,8 +14,8 @@ from dataclasses import dataclass, field
 
 @dataclass
 class ValidationIssue:
-    level: str    # "error" | "warning"
-    code: str     # machine-readable key, e.g. "missing_infobox"
+    level: str  # "error" | "warning"
+    code: str  # machine-readable key, e.g. "missing_infobox"
     message: str  # human-readable one-liner
 
 
@@ -48,54 +48,65 @@ class WikitextValidationResult:
 # Individual checks
 # ---------------------------------------------------------------------------
 
+
 def _check_infobox(wikitext: str, issues: list[ValidationIssue]) -> None:
     """Error if {{Infobox officeholder is absent (case-insensitive)."""
     if not re.search(r"\{\{infobox officeholder", wikitext, re.IGNORECASE):
-        issues.append(ValidationIssue(
-            level="error",
-            code="missing_infobox",
-            message="Missing {{Infobox officeholder}} template",
-        ))
+        issues.append(
+            ValidationIssue(
+                level="error",
+                code="missing_infobox",
+                message="Missing {{Infobox officeholder}} template",
+            )
+        )
 
 
 def _check_refs(wikitext: str, issues: list[ValidationIssue]) -> None:
     """Error if no <ref tag is present."""
     if not re.search(r"<ref", wikitext, re.IGNORECASE):
-        issues.append(ValidationIssue(
-            level="error",
-            code="missing_refs",
-            message="No <ref> citation tags found — every factual claim needs a citation",
-        ))
+        issues.append(
+            ValidationIssue(
+                level="error",
+                code="missing_refs",
+                message="No <ref> citation tags found — every factual claim needs a citation",
+            )
+        )
 
 
 def _check_reflist(wikitext: str, issues: list[ValidationIssue]) -> None:
     """Error if {{reflist}} is absent (case-insensitive)."""
     if not re.search(r"\{\{reflist", wikitext, re.IGNORECASE):
-        issues.append(ValidationIssue(
-            level="error",
-            code="missing_reflist",
-            message="Missing {{reflist}} in References section",
-        ))
+        issues.append(
+            ValidationIssue(
+                level="error",
+                code="missing_reflist",
+                message="Missing {{reflist}} in References section",
+            )
+        )
 
 
 def _check_references_section(wikitext: str, issues: list[ValidationIssue]) -> None:
     """Error if ==References== section header is absent."""
     if not re.search(r"==\s*References\s*==", wikitext, re.IGNORECASE):
-        issues.append(ValidationIssue(
-            level="error",
-            code="missing_references_section",
-            message="Missing ==References== section header",
-        ))
+        issues.append(
+            ValidationIssue(
+                level="error",
+                code="missing_references_section",
+                message="Missing ==References== section header",
+            )
+        )
 
 
 def _check_categories(wikitext: str, issues: list[ValidationIssue]) -> None:
     """Error if no [[Category: link is present."""
     if not re.search(r"\[\[Category:", wikitext, re.IGNORECASE):
-        issues.append(ValidationIssue(
-            level="error",
-            code="missing_categories",
-            message="No [[Category:...]] links found — article must be categorised",
-        ))
+        issues.append(
+            ValidationIssue(
+                level="error",
+                code="missing_categories",
+                message="No [[Category:...]] links found — article must be categorised",
+            )
+        )
 
 
 def _check_unmatched_braces(wikitext: str, issues: list[ValidationIssue]) -> None:
@@ -110,11 +121,13 @@ def _check_unmatched_braces(wikitext: str, issues: list[ValidationIssue]) -> Non
     if open_count != close_count:
         delta = open_count - close_count
         direction = "unclosed" if delta > 0 else "extra closing"
-        issues.append(ValidationIssue(
-            level="warning",
-            code="unmatched_braces",
-            message=f"Unmatched template braces: {abs(delta)} {direction} '{{{{' detected",
-        ))
+        issues.append(
+            ValidationIssue(
+                level="warning",
+                code="unmatched_braces",
+                message=f"Unmatched template braces: {abs(delta)} {direction} '{{{{' detected",
+            )
+        )
 
 
 def _check_birth_date_template(
@@ -126,16 +139,19 @@ def _check_birth_date_template(
     if not has_birth_info:
         return
     if not re.search(r"\{\{birth date", wikitext, re.IGNORECASE):
-        issues.append(ValidationIssue(
-            level="warning",
-            code="missing_birth_date_template",
-            message="birth_date field present but missing {{birth date|YYYY|MM|DD}} template",
-        ))
+        issues.append(
+            ValidationIssue(
+                level="warning",
+                code="missing_birth_date_template",
+                message="birth_date field present but missing {{birth date|YYYY|MM|DD}} template",
+            )
+        )
 
 
 # ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
+
 
 def validate_wikitext(wikitext: str) -> WikitextValidationResult:
     """Run all checks against *wikitext* and return the aggregate result.

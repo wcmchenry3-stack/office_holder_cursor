@@ -10,6 +10,8 @@ Covers:
 No live HTTP requests are made to Wikipedia in these tests.
 All Wikipedia API calls in the production code (submit + preview) include a
 descriptive User-Agent header via HTTP_USER_AGENT per Wikimedia API etiquette.
+Rate limiting (sleep/backoff/retry) is applied in the production endpoints;
+all HTTP calls in these tests are mocked so no live Wikipedia requests are made.
 """
 
 from __future__ import annotations
@@ -19,7 +21,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -66,10 +67,12 @@ def seeded_draft_id(client):
     from src.db import individuals as db_individuals
     from src.db import individual_research_sources as db_research
 
-    ind_id = db_individuals.upsert_individual({
-        "wiki_url": "https://en.wikipedia.org/wiki/John_Test",
-        "full_name": "John Test",
-    })
+    ind_id = db_individuals.upsert_individual(
+        {
+            "wiki_url": "https://en.wikipedia.org/wiki/John_Test",
+            "full_name": "John Test",
+        }
+    )
     proposal_id = db_research.insert_wiki_draft_proposal(
         individual_id=ind_id,
         proposal_text=_VALID_WIKITEXT,
@@ -84,10 +87,12 @@ def submitted_draft_id(client):
     from src.db import individuals as db_individuals
     from src.db import individual_research_sources as db_research
 
-    ind_id = db_individuals.upsert_individual({
-        "wiki_url": "https://en.wikipedia.org/wiki/Already_Submitted",
-        "full_name": "Already Submitted",
-    })
+    ind_id = db_individuals.upsert_individual(
+        {
+            "wiki_url": "https://en.wikipedia.org/wiki/Already_Submitted",
+            "full_name": "Already Submitted",
+        }
+    )
     proposal_id = db_research.insert_wiki_draft_proposal(
         individual_id=ind_id,
         proposal_text=_VALID_WIKITEXT,
@@ -102,10 +107,12 @@ def nameless_draft_id(client):
     from src.db import individuals as db_individuals
     from src.db import individual_research_sources as db_research
 
-    ind_id = db_individuals.upsert_individual({
-        "wiki_url": "https://en.wikipedia.org/wiki/Nameless_Person",
-        "full_name": None,
-    })
+    ind_id = db_individuals.upsert_individual(
+        {
+            "wiki_url": "https://en.wikipedia.org/wiki/Nameless_Person",
+            "full_name": None,
+        }
+    )
     proposal_id = db_research.insert_wiki_draft_proposal(
         individual_id=ind_id,
         proposal_text=_VALID_WIKITEXT,
@@ -120,10 +127,12 @@ def invalid_wikitext_draft_id(client):
     from src.db import individuals as db_individuals
     from src.db import individual_research_sources as db_research
 
-    ind_id = db_individuals.upsert_individual({
-        "wiki_url": "https://en.wikipedia.org/wiki/Bad_Format_Person",
-        "full_name": "Bad Format Person",
-    })
+    ind_id = db_individuals.upsert_individual(
+        {
+            "wiki_url": "https://en.wikipedia.org/wiki/Bad_Format_Person",
+            "full_name": "Bad Format Person",
+        }
+    )
     proposal_id = db_research.insert_wiki_draft_proposal(
         individual_id=ind_id,
         proposal_text=_INVALID_WIKITEXT,
@@ -218,10 +227,12 @@ class TestSubmitWikiDraft:
         from src.db import individuals as db_individuals
         from src.db import individual_research_sources as db_research
 
-        ind_id = db_individuals.upsert_individual({
-            "wiki_url": "https://en.wikipedia.org/wiki/Direct_Submit_Person",
-            "full_name": "Direct Submit Person",
-        })
+        ind_id = db_individuals.upsert_individual(
+            {
+                "wiki_url": "https://en.wikipedia.org/wiki/Direct_Submit_Person",
+                "full_name": "Direct Submit Person",
+            }
+        )
         pid = db_research.insert_wiki_draft_proposal(
             individual_id=ind_id,
             proposal_text=_VALID_WIKITEXT,
@@ -242,10 +253,12 @@ class TestSubmitWikiDraft:
         from src.db import individuals as db_individuals
         from src.db import individual_research_sources as db_research
 
-        ind_id = db_individuals.upsert_individual({
-            "wiki_url": "https://en.wikipedia.org/wiki/Status_Check_Person",
-            "full_name": "Status Check Person",
-        })
+        ind_id = db_individuals.upsert_individual(
+            {
+                "wiki_url": "https://en.wikipedia.org/wiki/Status_Check_Person",
+                "full_name": "Status Check Person",
+            }
+        )
         pid = db_research.insert_wiki_draft_proposal(
             individual_id=ind_id,
             proposal_text=_VALID_WIKITEXT,
@@ -263,10 +276,12 @@ class TestSubmitWikiDraft:
         from src.db import individual_research_sources as db_research
         from src.services.wikipedia_submit import WikipediaSubmitError
 
-        ind_id = db_individuals.upsert_individual({
-            "wiki_url": "https://en.wikipedia.org/wiki/Error_Person",
-            "full_name": "Error Person",
-        })
+        ind_id = db_individuals.upsert_individual(
+            {
+                "wiki_url": "https://en.wikipedia.org/wiki/Error_Person",
+                "full_name": "Error Person",
+            }
+        )
         pid = db_research.insert_wiki_draft_proposal(
             individual_id=ind_id,
             proposal_text=_VALID_WIKITEXT,
@@ -307,6 +322,7 @@ class TestWikiDraftPreview:
 
     def test_returns_503_on_wikipedia_api_failure(self, client, seeded_draft_id):
         import requests as real_requests
+
         with patch("src.routers.data._requests") as mock_req:
             mock_req.post.side_effect = real_requests.RequestException("timeout")
             r = client.get(f"/api/wiki-drafts/{seeded_draft_id}/preview")
