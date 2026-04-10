@@ -143,7 +143,7 @@ def _create_gh_issue(
             + f"\n\n### AI votes\n{ai_votes_summary}"
             + source_section
             + "\n\nThis record was **not inserted** into the database. "
-            f"Please investigate and re-scrape the office if the record is legitimate."
+            "Please investigate and re-scrape the office if the record is legitimate."
         )
         result = gh.create_issue(title=title, body=body, labels=[_GH_LABEL])
         return result.get("html_url")
