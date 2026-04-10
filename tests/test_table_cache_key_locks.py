@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
-"""Tests for the _key_locks memory-leak fix in table_cache.py (Issue #224).
+"""Tests for the _key_locks memory-leak fix and cache toggle in table_cache.py.
 
-The original implementation used a plain dict[str, threading.Lock] that
-grew forever. The fix uses weakref.WeakValueDictionary so entries are
-automatically removed once no thread holds a reference to the lock.
+table_cache.py never makes HTTP requests directly — all Wikipedia fetches go
+through _fetch_table_from_url() → wiki_session(), which enforces the
+User-Agent header, rate_limit, and backoff/retry per Wikimedia policy (wiki_fetch.py).
 
 Tests cover:
 - _key_lock returns a _KeyLock with working __enter__/__exit__
@@ -12,6 +12,7 @@ Tests cover:
 - Dict shrinks after references are released (GC frees the lock)
 - Concurrent access from multiple threads does not corrupt the dict
   and each thread gets a usable lock
+- TABLE_HTML_CACHE_ENABLED=0 bypasses disk I/O and calls _fetch_table_from_url directly
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from __future__ import annotations
 import gc
 import threading
 import weakref
+from unittest.mock import patch, MagicMock
 
 import pytest
 
@@ -162,3 +164,87 @@ class TestThreadSafety:
 
         gc.collect()
         assert errors == []
+
+
+# ---------------------------------------------------------------------------
+# TABLE_HTML_CACHE_ENABLED toggle (#396)
+# ---------------------------------------------------------------------------
+
+
+class TestCacheToggle:
+    def test_disabled_bypasses_disk_and_calls_fetch_directly(self):
+        """When TABLE_HTML_CACHE_ENABLED=0, get_table_html_cached calls _fetch_table_from_url
+        directly with run_cache=None and skips all disk I/O."""
+        from src.scraper import table_cache
+
+        fake_result = {"table_no": 1, "num_tables": 1, "html": "<table></table>"}
+        with patch.dict("os.environ", {"TABLE_HTML_CACHE_ENABLED": "0"}):
+            with patch.object(
+                table_cache, "_fetch_table_from_url", return_value=fake_result
+            ) as mock_fetch:
+                result = table_cache.get_table_html_cached(
+                    "https://en.wikipedia.org/wiki/Test", table_no=1
+                )
+
+        mock_fetch.assert_called_once_with(
+            "https://en.wikipedia.org/wiki/Test", 1, False, run_cache=None
+        )
+        assert result == fake_result
+
+    def test_disabled_write_is_noop(self, tmp_path):
+        """When TABLE_HTML_CACHE_ENABLED=0, write_table_html_cache writes no files."""
+        from src.scraper import table_cache
+
+        with patch.dict("os.environ", {"TABLE_HTML_CACHE_ENABLED": "0"}):
+            with patch.object(table_cache, "_cache_dir", return_value=tmp_path):
+                table_cache.write_table_html_cache(
+                    url="https://en.wikipedia.org/wiki/Test",
+                    table_no=1,
+                    html="<table></table>",
+                    num_tables=1,
+                )
+
+        assert list(tmp_path.iterdir()) == []
+
+    def test_enabled_by_default(self):
+        """Without TABLE_HTML_CACHE_ENABLED set, normal disk-cache path is used."""
+        from src.scraper import table_cache
+
+        fake_result = {"table_no": 1, "num_tables": 1, "html": "<table></table>"}
+        with patch.dict("os.environ", {}, clear=False):
+            # Remove key if present to test default
+            import os
+
+            os.environ.pop("TABLE_HTML_CACHE_ENABLED", None)
+            with patch.object(
+                table_cache, "_fetch_table_from_url", return_value=fake_result
+            ) as mock_fetch:
+                with patch.object(table_cache, "_cache_dir") as mock_dir:
+                    mock_path = MagicMock()
+                    mock_path.__truediv__ = MagicMock(return_value=MagicMock(exists=lambda: False))
+                    mock_dir.return_value = mock_path
+                    table_cache.get_table_html_cached(
+                        "https://en.wikipedia.org/wiki/Test2", table_no=1
+                    )
+
+        # Normal path calls _fetch_table_from_url but NOT with run_cache=None forced
+        mock_fetch.assert_called_once()
+
+    def test_explicit_enabled_uses_normal_path(self):
+        """TABLE_HTML_CACHE_ENABLED=1 uses the normal disk-cache path."""
+        from src.scraper import table_cache
+
+        fake_result = {"table_no": 1, "num_tables": 1, "html": "<table></table>"}
+        with patch.dict("os.environ", {"TABLE_HTML_CACHE_ENABLED": "1"}):
+            with patch.object(
+                table_cache, "_fetch_table_from_url", return_value=fake_result
+            ) as mock_fetch:
+                with patch.object(table_cache, "_cache_dir") as mock_dir:
+                    mock_path = MagicMock()
+                    mock_path.__truediv__ = MagicMock(return_value=MagicMock(exists=lambda: False))
+                    mock_dir.return_value = mock_path
+                    table_cache.get_table_html_cached(
+                        "https://en.wikipedia.org/wiki/Test3", table_no=1
+                    )
+
+        mock_fetch.assert_called_once()
