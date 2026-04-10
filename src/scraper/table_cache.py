@@ -8,6 +8,7 @@ import gzip
 import hashlib
 import json
 import logging
+import os
 import time
 import threading
 import weakref
@@ -147,6 +148,8 @@ def write_table_html_cache(
     Used by the AI office builder to prime the cache from already-fetched page HTML,
     so retry validations never re-fetch Wikipedia.
     """
+    if os.environ.get("WIKI_TABLE_CACHE_ENABLED", "1") == "0":
+        return
     url = (url or "").strip()
     if not url or not html:
         return
@@ -181,6 +184,9 @@ def get_table_html_cached(
     and re-fetch. Prevents stale cached pages from masking Wikipedia changes across runs.
     Returns {"table_no", "num_tables", "html": "<table>...</table>"} or {"error": "..."}.
     """
+
+    if os.environ.get("WIKI_TABLE_CACHE_ENABLED", "1") == "0":
+        return _fetch_table_from_url(url, table_no, use_full_page, run_cache=None)
 
     url = (url or "").strip()
     if not url:
