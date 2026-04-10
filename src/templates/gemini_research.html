@@ -2,7 +2,19 @@
 {% block title %}Gemini Research – Office Holder{% endblock %}
 {% block content %}
 <h1>Gemini Vitals Research</h1>
-<p>Search for an individual, then run Gemini deep research + OpenAI article polish.</p>
+
+<!-- Already-researched drafts -->
+<div style="margin-bottom:2em;">
+  <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:0.5em;">
+    <strong>Researched items</strong>
+    <a href="/data/wiki-drafts" style="font-size:0.875rem;">View all →</a>
+  </div>
+  <div id="draftsList" style="border:1px solid var(--border); border-radius:4px; overflow:hidden; background:var(--bg2);">
+    <div style="padding:0.75em 1em; color:var(--text-muted); font-size:0.875rem;">Loading…</div>
+  </div>
+</div>
+
+<p style="margin-bottom:0.75em; color:var(--text-muted); font-size:0.9rem;">To research a new individual, search below:</p>
 
 <div style="margin-bottom:1.5em">
   <label for="searchInput"><strong>Search individual:</strong></label>
@@ -206,6 +218,34 @@
       runBtn.disabled = false;
     }
   }
+
+  // --- Load researched drafts list ---
+  (function loadDrafts() {
+    fetch('/api/research/drafts')
+      .then(r => r.json())
+      .then(drafts => {
+        const el = document.getElementById('draftsList');
+        if (!drafts.length) {
+          el.innerHTML = '<div style="padding:0.75em 1em; color:var(--text-muted); font-size:0.875rem;">No researched items yet.</div>';
+          return;
+        }
+        const STATUS_COLORS = { pending: 'var(--accent)', submitted: '#2196f3', published: 'var(--success)', rejected: 'var(--danger)' };
+        el.innerHTML = drafts.slice(0, 20).map(d =>
+          `<a href="/data/wiki-drafts/${d.id}" style="display:flex; align-items:center; gap:0.75em; padding:0.6em 1em; border-bottom:1px solid var(--border); text-decoration:none; color:var(--text);">`
+          + `<span style="flex:1; font-weight:500;">${window.esc(d.full_name || '(unknown)')}</span>`
+          + `<span style="font-size:0.8rem; color:${STATUS_COLORS[d.status] || 'var(--text-muted)'}; min-width:5em; text-align:right;">${window.esc(d.status)}</span>`
+          + `<span style="font-size:0.8rem; color:var(--text-muted);">${window.esc((d.created_at || '').slice(0, 10))}</span>`
+          + `</a>`
+        ).join('');
+        if (drafts.length > 20) {
+          el.innerHTML += `<div style="padding:0.5em 1em; font-size:0.8rem; color:var(--text-muted);">…and ${drafts.length - 20} more — <a href="/data/wiki-drafts">view all</a></div>`;
+        }
+      })
+      .catch(() => {
+        document.getElementById('draftsList').innerHTML =
+          '<div style="padding:0.75em 1em; color:var(--danger); font-size:0.875rem;">Failed to load drafts.</div>';
+      });
+  })();
 
   function showGeminiResult(g) {
     document.getElementById('resBirth').textContent = g.birth_date || '—';
