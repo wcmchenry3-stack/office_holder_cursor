@@ -37,6 +37,15 @@
 
 {% if source_page_id is not none and page_data and offices_on_page %}
 {# Multi-office: one page config, multiple office sections, floating outline to jump #}
+<div class="page-header" style="margin-bottom:1rem;">
+  <div class="page-header-icon">
+    <span class="material-symbols-outlined" aria-hidden="true">edit_note</span>
+  </div>
+  <div>
+    <h1 class="page-header-title">Edit Page</h1>
+    <p class="page-header-desc">{% if page_data and page_data.url %}{{ (page_data.url[:80] + '…') if page_data.url|length > 80 else page_data.url }}{% else %}Edit page configuration and offices.{% endif %}</p>
+  </div>
+</div>
 <aside class="page-outline" aria-label="Page sections" style="position:fixed; right:1rem; top:6rem; width:11rem; max-height:calc(100vh - 8rem); overflow:auto; background:var(--bg2, #f5f5f5); border:1px solid var(--border, #ccc); border-radius:6px; padding:0.75rem; font-size:0.9rem; z-index:10;">
   <strong style="display:block; margin-bottom:0.5rem;">Sections</strong>
   <ul style="list-style:none; margin:0; padding:0;">
@@ -69,16 +78,17 @@
     <span class="save-all-status" id="saveAllStatus" style="margin-left:0.5rem; font-size:0.9rem; color:var(--muted, #666);"></span>
   </div>
   <section id="section-page" style="margin-bottom:2rem;" data-page-url="{{ (page_data.url or '')|e }}">
-    <h1>Page</h1>
+    <h2>Page</h2>
     <p class="form-note">Source page (URL and location). Shared by all offices below.</p>
     <form method="post" action="/pages/{{ source_page_id }}" id="pageForm">
       {% if nav_ids %}<input type="hidden" name="nav_ids" value="{{ nav_ids }}">{% endif %}
       {% if list_return_query is defined and list_return_query %}<input type="hidden" name="list_return_query" value="{{ list_return_query }}">{% endif %}
-      <div class="form-group"><label>URL</label><input type="url" name="url" value="{{ page_data.url or '' }}" required placeholder="https://en.wikipedia.org/wiki/..."></div>
+      <!-- Wikipedia URL input — all HTTP fetches use WIKIPEDIA_REQUEST_HEADERS which sets the User-Agent (see src/scraper/wiki_fetch.py) -->
+      <div class="form-group"><label for="pageUrlInput">URL</label><input type="url" id="pageUrlInput" name="url" value="{{ page_data.url or '' }}" required aria-required="true" placeholder="https://en.wikipedia.org/wiki/..."></div>
       <div class="form-row">
         <div class="form-group">
-          <label>Country</label>
-          <select name="country_id" required>
+          <label for="pageCountryId">Country</label>
+          <select name="country_id" id="pageCountryId" required aria-required="true">
             <option value="">— Select country —</option>
             {% for c in countries %}
             <option value="{{ c.id }}" {% if page_data.country_id == c.id %}selected{% endif %}>{{ c.name }}</option>
@@ -86,7 +96,7 @@
           </select>
         </div>
         <div class="form-group">
-          <label>State / Province / Territory</label>
+          <label for="pageStateId">State / Province / Territory</label>
           <select name="state_id" id="pageStateId">
             <option value="">— None —</option>
             {% for s in states %}
@@ -95,7 +105,7 @@
           </select>
         </div>
         <div class="form-group">
-          <label>City</label>
+          <label for="pageCityId">City</label>
           <select name="city_id" id="pageCityId">
             <option value="">— None —</option>
             {% if cities is defined and cities %}
@@ -108,7 +118,7 @@
       </div>
       <div class="form-row">
         <div class="form-group">
-          <label>Level</label>
+          <label for="pageLevelId">Level</label>
           <select name="level_id" id="pageLevelId">
             <option value="">— None —</option>
             {% for l in levels %}
@@ -117,7 +127,7 @@
           </select>
         </div>
         <div class="form-group">
-          <label>Branch</label>
+          <label for="pageBranchId">Branch</label>
           <select name="branch_id" id="pageBranchId">
             <option value="">— None —</option>
             {% for b in branches %}
@@ -126,7 +136,7 @@
           </select>
         </div>
       </div>
-      <div class="form-group"><label>Notes</label><input type="text" name="notes" value="{{ page_data.notes or '' }}"></div>
+      <div class="form-group"><label for="pageNotesInput">Notes</label><input type="text" id="pageNotesInput" name="notes" value="{{ page_data.notes or '' }}"></div>
       <div class="form-group checkbox-group"><label><input type="checkbox" id="pageEnabledInput" name="enabled" value="1" {% if page_data.enabled %}checked{% endif %}> Page enabled</label></div>
       <div class="form-group checkbox-group"><label><input type="checkbox" id="allowReuseTablesInput" name="allow_reuse_tables" value="1" {% if page_data.allow_reuse_tables %}checked{% endif %}> Allow reuse of tables</label></div>
       <div class="form-group checkbox-group"><label><input type="checkbox" id="disableAutoTableUpdateInput" name="disable_auto_table_update" value="1" {% if page_data.disable_auto_table_update %}checked{% endif %}> Disable auto table number update in full runs</label></div>
@@ -150,8 +160,8 @@
       <input type="hidden" name="office_only" value="1">
       <input type="hidden" name="action" value="save">
       <div class="form-row">
-        <div class="form-group"><label>Department</label><input type="text" name="department" value="{{ o.department or '' }}"></div>
-        <div class="form-group"><label>Office name</label><input type="text" name="name" value="{{ o.name or '' }}" required></div>
+        <div class="form-group"><label for="dept_{{ o.id }}">Department</label><input type="text" id="dept_{{ o.id }}" name="department" value="{{ o.department or '' }}"></div>
+        <div class="form-group"><label for="oname_{{ o.id }}">Office name</label><input type="text" id="oname_{{ o.id }}" name="name" value="{{ o.name or '' }}" required aria-required="true"></div>
       </div>
       <div class="form-group checkbox-group"><label><input type="checkbox" name="enabled" value="1" {% if o.enabled %}checked{% endif %}> Include in runs</label></div>
       {% if office_categories is defined and office_categories %}
@@ -165,7 +175,7 @@
         </select>
       </div>
       {% endif %}
-      <div class="form-group"><label>Notes</label><input type="text" name="notes" value="{{ o.notes or '' }}"></div>
+      <div class="form-group"><label for="onotes_{{ o.id }}">Notes</label><input type="text" id="onotes_{{ o.id }}" name="notes" value="{{ o.notes or '' }}"></div>
       <div class="form-group">
         <label>Alt links</label>
         <div class="alt-links-container">
@@ -184,18 +194,18 @@
         <input type="hidden" name="tc_id" value="{{ tc.id or '' }}">
         <h4 style="margin-top:0;">Table {{ loop.index }}</h4>
         <div class="form-row">
-          <div class="form-group"><label>Table name</label><input type="text" name="tc_name" value="{{ tc.name or '' }}" placeholder="e.g. Current members"></div>
-          <div class="form-group"><label>Table no</label><input type="number" name="tc_table_no" value="{{ tc.table_no or 1 }}" min="1"></div>
-          <div class="form-group"><label>Table rows (min)</label><input type="number" name="tc_table_rows" value="{{ tc.table_rows or 4 }}" min="1"></div>
+          <div class="form-group"><label for="tc_name_{{ o.id }}_{{ loop.index }}">Table name</label><input type="text" id="tc_name_{{ o.id }}_{{ loop.index }}" name="tc_name" value="{{ tc.name or '' }}" placeholder="e.g. Current members"></div>
+          <div class="form-group"><label for="tc_table_no_{{ o.id }}_{{ loop.index }}">Table no</label><input type="number" id="tc_table_no_{{ o.id }}_{{ loop.index }}" name="tc_table_no" value="{{ tc.table_no or 1 }}" min="1"></div>
+          <div class="form-group"><label for="tc_table_rows_{{ o.id }}_{{ loop.index }}">Table rows (min)</label><input type="number" id="tc_table_rows_{{ o.id }}_{{ loop.index }}" name="tc_table_rows" value="{{ tc.table_rows or 4 }}" min="1"></div>
         </div>
         <div class="form-row">
-          <div class="form-group"><label>Link column</label><input type="number" name="tc_link_column" value="{{ tc.link_column or 1 }}" min="0"></div>
-          <div class="form-group"><label>Party column</label><input type="number" name="tc_party_column" value="{{ tc.party_column or 0 }}" min="0"></div>
-          <div class="form-group"><label>Term start column</label><input type="number" name="tc_term_start_column" value="{{ tc.term_start_column or 4 }}" min="0"></div>
-          <div class="form-group"><label>Term end column</label><input type="number" name="tc_term_end_column" value="{{ tc.term_end_column or 5 }}" min="0"></div>
-          <div class="form-group"><label>District column</label><input type="number" name="tc_district_column" value="{{ tc.district_column or 0 }}" min="0"></div>
-          <div class="form-group"><label>Filter column (optional)</label><input type="number" name="tc_filter_column" value="{{ tc.filter_column or 0 }}" min="0"></div>
-          <div class="form-group"><label>Filter criteria (optional)</label><input type="text" name="tc_filter_criteria" value="{{ tc.filter_criteria or "" }}" placeholder="e.g. Associate Justice"></div>
+          <div class="form-group"><label for="tc_link_col_{{ o.id }}_{{ loop.index }}">Link column</label><input type="number" id="tc_link_col_{{ o.id }}_{{ loop.index }}" name="tc_link_column" value="{{ tc.link_column or 1 }}" min="0"></div>
+          <div class="form-group"><label for="tc_party_col_{{ o.id }}_{{ loop.index }}">Party column</label><input type="number" id="tc_party_col_{{ o.id }}_{{ loop.index }}" name="tc_party_column" value="{{ tc.party_column or 0 }}" min="0"></div>
+          <div class="form-group"><label for="tc_term_start_{{ o.id }}_{{ loop.index }}">Term start column</label><input type="number" id="tc_term_start_{{ o.id }}_{{ loop.index }}" name="tc_term_start_column" value="{{ tc.term_start_column or 4 }}" min="0"></div>
+          <div class="form-group"><label for="tc_term_end_{{ o.id }}_{{ loop.index }}">Term end column</label><input type="number" id="tc_term_end_{{ o.id }}_{{ loop.index }}" name="tc_term_end_column" value="{{ tc.term_end_column or 5 }}" min="0"></div>
+          <div class="form-group"><label for="tc_district_col_{{ o.id }}_{{ loop.index }}">District column</label><input type="number" id="tc_district_col_{{ o.id }}_{{ loop.index }}" name="tc_district_column" value="{{ tc.district_column or 0 }}" min="0"></div>
+          <div class="form-group"><label for="tc_filter_col_{{ o.id }}_{{ loop.index }}">Filter column (optional)</label><input type="number" id="tc_filter_col_{{ o.id }}_{{ loop.index }}" name="tc_filter_column" value="{{ tc.filter_column or 0 }}" min="0"></div>
+          <div class="form-group"><label for="tc_filter_crit_{{ o.id }}_{{ loop.index }}">Filter criteria (optional)</label><input type="text" id="tc_filter_crit_{{ o.id }}_{{ loop.index }}" name="tc_filter_criteria" value="{{ tc.filter_criteria or "" }}" placeholder="e.g. Associate Justice"></div>
         </div>
         <div class="form-row">
           <div class="form-group checkbox-group"><label><input type="checkbox" name="tc_term_dates_merged_{{ loop.index0 }}" value="1" {% if tc.term_dates_merged %}checked{% endif %}> Term dates merged</label></div>
@@ -203,8 +213,8 @@
           <div class="form-group checkbox-group"><label><input type="checkbox" name="tc_ignore_non_links" value="1" {% if tc.ignore_non_links %}checked{% endif %}> Ignore non-links</label></div>
           <div class="form-group checkbox-group"><label><input type="checkbox" name="tc_remove_duplicates" value="1" {% if tc.remove_duplicates %}checked{% endif %}> Remove duplicates</label></div>
           <div class="form-group">
-            <label>District</label>
-            <select name="tc_district_mode">
+            <label for="tc_district_mode_{{ o.id }}_{{ loop.index }}">District</label>
+            <select name="tc_district_mode" id="tc_district_mode_{{ o.id }}_{{ loop.index }}">
               <option value="column" {% if not tc.district_ignore and not tc.district_at_large %}selected{% endif %}>Use district column</option>
               <option value="at_large" {% if tc.district_at_large %}selected{% endif %}>At-Large</option>
               <option value="no_district" {% if tc.district_ignore %}selected{% endif %}>No District</option>
@@ -215,8 +225,8 @@
           <div class="form-group checkbox-group"><label><input type="checkbox" name="tc_dynamic_parse" value="1" {% if tc.dynamic_parse %}checked{% endif %}> Dynamic parse</label></div>
           <div class="form-group checkbox-group"><label><input type="checkbox" name="tc_read_right_to_left" value="1" {% if tc.read_right_to_left %}checked{% endif %}> Read right to left</label></div>
           <div class="form-group">
-            <label>Date source</label>
-            <select name="tc_date_source">
+            <label for="tc_date_source_{{ o.id }}_{{ loop.index }}">Date source</label>
+            <select name="tc_date_source" id="tc_date_source_{{ o.id }}_{{ loop.index }}">
               <option value="not_applicable" {% if not tc.find_date_in_infobox and not tc.years_only %}selected{% endif %}>Not applicable</option>
               <option value="find_date_in_infobox" {% if tc.find_date_in_infobox %}selected{% endif %}>Find date in infobox</option>
               <option value="years_only" {% if tc.years_only %}selected{% endif %}>Table has years only</option>
@@ -230,7 +240,7 @@
           <div class="form-group checkbox-group"><label><input type="checkbox" name="tc_use_full_page_for_table" value="1" {% if tc.use_full_page_for_table %}checked{% endif %}> Use full page for table</label></div>
           <div class="form-group checkbox-group"><label><input type="hidden" name="tc_enabled_{{ tc.id if tc.id else ('new_' ~ loop.index0) }}" value="0"><input type="checkbox" name="tc_enabled_{{ tc.id if tc.id else ('new_' ~ loop.index0) }}" value="1" {% if tc.enabled %}checked{% endif %}> Table enabled</label></div>
         </div>
-        <div class="form-group"><label>Notes</label><input type="text" name="tc_notes" value="{{ tc.notes or '' }}"></div>
+        <div class="form-group"><label for="tc_notes_{{ o.id }}_{{ loop.index }}">Notes</label><input type="text" id="tc_notes_{{ o.id }}_{{ loop.index }}" name="tc_notes" value="{{ tc.notes or '' }}"></div>
         <div class="actions" style="margin-top:0.5rem;">
           <button type="submit" class="btn btn-sm">Save office + tables</button>
           <button type="button" class="btn btn-secondary btn-sm remove-table-btn">Remove table</button>
