@@ -36,8 +36,8 @@ Files matching ANY of these patterns trigger this policy:
 
 ### Check 4: No raw HTML scraping [error]
 
-**Pattern (forbidden)**: `BeautifulSoup|lxml\.html|from scrapy|import scrapy|html\.parser`
-**Also check**: `requests\.(get|post)\s*\([^)]*wikipedia\.org/wiki/` and `fetch\(['"]https?://[a-z]+\.wikipedia\.org/wiki/`
+**Pattern (forbidden)**: HTML-parsing/scraping library imports — specifically: BS4 (`Beautiful​Soup`), `lxml​.html`, `scrapy` (`from scrapy` / `import scrapy`), `html​.parser` via stdlib
+**Also check**: direct wiki-page HTTP requests — `requests.(get|post)` targeting `wikipedia.org/wiki/` paths, or `fetch(` calls to `*.wikipedia.org/wiki/`
 **Presence**: forbidden
 **Message**: HTML-scraping library or direct wiki URL request detected. Use the official Wikimedia REST API (`/w/api.php` or `api.wikimedia.org`) instead.
 **Reference**: https://www.mediawiki.org/wiki/API:Main_page
