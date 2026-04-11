@@ -302,6 +302,7 @@
 
   <h2>Page</h2>
   <p class="form-note">Source page (URL and location).</p>
+  <!-- Wikipedia URL input — all HTTP fetches use WIKIPEDIA_REQUEST_HEADERS which sets the User-Agent (see src/scraper/wiki_fetch.py) -->
   <div class="form-group"><label for="urlInput">URL</label><input type="url" id="urlInput" name="url" value="{{ office.url if office else '' }}" required aria-required="true" placeholder="https://en.wikipedia.org/wiki/..."></div>
   <div class="form-row">
     <div class="form-group">
