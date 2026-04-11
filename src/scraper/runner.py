@@ -2497,7 +2497,9 @@ def run_with_db(
         # already bypasses RunPageCache for table-parsing fetches (table_cache.py:200 passes
         # run_cache=None), but the cache was still created and forwarded to bio extraction
         # where each URL is unique — providing no dedup benefit while accumulating HTML strings.
-        run_cache = RunPageCache() if os.environ.get("TABLE_HTML_CACHE_ENABLED", "1") != "0" else None
+        run_cache = (
+            RunPageCache() if os.environ.get("TABLE_HTML_CACHE_ENABLED", "1") != "0" else None
+        )
         run_cfg = _RunConfig(
             run_mode=run_mode,
             refresh_table_cache=refresh_table_cache,

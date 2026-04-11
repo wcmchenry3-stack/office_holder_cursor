@@ -266,9 +266,7 @@ class ConsensusVoter:
         # __exit__, which blocks until every thread finishes — meaning a 60 s Gemini response
         # holds up the process for 60 s even after we've logged it as a 30 s timeout.
         executor = ThreadPoolExecutor(max_workers=3)
-        future_to_provider = {
-            executor.submit(fn, prompt, context): name for name, fn in providers
-        }
+        future_to_provider = {executor.submit(fn, prompt, context): name for name, fn in providers}
         pending_futures = set(future_to_provider)
 
         def _collect(future: object) -> None:
