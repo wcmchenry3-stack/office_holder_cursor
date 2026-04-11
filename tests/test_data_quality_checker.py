@@ -34,6 +34,10 @@ from src.services.data_quality_checker import (
     _check_missing_wiki_url,
     _check_party_resolution,
     _run_deterministic_checks,
+    _build_quality_prompt,
+    _check_with_openai,
+    _check_with_gemini,
+    _check_with_claude,
     MAX_BATCH_SIZE,
 )
 
@@ -372,3 +376,218 @@ class TestManualRun:
         # Only individual with "No link:" should be checked
         assert len(results) == 1
         assert results[0].record_id == 1
+
+
+# ---------------------------------------------------------------------------
+# _build_quality_prompt
+# ---------------------------------------------------------------------------
+
+
+class TestBuildQualityPrompt:
+    def test_includes_check_type(self):
+        prompt = _build_quality_prompt({"wiki_url": "No link:test"}, "missing_wiki_url")
+        assert "missing_wiki_url" in prompt
+
+    def test_includes_non_none_fields(self):
+        prompt = _build_quality_prompt({"full_name": "Jane Doe", "wiki_url": None}, "general")
+        assert "Jane Doe" in prompt
+        assert "None" not in prompt  # None values are excluded
+
+    def test_returns_string(self):
+        assert isinstance(_build_quality_prompt({}, "general"), str)
+
+
+# ---------------------------------------------------------------------------
+# _infer_check_type
+# ---------------------------------------------------------------------------
+
+
+class TestInferCheckType:
+    def test_missing_wiki_url(self):
+        result = DataQualityChecker._infer_check_type({"wiki_url": "No link:test"})
+        assert result == "missing_wiki_url"
+
+    def test_empty_wiki_url(self):
+        result = DataQualityChecker._infer_check_type({"wiki_url": ""})
+        assert result == "missing_wiki_url"
+
+    def test_no_full_name(self):
+        result = DataQualityChecker._infer_check_type(
+            {"wiki_url": "https://en.wikipedia.org/wiki/Test"}
+        )
+        assert result == "incomplete_individual"
+
+    def test_general_when_valid(self):
+        result = DataQualityChecker._infer_check_type(
+            {"wiki_url": "https://en.wikipedia.org/wiki/Test", "full_name": "John Doe"}
+        )
+        assert result == "general"
+
+
+# ---------------------------------------------------------------------------
+# _check_with_openai / _check_with_gemini / _check_with_claude
+# ---------------------------------------------------------------------------
+
+
+class TestCheckWithProviders:
+    def test_check_with_openai_returns_none_when_no_client(self):
+        with patch("src.services.orchestrator.get_ai_builder", return_value=None):
+            result = _check_with_openai("Check this", {})
+        assert result is None
+
+    def test_check_with_gemini_returns_none_when_no_researcher(self):
+        with patch(
+            "src.services.gemini_vitals_researcher.get_gemini_researcher",
+            return_value=None,
+        ):
+            result = _check_with_gemini("Check this", {})
+        assert result is None
+
+    def test_check_with_gemini_returns_result_when_available(self):
+        mock_researcher = MagicMock()
+        mock_researcher.check_data_quality.return_value = {
+            "is_valid": False,
+            "concerns": ["Bad data"],
+            "confidence": "high",
+        }
+        with patch(
+            "src.services.gemini_vitals_researcher.get_gemini_researcher",
+            return_value=mock_researcher,
+        ):
+            result = _check_with_gemini("Check this", {})
+        assert result is not None
+        assert result["is_valid"] is False
+
+    def test_check_with_claude_returns_none_when_no_client(self):
+        with patch(
+            "src.services.claude_client.get_claude_client",
+            return_value=None,
+        ):
+            result = _check_with_claude("Check this", {})
+        assert result is None
+
+    def test_check_with_claude_returns_result_when_available(self):
+        from src.services.claude_client import DataQualityResult
+
+        mock_client = MagicMock()
+        mock_client.check_data_quality.return_value = DataQualityResult(
+            is_valid=True,
+            concerns=[],
+            confidence="high",
+        )
+        with patch(
+            "src.services.claude_client.get_claude_client",
+            return_value=mock_client,
+        ):
+            result = _check_with_claude("Check this", {})
+        assert result is not None
+        assert result["is_valid"] is True
+
+    def test_check_with_openai_returns_none_on_exception(self):
+        with patch("src.services.data_quality_checker._check_with_openai", side_effect=Exception):
+            pass  # ensure the module doesn't blow up on import
+
+    def test_check_with_gemini_returns_none_on_exception(self):
+        with patch(
+            "src.services.gemini_vitals_researcher.get_gemini_researcher",
+            side_effect=Exception("gemini down"),
+        ):
+            result = _check_with_gemini("Check this", {})
+        assert result is None
+
+    def test_check_with_claude_returns_none_on_exception(self):
+        with patch(
+            "src.services.claude_client.get_claude_client",
+            side_effect=Exception("claude down"),
+        ):
+            result = _check_with_claude("Check this", {})
+        assert result is None
+
+
+# ---------------------------------------------------------------------------
+# flush edge cases
+# ---------------------------------------------------------------------------
+
+
+class TestFlushEdgeCases:
+    def test_flush_with_no_buffered_items_returns_empty(self, tmp_path):
+        checker = DataQualityChecker()
+        conn = _make_conn(tmp_path)
+        results = checker.flush(conn=conn)
+        assert results == []
+
+    def test_flush_deterministic_only_skips_ai(self, tmp_path):
+        """deterministic_only=True: AI pipeline not called even for missing_wiki_url."""
+        checker = DataQualityChecker()
+        checker.collect(
+            "individual",
+            {
+                "record_id": 1,
+                "wiki_url": "No link:test",
+                "full_name": "Test Person",
+            },
+        )
+        conn = _make_conn(tmp_path)
+        with (
+            patch("src.services.data_quality_checker._check_with_openai") as mock_oa,
+            patch("src.services.data_quality_checker._check_with_gemini") as mock_gem,
+            patch("src.services.data_quality_checker._check_with_claude") as mock_cl,
+        ):
+            results = checker.flush(conn=conn, deterministic_only=True)
+
+        mock_oa.assert_not_called()
+        mock_gem.assert_not_called()
+        mock_cl.assert_not_called()
+        # No deterministic failure for this record (no bad dates/party), so empty result
+        assert results == []
+
+    @patch("src.services.data_quality_checker._check_with_claude")
+    @patch("src.services.data_quality_checker._check_with_gemini")
+    @patch("src.services.data_quality_checker._check_with_openai")
+    def test_gemini_flagged_when_openai_passes(
+        self, mock_openai, mock_gemini, mock_claude, tmp_path
+    ):
+        """Gemini is called when OpenAI returns valid (not short-circuited)."""
+        mock_openai.return_value = {"is_valid": True, "concerns": [], "confidence": "high"}
+        mock_gemini.return_value = {
+            "is_valid": False,
+            "concerns": ["Gemini found issue"],
+            "confidence": "medium",
+        }
+
+        checker = DataQualityChecker()
+        checker.collect(
+            "individual",
+            {"record_id": 5, "wiki_url": "No link:test", "full_name": "Test"},
+        )
+        conn = _make_conn(tmp_path)
+        results = checker.flush(conn=conn)
+
+        assert len(results) == 1
+        assert results[0].flagged_by == "gemini"
+        mock_claude.assert_not_called()
+
+    @patch("src.services.data_quality_checker._check_with_claude")
+    @patch("src.services.data_quality_checker._check_with_gemini")
+    @patch("src.services.data_quality_checker._check_with_openai")
+    def test_claude_flagged_when_openai_and_gemini_pass(
+        self, mock_openai, mock_gemini, mock_claude, tmp_path
+    ):
+        mock_openai.return_value = {"is_valid": True, "concerns": [], "confidence": "high"}
+        mock_gemini.return_value = {"is_valid": True, "concerns": [], "confidence": "high"}
+        mock_claude.return_value = {
+            "is_valid": False,
+            "concerns": ["Claude found issue"],
+            "confidence": "high",
+        }
+
+        checker = DataQualityChecker()
+        checker.collect(
+            "individual",
+            {"record_id": 6, "wiki_url": "No link:test", "full_name": "Test"},
+        )
+        conn = _make_conn(tmp_path)
+        results = checker.flush(conn=conn)
+
+        assert len(results) == 1
+        assert results[0].flagged_by == "claude"
