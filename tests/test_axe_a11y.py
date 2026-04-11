@@ -6,6 +6,7 @@ Marked xfail(strict=False) until all screen stories (#447–#457) ship —
 each story's definition of done includes keeping these tests green.
 Remove the xfail marker for a given test once its screen story is complete.
 """
+
 import os
 
 import pytest
@@ -73,6 +74,7 @@ def _fmt(violations: list) -> str:
 # All tests are xfail(strict=False) until screen stories (#447–#457) ship.
 # strict=False means: a failure is XFAIL (non-blocking), a pass is XPASS (also non-blocking).
 # Flip to a plain passing test once the relevant screen story is done.
+
 
 @pytest.mark.xfail(strict=False, reason="WCAG violations expected until screen story #448 ships")
 def test_axe_login(page):
