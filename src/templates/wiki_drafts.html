@@ -1,21 +1,36 @@
 {% extends "base.html" %}
-{% block title %}Wiki Draft Proposals – Office Holder{% endblock %}
+{% block title %}Wiki Draft Proposals — RulersAI{% endblock %}
 {% block content %}
-<h1>Wiki Draft Proposals</h1>
-
-<div style="margin-bottom:1em">
-  <strong>Filter:</strong>
-  <a href="/data/wiki-drafts"{% if not status_filter %} style="font-weight:bold"{% endif %}>All</a> |
-  <a href="/data/wiki-drafts?status=pending"{% if status_filter == 'pending' %} style="font-weight:bold"{% endif %}>Pending</a> |
-  <a href="/data/wiki-drafts?status=submitted"{% if status_filter == 'submitted' %} style="font-weight:bold"{% endif %}>Submitted</a> |
-  <a href="/data/wiki-drafts?status=published"{% if status_filter == 'published' %} style="font-weight:bold"{% endif %}>Published</a> |
-  <a href="/data/wiki-drafts?status=rejected"{% if status_filter == 'rejected' %} style="font-weight:bold"{% endif %}>Rejected</a>
+<div class="page-header">
+  <div class="page-header-icon">
+    <span class="material-symbols-outlined" aria-hidden="true">edit_document</span>
+  </div>
+  <div>
+    <h1 class="page-header-title">Wiki Draft Proposals</h1>
+    <p class="page-header-desc">Review and manage Wikipedia draft proposals.</p>
+  </div>
 </div>
 
+<nav aria-label="Filter by status" style="margin-bottom:1rem;">
+  <a href="/data/wiki-drafts"{% if not status_filter %} aria-current="page" style="font-weight:600"{% endif %}>All</a> |
+  <a href="/data/wiki-drafts?status=pending"{% if status_filter == 'pending' %} aria-current="page" style="font-weight:600"{% endif %}>Pending</a> |
+  <a href="/data/wiki-drafts?status=submitted"{% if status_filter == 'submitted' %} aria-current="page" style="font-weight:600"{% endif %}>Submitted</a> |
+  <a href="/data/wiki-drafts?status=published"{% if status_filter == 'published' %} aria-current="page" style="font-weight:600"{% endif %}>Published</a> |
+  <a href="/data/wiki-drafts?status=rejected"{% if status_filter == 'rejected' %} aria-current="page" style="font-weight:600"{% endif %}>Rejected</a>
+</nav>
+
 {% if drafts %}
-<table>
+<table class="table" aria-label="Wiki Draft Proposals">
   <thead>
-    <tr><th>ID</th><th>Individual</th><th>Wiki URL</th><th>Status</th><th>Origin</th><th>Created</th><th></th></tr>
+    <tr>
+      <th scope="col">ID</th>
+      <th scope="col">Individual</th>
+      <th scope="col">Wiki URL</th>
+      <th scope="col">Status</th>
+      <th scope="col">Origin</th>
+      <th scope="col">Created</th>
+      <th scope="col"><span class="sr-only">Actions</span></th>
+    </tr>
   </thead>
   <tbody>
     {% for d in drafts %}
