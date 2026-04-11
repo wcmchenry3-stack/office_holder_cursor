@@ -36,7 +36,7 @@ Files matching ANY of these patterns trigger this policy:
 
 ### Check 4: No raw HTML scraping [error]
 
-**Pattern (forbidden)**: See called-wikipedia-policy.yml Check 4 for the exact grep pattern (not inlined here to avoid triggering the scanner on this doc file).
+**Pattern (forbidden)**: `BeautifulSoup|lxml\.html|from scrapy|import scrapy|html\.parser`
 **Also check**: `requests\.(get|post)\s*\([^)]*wikipedia\.org/wiki/` and `fetch\(['"]https?://[a-z]+\.wikipedia\.org/wiki/`
 **Presence**: forbidden
 **Message**: HTML-scraping library or direct wiki URL request detected. Use the official Wikimedia REST API (`/w/api.php` or `api.wikimedia.org`) instead.
