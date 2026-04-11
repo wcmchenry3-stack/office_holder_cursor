@@ -335,8 +335,9 @@ def test_lifespan_calls_expire_stale_scheduled_job_runs_on_startup(monkeypatch, 
     """expire_stale_scheduled_job_runs must be called during lifespan startup (#376)."""
     calls = {"count": 0}
 
-    def fake_expire():
+    def fake_expire(stale_hours=4):
         calls["count"] += 1
+        calls["stale_hours"] = stale_hours
         return 0
 
     monkeypatch.setattr("src.db.scheduled_job_runs.expire_stale_scheduled_job_runs", fake_expire)
@@ -366,3 +367,7 @@ def test_lifespan_calls_expire_stale_scheduled_job_runs_on_startup(monkeypatch, 
         pool.submit(_thread_body).result(timeout=15)
 
     assert calls["count"] == 1, "expire_stale_scheduled_job_runs must be called once at startup"
+    assert calls.get("stale_hours") == 0, (
+        "startup sweep must use stale_hours=0 to expire ALL running records, "
+        "not just those older than N hours — any in-flight job died with the previous process"
+    )

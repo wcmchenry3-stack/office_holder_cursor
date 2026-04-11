@@ -645,7 +645,9 @@ class TestConsensusVoterSubmsTimeoutDrain:
             submit_idx = [0]
 
             mock_executor = MagicMock()
-            mock_executor_cls.return_value.__enter__.return_value = mock_executor
+            # ConsensusVoter now uses the executor directly (no `with` block), so
+            # mock_executor_cls() must return the mock executor, not __enter__.
+            mock_executor_cls.return_value = mock_executor
 
             def fake_submit(fn, *args, **kwargs):
                 f = submit_returns[submit_idx[0]]
