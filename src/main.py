@@ -95,6 +95,7 @@ from src.routers import gemini_research as gemini_research_router
 from src.routers import ai_decisions as ai_decisions_router
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from src.routers._deps import templates, limiter
+from src.i18n import SUPPORTED_LOCALES, resolve_locale
 from src.scheduled_tasks import (
     run_daily_maintenance,
     run_daily_delta,
@@ -275,6 +276,17 @@ _MAX_BODY_SIZE = 1_048_576  # 1 MB
 
 
 @app.middleware("http")
+async def detect_locale(request: Request, call_next):
+    """Populate request.state.locale using cookie → Accept-Language → 'en'."""
+    locale = request.session.get("lang", "") if hasattr(request, "session") else ""
+    if not locale or locale not in SUPPORTED_LOCALES:
+        accept_lang = request.headers.get("accept-language", "")
+        locale = resolve_locale(accept_lang)
+    request.state.locale = locale
+    return await call_next(request)
+
+
+@app.middleware("http")
 async def limit_request_body_size(request: Request, call_next):
     content_length = request.headers.get("content-length")
     if content_length and int(content_length) > _MAX_BODY_SIZE:
@@ -338,6 +350,16 @@ async def auth_google_callback(request: Request):
 async def logout(request: Request):
     request.session.clear()
     return RedirectResponse("/login")
+
+
+@app.post("/set-locale")
+@limiter.limit("30/minute")
+async def set_locale(request: Request, locale: str = Form(...)):
+    """Set the user's preferred locale via session cookie and redirect back."""
+    if locale in SUPPORTED_LOCALES:
+        request.session["lang"] = locale
+    referer = request.headers.get("referer", "/")
+    return RedirectResponse(referer, status_code=303)
 
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"

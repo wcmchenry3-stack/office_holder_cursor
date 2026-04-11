@@ -1,0 +1,26 @@
+# RulersAI translations — ko
+# Copyright (C) 2025 RulersAI
+# This file is distributed under the same license as the RulersAI project.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: RulersAI 1.0
+"
+"Report-Msgid-Bugs-To: 
+"
+"POT-Creation-Date: 2026-04-11 00:00+0000
+"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE
+"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>
+"
+"Language-Team: ko <LL@li.org>
+"
+"Language: ko
+"
+"MIME-Version: 1.0
+"
+"Content-Type: text/plain; charset=UTF-8
+"
+"Content-Transfer-Encoding: 8bit
+"

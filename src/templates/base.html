@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{{ locale | default('en') }}" dir="{{ dir | default('ltr') }}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -151,6 +151,35 @@
         if (menuBtn) menuBtn.focus();
       }
     });
+
+    // Language switcher toggle
+    var langBtn = document.getElementById('langBtn');
+    var langMenu = document.getElementById('langMenu');
+    function openLangMenu() {
+      langMenu.hidden = false;
+      langBtn.setAttribute('aria-expanded', 'true');
+    }
+    function closeLangMenu() {
+      langMenu.hidden = true;
+      langBtn.setAttribute('aria-expanded', 'false');
+    }
+    if (langBtn && langMenu) {
+      langBtn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        langMenu.hidden ? openLangMenu() : closeLangMenu();
+      });
+      document.addEventListener('click', function (e) {
+        if (!document.getElementById('langSwitcher').contains(e.target)) {
+          closeLangMenu();
+        }
+      });
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && !langMenu.hidden) {
+          closeLangMenu();
+          langBtn.focus();
+        }
+      });
+    }
   });
   </script>
 
@@ -194,6 +223,38 @@
               aria-pressed="false">
         <span class="material-symbols-outlined" aria-hidden="true">volume_up</span>
       </button>
+
+      <!-- Language switcher -->
+      <div class="lang-switcher" id="langSwitcher">
+        <button id="langBtn"
+                type="button"
+                class="btn-icon"
+                aria-label="Change language"
+                aria-haspopup="listbox"
+                aria-expanded="false"
+                aria-controls="langMenu">
+          <span class="material-symbols-outlined" aria-hidden="true">language</span>
+        </button>
+        <ul id="langMenu"
+            role="listbox"
+            aria-label="Select language"
+            class="lang-menu"
+            hidden>
+          {% set _active_locale = locale | default('en') %}
+          {% set _ltr_locales = ['en','es','fr-CA','de','nl','pt','ru','hi','zh','ja','ko'] %}
+          {% set _locale_names = {'en':'English','es':'Español','fr-CA':'Français (Canada)','de':'Deutsch','nl':'Nederlands','pt':'Português','ru':'Русский','hi':'हिन्दी','zh':'中文','ja':'日本語','ko':'한국어'} %}
+          {% for _code in _ltr_locales %}
+          <li role="option"
+              aria-selected="{{ 'true' if _code == _active_locale else 'false' }}"
+              class="lang-option{% if _code == _active_locale %} is-active{% endif %}">
+            <form method="post" action="/set-locale" style="margin:0">
+              <input type="hidden" name="locale" value="{{ _code }}">
+              <button type="submit" class="lang-option-btn">{{ _locale_names[_code] }}</button>
+            </form>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
 
       <!-- Dark mode toggle -->
       <button id="darkModeBtn"
