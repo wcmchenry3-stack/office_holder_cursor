@@ -190,3 +190,36 @@ The `daily_delta` job (06:00 UTC) calls `_cleanup_disk_cache(max_age_days=30)` b
 - **Delta run**: uses the `cache_batch` rotation. Cache hits skip the HTTP fetch; `last_html_hash` comparisons then determine whether parsing is needed. An office whose HTML is unchanged (same hash as stored in the DB) is skipped with `offices_unchanged` incremented.
 - **Full run**: `max_age_seconds=None` — disk cache is always used if present. Set `refresh_table_cache=True` to bypass it.
 - **`TABLE_HTML_CACHE_ENABLED=0`**: disables the in-memory `RunPageCache` (the per-run dedup layer that avoids fetching the same URL twice within one run). The `wiki_cache/` disk cache is unaffected by this flag.
+
+---
+
+## AI consensus voting (daily_page_quality)
+
+The `daily_page_quality` job uses `ConsensusVoter` to run three AI providers (OpenAI, Gemini, Claude) in parallel and derive a single verdict for each source page inspected.
+
+### Timeout behavior
+
+Each provider has a **30-second per-call timeout** (`timeout_s=30.0`). All three calls are fired simultaneously; `as_completed` collects results up to `timeout_s + 5 = 35 s`. Any provider that hasn't responded by then is logged as timed out and its vote is recorded as `is_valid=None` (excluded from quorum). The executor is shut down with `wait=False, cancel_futures=True` — already-running provider threads are abandoned rather than waited on. This means `vote()` returns close to the 35-second mark regardless of how long a slow provider takes.
+
+**Before PR #468**, the executor used `shutdown(wait=True)` (implicit in a `with ThreadPoolExecutor` block), which caused `vote()` to block until the slowest thread finished — up to 60+ seconds when Gemini timed out. The wall-clock time of `daily_page_quality` runs is now bounded near the timeout threshold.
+
+### Observability
+
+Timed-out providers log at `WARNING`:
+
+```
+ConsensusVoter: gemini timed out after 30 s
+```
+
+This appears in the Render container log. The final verdict in `scheduled_job_runs` reflects only providers that responded in time.
+
+### Quorum rules
+
+| Responding providers | Outcome |
+|---|---|
+| 0 or 1 | `INSUFFICIENT_QUORUM` — no verdict recorded |
+| 2 or 3, all agree valid | `VALID` |
+| 2 or 3, all agree invalid | `INVALID` |
+| 2 or 3, mixed | `DISAGREEMENT` |
+
+A single timeout does not prevent a verdict — 2 responding providers are enough for quorum. Two timeouts (only 1 responding) yields `INSUFFICIENT_QUORUM` and the page is not acted on.
