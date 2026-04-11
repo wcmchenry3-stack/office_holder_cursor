@@ -198,7 +198,7 @@ class TestClaudePolicyCompliance:
     def test_anthropic_key_not_hardcoded(self):
         """Verify no literal API key patterns in the Claude service file."""
         service_path = Path("src/services/claude_client.py")
-        content = service_path.read_text()
+        content = service_path.read_text(encoding="utf-8")
         assert "sk-ant-" not in content  # Anthropic key prefix
         assert "sk-" not in content  # Generic key prefix
         assert "AIza" not in content  # Google key prefix
@@ -211,7 +211,7 @@ class TestClaudePolicyCompliance:
         for py_file in glob.glob("src/**/*.py", recursive=True):
             if "claude_client" in py_file:
                 continue
-            content = Path(py_file).read_text()
+            content = Path(py_file).read_text(encoding="utf-8")
             assert "import anthropic" not in content, (
                 f"Direct anthropic import found in {py_file} — "
                 "all Anthropic SDK usage should be in claude_client.py"
@@ -220,5 +220,5 @@ class TestClaudePolicyCompliance:
     def test_max_tokens_set(self):
         """Verify max_tokens is set in the Claude service."""
         service_path = Path("src/services/claude_client.py")
-        content = service_path.read_text()
+        content = service_path.read_text(encoding="utf-8")
         assert "max_tokens" in content

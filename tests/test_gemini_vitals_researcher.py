@@ -475,7 +475,7 @@ class TestPolicyCompliance:
     def test_gemini_key_not_hardcoded(self):
         """Verify no literal API key patterns in the Gemini service file."""
         service_path = Path("src/services/gemini_vitals_researcher.py")
-        content = service_path.read_text()
+        content = service_path.read_text(encoding="utf-8")
         # Should not contain anything that looks like a hardcoded key
         assert "AIza" not in content  # Google API key prefix
         assert "sk-" not in content  # OpenAI key prefix
@@ -488,7 +488,7 @@ class TestPolicyCompliance:
         for py_file in glob.glob("src/**/*.py", recursive=True):
             if "gemini_vitals_researcher" in py_file:
                 continue
-            content = Path(py_file).read_text()
+            content = Path(py_file).read_text(encoding="utf-8")
             assert "from google import genai" not in content, (
                 f"Direct google.genai import found in {py_file} — "
                 "all Gemini SDK usage should be in gemini_vitals_researcher.py"
@@ -500,7 +500,7 @@ class TestPolicyCompliance:
     def test_gemini_max_output_tokens_set(self):
         """Verify max_output_tokens is set in the Gemini service."""
         service_path = Path("src/services/gemini_vitals_researcher.py")
-        content = service_path.read_text()
+        content = service_path.read_text(encoding="utf-8")
         assert "max_output_tokens" in content
 
 
