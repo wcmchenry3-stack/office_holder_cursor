@@ -173,3 +173,67 @@ class TestLocaleTemplateContext:
     def test_ltr_dir_attribute(self, client):
         resp = client.get("/offices")
         assert 'dir="ltr"' in resp.text
+
+
+# ---------------------------------------------------------------------------
+# RTL layout — story #461
+# ---------------------------------------------------------------------------
+
+
+class TestRTLLayout:
+    def test_ar_dir_rtl(self, client):
+        client.post("/set-locale", data={"locale": "ar"}, follow_redirects=False)
+        resp = client.get("/offices")
+        assert resp.status_code == 200
+        assert 'lang="ar"' in resp.text
+        assert 'dir="rtl"' in resp.text
+
+    def test_he_dir_rtl(self, client):
+        client.post("/set-locale", data={"locale": "he"}, follow_redirects=False)
+        resp = client.get("/offices")
+        assert resp.status_code == 200
+        assert 'lang="he"' in resp.text
+        assert 'dir="rtl"' in resp.text
+
+    def test_en_dir_ltr(self, client):
+        client.post("/set-locale", data={"locale": "en"}, follow_redirects=False)
+        resp = client.get("/offices")
+        assert 'dir="ltr"' in resp.text
+
+    def test_ar_in_language_switcher(self, client):
+        """ar must appear in the language switcher dropdown (RTL gate removed)."""
+        resp = client.get("/offices")
+        assert resp.status_code == 200
+        assert 'value="ar"' in resp.text
+
+    def test_he_in_language_switcher(self, client):
+        """he must appear in the language switcher dropdown (RTL gate removed)."""
+        resp = client.get("/offices")
+        assert resp.status_code == 200
+        assert 'value="he"' in resp.text
+
+    def test_ar_noto_font_loaded(self, client):
+        """Noto Sans Arabic link tag appears only when locale is ar."""
+        client.post("/set-locale", data={"locale": "ar"}, follow_redirects=False)
+        resp = client.get("/offices")
+        assert "Noto+Sans+Arabic" in resp.text
+
+    def test_he_noto_font_loaded(self, client):
+        """Noto Sans Hebrew link tag appears only when locale is he."""
+        client.post("/set-locale", data={"locale": "he"}, follow_redirects=False)
+        resp = client.get("/offices")
+        assert "Noto+Sans+Hebrew" in resp.text
+
+    def test_en_no_rtl_font(self, client):
+        """No Noto RTL font link tag rendered for LTR locales."""
+        resp = client.get("/offices")
+        assert "Noto+Sans+Arabic" not in resp.text
+        assert "Noto+Sans+Hebrew" not in resp.text
+
+    @pytest.mark.parametrize("locale", ["ar", "he"])
+    def test_rtl_locales_accessible_key_pages(self, client, locale):
+        """HTTP 200 for RTL locales on key pages (locale smoke test)."""
+        client.post("/set-locale", data={"locale": locale}, follow_redirects=False)
+        for path in ["/offices", "/run", "/data/individuals", "/refs", "/reports"]:
+            resp = client.get(path)
+            assert resp.status_code == 200, f"Expected 200 for {locale} on {path}"
