@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ "Edit" if filter_obj else "New" }} infobox role key filter – Office Holder{% endblock %}
+{% block title %}{{ "Edit" if filter_obj else "New" }} Infobox Role Key Filter — RulersAI{% endblock %}
 {% block content %}
 <h1>{{ "Edit" if filter_obj else "New" }} infobox role key filter</h1>
 {% if validation_error %}<div class="alert alert-error">{{ validation_error }}</div>{% endif %}
@@ -7,11 +7,11 @@
 <form method="post" action="{% if filter_obj %}/refs/infobox-role-key-filters/{{ filter_obj.id }}{% else %}/refs/infobox-role-key-filters/new{% endif %}">
   <div class="form-group">
     <label for="name">Name</label>
-    <input type="text" id="name" name="name" value="{{ filter_obj.name if filter_obj else (form_name if form_name is defined else '') }}" required placeholder="Filter name">
+    <input type="text" id="name" name="name" value="{{ filter_obj.name if filter_obj else (form_name if form_name is defined else '') }}" required aria-required="true" placeholder="Filter name">
   </div>
   <div class="form-group">
     <label for="role_key">Role key</label>
-    <input type="text" id="role_key" name="role_key" value="{{ filter_obj.role_key if filter_obj else (form_role_key if form_role_key is defined else '') }}" required placeholder="Infobox role key">
+    <input type="text" id="role_key" name="role_key" value="{{ filter_obj.role_key if filter_obj else (form_role_key if form_role_key is defined else '') }}" required aria-required="true" placeholder="Infobox role key">
   </div>
   <div class="form-group">
     <label for="country_ids">Countries (optional; leave empty for all)</label>

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Infobox role key filters – Office Holder{% endblock %}
+{% block title %}Infobox Role Key Filters — RulersAI{% endblock %}
 {% block content %}
 <h1>Infobox role key filters</h1>
 {% if saved %}<div class="alert alert-success">Saved to local database.</div>{% endif %}
@@ -9,9 +9,9 @@
   <a href="/refs" class="btn btn-secondary">Back to Reference data</a>
 </div>
 {% if filters %}
-<table class="table">
+<table class="table" aria-label="Infobox Role Key Filters">
   <thead>
-    <tr><th>Name</th><th>Role key</th><th></th></tr>
+    <tr><th scope="col">Name</th><th scope="col">Role key</th><th scope="col"><span class="sr-only">Actions</span></th></tr>
   </thead>
   <tbody>
     {% for f in filters %}

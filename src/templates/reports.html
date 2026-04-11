@@ -1,11 +1,37 @@
 {% extends "base.html" %}
-{% block title %}Reports – Office Holder{% endblock %}
+{% block title %}Reports — RulersAI{% endblock %}
 {% block content %}
-<h1>Reports</h1>
-<p>Data views and analytical reports.</p>
-<ul>
-  <li><a href="/data/individuals">Individuals</a> — Browse and filter the individuals database</li>
-  <li><a href="/data/office-terms">Office Terms</a> — Browse scraped office term records</li>
-  <li><a href="/report/milestones">Milestone Report</a> — Aggregated progress report across all offices</li>
-</ul>
+<div class="page-header">
+  <div class="page-header-icon">
+    <span class="material-symbols-outlined" aria-hidden="true">bar_chart</span>
+  </div>
+  <div>
+    <h1 class="page-header-title">Reports</h1>
+    <p class="page-header-desc">Data views and analytical reports.</p>
+  </div>
+</div>
+
+<div class="nav-card-grid">
+  <a href="/data/individuals" class="nav-card">
+    <span class="material-symbols-outlined nav-card-icon" aria-hidden="true">person</span>
+    <div>
+      <div class="nav-card-title">Individuals</div>
+      <div class="nav-card-desc">Browse and filter the individuals database</div>
+    </div>
+  </a>
+  <a href="/data/office-terms" class="nav-card">
+    <span class="material-symbols-outlined nav-card-icon" aria-hidden="true">assignment</span>
+    <div>
+      <div class="nav-card-title">Office Terms</div>
+      <div class="nav-card-desc">Browse scraped office term records</div>
+    </div>
+  </a>
+  <a href="/report/milestones" class="nav-card">
+    <span class="material-symbols-outlined nav-card-icon" aria-hidden="true">flag</span>
+    <div>
+      <div class="nav-card-title">Milestone Report</div>
+      <div class="nav-card-desc">Aggregated progress report across all offices</div>
+    </div>
+  </a>
+</div>
 {% endblock %}

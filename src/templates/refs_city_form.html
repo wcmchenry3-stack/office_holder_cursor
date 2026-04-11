@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ "Edit" if city else "New" }} city – Office Holder{% endblock %}
+{% block title %}{{ "Edit" if city else "New" }} City — RulersAI{% endblock %}
 {% block content %}
 <h1>{{ "Edit" if city else "New" }} city</h1>
 <p>Select country, then state, then enter the city name.</p>
@@ -7,7 +7,7 @@
 <form method="post" action="{% if city %}/refs/cities/{{ city.id }}{% else %}/refs/cities/new{% endif %}">
   <div class="form-group">
     <label for="country_id">Country</label>
-    <select id="country_id" name="country_id" required>
+    <select id="country_id" name="country_id" required aria-required="true">
       <option value="">— Select country —</option>
       {% for c in countries %}
       <option value="{{ c.id }}" {% if form_country_id is defined and form_country_id == c.id %}selected{% endif %}>{{ c.name }}</option>
@@ -16,7 +16,7 @@
   </div>
   <div class="form-group">
     <label for="state_id">State / Province / Territory</label>
-    <select id="state_id" name="state_id" required>
+    <select id="state_id" name="state_id" required aria-required="true">
       <option value="">— Select country first —</option>
       {% for s in states %}
       <option value="{{ s.id }}" {% if city and city.state_id == s.id %}selected{% elif form_state_id is defined and form_state_id == s.id %}selected{% endif %}>{{ s.name }}</option>
@@ -25,7 +25,7 @@
   </div>
   <div class="form-group">
     <label for="name">City name</label>
-    <input type="text" id="name" name="name" value="{{ city.name if city else (form_name if form_name is defined else '') }}" required placeholder="City name">
+    <input type="text" id="name" name="name" value="{{ city.name if city else (form_name if form_name is defined else '') }}" required aria-required="true" placeholder="City name">
   </div>
   <div class="actions">
     <button type="submit" class="btn">Save</button>

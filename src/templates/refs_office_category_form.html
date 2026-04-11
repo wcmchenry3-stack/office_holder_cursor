@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ "Edit" if category else "New" }} office category – Office Holder{% endblock %}
+{% block title %}{{ "Edit" if category else "New" }} Office Category — RulersAI{% endblock %}
 {% block content %}
 <h1>{{ "Edit" if category else "New" }} office category</h1>
 {% if validation_error %}<div class="alert alert-error">{{ validation_error }}</div>{% endif %}
@@ -7,7 +7,7 @@
 <form method="post" action="{% if category %}/refs/office-categories/{{ category.id }}{% else %}/refs/office-categories/new{% endif %}">
   <div class="form-group">
     <label for="name">Name</label>
-    <input type="text" id="name" name="name" value="{{ category.name if category else (form_name if form_name is defined else '') }}" required placeholder="Category name">
+    <input type="text" id="name" name="name" value="{{ category.name if category else (form_name if form_name is defined else '') }}" required aria-required="true" placeholder="Category name">
   </div>
   <div class="form-group">
     <label for="country_ids">Countries (optional; leave empty for all)</label>
