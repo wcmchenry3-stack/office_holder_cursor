@@ -2,10 +2,9 @@
 Axe-core WCAG 2.2 CI tests  (Issue #446).
 
 Injects axe-core into 7 key pages and asserts zero WCAG violations.
-Marked xfail(strict=False) until all screen stories (#447–#457) ship —
-each story's definition of done includes keeping these tests green.
-Remove the xfail marker for a given test once its screen story is complete.
-Completed: #448 (login), #449 (offices), #451 (offices/new), #453 (run), #454 (wiki-drafts), #455 (gemini-research), #457 (operations/reports/refs).
+All screen stories (#447–#457) are now complete — all xfail markers removed.
+Each test asserts zero WCAG 2.2 AA violations via axe-core injection.
+Completed: #448 (login), #449 (offices), #451 (offices/new), #453 (run), #454 (wiki-drafts), #455 (gemini-research), #456 (full audit), #457 (operations/reports/refs).
 """
 
 import os
@@ -74,12 +73,6 @@ def _fmt(violations: list) -> str:
     return "\n".join(lines) if lines else "(none)"
 
 
-# All tests are xfail(strict=False) until screen stories (#447–#457) ship.
-# strict=False means: a failure is XFAIL (non-blocking), a pass is XPASS (also non-blocking).
-# Flip to a plain passing test once the relevant screen story is done.
-
-
-@pytest.mark.xfail(strict=False, reason="WCAG violations expected until screen story #448 ships")
 def test_axe_login(page):
     v = _run_axe(page, "/login")
     assert v == [], f"/login WCAG violations:\n{_fmt(v)}"
