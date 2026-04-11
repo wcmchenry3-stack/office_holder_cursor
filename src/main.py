@@ -257,8 +257,11 @@ async def add_security_headers(request: Request, call_next):
     response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
     response.headers.setdefault(
         "Content-Security-Policy",
-        "default-src 'self'; script-src 'self' 'unsafe-inline'; "
-        "style-src 'self' 'unsafe-inline'; img-src 'self' data:",
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com; "
+        "img-src 'self' data: https://*.googleusercontent.com;",
     )
     response.headers.setdefault("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
     if request.url.scheme == "https":
@@ -326,6 +329,8 @@ async def auth_google_callback(request: Request):
             status_code=403,
         )
     request.session["user_email"] = email
+    request.session["user_name"] = user_info.get("name", "")
+    request.session["user_picture"] = user_info.get("picture", "")
     return RedirectResponse("/")
 
 

@@ -427,3 +427,231 @@ html.dark .sync-banner { background: #451a03; }
   margin-left: 0.75rem;
   color: var(--color-on-surface-variant);
 }
+
+/* =========================================================
+   20. Layout Shell  (Issue #447)
+   Top app bar + fixed sidebar + main content offset.
+   ========================================================= */
+
+/* ---------------------------------------------------------
+   20a. Top app bar
+   --------------------------------------------------------- */
+.top-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4rem;
+  z-index: 30;
+  background: var(--color-surface-bright);
+  border-bottom: 1px solid var(--color-outline-variant);
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0 1rem;
+}
+
+.top-bar-logo {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+  text-decoration: none;
+}
+.top-bar-logo img { border-radius: var(--radius-sm); }
+.top-bar-wordmark {
+  font-size: 1rem;
+  font-weight: 900;
+  letter-spacing: -0.03em;
+  color: var(--color-primary);
+  line-height: 1;
+}
+
+.top-bar-search {
+  flex: 1;
+  max-width: 28rem;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.top-bar-search .material-symbols-outlined {
+  position: absolute;
+  left: 0.75rem;
+  color: var(--color-on-surface-variant);
+  font-size: 1.1rem;
+  pointer-events: none;
+}
+.top-bar-search input[type="search"] {
+  width: 100%;
+  background: var(--color-surface-container-low);
+  border: 1px solid var(--color-outline-variant);
+  border-radius: var(--radius-full);
+  padding: 0.375rem 1rem 0.375rem 2.25rem;
+  font-size: 0.875rem;
+  color: var(--color-on-surface);
+}
+.top-bar-search input[type="search"]:focus {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 0;
+  border-color: var(--color-primary);
+}
+
+.top-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-inline-start: auto;
+}
+
+.user-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid var(--color-outline-variant);
+  flex-shrink: 0;
+}
+
+/* ---------------------------------------------------------
+   20b. Sidebar
+   --------------------------------------------------------- */
+.sidebar {
+  position: fixed;
+  top: 4rem;
+  left: 0;
+  width: 16rem;
+  height: calc(100vh - 4rem);
+  background: var(--color-surface-container-low);
+  border-inline-end: 1px solid var(--color-outline-variant);
+  display: flex;
+  flex-direction: column;
+  z-index: 20;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.sidebar-logo {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 1rem 1rem 0.75rem;
+  border-bottom: 1px solid var(--color-outline-variant);
+  flex-shrink: 0;
+}
+.sidebar-logo img { border-radius: var(--radius-sm); flex-shrink: 0; }
+.sidebar-wordmark {
+  font-size: 0.875rem;
+  font-weight: 900;
+  letter-spacing: -0.03em;
+  color: var(--color-primary);
+  line-height: 1;
+}
+.sidebar-tagline {
+  font-size: 0.5rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-on-surface-variant);
+  margin-top: 0.125rem;
+}
+
+.sidebar-nav {
+  list-style: none;
+  margin: 0;
+  padding: 0.5rem 0;
+  flex: 1;
+}
+.sidebar-nav li { margin: 0; }
+
+.sidebar-nav-link {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.625rem 1rem;
+  color: var(--color-on-surface);
+  border-inline-start: 4px solid transparent;
+  text-decoration: none;
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  transition: background 0.1s;
+}
+.sidebar-nav-link:hover {
+  background: var(--color-surface-container-high);
+  color: var(--color-primary);
+  text-decoration: none;
+}
+.sidebar-nav-link[aria-current="page"] {
+  border-inline-start-color: var(--color-primary);
+  color: var(--color-primary);
+  font-weight: 700;
+  background: var(--color-surface-container);
+}
+.sidebar-nav-link .material-symbols-outlined {
+  font-size: 1.1rem;
+  color: var(--color-on-surface-variant);
+  flex-shrink: 0;
+}
+.sidebar-nav-link[aria-current="page"] .material-symbols-outlined,
+.sidebar-nav-link:hover .material-symbols-outlined {
+  color: var(--color-primary);
+}
+
+.sidebar-footer {
+  padding: 0.75rem 1rem 1rem;
+  border-top: 1px solid var(--color-outline-variant);
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex-shrink: 0;
+}
+.sidebar-cta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 0.625rem 1rem;
+  background: var(--color-primary-container);
+  color: var(--color-on-primary);
+  border-radius: var(--radius-md);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  text-decoration: none;
+  margin-bottom: 0.25rem;
+}
+.sidebar-cta:hover { opacity: 0.9; color: var(--color-on-primary); text-decoration: none; }
+
+.sidebar-footer-link {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0.25rem;
+  color: var(--color-on-surface-variant);
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-decoration: none;
+}
+.sidebar-footer-link:hover { color: var(--color-primary); text-decoration: none; }
+.sidebar-footer-link .material-symbols-outlined { font-size: 1rem; }
+
+/* ---------------------------------------------------------
+   20c. Main content area
+   --------------------------------------------------------- */
+.main-content {
+  margin-inline-start: 16rem; /* sidebar width — logical property for RTL */
+  margin-top: 4rem;           /* clear fixed top bar */
+  padding: 1.5rem 2rem 6rem;
+  min-height: calc(100vh - 4rem);
+}
+
+/* Dark mode sidebar / top bar overrides */
+html.dark .top-bar,
+html.dark .sidebar {
+  background: var(--color-surface-container-low);
+  border-color: var(--color-outline-variant);
+}
