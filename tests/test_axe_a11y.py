@@ -5,6 +5,7 @@ Injects axe-core into 7 key pages and asserts zero WCAG violations.
 Marked xfail(strict=False) until all screen stories (#447–#457) ship —
 each story's definition of done includes keeping these tests green.
 Remove the xfail marker for a given test once its screen story is complete.
+Completed: #448 (login), #449 (offices), #457 (operations/reports/refs).
 """
 
 import os
@@ -84,7 +85,6 @@ def test_axe_login(page):
     assert v == [], f"/login WCAG violations:\n{_fmt(v)}"
 
 
-@pytest.mark.xfail(strict=False, reason="WCAG violations expected until screen story #449 ships")
 def test_axe_offices(page):
     v = _run_axe(page, "/offices")
     assert v == [], f"/offices WCAG violations:\n{_fmt(v)}"
