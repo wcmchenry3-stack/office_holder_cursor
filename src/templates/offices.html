@@ -1,7 +1,15 @@
 {% extends "base.html" %}
-{% block title %}Offices – Office Holder{% endblock %}
+{% block title %}Offices — RulersAI{% endblock %}
 {% block content %}
-<h1>Office configs</h1>
+<div class="page-header">
+  <div class="page-header-icon">
+    <span class="material-symbols-outlined" aria-hidden="true">corporate_fare</span>
+  </div>
+  <div>
+    <h1 class="page-header-title">Offices</h1>
+    <p class="page-header-desc">Manage office configurations and scraper pages.</p>
+  </div>
+</div>
 {% if saved %}<div class="alert alert-success">Saved to local database (data/office_holder.db).</div>{% endif %}
 {% if validation_error %}<div class="alert alert-error">{{ validation_error }}</div>{% endif %}
 {% if imported %}<div class="alert alert-success">Imported {{ imported_count }} offices to local database (data/office_holder.db).{% if imported_errors %}{{ imported_errors }} row(s) had errors.{% endif %}</div>{% endif %}
@@ -190,18 +198,18 @@
 })();
 </script>
 {% if pages %}
-<table id="pagesTable" class="table">
+<table id="pagesTable" class="table" aria-label="Pages">
   <thead>
     <tr>
-      <th>On</th>
-      <th>Country</th>
-      <th>State</th>
-      <th>Level</th>
-      <th>Branch</th>
-      <th>Office count</th>
-      <th>Table count</th>
-      <th>URL</th>
-      <th></th>
+      <th scope="col">On</th>
+      <th scope="col">Country</th>
+      <th scope="col">State</th>
+      <th scope="col">Level</th>
+      <th scope="col">Branch</th>
+      <th scope="col">Office count</th>
+      <th scope="col">Table count</th>
+      <th scope="col">URL</th>
+      <th scope="col"><span class="sr-only">Actions</span></th>
     </tr>
   </thead>
   <tbody>
@@ -286,19 +294,19 @@
     </select>
   </div>
 </div>
-<table id="officesTable">
+<table id="officesTable" aria-label="Offices" class="table">
   <thead>
     <tr>
-      <th class="sortable" data-sort="enabled" title="Sort by on/off"><span>On</span></th>
-      <th class="sortable" data-sort="name" title="Sort by name"><span>Name</span></th>
-      <th class="sortable" data-sort="country" title="Sort by country"><span>Country</span></th>
-      <th class="sortable" data-sort="state" title="Sort by state"><span>State</span></th>
-      <th class="sortable" data-sort="level" title="Sort by level"><span>Level</span></th>
-      <th class="sortable" data-sort="branch" title="Sort by branch"><span>Branch</span></th>
-      <th class="sortable" data-sort="url" title="Sort by URL"><span>URL</span></th>
-      <th class="sortable" data-sort="table" title="Sort by table number"><span>Table</span></th>
-      <th>Terms</th>
-      <th></th>
+      <th scope="col" class="sortable" data-sort="enabled" title="Sort by on/off"><span>On</span></th>
+      <th scope="col" class="sortable" data-sort="name" title="Sort by name"><span>Name</span></th>
+      <th scope="col" class="sortable" data-sort="country" title="Sort by country"><span>Country</span></th>
+      <th scope="col" class="sortable" data-sort="state" title="Sort by state"><span>State</span></th>
+      <th scope="col" class="sortable" data-sort="level" title="Sort by level"><span>Level</span></th>
+      <th scope="col" class="sortable" data-sort="branch" title="Sort by branch"><span>Branch</span></th>
+      <th scope="col" class="sortable" data-sort="url" title="Sort by URL"><span>URL</span></th>
+      <th scope="col" class="sortable" data-sort="table" title="Sort by table number"><span>Table</span></th>
+      <th scope="col">Terms</th>
+      <th scope="col"><span class="sr-only">Actions</span></th>
     </tr>
   </thead>
   <tbody>
