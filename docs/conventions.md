@@ -74,6 +74,34 @@ See [~/.claude/standards/testing.md](~/.claude/standards/testing.md) for univers
 
 ---
 
+## Accessibility — JS Contracts
+
+These contracts were established in Issue #446. All JavaScript that communicates status to users must follow them.
+
+### `window.announce(message, priority?)`
+
+Use this function for **all** dynamic status updates that screen readers need to hear. Never update arbitrary `<div>` text and expect screen readers to pick it up.
+
+```js
+window.announce('Saved successfully.');               // polite (default) — waits for idle
+window.announce('Error: office name required.', 'assertive'); // assertive — interrupts
+```
+
+- `priority` is `'polite'` (default) or `'assertive'`.
+- Polite: announced when the screen reader is idle. Use for non-urgent updates (save success, progress tick).
+- Assertive: interrupts immediately. Use only for errors or urgent state changes.
+- Internally writes to `#live-polite` or `#live-assertive` (defined in `base.html`). These are `sr-only` `<div>` elements with `aria-live` and `aria-atomic="true"`.
+
+### Audio mute flag
+
+`window._soundMuted` (boolean) — reflects whether the job completion sound is muted.
+
+- Persisted to `localStorage` under the key `'rulersai_sound_muted'`.
+- `playJobCompleteSound()` checks this flag before playing. No other code should bypass this check.
+- The mute toggle button (`#muteBtn`) in the top bar updates the flag, the button's `aria-pressed`, and `aria-label` dynamically.
+
+---
+
 ## Known Technical Debt
 
 | Item | Detail | Planned fix |
