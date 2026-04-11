@@ -88,6 +88,39 @@ After fetching the Wikipedia table HTML, the runner computes a SHA-256 hash of t
 
 ---
 
+## Table HTML cache
+
+Wikipedia table HTML is cached to disk (gzip JSON, under `data/wiki_cache/` by default). The cache avoids redundant HTTP fetches across runs.
+
+### Conditional GET (ETag / Last-Modified)
+
+When a cached entry is older than the configured TTL, the runner sends a **conditional GET** instead of a full re-download:
+
+- `If-None-Match: <stored ETag>` (if available)
+- `If-Modified-Since: <stored Last-Modified>` (if available)
+
+If Wikipedia responds **304 Not Modified**: the cached HTML is reused and the cache file's mtime is touched to reset the TTL clock — no bandwidth consumed, no diff triggered.
+
+If Wikipedia responds **200**: the new HTML and updated validator headers (`ETag`, `Last-Modified`) are stored.
+
+Existing cache files that pre-date this feature have no stored headers. On their first expiry they fall back to an unconditional GET, then gain the headers on the 200 response.
+
+### Batch re-check scheduling (`cache_batch`)
+
+All 1,278+ offices are spread across 7 weekday batches so conditional GETs are distributed evenly across the week rather than all hitting on the same day.
+
+- `office_table_config.cache_batch` (integer 0–6) is set to `id % 7` at insert time and backfilled for existing rows at startup.
+- On each delta run: `today_batch = date.today().weekday()` (0 = Monday … 6 = Sunday).
+  - `office_batch == today_batch` → `max_age_seconds = 86400` (1 day) — triggers conditional GET.
+  - `office_batch != today_batch` → `max_age_seconds = None` — use cache as-is, no HTTP.
+- Result: ~1/7 of offices check for updates each day; each office is checked once per week.
+
+### Kill switch
+
+Set `TABLE_HTML_CACHE_ENABLED=0` to disable the disk cache entirely for all offices. When disabled, every run fetches live HTML unconditionally.
+
+---
+
 ## Structural change detection (link fill rate)
 
 After parsing a table, the runner computes the **link fill rate**: the fraction of parsed holder rows that have a Wikipedia link (0.0–1.0). This is stored in `office_table_config.last_link_fill_rate`.

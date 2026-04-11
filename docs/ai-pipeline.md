@@ -112,7 +112,12 @@ Gates individual insertions via a pre-insertion AI check. Called from `runner.py
 ### Entry point
 
 ```python
-result = check_and_gate(full_name, wiki_url, office_id, conn=conn)
+result = check_and_gate(
+    full_name, wiki_url, office_id,
+    source_page_url=None,   # optional: Wikipedia source page URL
+    row_data=None,           # optional: dict of parsed row fields
+    conn=conn,
+)
 # Returns: "allowed" | "skipped" | "gh_issue"
 ```
 
@@ -127,6 +132,34 @@ If `result != "allowed"`, the insertion is blocked. The scraper logs the outcome
 | `gh_issue` | Flagged as suspect; insertion blocked; GitHub issue created |
 
 All outcomes are recorded to the `suspect_record_flags` table for audit visibility.
+
+### GitHub issue enrichment
+
+When `source_page_url` and `row_data` are provided, the created GitHub issue body includes a `### Source` section with:
+- The Wikipedia source page URL (clickable link)
+- A JSON block of the parsed row fields (all non-internal keys)
+
+`runner.py` populates both automatically: it stores the source page URL in each row dict during accumulation and passes a clean copy of the row (internal `_`-prefixed keys stripped) to `check_and_gate()`. Callers that don't provide these fields get the original issue body format unchanged.
+
+---
+
+## AI Provider Error Handling
+
+### Claude (`claude_client.py`)
+
+- **Code-fenced JSON:** Claude sometimes wraps its JSON in ` ```json ... ``` ` markdown fences. `_parse_response()` strips the fence before calling `json.loads()`, so fenced responses are parsed correctly.
+- **Parse failures return `None`:** If JSON parsing still fails (malformed response), `check_data_quality()` returns `None` instead of a fallback `DataQualityResult(is_valid=True)`. This causes `_vote_claude()` to record `AIVote(is_valid=None, error="parse error")`, **excluding Claude from quorum** rather than injecting a spurious "valid" vote.
+- **Rate limit backoff:** `RateLimitError` (429) triggers exponential backoff with `time.sleep(2^attempt)` up to 3 retries.
+
+### Gemini (`gemini_vitals_researcher.py` — `check_data_quality`)
+
+- **Truncated JSON:** `check_data_quality()` wraps `json.loads()` in `try/except JSONDecodeError` and returns `None` on failure so Gemini is excluded from quorum rather than crashing.
+- **`max_output_tokens`**: raised from 512 → 1024 to reduce mid-response truncation that causes the above.
+- **Server errors (503/500):** `_call_gemini()` catches `errors.ServerError` and retries up to 3 times with exponential backoff — the same pattern as the existing 429 retry. Transient Gemini outages no longer fail silently.
+
+### Gemini research batch (`runner.py`)
+
+- **Empty-result guard:** `mark_gemini_research_checked()` is only called when the Gemini result contains actual data. A fully empty result (all retries exhausted on 503/500) does **not** stamp `gemini_research_checked_at`, so the individual remains eligible for future research batches and is not silently lost.
 
 ---
 
