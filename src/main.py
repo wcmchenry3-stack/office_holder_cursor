@@ -195,10 +195,15 @@ async def lifespan(app: FastAPI):
 
     from src.db.scheduled_job_runs import expire_stale_scheduled_job_runs
 
-    expired_count = expire_stale_scheduled_job_runs()
+    # stale_hours=0 expires every 'running' record regardless of age.  Any job that was
+    # in-flight when the previous process died cannot be running now — the subprocess was
+    # killed with the container.  Using the default stale_hours=4 would leave a record
+    # created 1 minute before an OOM kill alive for 4 hours, blocking downstream jobs
+    # (insufficient_vitals, gemini_research, daily_page_quality) all morning.
+    expired_count = expire_stale_scheduled_job_runs(stale_hours=0)
     if expired_count:
         logger.warning(
-            "[startup] Cleared %d stale scheduled_job_runs row(s) left over from previous OOM kill",
+            "[startup] Cleared %d stale scheduled_job_runs row(s) left over from previous process (OOM kill or restart)",
             expired_count,
         )
     else:
