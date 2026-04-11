@@ -16,6 +16,7 @@ except ImportError:
         "src/test_ui_run_playwright.py",
         "tests/test_axe_a11y.py",
         "tests/test_dark_mode_e2e.py",
+        "tests/test_mobile_e2e.py",
     ]
 
 # Router files that match test_*.py naming but are not test modules.

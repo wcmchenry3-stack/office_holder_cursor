@@ -113,6 +113,44 @@
       var icon = darkBtn.querySelector('.material-symbols-outlined');
       if (icon) icon.textContent = 'light_mode';
     }
+
+    // Mobile nav drawer toggle
+    var menuBtn = document.getElementById('menuBtn');
+    var sidebar = document.getElementById('primaryNav');
+    var overlay = document.getElementById('sidebarOverlay');
+    function openNav() {
+      sidebar.classList.add('is-open');
+      overlay.classList.add('is-open');
+      menuBtn.setAttribute('aria-expanded', 'true');
+      menuBtn.setAttribute('aria-label', 'Close navigation menu');
+    }
+    function closeNav() {
+      sidebar.classList.remove('is-open');
+      overlay.classList.remove('is-open');
+      menuBtn.setAttribute('aria-expanded', 'false');
+      menuBtn.setAttribute('aria-label', 'Open navigation menu');
+    }
+    if (menuBtn) {
+      menuBtn.addEventListener('click', function () {
+        sidebar.classList.contains('is-open') ? closeNav() : openNav();
+      });
+    }
+    if (overlay) {
+      overlay.addEventListener('click', closeNav);
+    }
+    // Close drawer on nav link click (single-page navigation)
+    if (sidebar) {
+      sidebar.querySelectorAll('a').forEach(function (link) {
+        link.addEventListener('click', closeNav);
+      });
+    }
+    // Close drawer on Escape
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && sidebar && sidebar.classList.contains('is-open')) {
+        closeNav();
+        if (menuBtn) menuBtn.focus();
+      }
+    });
   });
   </script>
 
@@ -120,6 +158,16 @@
        Top App Bar  (role=banner, sticky, h-16)
        ===================================================================== -->
   <header role="banner" class="top-bar">
+    <!-- Hamburger — mobile only, toggles sidebar drawer -->
+    <button id="menuBtn"
+            type="button"
+            class="menu-btn"
+            aria-label="Open navigation menu"
+            aria-expanded="false"
+            aria-controls="primaryNav">
+      <span class="material-symbols-outlined" aria-hidden="true">menu</span>
+    </button>
+
     <!-- Logo -->
     <a href="/" class="top-bar-logo" aria-label="RulersAI home">
       <img src="/static/images/rulersai-icon.png" alt="" width="28" height="28" aria-hidden="true">
@@ -173,7 +221,10 @@
        Sidebar  (fixed, w-64, below top bar)
        ===================================================================== -->
   {% set _path = request.url.path %}
-  <nav aria-label="Primary navigation" class="sidebar">
+  <!-- Sidebar overlay — tapping it closes the drawer on mobile -->
+  <div id="sidebarOverlay" class="sidebar-overlay" aria-hidden="true"></div>
+
+  <nav id="primaryNav" aria-label="Primary navigation" class="sidebar">
 
     <!-- Logo area -->
     <div class="sidebar-logo" aria-hidden="true">

@@ -740,3 +740,88 @@ html.dark .sidebar {
   margin-top: 0.125rem;
   line-height: 1.4;
 }
+
+/* =========================================================
+   §23  Mobile responsive  (Issue #459)
+   Breakpoint: 768px — sidebar becomes an off-screen drawer.
+   ========================================================= */
+
+/* Hamburger button — hidden on desktop, shown on mobile */
+.menu-btn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-md);
+  color: var(--color-on-surface);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.menu-btn:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* Sidebar overlay — covers page behind open sidebar on mobile */
+.sidebar-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 19;
+}
+
+@media (max-width: 768px) {
+  /* Show hamburger in top-bar */
+  .menu-btn { display: flex; }
+
+  /* Collapse sidebar off-screen to the left */
+  .sidebar {
+    transform: translateX(-100%);
+    transition: transform 0.22s ease;
+    z-index: 21;
+  }
+  .sidebar.is-open {
+    transform: translateX(0);
+  }
+
+  /* Overlay visible when sidebar is open */
+  .sidebar-overlay.is-open {
+    display: block;
+  }
+
+  /* Main content takes full width — no sidebar offset */
+  .main-content {
+    margin-inline-start: 0;
+    padding: 1rem 1rem 4rem;
+  }
+
+  /* Hide global search in top-bar (space-constrained) */
+  .top-bar-search { display: none; }
+
+  /* Tables: horizontal scroll so data isn't clipped */
+  table.table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Nav card grid: single column on narrow screens */
+  .nav-card-grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* Give forms breathing room */
+  input[type="text"],
+  input[type="search"],
+  input[type="url"],
+  input[type="email"],
+  input[type="number"],
+  select,
+  textarea {
+    max-width: 100%;
+  }
+}
