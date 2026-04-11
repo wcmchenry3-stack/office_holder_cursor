@@ -23,8 +23,14 @@
 - [ ] Dependencies reviewed if new ones added
 - [ ] OWASP considerations addressed if auth or data handling was touched
 
-## Accessibility checklist *(frontend PRs only)*
+## Accessibility checklist *(web / frontend PRs only)*
 - [ ] axe DevTools — no violations on affected pages
 - [ ] Keyboard navigation tested
 - [ ] Tested at 320px viewport width
 - [ ] Tested at 200% zoom
+
+## Mobile checklist *(iOS / Android PRs only)*
+- [ ] Tested on iOS Simulator or physical device
+- [ ] `ios-build-check` / `android-build-check` CI job passes
+- [ ] No hardcoded local paths in `.pbxproj` (`local-path-check` passes)
+- [ ] `pod install` run locally and `Podfile.lock` changes committed (if applicable)
