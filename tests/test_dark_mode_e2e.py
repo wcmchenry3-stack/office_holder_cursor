@@ -108,13 +108,15 @@ def test_dark_mode_toggle_applies_class(page):
     assert btn.count() == 1, "#darkModeBtn not found on /offices"
 
     # Start in light mode
-    assert not page.evaluate("document.documentElement.classList.contains('dark')"), \
-        "Expected light mode on fresh load"
+    assert not page.evaluate(
+        "document.documentElement.classList.contains('dark')"
+    ), "Expected light mode on fresh load"
 
     btn.click()
 
-    assert page.evaluate("document.documentElement.classList.contains('dark')"), \
-        "html.dark not added after clicking #darkModeBtn"
+    assert page.evaluate(
+        "document.documentElement.classList.contains('dark')"
+    ), "html.dark not added after clicking #darkModeBtn"
 
 
 def test_dark_mode_toggle_updates_aria(page):
@@ -127,12 +129,13 @@ def test_dark_mode_toggle_updates_aria(page):
 
     btn.click()
 
-    assert btn.get_attribute("aria-pressed") == "true", \
-        "aria-pressed should be 'true' in dark mode"
-    assert btn.get_attribute("aria-label") != initial_label, \
-        "aria-label should change when toggling dark mode"
-    assert btn.get_attribute("aria-pressed") != initial_pressed, \
-        "aria-pressed should flip on toggle"
+    assert btn.get_attribute("aria-pressed") == "true", "aria-pressed should be 'true' in dark mode"
+    assert (
+        btn.get_attribute("aria-label") != initial_label
+    ), "aria-label should change when toggling dark mode"
+    assert (
+        btn.get_attribute("aria-pressed") != initial_pressed
+    ), "aria-pressed should flip on toggle"
 
 
 def test_dark_mode_toggle_is_reversible(page):
@@ -143,10 +146,12 @@ def test_dark_mode_toggle_is_reversible(page):
     btn.click()  # → dark
     btn.click()  # → light
 
-    assert not page.evaluate("document.documentElement.classList.contains('dark')"), \
-        "html.dark should be removed after toggling back to light"
-    assert btn.get_attribute("aria-pressed") == "false", \
-        "aria-pressed should be 'false' after returning to light mode"
+    assert not page.evaluate(
+        "document.documentElement.classList.contains('dark')"
+    ), "html.dark should be removed after toggling back to light"
+    assert (
+        btn.get_attribute("aria-pressed") == "false"
+    ), "aria-pressed should be 'false' after returning to light mode"
 
 
 # ---------------------------------------------------------------------------
@@ -160,8 +165,9 @@ def test_dark_mode_persists_across_reload(page):
     page.locator("#darkModeBtn").click()
     page.reload(wait_until="networkidle")
 
-    assert page.evaluate("document.documentElement.classList.contains('dark')"), \
-        "html.dark should be restored from localStorage after reload"
+    assert page.evaluate(
+        "document.documentElement.classList.contains('dark')"
+    ), "html.dark should be restored from localStorage after reload"
 
 
 def test_dark_mode_prepaint_no_fouc(page):
@@ -170,8 +176,9 @@ def test_dark_mode_prepaint_no_fouc(page):
     _enable_dark_via_localstorage(page, "/offices")
 
     # html.dark must already be present (applied by inline script, before CSS loads)
-    assert page.evaluate("document.documentElement.classList.contains('dark')"), \
-        "Pre-paint script did not apply html.dark from localStorage"
+    assert page.evaluate(
+        "document.documentElement.classList.contains('dark')"
+    ), "Pre-paint script did not apply html.dark from localStorage"
 
 
 # ---------------------------------------------------------------------------

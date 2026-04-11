@@ -101,7 +101,7 @@ jobs:
           OFFICE_HOLDER_DB_PATH: /tmp/playwright_ci.db
 
       - name: Run Playwright tests
-        run: pytest src/test_ui_edit_office_playwright.py src/test_ui_offices_list_playwright.py src/test_ui_run_playwright.py tests/test_axe_a11y.py --tb=short -v
+        run: pytest src/test_ui_edit_office_playwright.py src/test_ui_offices_list_playwright.py src/test_ui_run_playwright.py tests/test_axe_a11y.py tests/test_dark_mode_e2e.py --tb=short -v
         env:
           PLAYWRIGHT_BASE_URL: http://127.0.0.1:8000
           OFFICE_HOLDER_DB_PATH: /tmp/playwright_ci.db
