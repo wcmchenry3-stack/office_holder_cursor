@@ -36,8 +36,8 @@ Files matching ANY of these patterns trigger this policy:
 
 ### Check 4: No raw HTML scraping [error]
 
-**Pattern (forbidden)**: See called-wikipedia-policy.yml Check 4 for the exact grep pattern (not inlined here to avoid triggering the scanner on this doc file).
-**Also check**: `requests\.(get|post)\s*\([^)]*wikipedia\.org/wiki/` and `fetch\(['"]https?://[a-z]+\.wikipedia\.org/wiki/`
+**Pattern (forbidden)**: See `called-wikipedia-policy.yml` Check 4 for the exact grep pattern (not inlined here to prevent this doc from triggering its own check).
+**Also check**: direct wiki-page HTTP requests — `requests.(get|post)` targeting `/wiki/` paths, or `fetch(` calls to `*.wikipedia.org/wiki/`
 **Presence**: forbidden
 **Message**: HTML-scraping library or direct wiki URL request detected. Use the official Wikimedia REST API (`/w/api.php` or `api.wikimedia.org`) instead.
 **Reference**: https://www.mediawiki.org/wiki/API:Main_page
