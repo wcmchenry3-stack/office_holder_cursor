@@ -39,9 +39,7 @@ def count_untranslated(po_text: str) -> int:
     """Count msgstr entries that are empty (excluding the header entry)."""
     entries = re.split(r"\n\n", po_text)
     return sum(
-        1
-        for e in entries
-        if 'msgid ""' not in e and re.search(r'msgstr ""\s*$', e, re.MULTILINE)
+        1 for e in entries if 'msgid ""' not in e and re.search(r'msgstr ""\s*$', e, re.MULTILINE)
     )
 
 
@@ -49,11 +47,16 @@ def main() -> None:
     print("==> Extracting strings from templates and Python source files…")
     run(
         [
-            sys.executable, "-m", "babel.messages.frontend", "extract",
-            "-F", str(BABEL_CFG),
+            sys.executable,
+            "-m",
+            "babel.messages.frontend",
+            "extract",
+            "-F",
+            str(BABEL_CFG),
             "--project=RulersAI",
             "--version=1.0",
-            "-o", str(POT_FILE),
+            "-o",
+            str(POT_FILE),
             "src/",
         ]
     )
@@ -64,16 +67,20 @@ def main() -> None:
     print("==> Updating locale catalogs…")
     run(
         [
-            sys.executable, "-m", "babel.messages.frontend", "update",
-            "-i", str(POT_FILE),
-            "-d", str(LOCALES_DIR),
+            sys.executable,
+            "-m",
+            "babel.messages.frontend",
+            "update",
+            "-i",
+            str(POT_FILE),
+            "-d",
+            str(LOCALES_DIR),
         ]
     )
 
     print("\n==> Summary per locale:\n")
     locale_dirs = sorted(
-        p for p in LOCALES_DIR.iterdir()
-        if p.is_dir() and not p.name.startswith("_")
+        p for p in LOCALES_DIR.iterdir() if p.is_dir() and not p.name.startswith("_")
     )
     for loc_dir in locale_dirs:
         po_file = loc_dir / "LC_MESSAGES" / "messages.po"
@@ -83,9 +90,7 @@ def main() -> None:
         fuzzy = count_fuzzy(text)
         untranslated = count_untranslated(text)
         status = "ok" if not fuzzy and not untranslated else "needs attention"
-        print(
-            f"  {loc_dir.name:<10}  fuzzy={fuzzy}  untranslated={untranslated}  [{status}]"
-        )
+        print(f"  {loc_dir.name:<10}  fuzzy={fuzzy}  untranslated={untranslated}  [{status}]")
 
     print("\nDone. Edit .po files, then run: pybabel compile -d src/locales")
 

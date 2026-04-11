@@ -29,8 +29,7 @@ LOCALES_DIR = ROOT / "src" / "locales"
 
 def main(output_dir: Path) -> None:
     locale_dirs = sorted(
-        p for p in LOCALES_DIR.iterdir()
-        if p.is_dir() and not p.name.startswith("_")
+        p for p in LOCALES_DIR.iterdir() if p.is_dir() and not p.name.startswith("_")
     )
 
     for loc_dir in locale_dirs:
@@ -45,9 +44,9 @@ def main(output_dir: Path) -> None:
         for line in po_file.read_text(encoding="utf-8").splitlines():
             line = line.strip()
             if line.startswith("msgid "):
-                msgid = _unquote(line[len("msgid "):])
+                msgid = _unquote(line[len("msgid ") :])
             elif line.startswith("msgstr "):
-                msgstr = _unquote(line[len("msgstr "):])
+                msgstr = _unquote(line[len("msgstr ") :])
                 if msgid and msgstr:
                     ns = msgid.split(".")[0] if "." in msgid else "common"
                     namespaces[ns][msgid] = msgstr
