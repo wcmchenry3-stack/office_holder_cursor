@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}States – Office Holder{% endblock %}
+{% block title %}States — RulersAI{% endblock %}
 {% block content %}
 <h1>States (by country)</h1>
 {% if saved %}<div class="alert alert-success">Saved to local database.</div>{% endif %}
@@ -9,9 +9,9 @@
   <a href="/refs" class="btn btn-secondary">Back to Reference data</a>
 </div>
 {% if states %}
-<table class="table">
+<table class="table" aria-label="States">
   <thead>
-    <tr><th>State</th><th>Country</th><th></th></tr>
+    <tr><th scope="col">State</th><th scope="col">Country</th><th scope="col"><span class="sr-only">Actions</span></th></tr>
   </thead>
   <tbody>
     {% for s in states %}

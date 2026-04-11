@@ -1,13 +1,51 @@
 {% extends "base.html" %}
-{% block title %}Operations – Office Holder{% endblock %}
+{% block title %}Operations — RulersAI{% endblock %}
 {% block content %}
-<h1>Operations</h1>
-<p>Monitoring, job management, and reporting.</p>
-<ul>
-  <li><a href="/data/ai-decisions">AI Decisions</a> — Review AI-generated office configuration decisions</li>
-  <li><a href="/data/scheduled-job-runs">Job Runs</a> — History of scheduled job executions</li>
-  <li><a href="/data/scraper-jobs">Scraper Jobs</a> — Active and recent scraper job queue</li>
-  <li><a href="/data/scheduled-jobs">Scheduled Jobs</a> — Configure and pause/resume scheduled jobs</li>
-  <li><a href="/data/runner-registry">Runner Registry</a> — Available scraper runner configurations</li>
-</ul>
+<div class="page-header">
+  <div class="page-header-icon">
+    <span class="material-symbols-outlined" aria-hidden="true">dashboard</span>
+  </div>
+  <div>
+    <h1 class="page-header-title">Operations</h1>
+    <p class="page-header-desc">Monitoring, job management, and reporting.</p>
+  </div>
+</div>
+
+<div class="nav-card-grid">
+  <a href="/data/ai-decisions" class="nav-card">
+    <span class="material-symbols-outlined nav-card-icon" aria-hidden="true">auto_awesome</span>
+    <div>
+      <div class="nav-card-title">AI Decisions</div>
+      <div class="nav-card-desc">Review AI-generated office configuration decisions</div>
+    </div>
+  </a>
+  <a href="/data/scheduled-job-runs" class="nav-card">
+    <span class="material-symbols-outlined nav-card-icon" aria-hidden="true">history</span>
+    <div>
+      <div class="nav-card-title">Job Runs</div>
+      <div class="nav-card-desc">History of scheduled job executions</div>
+    </div>
+  </a>
+  <a href="/data/scraper-jobs" class="nav-card">
+    <span class="material-symbols-outlined nav-card-icon" aria-hidden="true">queue</span>
+    <div>
+      <div class="nav-card-title">Scraper Jobs</div>
+      <div class="nav-card-desc">Active and recent scraper job queue</div>
+    </div>
+  </a>
+  <a href="/data/scheduled-jobs" class="nav-card">
+    <span class="material-symbols-outlined nav-card-icon" aria-hidden="true">schedule</span>
+    <div>
+      <div class="nav-card-title">Scheduled Jobs</div>
+      <div class="nav-card-desc">Configure and pause/resume scheduled jobs</div>
+    </div>
+  </a>
+  <a href="/data/runner-registry" class="nav-card">
+    <span class="material-symbols-outlined nav-card-icon" aria-hidden="true">settings</span>
+    <div>
+      <div class="nav-card-title">Runner Registry</div>
+      <div class="nav-card-desc">Available scraper runner configurations</div>
+    </div>
+  </a>
+</div>
 {% endblock %}

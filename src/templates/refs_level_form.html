@@ -1,12 +1,12 @@
 {% extends "base.html" %}
-{% block title %}{{ "Edit" if level else "New" }} level – Office Holder{% endblock %}
+{% block title %}{{ "Edit" if level else "New" }} Level — RulersAI{% endblock %}
 {% block content %}
 <h1>{{ "Edit" if level else "New" }} level</h1>
 {% if validation_error %}<div class="alert alert-error">{{ validation_error }}</div>{% endif %}
 <form method="post" action="{% if level %}/refs/levels/{{ level.id }}{% else %}/refs/levels/new{% endif %}">
   <div class="form-group">
     <label for="name">Name</label>
-    <input type="text" id="name" name="name" value="{{ level.name if level else '' }}" required placeholder="e.g. Federal, State, Local">
+    <input type="text" id="name" name="name" value="{{ level.name if level else '' }}" required aria-required="true" placeholder="e.g. Federal, State, Local">
   </div>
   <div class="actions">
     <button type="submit" class="btn">Save</button>

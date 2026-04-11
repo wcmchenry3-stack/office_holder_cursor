@@ -1,16 +1,72 @@
 {% extends "base.html" %}
-{% block title %}Reference data – Office Holder{% endblock %}
+{% block title %}Reference Data — RulersAI{% endblock %}
 {% block content %}
-<h1>Reference data</h1>
-<p>Manage countries, states/provinces, levels, and branches used by offices and pages.</p>
-<ul>
-  <li><a href="/refs/countries">Countries</a></li>
-  <li><a href="/refs/states">States (by country)</a></li>
-  <li><a href="/refs/levels">Levels</a></li>
-  <li><a href="/refs/branches">Branches</a></li>
-  <li><a href="/refs/cities">Cities</a></li>
-  <li><a href="/refs/office-categories">Office categories</a></li>
-  <li><a href="/refs/infobox-role-key-filters">Infobox role key filters</a></li>
-  <li><a href="/refs/parties">Parties</a></li>
-</ul>
+<div class="page-header">
+  <div class="page-header-icon">
+    <span class="material-symbols-outlined" aria-hidden="true">database</span>
+  </div>
+  <div>
+    <h1 class="page-header-title">Reference Data</h1>
+    <p class="page-header-desc">Manage countries, states, levels, branches, and other lookup values.</p>
+  </div>
+</div>
+
+<div class="nav-card-grid">
+  <a href="/refs/countries" class="nav-card">
+    <span class="material-symbols-outlined nav-card-icon" aria-hidden="true">public</span>
+    <div>
+      <div class="nav-card-title">Countries</div>
+      <div class="nav-card-desc">Country lookup values</div>
+    </div>
+  </a>
+  <a href="/refs/states" class="nav-card">
+    <span class="material-symbols-outlined nav-card-icon" aria-hidden="true">map</span>
+    <div>
+      <div class="nav-card-title">States</div>
+      <div class="nav-card-desc">States and provinces by country</div>
+    </div>
+  </a>
+  <a href="/refs/levels" class="nav-card">
+    <span class="material-symbols-outlined nav-card-icon" aria-hidden="true">layers</span>
+    <div>
+      <div class="nav-card-title">Levels</div>
+      <div class="nav-card-desc">Federal, state, local, and other levels</div>
+    </div>
+  </a>
+  <a href="/refs/branches" class="nav-card">
+    <span class="material-symbols-outlined nav-card-icon" aria-hidden="true">account_balance</span>
+    <div>
+      <div class="nav-card-title">Branches</div>
+      <div class="nav-card-desc">Executive, legislative, judicial branches</div>
+    </div>
+  </a>
+  <a href="/refs/cities" class="nav-card">
+    <span class="material-symbols-outlined nav-card-icon" aria-hidden="true">location_city</span>
+    <div>
+      <div class="nav-card-title">Cities</div>
+      <div class="nav-card-desc">Cities linked to states</div>
+    </div>
+  </a>
+  <a href="/refs/office-categories" class="nav-card">
+    <span class="material-symbols-outlined nav-card-icon" aria-hidden="true">category</span>
+    <div>
+      <div class="nav-card-title">Office Categories</div>
+      <div class="nav-card-desc">Office classification categories</div>
+    </div>
+  </a>
+  <a href="/refs/infobox-role-key-filters" class="nav-card">
+    <span class="material-symbols-outlined nav-card-icon" aria-hidden="true">filter_alt</span>
+    <div>
+      <div class="nav-card-title">Infobox Role Key Filters</div>
+      <div class="nav-card-desc">Filter rules for Wikipedia infobox role keys</div>
+    </div>
+  </a>
+  <a href="/refs/parties" class="nav-card">
+    <span class="material-symbols-outlined nav-card-icon" aria-hidden="true">groups</span>
+    <div>
+      <div class="nav-card-title">Parties</div>
+      <div class="nav-card-desc">Political party lookup values</div>
+    </div>
+  </a>
+</div>
 {% endblock %}
