@@ -21,6 +21,11 @@
       } catch (e) {}
     })();
   </script>
+  <!-- RTL font loading — Noto Sans Arabic/Hebrew loaded lazily only when needed -->
+  {% set _rtl_font_map = {'ar': 'Noto+Sans+Arabic:wght@400;700', 'he': 'Noto+Sans+Hebrew:wght@400;700'} %}
+  {% if locale in _rtl_font_map %}
+  <link href="https://fonts.googleapis.com/css2?family={{ _rtl_font_map[locale] }}&display=swap" rel="stylesheet">
+  {% endif %}
 </head>
 <body>
   <!-- Skip link — first interactive element, sr-only until focused (WCAG 2.4.1) -->
@@ -241,9 +246,9 @@
             class="lang-menu"
             hidden>
           {% set _active_locale = locale | default('en') %}
-          {% set _ltr_locales = ['en','es','fr-CA','de','nl','pt','ru','hi','zh','ja','ko'] %}
-          {% set _locale_names = {'en':'English','es':'Español','fr-CA':'Français (Canada)','de':'Deutsch','nl':'Nederlands','pt':'Português','ru':'Русский','hi':'हिन्दी','zh':'中文','ja':'日本語','ko':'한국어'} %}
-          {% for _code in _ltr_locales %}
+          {% set _all_locales = ['en','es','fr-CA','de','nl','pt','ru','hi','zh','ja','ko','ar','he'] %}
+          {% set _locale_names = {'en':'English','es':'Español','fr-CA':'Français (Canada)','de':'Deutsch','nl':'Nederlands','pt':'Português','ru':'Русский','hi':'हिन्दी','zh':'中文','ja':'日本語','ko':'한국어','ar':'العربية','he':'עברית'} %}
+          {% for _code in _all_locales %}
           <li role="option"
               aria-selected="{{ 'true' if _code == _active_locale else 'false' }}"
               class="lang-option{% if _code == _active_locale %} is-active{% endif %}">

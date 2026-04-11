@@ -46,7 +46,7 @@
     <p class="page-header-desc">{% if page_data and page_data.url %}{{ (page_data.url[:80] + '…') if page_data.url|length > 80 else page_data.url }}{% else %}Edit page configuration and offices.{% endif %}</p>
   </div>
 </div>
-<aside class="page-outline" aria-label="Page sections" style="position:fixed; right:1rem; top:6rem; width:11rem; max-height:calc(100vh - 8rem); overflow:auto; background:var(--bg2, #f5f5f5); border:1px solid var(--border, #ccc); border-radius:6px; padding:0.75rem; font-size:0.9rem; z-index:10;">
+<aside class="page-outline" aria-label="Page sections" style="position:fixed; inset-inline-end:1rem; top:6rem; width:11rem; max-height:calc(100vh - 8rem); overflow:auto; background:var(--bg2, #f5f5f5); border:1px solid var(--border, #ccc); border-radius:6px; padding:0.75rem; font-size:0.9rem; z-index:10;">
   <strong style="display:block; margin-bottom:0.5rem;">Sections</strong>
   <ul style="list-style:none; margin:0; padding:0;">
     <li style="margin-bottom:0.35rem;"><a href="#section-page">{% if page_data.enabled %}<span style="color:green;" aria-label="Enabled">✓</span>{% else %}<span style="color:red;" aria-label="Disabled">✗</span>{% endif %} Page</a></li>
@@ -54,7 +54,7 @@
     <li style="margin-bottom:0.35rem;"><a href="#section-office-{{ o.id }}">{% if o.enabled %}<span style="color:green;" aria-label="Enabled">✓</span>{% else %}<span style="color:red;" aria-label="Disabled">✗</span>{% endif %} {{ o.name or 'Office' }}</a></li>
     {% set tclist_outline = o.table_configs if o.table_configs and o.table_configs|length > 0 else [] %}
     {% for tc in tclist_outline %}
-    <li style="margin-bottom:0.25rem; margin-left:0.75rem; font-size:0.85rem;"><a href="#section-table-{{ tc.id if tc.id else (o.id ~ '-t' ~ loop.index) }}">{% if tc.enabled %}<span style="color:green;" aria-label="Enabled">✓</span>{% else %}<span style="color:red;" aria-label="Disabled">✗</span>{% endif %} {{ tc.name or ('Table ' ~ loop.index) }}</a></li>
+    <li style="margin-bottom:0.25rem; margin-inline-start:0.75rem; font-size:0.85rem;"><a href="#section-table-{{ tc.id if tc.id else (o.id ~ '-t' ~ loop.index) }}">{% if tc.enabled %}<span style="color:green;" aria-label="Enabled">✓</span>{% else %}<span style="color:red;" aria-label="Disabled">✗</span>{% endif %} {{ tc.name or ('Table ' ~ loop.index) }}</a></li>
     {% endfor %}
     {% endfor %}
     <li style="margin-top:0.5rem; padding-top:0.5rem; border-top:1px solid var(--border, #ccc);">
@@ -72,10 +72,10 @@
     </li>
   </ul>
 </aside>
-<div class="page-edit-main" style="margin-right:13rem;">
+<div class="page-edit-main" style="margin-inline-end:13rem;">
   <div class="save-all-bar" style="margin-bottom:1rem;" data-source-page-id="{{ source_page_id }}">
     <button type="button" class="btn save-all-btn" id="saveAllBtn">Save all (page + offices + tables)</button>
-    <span class="save-all-status" id="saveAllStatus" style="margin-left:0.5rem; font-size:0.9rem; color:var(--muted, #666);"></span>
+    <span class="save-all-status" id="saveAllStatus" style="margin-inline-start:0.5rem; font-size:0.9rem; color:var(--muted, #666);"></span>
   </div>
   <section id="section-page" style="margin-bottom:2rem;" data-page-url="{{ (page_data.url or '')|e }}">
     <h2>Page</h2>

@@ -172,7 +172,7 @@ input, select, button, textarea {
   overflow: visible;
   white-space: normal;
   top: 1rem;
-  left: 1rem;
+  inset-inline-start: 1rem;
   background: var(--color-primary-container);
   color: var(--color-on-primary);
   padding: 0.5rem 1rem;
@@ -219,7 +219,7 @@ h2 { font-size: 1.25rem; margin: 1rem 0 0.5rem; font-weight: 600; }
    11. Tables
    --------------------------------------------------------- */
 table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
-th, td { padding: 0.5rem 0.75rem; text-align: left; border-bottom: 1px solid var(--color-outline-variant); }
+th, td { padding: 0.5rem 0.75rem; text-align: start; border-bottom: 1px solid var(--color-outline-variant); }
 th {
   background: var(--color-surface-container-low);
   color: var(--color-on-surface-variant);
@@ -229,7 +229,7 @@ th {
   text-transform: uppercase;
 }
 th.sortable:hover { color: var(--color-on-surface); cursor: pointer; }
-th.sortable span { margin-right: 0.35rem; }
+th.sortable span { margin-inline-end: 0.35rem; }
 th.sort-asc::after  { content: ' \2191'; font-size: 0.75em; opacity: 0.8; }
 th.sort-desc::after { content: ' \2193'; font-size: 0.75em; opacity: 0.8; }
 tr:hover { background: var(--color-surface-container-low); }
@@ -424,7 +424,7 @@ html.dark .badge-blue   { background: #1e3a5f; color: #60a5fa; }
 html.dark .sync-banner { background: #451a03; }
 .sync-banner code { color: var(--color-on-surface); }
 .sync-banner .sync-meta {
-  margin-left: 0.75rem;
+  margin-inline-start: 0.75rem;
   color: var(--color-on-surface-variant);
 }
 
@@ -439,8 +439,8 @@ html.dark .sync-banner { background: #451a03; }
 .top-bar {
   position: fixed;
   top: 0;
-  left: 0;
-  right: 0;
+  inset-inline-start: 0;
+  inset-inline-end: 0;
   height: 4rem;
   z-index: 30;
   background: var(--color-surface-bright);
@@ -476,7 +476,7 @@ html.dark .sync-banner { background: #451a03; }
 }
 .top-bar-search .material-symbols-outlined {
   position: absolute;
-  left: 0.75rem;
+  inset-inline-start: 0.75rem;
   color: var(--color-on-surface-variant);
   font-size: 1.1rem;
   pointer-events: none;
@@ -518,7 +518,7 @@ html.dark .sync-banner { background: #451a03; }
 .sidebar {
   position: fixed;
   top: 4rem;
-  left: 0;
+  inset-inline-start: 0;
   width: 16rem;
   height: calc(100vh - 4rem);
   background: var(--color-surface-container-low);
@@ -840,7 +840,7 @@ html.dark .sidebar {
 .lang-menu {
   position: absolute;
   top: calc(100% + 0.25rem);
-  right: 0;
+  inset-inline-end: 0;
   min-width: 13rem;
   background: var(--color-surface-container-lowest);
   border: 1px solid var(--color-outline-variant);
@@ -880,4 +880,38 @@ html.dark .sidebar {
 .lang-option-btn:focus-visible {
   outline: 2px solid var(--color-primary);
   outline-offset: -2px;
+}
+
+/* =========================================================
+   §25  RTL layout  (Issue #461)
+   Arabic and Hebrew locale support.
+   ========================================================= */
+
+/* ---------------------------------------------------------
+   25a. RTL-aware font stacks
+   Noto Sans Arabic / Hebrew are loaded lazily via JS only
+   when the active locale requires them.
+   --------------------------------------------------------- */
+:lang(ar) { font-family: 'Inter', 'Noto Sans Arabic', 'Arial', sans-serif; }
+:lang(he) { font-family: 'Inter', 'Noto Sans Hebrew', 'Arial', sans-serif; }
+
+/* ---------------------------------------------------------
+   25b. Directional icons
+   Chevrons and arrows that convey left/right direction must
+   mirror horizontally in RTL so "next" still points forward.
+   Non-directional icons (check, warning, settings) must NOT
+   get this class.
+   --------------------------------------------------------- */
+[dir="rtl"] .icon-directional { transform: scaleX(-1); }
+
+/* ---------------------------------------------------------
+   25c. Mobile sidebar RTL — slides in from the right edge
+   --------------------------------------------------------- */
+@media (max-width: 768px) {
+  [dir="rtl"] .sidebar {
+    transform: translateX(100%);
+  }
+  [dir="rtl"] .sidebar.is-open {
+    transform: translateX(0);
+  }
 }
