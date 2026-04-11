@@ -1,11 +1,19 @@
 {# Wikipedia requests use a descriptive User-Agent header per Wikimedia API etiquette. #}
 {% extends "base.html" %}
-{% block title %}Run scraper – Office Holder{% endblock %}
+{% block title %}Run Scraper — RulersAI{% endblock %}
 {% block content %}
-<h1>Run scraper</h1>
+<div class="page-header">
+  <div class="page-header-icon">
+    <span class="material-symbols-outlined" aria-hidden="true">play_circle</span>
+  </div>
+  <div>
+    <h1 class="page-header-title">Run Scraper</h1>
+    <p class="page-header-desc">Launch scraper jobs and monitor progress.</p>
+  </div>
+</div>
 <form id="runForm" method="post" action="/api/run">
   <div class="form-group">
-    <label>Run</label>
+    <label for="runMode">Run</label>
     <select name="run_mode" id="runMode">
       <option value="full">Full run</option>
       <option value="delta" selected>Delta run</option>
@@ -21,11 +29,11 @@
     </select>
   </div>
   <div class="form-group" id="individualRefGroup" style="display:none;">
-    <label>Individual (ID or Wikipedia URL)</label>
+    <label for="individualRef">Individual (ID or Wikipedia URL)</label>
     <input type="text" name="individual_ref" id="individualRef" placeholder="e.g. 42 or https://en.wikipedia.org/wiki/John_Doe">
   </div>
   <div class="form-group" id="officeCategoryGroup" style="display:none;">
-    <label>Office category</label>
+    <label for="officeCategoryId">Office category</label>
     <select name="office_category_id" id="officeCategoryId">
       <option value="">Select office category</option>
       {% for oc in office_categories %}
@@ -96,9 +104,9 @@
 .running-panel {
   margin: 1.5rem 0;
   padding: 1rem 1.25rem;
-  background: var(--bg2);
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  background: var(--color-surface-container-low);
+  border: 1px solid var(--color-outline-variant);
+  border-radius: var(--radius-lg);
 }
 .running-header {
   display: flex;
@@ -109,30 +117,30 @@
 .spinner {
   width: 1.25rem;
   height: 1.25rem;
-  border: 2px solid var(--border);
-  border-top-color: var(--accent);
+  border: 2px solid var(--color-outline-variant);
+  border-top-color: var(--color-primary);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
-.running-message { color: var(--text); margin-bottom: 0.5rem; }
-.running-detail { font-size: 0.875rem; color: var(--text-muted); margin-top: 0.5rem; }
-.muted { color: var(--text-muted); font-size: 0.9rem; }
+.running-message { color: var(--color-on-surface); margin-bottom: 0.5rem; }
+.running-detail { font-size: 0.875rem; color: var(--color-on-surface-variant); margin-top: 0.5rem; }
+.muted { color: var(--color-on-surface-variant); font-size: 0.9rem; }
 .progress-bar-wrap {
   height: 8px;
-  background: var(--bg3);
-  border-radius: 4px;
+  background: var(--color-surface-container);
+  border-radius: var(--radius-full);
   overflow: hidden;
 }
 .progress-group { margin-top: 0.5rem; }
 .progress-row + .progress-row { margin-top: 0.5rem; }
-.progress-label { font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.2rem; }
+.progress-label { font-size: 0.875rem; color: var(--color-on-surface-variant); margin-bottom: 0.2rem; }
 .progress-bar {
   height: 100%;
-  background: var(--accent);
-  border-radius: 4px;
+  background: var(--color-primary);
+  border-radius: var(--radius-full);
   transition: width 0.3s ease;
 }
 </style>
