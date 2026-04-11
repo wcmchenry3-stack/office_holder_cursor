@@ -14,7 +14,6 @@ import pytest
 
 import src.scheduled_tasks as st
 
-
 # ---------------------------------------------------------------------------
 # is_runners_enabled
 # ---------------------------------------------------------------------------
@@ -115,24 +114,18 @@ class TestFormatErrors:
 
 class TestHasActiveScheduledRun:
     def test_returns_false_when_no_active(self, monkeypatch):
-        monkeypatch.setattr(
-            "src.db.scheduled_job_runs.count_active_scheduled_runs", lambda: 0
-        )
+        monkeypatch.setattr("src.db.scheduled_job_runs.count_active_scheduled_runs", lambda: 0)
         assert st._has_active_scheduled_run("daily_delta") is False
 
     def test_returns_true_when_active(self, monkeypatch):
-        monkeypatch.setattr(
-            "src.db.scheduled_job_runs.count_active_scheduled_runs", lambda: 1
-        )
+        monkeypatch.setattr("src.db.scheduled_job_runs.count_active_scheduled_runs", lambda: 1)
         assert st._has_active_scheduled_run("daily_delta") is True
 
     def test_returns_false_on_db_error(self, monkeypatch):
         def _raise():
             raise RuntimeError("db unreachable")
 
-        monkeypatch.setattr(
-            "src.db.scheduled_job_runs.count_active_scheduled_runs", _raise
-        )
+        monkeypatch.setattr("src.db.scheduled_job_runs.count_active_scheduled_runs", _raise)
         # Should not raise — DB error is caught and returns False (non-fatal)
         assert st._has_active_scheduled_run("daily_delta") is False
 
@@ -213,7 +206,9 @@ class TestRunDailyMaintenance:
 
 
 class TestRunDailyDeltaGuards:
-    def _patch_all(self, monkeypatch, runners_enabled=True, paused=False, active_jobs=0, active_scheduled=0):
+    def _patch_all(
+        self, monkeypatch, runners_enabled=True, paused=False, active_jobs=0, active_scheduled=0
+    ):
         monkeypatch.setattr("src.scheduled_tasks.is_runners_enabled", lambda: runners_enabled)
         monkeypatch.setattr("src.db.scheduler_settings.is_job_paused", lambda job_id: paused)
         monkeypatch.setattr("src.db.scraper_jobs.count_active_jobs", lambda: active_jobs)
@@ -227,21 +222,27 @@ class TestRunDailyDeltaGuards:
     def test_skips_when_runners_disabled(self, monkeypatch):
         self._patch_all(monkeypatch, runners_enabled=False)
         created = []
-        monkeypatch.setattr("src.db.scheduled_job_runs.create_run", lambda *a, **kw: created.append(a))
+        monkeypatch.setattr(
+            "src.db.scheduled_job_runs.create_run", lambda *a, **kw: created.append(a)
+        )
         st.run_daily_delta()
         assert created == []
 
     def test_skips_when_paused(self, monkeypatch):
         self._patch_all(monkeypatch, paused=True)
         created = []
-        monkeypatch.setattr("src.db.scheduled_job_runs.create_run", lambda *a, **kw: created.append(a))
+        monkeypatch.setattr(
+            "src.db.scheduled_job_runs.create_run", lambda *a, **kw: created.append(a)
+        )
         st.run_daily_delta()
         assert created == []
 
     def test_skips_when_active_jobs(self, monkeypatch):
         self._patch_all(monkeypatch, active_jobs=1)
         created = []
-        monkeypatch.setattr("src.db.scheduled_job_runs.create_run", lambda *a, **kw: created.append(a))
+        monkeypatch.setattr(
+            "src.db.scheduled_job_runs.create_run", lambda *a, **kw: created.append(a)
+        )
         st.run_daily_delta()
         assert created == []
 

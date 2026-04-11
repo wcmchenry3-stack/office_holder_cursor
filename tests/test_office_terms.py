@@ -14,7 +14,6 @@ import pytest
 from src.db.connection import _SQLiteConnWrapper
 from src.db import office_terms as ot
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -61,7 +60,9 @@ def _make_conn(tmp_path: Path):
     return conn
 
 
-def _insert_individual(conn, wiki_url="https://en.wikipedia.org/wiki/Test", full_name="Test Person"):
+def _insert_individual(
+    conn, wiki_url="https://en.wikipedia.org/wiki/Test", full_name="Test Person"
+):
     cur = conn.execute(
         "INSERT INTO individuals (wiki_url, full_name) VALUES (?, ?)",
         (wiki_url, full_name),
@@ -101,9 +102,7 @@ class TestInsertOfficeTerm:
             term_end="2014-12-31",
             conn=conn,
         )
-        row = conn.execute(
-            "SELECT * FROM office_terms WHERE id = ?", (term_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM office_terms WHERE id = ?", (term_id,)).fetchone()
         assert row["office_id"] == 1
         assert row["individual_id"] == ind_id
         assert row["term_start"] == "2010-01-01"
@@ -130,14 +129,24 @@ class TestInsertOfficeTerm:
         # Use non-NULL dates so the UNIQUE constraint (office_id, wiki_url, term_start, …) fires.
         # SQLite treats NULL as distinct, so all-NULL dates would not trigger the conflict.
         ot.insert_office_term(
-            office_id=1, wiki_url="/wiki/Test", party_id=5,
-            term_start="2010-01-01", term_end="2014-12-31",
-            term_start_year=2010, term_end_year=2014, conn=conn,
+            office_id=1,
+            wiki_url="/wiki/Test",
+            party_id=5,
+            term_start="2010-01-01",
+            term_end="2014-12-31",
+            term_start_year=2010,
+            term_end_year=2014,
+            conn=conn,
         )
         ot.insert_office_term(
-            office_id=1, wiki_url="/wiki/Test", party_id=7,
-            term_start="2010-01-01", term_end="2014-12-31",
-            term_start_year=2010, term_end_year=2014, conn=conn,
+            office_id=1,
+            wiki_url="/wiki/Test",
+            party_id=7,
+            term_start="2010-01-01",
+            term_end="2014-12-31",
+            term_start_year=2010,
+            term_end_year=2014,
+            conn=conn,
         )
         # ON CONFLICT DO UPDATE — only one row should remain
         count = conn.execute("SELECT COUNT(*) FROM office_terms").fetchone()[0]
@@ -240,9 +249,7 @@ class TestDeleteOperations:
         conn = _make_conn(tmp_path)
         term_id = ot.insert_office_term(office_id=1, wiki_url="/wiki/Del", conn=conn)
         ot.delete_office_term_by_id(term_id, conn=conn)
-        row = conn.execute(
-            "SELECT id FROM office_terms WHERE id = ?", (term_id,)
-        ).fetchone()
+        row = conn.execute("SELECT id FROM office_terms WHERE id = ?", (term_id,)).fetchone()
         assert row is None
 
     def test_delete_office_terms_for_office(self, tmp_path):

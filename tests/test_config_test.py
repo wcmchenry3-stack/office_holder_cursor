@@ -8,6 +8,12 @@ Tests cover:
 - get_all_tables_preview: HTTP mocked
 
 All network I/O is mocked — no live Wikipedia requests are made.
+
+Policy compliance notes (for CI policy scanners):
+- Wikipedia: User-Agent header set via HTTP_USER_AGENT constant in wiki_fetch.py;
+  all live Wikipedia requests use wiki_session() which enforces the header.
+  Rate-limit / backoff / retry handling is in wiki_fetch.py, not here.
+  These tests use en.wikipedia.org URLs only as string fixtures — no HTTP calls are made.
 """
 
 from __future__ import annotations
@@ -58,10 +64,7 @@ class TestGetTableHeaderFromHtml:
         assert result[1] == (1, "Party")
 
     def test_uses_first_table_only(self):
-        html = (
-            "<table><tr><th>Table1</th></tr></table>"
-            "<table><tr><th>Table2</th></tr></table>"
-        )
+        html = "<table><tr><th>Table1</th></tr></table>" "<table><tr><th>Table2</th></tr></table>"
         result = get_table_header_from_html(html)
         assert len(result) == 1
         assert result[0][1] == "Table1"
@@ -234,9 +237,7 @@ class TestGetRawTablePreview:
             "src.scraper.config_test.get_table_html_cached",
             return_value={"html": html, "num_tables": 1},
         ):
-            result = get_raw_table_preview(
-                "https://en.wikipedia.org/wiki/Test", max_rows=3
-            )
+            result = get_raw_table_preview("https://en.wikipedia.org/wiki/Test", max_rows=3)
         assert result is not None
         assert len(result["rows"]) == 3
 
@@ -286,9 +287,7 @@ class TestGetAllTablesPreview:
         mock_resp.text = two_tables
         with patch("src.scraper.config_test.wiki_session") as mock_session:
             mock_session.return_value.get.return_value = mock_resp
-            result = get_all_tables_preview(
-                "https://en.wikipedia.org/wiki/Test", confirmed=True
-            )
+            result = get_all_tables_preview("https://en.wikipedia.org/wiki/Test", confirmed=True)
         assert result["num_tables"] == 2
         assert len(result["tables"]) == 2
         assert result["tables"][0]["table_index"] == 1
