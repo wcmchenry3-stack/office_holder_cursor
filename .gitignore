@@ -39,5 +39,9 @@ test_scripts/**/*.html
 .coverage
 htmlcov/
 
+# Localization — compiled binary and master template are generated, not committed
+src/locales/**/*.mo
+src/locales/messages.pot
+
 # Claude Code local overrides (personal, not shared)
 .claude/settings.local.json
