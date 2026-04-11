@@ -261,31 +261,34 @@ class ConsensusVoter:
 
         votes: list[AIVote] = []
 
-        with ThreadPoolExecutor(max_workers=3) as executor:
-            future_to_provider = {
-                executor.submit(fn, prompt, context): name for name, fn in providers
-            }
-            pending_futures = set(future_to_provider)
+        # Use explicit executor (not a `with` block) so we can call shutdown(wait=False)
+        # when providers time out.  `with ThreadPoolExecutor` calls shutdown(wait=True) on
+        # __exit__, which blocks until every thread finishes — meaning a 60 s Gemini response
+        # holds up the process for 60 s even after we've logged it as a 30 s timeout.
+        executor = ThreadPoolExecutor(max_workers=3)
+        future_to_provider = {executor.submit(fn, prompt, context): name for name, fn in providers}
+        pending_futures = set(future_to_provider)
 
-            def _collect(future: object) -> None:
-                pending_futures.discard(future)
-                provider_name = future_to_provider[future]
-                try:
-                    vote = future.result(timeout=0)
-                except FuturesTimeoutError:
-                    logger.warning(
-                        "ConsensusVoter: %s timed out after %.0f s", provider_name, timeout_s
-                    )
-                    vote = AIVote(
-                        provider=provider_name,
-                        is_valid=None,
-                        error=f"timed out after {timeout_s:.0f}s",
-                    )
-                except Exception as exc:
-                    logger.exception("ConsensusVoter: %s raised unexpected error", provider_name)
-                    vote = AIVote(provider=provider_name, is_valid=None, error=str(exc))
-                votes.append(vote)
+        def _collect(future: object) -> None:
+            pending_futures.discard(future)
+            provider_name = future_to_provider[future]
+            try:
+                vote = future.result(timeout=0)
+            except FuturesTimeoutError:
+                logger.warning(
+                    "ConsensusVoter: %s timed out after %.0f s", provider_name, timeout_s
+                )
+                vote = AIVote(
+                    provider=provider_name,
+                    is_valid=None,
+                    error=f"timed out after {timeout_s:.0f}s",
+                )
+            except Exception as exc:
+                logger.exception("ConsensusVoter: %s raised unexpected error", provider_name)
+                vote = AIVote(provider=provider_name, is_valid=None, error=str(exc))
+            votes.append(vote)
 
+        try:
             try:
                 for future in as_completed(future_to_provider, timeout=timeout_s + 5):
                     _collect(future)
@@ -309,6 +312,11 @@ class ConsensusVoter:
                             error=f"timed out after {timeout_s:.0f}s",
                         )
                     )
+        finally:
+            # Abandon any still-running threads rather than blocking until they finish.
+            # cancel_futures=True cancels queued-but-not-started futures; already-running
+            # threads are detached (they complete eventually and are GC'd).
+            executor.shutdown(wait=False, cancel_futures=True)
 
         # Sort for deterministic ordering in tests / logs
         votes.sort(key=lambda v: v.provider)
