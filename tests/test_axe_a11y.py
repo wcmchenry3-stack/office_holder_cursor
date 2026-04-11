@@ -32,7 +32,9 @@ def playwright_instance():
 @pytest.fixture()
 def page(playwright_instance):
     browser = playwright_instance.chromium.launch()
-    ctx = browser.new_context()
+    # bypass_csp=True lets axe-core load from the CDN without being blocked by
+    # the app's Content-Security-Policy (acceptable for test contexts only).
+    ctx = browser.new_context(bypass_csp=True)
     page = ctx.new_page()
     yield page
     browser.close()

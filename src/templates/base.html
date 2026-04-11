@@ -13,7 +13,7 @@
   <link rel="stylesheet" href="/static/css/theme.css">
   <!-- Dark mode pre-paint: read preference before first paint to avoid flash -->
   <script>
-    (function() {
+    (function () {
       try {
         if (localStorage.getItem('rulersai_theme') === 'dark') {
           document.documentElement.classList.add('dark');
@@ -30,110 +30,272 @@
   <script>
   // ---------------------------------------------------------------------------
   // Audio mute — WCAG 1.4.2 Audio Control
-  // Job completion sound plays 5 tones over ~4.5 s (exceeds 3-second threshold).
-  // Mute preference persists in localStorage under 'rulersai_sound_muted'.
   // ---------------------------------------------------------------------------
-  (function() {
-    try {
-      window._soundMuted = localStorage.getItem('rulersai_sound_muted') === 'true';
-    } catch (e) {
-      window._soundMuted = false;
-    }
+  (function () {
+    try { window._soundMuted = localStorage.getItem('rulersai_sound_muted') === 'true'; }
+    catch (e) { window._soundMuted = false; }
   })();
 
-  window.playJobCompleteSound = function() {
-    if (window._soundMuted) return; // respect mute preference (WCAG 1.4.2)
+  window.playJobCompleteSound = function () {
+    if (window._soundMuted) return;
     try {
       var C = window.AudioContext || window.webkitAudioContext;
       if (!C) return;
       var ctx = new C();
-      var t0 = ctx.currentTime;
-      var interval = 1;
+      var t0 = ctx.currentTime, interval = 1;
       for (var i = 0; i < 5; i++) {
-        var osc = ctx.createOscillator();
-        var gain = ctx.createGain();
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.frequency.value = 800;
-        osc.type = 'sine';
+        var osc = ctx.createOscillator(), gain = ctx.createGain();
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.frequency.value = 800; osc.type = 'sine';
         gain.gain.setValueAtTime(0.2, t0 + i * interval);
         gain.gain.exponentialRampToValueAtTime(0.01, t0 + i * interval + 0.5);
-        osc.start(t0 + i * interval);
-        osc.stop(t0 + i * interval + 0.5);
+        osc.start(t0 + i * interval); osc.stop(t0 + i * interval + 0.5);
       }
     } catch (e) {}
   };
 
-  window._toggleSound = function() {
+  window._toggleSound = function () {
     window._soundMuted = !window._soundMuted;
     try { localStorage.setItem('rulersai_sound_muted', window._soundMuted); } catch (e) {}
     var btn = document.getElementById('muteBtn');
     if (!btn) return;
-    if (window._soundMuted) {
-      btn.setAttribute('aria-pressed', 'true');
-      btn.setAttribute('aria-label', 'Unmute completion sound');
-      var icon = btn.querySelector('.material-symbols-outlined');
-      if (icon) icon.textContent = 'volume_off';
-    } else {
-      btn.setAttribute('aria-pressed', 'false');
-      btn.setAttribute('aria-label', 'Mute completion sound');
-      var icon = btn.querySelector('.material-symbols-outlined');
-      if (icon) icon.textContent = 'volume_up';
-    }
+    var muted = window._soundMuted;
+    btn.setAttribute('aria-pressed', muted ? 'true' : 'false');
+    btn.setAttribute('aria-label', muted ? 'Unmute completion sound' : 'Mute completion sound');
+    var icon = btn.querySelector('.material-symbols-outlined');
+    if (icon) icon.textContent = muted ? 'volume_off' : 'volume_up';
+  };
+
+  // ---------------------------------------------------------------------------
+  // Dark mode toggle
+  // ---------------------------------------------------------------------------
+  window._darkMode = document.documentElement.classList.contains('dark');
+
+  window._toggleDarkMode = function () {
+    window._darkMode = !window._darkMode;
+    document.documentElement.classList.toggle('dark', window._darkMode);
+    try { localStorage.setItem('rulersai_theme', window._darkMode ? 'dark' : 'light'); } catch (e) {}
+    var btn = document.getElementById('darkModeBtn');
+    if (!btn) return;
+    var dark = window._darkMode;
+    btn.setAttribute('aria-pressed', dark ? 'true' : 'false');
+    btn.setAttribute('aria-label', dark ? 'Switch to light mode' : 'Switch to dark mode');
+    var icon = btn.querySelector('.material-symbols-outlined');
+    if (icon) icon.textContent = dark ? 'light_mode' : 'dark_mode';
   };
 
   // ---------------------------------------------------------------------------
   // window.announce() — aria-live helper (WCAG 4.1.3 Status Messages)
-  // All JS status updates must use this function; never update arbitrary divs.
-  // See docs/conventions.md § Accessibility — JS Contracts.
+  // All JS status updates must use this. See docs/conventions.md.
   // ---------------------------------------------------------------------------
-  window.announce = function(message, priority) {
+  window.announce = function (message, priority) {
     var id = (priority === 'assertive') ? 'live-assertive' : 'live-polite';
     var region = document.getElementById(id);
     if (!region) return;
-    // Clear first so the same string re-triggers announcement in screen readers.
     region.textContent = '';
-    setTimeout(function() { region.textContent = message; }, 50);
+    setTimeout(function () { region.textContent = message; }, 50);
   };
 
-  // Apply mute button state once DOM is ready
-  document.addEventListener('DOMContentLoaded', function() {
-    var btn = document.getElementById('muteBtn');
-    if (btn && window._soundMuted) {
-      btn.setAttribute('aria-pressed', 'true');
-      btn.setAttribute('aria-label', 'Unmute completion sound');
-      var icon = btn.querySelector('.material-symbols-outlined');
+  document.addEventListener('DOMContentLoaded', function () {
+    // Sync mute button to persisted state
+    var muteBtn = document.getElementById('muteBtn');
+    if (muteBtn && window._soundMuted) {
+      muteBtn.setAttribute('aria-pressed', 'true');
+      muteBtn.setAttribute('aria-label', 'Unmute completion sound');
+      var icon = muteBtn.querySelector('.material-symbols-outlined');
       if (icon) icon.textContent = 'volume_off';
+    }
+    // Sync dark mode button to persisted state
+    var darkBtn = document.getElementById('darkModeBtn');
+    if (darkBtn && window._darkMode) {
+      darkBtn.setAttribute('aria-pressed', 'true');
+      darkBtn.setAttribute('aria-label', 'Switch to light mode');
+      var icon = darkBtn.querySelector('.material-symbols-outlined');
+      if (icon) icon.textContent = 'light_mode';
     }
   });
   </script>
 
-  <nav aria-label="Primary navigation">
-    <ul>
-      <li><a href="/offices">Offices</a></li>
-      <li><a href="/reports">Reports</a></li>
-      <li><a href="/operations">Operations</a></li>
-      <li><a href="/refs">Reference data</a></li>
+  <!-- =====================================================================
+       Top App Bar  (role=banner, sticky, h-16)
+       ===================================================================== -->
+  <header role="banner" class="top-bar">
+    <!-- Logo -->
+    <a href="/" class="top-bar-logo" aria-label="RulersAI home">
+      <img src="/static/images/rulersai-icon.png" alt="" width="28" height="28" aria-hidden="true">
+      <span class="top-bar-wordmark">RulersAI</span>
+    </a>
+
+    <!-- Global search -->
+    <div role="search" class="top-bar-search">
+      <span class="material-symbols-outlined" aria-hidden="true">search</span>
+      <input type="search"
+             autocomplete="off"
+             aria-label="Search offices, individuals, or research"
+             placeholder="Search…">
+    </div>
+
+    <!-- Icon actions -->
+    <div class="top-bar-actions">
+      <!-- Sound mute toggle (WCAG 1.4.2) -->
+      <button id="muteBtn"
+              type="button"
+              class="btn-icon"
+              onclick="window._toggleSound()"
+              aria-label="Mute completion sound"
+              aria-pressed="false">
+        <span class="material-symbols-outlined" aria-hidden="true">volume_up</span>
+      </button>
+
+      <!-- Dark mode toggle -->
+      <button id="darkModeBtn"
+              type="button"
+              class="btn-icon"
+              onclick="window._toggleDarkMode()"
+              aria-label="Switch to dark mode"
+              aria-pressed="false">
+        <span class="material-symbols-outlined" aria-hidden="true">dark_mode</span>
+      </button>
+
+      <!-- User avatar — use scope dict directly so tests without SessionMiddleware don't error -->
+      {% set _session = request.scope.get('session', {}) %}
+      {% set _pic = _session.get('user_picture', '') %}
+      {% set _name = _session.get('user_name', '') %}
+      <img src="{{ _pic or '/static/images/rulersai-icon.png' }}"
+           alt="{{ _name or 'User' }}"
+           class="user-avatar"
+           width="32"
+           height="32">
+    </div>
+  </header>
+
+  <!-- =====================================================================
+       Sidebar  (fixed, w-64, below top bar)
+       ===================================================================== -->
+  {% set _path = request.url.path %}
+  <nav aria-label="Primary navigation" class="sidebar">
+
+    <!-- Logo area -->
+    <div class="sidebar-logo" aria-hidden="true">
+      <img src="/static/images/rulersai-icon.png" alt="" width="28" height="28">
+      <div>
+        <div class="sidebar-wordmark">RulersAI</div>
+        <div class="sidebar-tagline">Institutional Intelligence</div>
+      </div>
+    </div>
+
+    <!-- Nav items -->
+    <ul class="sidebar-nav" role="list">
+      <li>
+        <a href="/operations"
+           class="sidebar-nav-link"
+           {% if _path == '/operations' or _path == '/' %}aria-current="page"{% endif %}>
+          <span class="material-symbols-outlined" aria-hidden="true">dashboard</span>
+          Dashboard
+        </a>
+      </li>
+      <li>
+        <a href="/offices"
+           class="sidebar-nav-link"
+           {% if _path.startswith('/offices') %}aria-current="page"{% endif %}>
+          <span class="material-symbols-outlined" aria-hidden="true">domain</span>
+          Offices
+        </a>
+      </li>
+      <li>
+        <a href="/run"
+           class="sidebar-nav-link"
+           {% if _path.startswith('/run') %}aria-current="page"{% endif %}>
+          <span class="material-symbols-outlined" aria-hidden="true">terminal</span>
+          Command Center
+        </a>
+      </li>
+      <li>
+        <a href="/data/individuals"
+           class="sidebar-nav-link"
+           {% if _path.startswith('/data/individuals') %}aria-current="page"{% endif %}>
+          <span class="material-symbols-outlined" aria-hidden="true">groups</span>
+          Data
+        </a>
+      </li>
+      <li>
+        <a href="/data/wiki-drafts"
+           class="sidebar-nav-link"
+           {% if _path.startswith('/data/wiki-drafts') %}aria-current="page"{% endif %}>
+          <span class="material-symbols-outlined" aria-hidden="true">description</span>
+          Wiki Drafts
+        </a>
+      </li>
+      <li>
+        <a href="/gemini-research"
+           class="sidebar-nav-link"
+           {% if _path.startswith('/gemini-research') %}aria-current="page"{% endif %}>
+          <span class="material-symbols-outlined" aria-hidden="true">person_search</span>
+          Deep Research
+        </a>
+      </li>
+      <li>
+        <a href="/ai-offices"
+           class="sidebar-nav-link"
+           {% if _path.startswith('/ai-offices') %}aria-current="page"{% endif %}>
+          <span class="material-symbols-outlined" aria-hidden="true">auto_awesome</span>
+          AI Creation
+        </a>
+      </li>
+      <li>
+        <a href="/refs"
+           class="sidebar-nav-link"
+           {% if _path.startswith('/refs') %}aria-current="page"{% endif %}>
+          <span class="material-symbols-outlined" aria-hidden="true">database</span>
+          Reference Data
+        </a>
+      </li>
+      <li>
+        <a href="/reports"
+           class="sidebar-nav-link"
+           {% if _path.startswith('/reports') %}aria-current="page"{% endif %}>
+          <span class="material-symbols-outlined" aria-hidden="true">analytics</span>
+          Reports
+        </a>
+      </li>
+      <li>
+        <a href="/data/scheduled-jobs"
+           class="sidebar-nav-link"
+           {% if _path.startswith('/data/scheduled') %}aria-current="page"{% endif %}>
+          <span class="material-symbols-outlined" aria-hidden="true">settings</span>
+          System
+        </a>
+      </li>
     </ul>
-    <!-- Audio mute toggle — positioned in top bar in #447 (Layout Shell) -->
-    <button id="muteBtn"
-            type="button"
-            class="btn-icon"
-            onclick="window._toggleSound()"
-            aria-label="Mute completion sound"
-            aria-pressed="false">
-      <span class="material-symbols-outlined" aria-hidden="true">volume_up</span>
-    </button>
+
+    <!-- Footer: CTA + Support + Logout (WCAG 3.2.6 — consistent position) -->
+    <div class="sidebar-footer">
+      <a href="/offices/new" class="sidebar-cta">New Office</a>
+      <a href="https://github.com/wcmchenry3-stack/office_holder_cursor/issues"
+         class="sidebar-footer-link"
+         target="_blank"
+         rel="noopener noreferrer">
+        <span class="material-symbols-outlined" aria-hidden="true">help</span>
+        Support
+      </a>
+      <a href="/logout" class="sidebar-footer-link">
+        <span class="material-symbols-outlined" aria-hidden="true">logout</span>
+        Logout
+      </a>
+    </div>
   </nav>
 
-  <main id="main-content" class="container{% block container_class %}{% endblock %}">
+  <!-- =====================================================================
+       Main content
+       ===================================================================== -->
+  {# container_class block kept for backward compat — no longer applied to main #}
+  {% block container_class %}{% endblock %}
+  <main id="main-content" class="main-content">
     {% block content %}{% endblock %}
-    <p class="storage-note"><small>All data (offices, parties, individuals, office terms) is saved locally in <code>data/office_holder.db</code> and persists after you close the browser or restart the app.</small></p>
   </main>
 
   <!-- aria-live regions — screen reader announcement endpoints (WCAG 4.1.3) -->
-  <!-- Write to these via window.announce(); never update arbitrary divs directly. -->
-  <div id="live-polite"    aria-live="polite"    aria-atomic="true" class="sr-only"></div>
-  <div id="live-assertive" aria-live="assertive"  aria-atomic="true" class="sr-only"></div>
+  <div id="live-polite"    aria-live="polite"   aria-atomic="true" class="sr-only"></div>
+  <div id="live-assertive" aria-live="assertive" aria-atomic="true" class="sr-only"></div>
 </body>
 </html>
