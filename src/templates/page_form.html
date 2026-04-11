@@ -1,11 +1,19 @@
 {% extends "base.html" %}
-{% block title %}{{ "Edit" if office else "New" }} office – Office Holder{% endblock %}
+{% block title %}{{ "Edit" if office else "New" }} Office — RulersAI{% endblock %}
 {% block container_class %} container-wide{% endblock %}
 {% block content %}
 {% if form_template == "page_form" %}
 <p role="status" style="background:var(--bg2, #f0f0f0); border:1px solid var(--border, #ccc); border-radius:4px; padding:0.35rem 0.75rem; margin-bottom:1rem; font-size:0.9rem;">Form: <strong>page_form</strong> (template: page_form.html)</p>
 {% endif %}
-<p class="form-note" style="margin-bottom:1rem;">{{ "Edit" if office else "New" }} office</p>
+<div class="page-header" style="margin-bottom:1rem;">
+  <div class="page-header-icon">
+    <span class="material-symbols-outlined" aria-hidden="true">{% if office %}edit{% else %}add_circle{% endif %}</span>
+  </div>
+  <div>
+    <h1 class="page-header-title">{{ "Edit" if office else "New" }} Office</h1>
+    <p class="page-header-desc">{% if office %}{{ office.name or 'Edit office configuration.' }}{% else %}Create a new office configuration.{% endif %}</p>
+  </div>
+</div>
 {% if office and (nav_prev_id or nav_next_id) %}
 {% set _nav_part = "nav_ids=" ~ nav_ids if nav_ids else "" %}
 {% set _filter_part = list_return_query if list_return_query is defined and list_return_query else "" %}
@@ -292,13 +300,13 @@
   {% if office and nav_ids %}<input type="hidden" name="nav_ids" value="{{ nav_ids }}">{% endif %}
   {% if office and list_return_query is defined and list_return_query %}<input type="hidden" name="list_return_query" value="{{ list_return_query }}">{% endif %}
 
-  <h1>Page</h1>
+  <h2>Page</h2>
   <p class="form-note">Source page (URL and location).</p>
-  <div class="form-group"><label>URL</label><input type="url" name="url" value="{{ office.url if office else '' }}" required placeholder="https://en.wikipedia.org/wiki/..."></div>
+  <div class="form-group"><label for="urlInput">URL</label><input type="url" id="urlInput" name="url" value="{{ office.url if office else '' }}" required aria-required="true" placeholder="https://en.wikipedia.org/wiki/..."></div>
   <div class="form-row">
     <div class="form-group">
-      <label>Country</label>
-      <select name="country_id" id="countryId" required>
+      <label for="countryId">Country</label>
+      <select name="country_id" id="countryId" required aria-required="true">
         <option value="">— Select country —</option>
         {% for c in countries %}
         <option value="{{ c.id }}" {% if office and office.country_id == c.id %}selected{% endif %}>{{ c.name }}</option>
@@ -306,7 +314,7 @@
       </select>
     </div>
     <div class="form-group">
-      <label>State / Province / Territory</label>
+      <label for="stateId">State / Province / Territory</label>
       <select name="state_id" id="stateId">
         <option value="">— None —</option>
         {% for s in states %}
@@ -315,7 +323,7 @@
       </select>
     </div>
     <div class="form-group">
-      <label>City (optional)</label>
+      <label for="cityId">City (optional)</label>
       <select name="city_id" id="cityId">
         <option value="">— None —</option>
       </select>
@@ -323,7 +331,7 @@
   </div>
   <div class="form-row">
     <div class="form-group">
-      <label>Level</label>
+      <label for="levelId">Level</label>
       <select name="level_id" id="levelId">
         <option value="">— None —</option>
         {% for l in levels %}
@@ -332,7 +340,7 @@
       </select>
     </div>
     <div class="form-group">
-      <label>Branch</label>
+      <label for="branchId">Branch</label>
       <select name="branch_id" id="branchId">
         <option value="">— None —</option>
         {% for b in branches %}
@@ -351,8 +359,8 @@
   <h2>Office</h2>
   <p class="form-note">Office definition on this page.</p>
   <div class="form-row">
-    <div class="form-group"><label>Department</label><input type="text" name="department" value="{{ office.department if office else '' }}"></div>
-    <div class="form-group"><label>Office name</label><input type="text" name="name" value="{{ office.name if office else '' }}" required></div>
+    <div class="form-group"><label for="deptInput">Department</label><input type="text" id="deptInput" name="department" value="{{ office.department if office else '' }}"></div>
+    <div class="form-group"><label for="officeNameInput">Office name</label><input type="text" id="officeNameInput" name="name" value="{{ office.name if office else '' }}" required aria-required="true"></div>
   </div>
   <div class="form-group checkbox-group"><label><input type="checkbox" name="enabled" value="1" {% if office and office.enabled %}checked{% endif %}> Include in runs</label></div>
   {% if office_categories is defined and office_categories %}
@@ -366,7 +374,7 @@
     </select>
   </div>
   {% endif %}
-  <div class="form-group"><label>Notes</label><input type="text" name="notes" value="{{ office.notes if office else '' }}"></div>
+  <div class="form-group"><label for="officeNotesInput">Notes</label><input type="text" id="officeNotesInput" name="notes" value="{{ office.notes if office else '' }}"></div>
   <div class="form-group" id="altLinksGroup">
     <label>Alt links</label>
     <p class="form-note">For Find date in infobox: Wikipedia paths to match in bios (e.g. /wiki/Mayor_of_Chicago). One per row; add as many as needed. Leave all empty to use the office URL only.</p>
@@ -388,17 +396,17 @@
   <h3>Table parsing</h3>
   <p class="form-note">Which table and how to parse it.</p>
   <div class="form-row">
-    <div class="form-group"><label>Table no</label><input type="number" name="table_no" value="{{ office.table_no if office else 1 }}" min="1"></div>
-    <div class="form-group"><label>Table rows (min)</label><input type="number" name="table_rows" value="{{ office.table_rows if office else 4 }}" min="1"></div>
+    <div class="form-group"><label for="tableNoInput">Table no</label><input type="number" id="tableNoInput" name="table_no" value="{{ office.table_no if office else 1 }}" min="1"></div>
+    <div class="form-group"><label for="tableRowsInput">Table rows (min)</label><input type="number" id="tableRowsInput" name="table_rows" value="{{ office.table_rows if office else 4 }}" min="1"></div>
   </div>
   <div class="form-row">
-    <div class="form-group"><label>Link column (1-based)</label><input type="number" name="link_column" value="{{ office.link_column if office else 1 }}" min="0"></div>
-    <div class="form-group" id="partyColumnGroup"><label>Party column</label><input type="number" name="party_column" id="partyColumn" value="{{ office.party_column if office else 0 }}" min="0" placeholder="—"></div>
-    <div class="form-group"><label>Term start column</label><input type="number" name="term_start_column" id="termStartColumn" value="{{ office.term_start_column if office else 4 }}" min="0"></div>
-    <div class="form-group" id="termEndColumnGroup"><label>Term end column</label><input type="number" name="term_end_column" id="termEndColumn" value="{{ office.term_end_column if office else 5 }}" min="0" placeholder="—"></div>
-    <div class="form-group" id="districtColumnGroup"><label>District column</label><input type="number" name="district_column" id="districtColumn" value="{{ office.district_column if office else 0 }}" min="0" placeholder="—"></div>
-    <div class="form-group"><label>Filter column (optional)</label><input type="number" name="filter_column" value="{{ office.filter_column if office else 0 }}" min="0"></div>
-    <div class="form-group"><label>Filter criteria (optional)</label><input type="text" name="filter_criteria" value="{{ office.filter_criteria if office else "" }}" placeholder="e.g. Associate Justice"></div>
+    <div class="form-group"><label for="linkColumnInput">Link column (1-based)</label><input type="number" id="linkColumnInput" name="link_column" value="{{ office.link_column if office else 1 }}" min="0"></div>
+    <div class="form-group" id="partyColumnGroup"><label for="partyColumn">Party column</label><input type="number" name="party_column" id="partyColumn" value="{{ office.party_column if office else 0 }}" min="0" placeholder="—"></div>
+    <div class="form-group"><label for="termStartColumn">Term start column</label><input type="number" name="term_start_column" id="termStartColumn" value="{{ office.term_start_column if office else 4 }}" min="0"></div>
+    <div class="form-group" id="termEndColumnGroup"><label for="termEndColumn">Term end column</label><input type="number" name="term_end_column" id="termEndColumn" value="{{ office.term_end_column if office else 5 }}" min="0" placeholder="—"></div>
+    <div class="form-group" id="districtColumnGroup"><label for="districtColumn">District column</label><input type="number" name="district_column" id="districtColumn" value="{{ office.district_column if office else 0 }}" min="0" placeholder="—"></div>
+    <div class="form-group"><label for="filterColumnInput">Filter column (optional)</label><input type="number" id="filterColumnInput" name="filter_column" value="{{ office.filter_column if office else 0 }}" min="0"></div>
+    <div class="form-group"><label for="filterCriteriaInput">Filter criteria (optional)</label><input type="text" id="filterCriteriaInput" name="filter_criteria" value="{{ office.filter_criteria if office else "" }}" placeholder="e.g. Associate Justice"></div>
   </div>
   <div class="form-row">
     <div class="form-group checkbox-group">
@@ -412,7 +420,7 @@
       <p class="form-note">Do not extract party; store null. Party column is grayed out — do not enter.</p>
     </div>
     <div class="form-group" id="districtModeGroup">
-      <label>District</label>
+      <label for="districtMode">District</label>
       <select name="district_mode" id="districtMode">
         <option value="column" {% if office and not office.district_ignore and not office.district_at_large %}selected{% endif %}{% if not office %} selected{% endif %}>Use district column</option>
         <option value="at_large" {% if office and office.district_at_large %}selected{% endif %}>At-Large (ignore column)</option>
@@ -431,8 +439,8 @@
       <p class="form-note">Use when the table&apos;s link column is on the right (e.g. some senate tables).</p>
     </div>
     <div class="form-group">
-      <label>Date source</label>
-      <select name="date_source">
+      <label for="dateSourceSelect">Date source</label>
+      <select name="date_source" id="dateSourceSelect">
         <option value="not_applicable" {% if not office or (not office.find_date_in_infobox and not office.years_only) %}selected{% endif %}>Not applicable</option>
         <option value="find_date_in_infobox" {% if office and office.find_date_in_infobox %}selected{% endif %}>Find date in infobox</option>
         <option value="years_only" {% if office and office.years_only %}selected{% endif %}>Table has years only</option>
