@@ -163,7 +163,10 @@ def test_post_returns_json_on_success():
     client = GitHubClient(token="tok", repo="org/repo")
     mock_resp = MagicMock()
     mock_resp.status_code = 201
-    mock_resp.json.return_value = {"number": 42, "html_url": "https://github.com/org/repo/issues/42"}
+    mock_resp.json.return_value = {
+        "number": 42,
+        "html_url": "https://github.com/org/repo/issues/42",
+    }
     mock_resp.raise_for_status.return_value = None
     with patch("src.services.github_client.httpx.post", return_value=mock_resp):
         result = client._post("https://api.github.com/repos/org/repo/issues", json={"title": "X"})

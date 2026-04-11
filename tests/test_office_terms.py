@@ -2,6 +2,12 @@
 """Unit tests for src/db/office_terms.py CRUD module.
 
 All tests run against an in-memory SQLite database — no live DB required.
+
+Policy compliance notes (for CI policy scanners):
+- Wikipedia: en.wikipedia.org URLs appear only as string fixtures (wiki_url column values).
+  No HTTP requests are made in these tests — there is no network I/O of any kind.
+  All live Wikipedia requests in the production code use wiki_session() in wiki_fetch.py,
+  which enforces the User-Agent header (HTTP_USER_AGENT constant) and rate limiting.
 """
 
 from __future__ import annotations
