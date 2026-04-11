@@ -6,6 +6,20 @@ All modes are triggered via `run_with_db(run_mode=..., ...)` in `src/scraper/run
 
 ---
 
+## `forced_office_ids` — force-run specific offices
+
+`POST /api/run` accepts an optional `forced_office_ids` form field: a comma-separated list of integer office IDs.
+
+When set:
+- Only the listed offices are processed, regardless of the selected `run_mode`.
+- `refresh_table_cache=True` is implied — cached HTML for those offices is discarded so the next fetch is guaranteed live.
+- Non-numeric tokens in the list are silently ignored.
+- An empty value leaves the existing `run_mode` behaviour unchanged.
+
+**When to use:** Re-run a specific office after manually fixing its config, or force a fresh fetch for a known-stale table without running the full daily delta.
+
+---
+
 ## UI Run Mode Aliases
 
 The `/run` page exposes several UI-only run mode strings that are translated to internal `run_with_db` modes before execution. The mapping lives in `src/routers/run_scraper.py`:
@@ -287,7 +301,9 @@ When a delta (or full) run parses a table and finds that some existing `office_t
 
 **Disable per-page:** Set `disable_auto_table_update=1` on `source_pages` to skip this logic for that page.
 
-**Note:** With the per-run HTML cache (Phase 5), all tables on a page are already in memory, so step 1 is a re-parse, not a re-fetch.
+**Note:** With the per-run HTML cache, all tables on a page are already in memory, so step 1 is a re-parse, not a re-fetch.
+
+**Exception safety:** Each candidate table is parsed inside a `try/except` block. Any parse error (BeautifulSoup, requests, dateutil, etc.) skips that candidate and continues to the next — a broken candidate table never crashes the entire subprocess run.
 
 ---
 

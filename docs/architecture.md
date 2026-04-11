@@ -50,7 +50,7 @@ Wikipedia REST API      SQLite file
 | `/data/ai-decisions` | AI decision log across data quality, parse errors, page quality, suspect flags |
 | `/data/wiki-drafts` | Wikipedia draft proposals; list view |
 | `/data/wiki-drafts/<id>` | Draft proposal detail; submit button |
-| `/gemini-research` | Interactive Gemini+OpenAI vitals research test page |
+| `/gemini-research` | Interactive Gemini+OpenAI vitals research test page; shows the 20 most recent wiki draft proposals with links to `/data/wiki-drafts` |
 | `/ai-offices` | AI batch office creation via OpenAI |
 | `/refs` | Reference data index (countries, states, cities, levels, branches, parties, etc.) |
 | `/refs/parties` | Party CRUD |
