@@ -14,6 +14,7 @@ except ImportError:
         "src/test_ui_edit_office_playwright.py",
         "src/test_ui_offices_list_playwright.py",
         "src/test_ui_run_playwright.py",
+        "tests/test_axe_a11y.py",
     ]
 
 # Router files that match test_*.py naming but are not test modules.
