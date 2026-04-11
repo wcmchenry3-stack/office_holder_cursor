@@ -1,7 +1,15 @@
 {% extends "base.html" %}
-{% block title %}Gemini Research – Office Holder{% endblock %}
+{% block title %}Gemini Research — RulersAI{% endblock %}
 {% block content %}
-<h1>Gemini Vitals Research</h1>
+<div class="page-header">
+  <div class="page-header-icon">
+    <span class="material-symbols-outlined" aria-hidden="true">psychology</span>
+  </div>
+  <div>
+    <h1 class="page-header-title">Gemini Vitals Research</h1>
+    <p class="page-header-desc">Look up biographical vitals for an individual using Gemini AI.</p>
+  </div>
+</div>
 
 <!-- Already-researched drafts -->
 <div style="margin-bottom:2em;">
@@ -9,35 +17,35 @@
     <strong>Researched items</strong>
     <a href="/data/wiki-drafts" style="font-size:0.875rem;">View all →</a>
   </div>
-  <div id="draftsList" style="border:1px solid var(--border); border-radius:4px; overflow:hidden; background:var(--bg2);">
-    <div style="padding:0.75em 1em; color:var(--text-muted); font-size:0.875rem;">Loading…</div>
+  <div id="draftsList" style="border:1px solid var(--color-outline-variant); border-radius:4px; overflow:hidden; background:var(--color-surface-container-low);">
+    <div style="padding:0.75em 1em; color:var(--color-on-surface-variant); font-size:0.875rem;">Loading…</div>
   </div>
 </div>
 
-<p style="margin-bottom:0.75em; color:var(--text-muted); font-size:0.9rem;">To research a new individual, search below:</p>
+<p style="margin-bottom:0.75em; color:var(--color-on-surface-variant); font-size:0.9rem;">To research a new individual, search below:</p>
 
-<div style="margin-bottom:1.5em">
+<div style="margin-bottom:1.5em; position:relative;">
   <label for="searchInput"><strong>Search individual:</strong></label>
-  <input type="text" id="searchInput" placeholder="Name or wiki URL..." style="width:400px; padding:0.4em; background:var(--bg2); color:var(--text); border:1px solid var(--border);">
-  <div id="searchResults" style="border:1px solid var(--border); max-height:200px; overflow-y:auto; display:none; background:var(--bg2); color:var(--text); position:absolute; z-index:10; width:420px;"></div>
+  <input type="text" id="searchInput" placeholder="Name or wiki URL..." style="width:400px; padding:0.4em; background:var(--color-surface-container-low); color:var(--color-on-surface); border:1px solid var(--color-outline);">
+  <div id="searchResults" role="listbox" aria-label="Individual search results" style="border:1px solid var(--color-outline-variant); max-height:200px; overflow-y:auto; display:none; background:var(--color-surface-container-low); color:var(--color-on-surface); position:absolute; z-index:10; width:420px;"></div>
 </div>
 
-<div id="selectedPanel" style="display:none; margin-bottom:1.5em; padding:1em; border:1px solid var(--border); background:var(--bg2);">
+<div id="selectedPanel" style="display:none; margin-bottom:1.5em; padding:1em; border:1px solid var(--color-outline-variant); background:var(--color-surface-container-low);">
   <h3 style="margin-top:0">Selected Individual</h3>
-  <table>
-    <tr><th>ID</th><td id="selId"></td></tr>
-    <tr><th>Name</th><td id="selName"></td></tr>
-    <tr><th>Wiki URL</th><td id="selUrl"></td></tr>
-    <tr><th>Birth date</th><td id="selBirth"></td></tr>
-    <tr><th>Death date</th><td id="selDeath"></td></tr>
-    <tr><th>Living</th><td id="selLiving"></td></tr>
+  <table aria-label="Selected individual details">
+    <tr><th scope="row">ID</th><td id="selId"></td></tr>
+    <tr><th scope="row">Name</th><td id="selName"></td></tr>
+    <tr><th scope="row">Wiki URL</th><td id="selUrl"></td></tr>
+    <tr><th scope="row">Birth date</th><td id="selBirth"></td></tr>
+    <tr><th scope="row">Death date</th><td id="selDeath"></td></tr>
+    <tr><th scope="row">Living</th><td id="selLiving"></td></tr>
   </table>
   <button id="runBtn" style="margin-top:0.5em; padding:0.5em 1.5em; font-size:1em; cursor:pointer;">
     Run Gemini Research
   </button>
 </div>
 
-<div id="progressPanel" style="display:none; margin-bottom:1.5em; padding:1em; border:1px solid var(--accent); background:var(--bg3);">
+<div id="progressPanel" style="display:none; margin-bottom:1.5em; padding:1em; border:1px solid var(--color-primary); background:var(--color-surface-container);">
   <span class="spinner" aria-hidden="true" style="margin-right:0.5em;"></span>
   <strong id="progressPhase">Starting...</strong>
 </div>
@@ -46,26 +54,26 @@
 
 <div id="resultsPanel" style="display:none;">
   <h2>Gemini Research Results</h2>
-  <table id="vitalsTable">
-    <tr><th>Birth date</th><td id="resBirth"></td></tr>
-    <tr><th>Death date</th><td id="resDeath"></td></tr>
-    <tr><th>Birth place</th><td id="resBirthPlace"></td></tr>
-    <tr><th>Death place</th><td id="resDeathPlace"></td></tr>
-    <tr><th>Confidence</th><td id="resConfidence"></td></tr>
+  <table id="vitalsTable" aria-label="Gemini vitals results">
+    <tr><th scope="row">Birth date</th><td id="resBirth"></td></tr>
+    <tr><th scope="row">Death date</th><td id="resDeath"></td></tr>
+    <tr><th scope="row">Birth place</th><td id="resBirthPlace"></td></tr>
+    <tr><th scope="row">Death place</th><td id="resDeathPlace"></td></tr>
+    <tr><th scope="row">Confidence</th><td id="resConfidence"></td></tr>
   </table>
 
   <h3>Sources</h3>
-  <table id="sourcesTable">
-    <thead><tr><th>URL</th><th>Type</th><th>Notes</th></tr></thead>
+  <table id="sourcesTable" aria-label="Research sources">
+    <thead><tr><th scope="col">URL</th><th scope="col">Type</th><th scope="col">Notes</th></tr></thead>
     <tbody id="sourcesBody"></tbody>
   </table>
 
   <h3>Biographical Notes</h3>
-  <pre id="resBioNotes" style="background:var(--bg2); color:var(--text); padding:1em; white-space:pre-wrap; border:1px solid var(--border); max-height:300px; overflow-y:auto;"></pre>
+  <pre id="resBioNotes" style="background:var(--color-surface-container-low); color:var(--color-on-surface); padding:1em; white-space:pre-wrap; border:1px solid var(--color-outline-variant); max-height:300px; overflow-y:auto;"></pre>
 
   <div id="articlePanel" style="display:none;">
     <h2>Wikipedia Article Draft</h2>
-    <pre id="resArticle" style="background:var(--bg2); color:var(--text); padding:1em; white-space:pre-wrap; border:1px solid var(--border); max-height:500px; overflow-y:auto;"></pre>
+    <pre id="resArticle" style="background:var(--color-surface-container-low); color:var(--color-on-surface); padding:1em; white-space:pre-wrap; border:1px solid var(--color-outline-variant); max-height:500px; overflow-y:auto;"></pre>
   </div>
 </div>
 
@@ -73,15 +81,15 @@
   .spinner {
     display: inline-block;
     width: 14px; height: 14px;
-    border: 2px solid #ccc;
-    border-top-color: #2196f3;
+    border: 2px solid var(--color-outline-variant);
+    border-top-color: var(--color-primary);
     border-radius: 50%;
     animation: spin 0.6s linear infinite;
     vertical-align: middle;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
-  #searchResults div { padding: 0.4em 0.6em; cursor: pointer; border-bottom: 1px solid var(--border); color: var(--text); }
-  #searchResults div:hover { background: var(--bg3); }
+  #searchResults div { padding: 0.4em 0.6em; cursor: pointer; border-bottom: 1px solid var(--color-outline-variant); color: var(--color-on-surface); }
+  #searchResults div:hover { background: var(--color-surface-container); }
   #vitalsTable th, #sourcesTable th { text-align: left; padding-right: 1em; }
 </style>
 
@@ -111,10 +119,10 @@
         const data = await r.json();
         if (!data.length) { searchResults.style.display = 'none'; return; }
         searchResults.innerHTML = data.map(d =>
-          `<div data-id="${d.id}" data-json='${JSON.stringify(d).replace(/'/g,"&#39;")}'>`
+          `<div role="option" data-id="${d.id}" data-json='${JSON.stringify(d).replace(/'/g,"&#39;")}'>`
           + `<strong>${window.esc(d.full_name || '(no name)')}</strong> `
           + `<small>(ID: ${d.id})</small> `
-          + `<small style="color:var(--text-muted)">${window.esc((d.wiki_url || '').substring(0,50))}</small>`
+          + `<small style="color:var(--color-on-surface-variant)">${window.esc((d.wiki_url || '').substring(0,50))}</small>`
           + `</div>`
         ).join('');
         searchResults.style.display = 'block';
@@ -226,24 +234,29 @@
       .then(drafts => {
         const el = document.getElementById('draftsList');
         if (!drafts.length) {
-          el.innerHTML = '<div style="padding:0.75em 1em; color:var(--text-muted); font-size:0.875rem;">No researched items yet.</div>';
+          el.innerHTML = '<div style="padding:0.75em 1em; color:var(--color-on-surface-variant); font-size:0.875rem;">No researched items yet.</div>';
           return;
         }
-        const STATUS_COLORS = { pending: 'var(--accent)', submitted: '#2196f3', published: 'var(--success)', rejected: 'var(--danger)' };
+        const STATUS_COLORS = {
+          pending:   'var(--color-on-surface-variant)',
+          submitted: 'var(--color-primary)',
+          published: 'var(--color-success)',
+          rejected:  'var(--color-error)'
+        };
         el.innerHTML = drafts.slice(0, 20).map(d =>
-          `<a href="/data/wiki-drafts/${d.id}" style="display:flex; align-items:center; gap:0.75em; padding:0.6em 1em; border-bottom:1px solid var(--border); text-decoration:none; color:var(--text);">`
+          `<a href="/data/wiki-drafts/${d.id}" style="display:flex; align-items:center; gap:0.75em; padding:0.6em 1em; border-bottom:1px solid var(--color-outline-variant); text-decoration:none; color:var(--color-on-surface);">`
           + `<span style="flex:1; font-weight:500;">${window.esc(d.full_name || '(unknown)')}</span>`
-          + `<span style="font-size:0.8rem; color:${STATUS_COLORS[d.status] || 'var(--text-muted)'}; min-width:5em; text-align:right;">${window.esc(d.status)}</span>`
-          + `<span style="font-size:0.8rem; color:var(--text-muted);">${window.esc((d.created_at || '').slice(0, 10))}</span>`
+          + `<span style="font-size:0.8rem; color:${STATUS_COLORS[d.status] || 'var(--color-on-surface-variant)'}; min-width:5em; text-align:right;">${window.esc(d.status)}</span>`
+          + `<span style="font-size:0.8rem; color:var(--color-on-surface-variant);">${window.esc((d.created_at || '').slice(0, 10))}</span>`
           + `</a>`
         ).join('');
         if (drafts.length > 20) {
-          el.innerHTML += `<div style="padding:0.5em 1em; font-size:0.8rem; color:var(--text-muted);">…and ${drafts.length - 20} more — <a href="/data/wiki-drafts">view all</a></div>`;
+          el.innerHTML += `<div style="padding:0.5em 1em; font-size:0.8rem; color:var(--color-on-surface-variant);">…and ${drafts.length - 20} more — <a href="/data/wiki-drafts">view all</a></div>`;
         }
       })
       .catch(() => {
         document.getElementById('draftsList').innerHTML =
-          '<div style="padding:0.75em 1em; color:var(--danger); font-size:0.875rem;">Failed to load drafts.</div>';
+          '<div style="padding:0.75em 1em; color:var(--color-error); font-size:0.875rem;">Failed to load drafts.</div>';
       });
   })();
 
