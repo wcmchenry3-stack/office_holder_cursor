@@ -58,14 +58,15 @@ _LOCALES_DIR = Path(__file__).resolve().parent / "locales"
 def get_translations(locale: str) -> Translations:
     """Load and cache a Babel Translations object for *locale*.
 
-    Falls back to NullTranslations (returns source strings unchanged) if the
-    compiled .mo file does not exist yet — safe for development and CI runs
-    before ``pybabel compile`` has been executed.
+    Normalizes locale codes to use underscores (e.g. ``fr-CA`` → ``fr_CA``)
+    so directory names match Babel's convention while HTTP locale tags use
+    hyphens.  Falls back to NullTranslations if the compiled .mo file does
+    not exist yet — safe for development and CI runs before ``pybabel compile``
+    has been executed.
     """
+    babel_locale = locale.replace("-", "_")
     try:
-        t = Translations.load(str(_LOCALES_DIR), [locale])
-        # Translations.load() returns a NullTranslations when no catalog is
-        # found; check by inspecting the class name to distinguish them.
+        t = Translations.load(str(_LOCALES_DIR), [babel_locale])
         return t
     except Exception:
         return Translations()

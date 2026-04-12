@@ -245,6 +245,7 @@ def _make_test_app(tmp_path: Path):
         return {"unsynced": False}
 
     test_templates.env.globals["git_sync_status"] = _fake_git_sync
+    test_templates.env.globals["_"] = lambda s: s
 
     with patch("src.routers._deps.templates", test_templates):
         with patch("src.routers.ai_decisions.templates", test_templates):
@@ -273,6 +274,7 @@ class TestAiDecisionsRouter:
             tdir = Path(__file__).resolve().parent.parent / "src" / "templates"
             tmpl = Jinja2Templates(directory=str(tdir))
             tmpl.env.globals["git_sync_status"] = lambda: {"unsynced": False}
+            tmpl.env.globals["_"] = lambda s: s
 
             with patch("src.routers.ai_decisions.templates", tmpl):
                 app.include_router(router_mod.router)
@@ -292,6 +294,7 @@ class TestAiDecisionsRouter:
         tdir = Path(__file__).resolve().parent.parent / "src" / "templates"
         tmpl = Jinja2Templates(directory=str(tdir))
         tmpl.env.globals["git_sync_status"] = lambda: {"unsynced": False}
+        tmpl.env.globals["_"] = lambda s: s
 
         with (
             patch("src.db.ai_decisions.list_ai_decisions", return_value=[]) as mock_list,
@@ -318,6 +321,7 @@ class TestAiDecisionsRouter:
         tdir = Path(__file__).resolve().parent.parent / "src" / "templates"
         tmpl = Jinja2Templates(directory=str(tdir))
         tmpl.env.globals["git_sync_status"] = lambda: {"unsynced": False}
+        tmpl.env.globals["_"] = lambda s: s
 
         with (
             patch("src.db.ai_decisions.list_ai_decisions", return_value=[]) as mock_list,

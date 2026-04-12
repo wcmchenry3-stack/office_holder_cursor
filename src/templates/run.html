@@ -1,101 +1,101 @@
 {# Wikipedia requests use a descriptive User-Agent header per Wikimedia API etiquette. #}
 {% extends "base.html" %}
-{% block title %}Run Scraper — RulersAI{% endblock %}
+{% block title %}{{ _('Run Scraper') }} — RulersAI{% endblock %}
 {% block content %}
 <div class="page-header">
   <div class="page-header-icon">
     <span class="material-symbols-outlined" aria-hidden="true">play_circle</span>
   </div>
   <div>
-    <h1 class="page-header-title">Run Scraper</h1>
-    <p class="page-header-desc">Launch scraper jobs and monitor progress.</p>
+    <h1 class="page-header-title">{{ _('Run Scraper') }}</h1>
+    <p class="page-header-desc">{{ _('Launch scraper jobs and monitor progress.') }}</p>
   </div>
 </div>
 <form id="runForm" method="post" action="/api/run">
   <div class="form-group">
-    <label for="runMode">Run</label>
+    <label for="runMode">{{ _('Run') }}</label>
     <select name="run_mode" id="runMode">
-      <option value="full">Full run</option>
-      <option value="delta" selected>Delta run</option>
-      <option value="delta_live">Delta run + live person update</option>
-      <option value="full_no_bio">Full run (no bio)</option>
-      <option value="delta_no_bio">Delta run (no bio)</option>
-      <option value="full_no_bio_refresh">Full run (no bio, refresh cache)</option>
-      <option value="delta_no_bio_refresh">Delta run (no bio, refresh cache)</option>
-      <option value="bios_only">Bios only (update all individuals)</option>
-      <option value="single_bio">Re-run bio for one individual</option>
-      <option value="populate_category_terms">Populate terms for office category</option>
-      <option value="selected_bios_by_category">Run bios for selected office category</option>
+      <option value="full">{{ _('Full run') }}</option>
+      <option value="delta" selected>{{ _('Delta run') }}</option>
+      <option value="delta_live">{{ _('Delta run + live person update') }}</option>
+      <option value="full_no_bio">{{ _('Full run (no bio)') }}</option>
+      <option value="delta_no_bio">{{ _('Delta run (no bio)') }}</option>
+      <option value="full_no_bio_refresh">{{ _('Full run (no bio, refresh cache)') }}</option>
+      <option value="delta_no_bio_refresh">{{ _('Delta run (no bio, refresh cache)') }}</option>
+      <option value="bios_only">{{ _('Bios only (update all individuals)') }}</option>
+      <option value="single_bio">{{ _('Re-run bio for one individual') }}</option>
+      <option value="populate_category_terms">{{ _('Populate terms for office category') }}</option>
+      <option value="selected_bios_by_category">{{ _('Run bios for selected office category') }}</option>
     </select>
   </div>
   <div class="form-group" id="individualRefGroup" style="display:none;">
-    <label for="individualRef">Individual (ID or Wikipedia URL)</label>
-    <input type="text" name="individual_ref" id="individualRef" placeholder="e.g. 42 or https://en.wikipedia.org/wiki/John_Doe">
+    <label for="individualRef">{{ _('Individual (ID or Wikipedia URL)') }}</label>
+    <input type="text" name="individual_ref" id="individualRef" placeholder="{{ _('e.g. 42 or /wiki/John_Doe') }}">
   </div>
   <div class="form-group" id="officeCategoryGroup" style="display:none;">
-    <label for="officeCategoryId">Office category</label>
+    <label for="officeCategoryId">{{ _('Office category') }}</label>
     <select name="office_category_id" id="officeCategoryId">
-      <option value="">Select office category</option>
+      <option value="">{{ _('Select office category') }}</option>
       {% for oc in office_categories %}
       <option value="{{ oc.id }}">{{ oc.name }}</option>
       {% endfor %}
     </select>
   </div>
   <div class="form-group checkbox-group" id="livingOnlyGroup" style="display:none;">
-    <label><input type="checkbox" name="living_only" value="1" id="livingOnly"> Only individuals with no death date</label>
+    <label><input type="checkbox" name="living_only" value="1" id="livingOnly"> {{ _('Only individuals with no death date') }}</label>
   </div>
   <div class="form-group checkbox-group" id="validPagePathsGroup" style="display:none;">
-    <label><input type="checkbox" name="valid_page_paths_only" value="1" id="validPagePathsOnly"> Only valid page paths (ignore blank page_path values)</label>
+    <label><input type="checkbox" name="valid_page_paths_only" value="1" id="validPagePathsOnly"> {{ _('Only valid page paths (ignore blank page_path values)') }}</label>
   </div>
   <div class="form-group" id="categoryMatchInfo" style="display:none;">
     <div id="categoryMatchText" class="muted"></div>
   </div>
   <div class="form-group checkbox-group">
-    <label><input type="checkbox" name="force_overwrite" value="1" id="forceOverwrite"> Force update</label>
+    <label><input type="checkbox" name="force_overwrite" value="1" id="forceOverwrite"> {{ _('Force update') }}</label>
   </div>
   <div class="actions">
-    <button type="submit" class="btn" id="runBtn">Run</button>
+    <button type="submit" class="btn" id="runBtn">{{ _('Run') }}</button>
   </div>
 </form>
 
 <hr>
-<h2>Force-run specific offices</h2>
-<p class="muted">Immediately re-scrape one or more offices regardless of their scheduled batch day. Always fetches fresh HTML from Wikipedia (bypasses cache).</p>
+<h2>{{ _('Force-run specific offices') }}</h2>
+<p class="muted">{{ _('Immediately re-scrape one or more offices regardless of their scheduled batch day. Always fetches fresh HTML from Wikipedia (bypasses cache).') }}</p>
 <div class="form-group">
-  <label for="forceRunIds">Office ID(s) <span class="muted">(comma-separated)</span></label>
-  <input type="text" id="forceRunIds" placeholder="e.g. 220, 314" style="width:220px;">
-  <button type="button" class="btn" id="forceRunBtn" style="margin-left:8px;">Force run</button>
+  <label for="forceRunIds">{{ _('Office ID(s)') }} <span class="muted">({{ _('comma-separated') }})</span></label>
+  <input type="text" id="forceRunIds" placeholder="{{ _('e.g. 220, 314') }}" style="width:220px;">
+  <button type="button" class="btn" id="forceRunBtn" style="margin-inline-start:8px;">{{ _('Force run') }}</button>
 </div>
 <div id="forceRunError" class="alert alert-error" style="display:none;"></div>
 
 <div id="runningPanel" class="running-panel" style="display:none;">
   <div class="running-header">
     <span class="spinner" aria-hidden="true"></span>
-    <strong>Job running</strong>
+    <strong>{{ _('Job running') }}</strong>
   </div>
   <div id="progressMessage" class="running-message"></div>
   <div id="parsingProgressGroup" class="progress-group">
     <div class="progress-row">
-      <div id="officeProgressLabel" class="progress-label">Offices: 0 / 0</div>
+      <div id="officeProgressLabel" class="progress-label">{{ _('Offices') }}: 0 / 0</div>
       <div class="progress-bar-wrap"><div id="officeProgressBar" class="progress-bar" style="width:0%"></div></div>
     </div>
     <div class="progress-row">
-      <div id="tableProgressLabel" class="progress-label">Tables: 0 / 0</div>
+      <div id="tableProgressLabel" class="progress-label">{{ _('Tables') }}: 0 / 0</div>
       <div class="progress-bar-wrap"><div id="tableProgressBar" class="progress-bar" style="width:0%"></div></div>
     </div>
     <div class="progress-row">
-      <div id="infoboxProgressLabel" class="progress-label">Infobox: 0 / 0</div>
+      <div id="infoboxProgressLabel" class="progress-label">{{ _('Infobox') }}: 0 / 0</div>
       <div class="progress-bar-wrap"><div id="infoboxProgressBar" class="progress-bar" style="width:0%"></div></div>
     </div>
   </div>
   <div id="bioProgressGroup" class="progress-group" style="display:none;">
     <div class="progress-row">
-      <div id="bioProgressLabel" class="progress-label">Bios: 0 / 0</div>
+      <div id="bioProgressLabel" class="progress-label">{{ _('Bios') }}: 0 / 0</div>
       <div class="progress-bar-wrap"><div id="bioProgressBar" class="progress-bar" style="width:0%"></div></div>
     </div>
   </div>
   <div id="progressDetail" class="running-detail"></div>
-  <button type="button" class="btn btn-secondary" id="runStopBtn" style="margin-top:0.75rem;">Stop</button>
+  <button type="button" class="btn btn-secondary" id="runStopBtn" style="margin-top:0.75rem;">{{ _('Stop') }}</button>
 </div>
 
 <div id="result" class="alert" style="display:none;"></div>

@@ -1,78 +1,78 @@
 {% extends "base.html" %}
-{% block title %}Gemini Research — RulersAI{% endblock %}
+{% block title %}{{ _('Gemini Research') }} — RulersAI{% endblock %}
 {% block content %}
 <div class="page-header">
   <div class="page-header-icon">
     <span class="material-symbols-outlined" aria-hidden="true">psychology</span>
   </div>
   <div>
-    <h1 class="page-header-title">Gemini Vitals Research</h1>
-    <p class="page-header-desc">Look up biographical vitals for an individual using Gemini AI.</p>
+    <h1 class="page-header-title">{{ _('Gemini Vitals Research') }}</h1>
+    <p class="page-header-desc">{{ _('Look up biographical vitals for an individual using Gemini AI.') }}</p>
   </div>
 </div>
 
 <!-- Already-researched drafts -->
 <div style="margin-bottom:2em;">
   <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:0.5em;">
-    <strong>Researched items</strong>
-    <a href="/data/wiki-drafts" style="font-size:0.875rem;">View all →</a>
+    <strong>{{ _('Researched items') }}</strong>
+    <a href="/data/wiki-drafts" style="font-size:0.875rem;">{{ _('View all \u2192') }}</a>
   </div>
   <div id="draftsList" style="border:1px solid var(--color-outline-variant); border-radius:4px; overflow:hidden; background:var(--color-surface-container-low);">
-    <div style="padding:0.75em 1em; color:var(--color-on-surface-variant); font-size:0.875rem;">Loading…</div>
+    <div style="padding:0.75em 1em; color:var(--color-on-surface-variant); font-size:0.875rem;">{{ _('Loading\u2026') }}</div>
   </div>
 </div>
 
-<p style="margin-bottom:0.75em; color:var(--color-on-surface-variant); font-size:0.9rem;">To research a new individual, search below:</p>
+<p style="margin-bottom:0.75em; color:var(--color-on-surface-variant); font-size:0.9rem;">{{ _('To research a new individual, search below:') }}</p>
 
 <div style="margin-bottom:1.5em; position:relative;">
-  <label for="searchInput"><strong>Search individual:</strong></label>
-  <input type="text" id="searchInput" placeholder="Name or wiki URL..." style="width:400px; padding:0.4em; background:var(--color-surface-container-low); color:var(--color-on-surface); border:1px solid var(--color-outline);">
-  <div id="searchResults" role="listbox" aria-label="Individual search results" style="border:1px solid var(--color-outline-variant); max-height:200px; overflow-y:auto; display:none; background:var(--color-surface-container-low); color:var(--color-on-surface); position:absolute; z-index:10; width:420px;"></div>
+  <label for="searchInput"><strong>{{ _('Search individual:') }}</strong></label>
+  <input type="text" id="searchInput" placeholder="{{ _('Name or wiki URL\u2026') }}" style="width:400px; padding:0.4em; background:var(--color-surface-container-low); color:var(--color-on-surface); border:1px solid var(--color-outline);">
+  <div id="searchResults" role="listbox" aria-label="{{ _('Individual search results') }}" style="border:1px solid var(--color-outline-variant); max-height:200px; overflow-y:auto; display:none; background:var(--color-surface-container-low); color:var(--color-on-surface); position:absolute; z-index:10; width:420px;"></div>
 </div>
 
 <div id="selectedPanel" style="display:none; margin-bottom:1.5em; padding:1em; border:1px solid var(--color-outline-variant); background:var(--color-surface-container-low);">
-  <h3 style="margin-top:0">Selected Individual</h3>
-  <table aria-label="Selected individual details">
-    <tr><th scope="row">ID</th><td id="selId"></td></tr>
-    <tr><th scope="row">Name</th><td id="selName"></td></tr>
-    <tr><th scope="row">Wiki URL</th><td id="selUrl"></td></tr>
-    <tr><th scope="row">Birth date</th><td id="selBirth"></td></tr>
-    <tr><th scope="row">Death date</th><td id="selDeath"></td></tr>
-    <tr><th scope="row">Living</th><td id="selLiving"></td></tr>
+  <h3 style="margin-top:0">{{ _('Selected Individual') }}</h3>
+  <table aria-label="{{ _('Selected individual details') }}">
+    <tr><th scope="row">{{ _('ID') }}</th><td id="selId"></td></tr>
+    <tr><th scope="row">{{ _('Name') }}</th><td id="selName"></td></tr>
+    <tr><th scope="row">{{ _('Wiki URL') }}</th><td id="selUrl"></td></tr>
+    <tr><th scope="row">{{ _('Birth date') }}</th><td id="selBirth"></td></tr>
+    <tr><th scope="row">{{ _('Death date') }}</th><td id="selDeath"></td></tr>
+    <tr><th scope="row">{{ _('Living') }}</th><td id="selLiving"></td></tr>
   </table>
   <button id="runBtn" style="margin-top:0.5em; padding:0.5em 1.5em; font-size:1em; cursor:pointer;">
-    Run Gemini Research
+    {{ _('Run Gemini Research') }}
   </button>
 </div>
 
 <div id="progressPanel" style="display:none; margin-bottom:1.5em; padding:1em; border:1px solid var(--color-primary); background:var(--color-surface-container);">
   <span class="spinner" aria-hidden="true" style="margin-right:0.5em;"></span>
-  <strong id="progressPhase">Starting...</strong>
+  <strong id="progressPhase">{{ _('Starting\u2026') }}</strong>
 </div>
 
 <div id="errorPanel" style="display:none; margin-bottom:1.5em;" class="alert alert-error"></div>
 
 <div id="resultsPanel" style="display:none;">
-  <h2>Gemini Research Results</h2>
-  <table id="vitalsTable" aria-label="Gemini vitals results">
-    <tr><th scope="row">Birth date</th><td id="resBirth"></td></tr>
-    <tr><th scope="row">Death date</th><td id="resDeath"></td></tr>
-    <tr><th scope="row">Birth place</th><td id="resBirthPlace"></td></tr>
-    <tr><th scope="row">Death place</th><td id="resDeathPlace"></td></tr>
-    <tr><th scope="row">Confidence</th><td id="resConfidence"></td></tr>
+  <h2>{{ _('Gemini Research Results') }}</h2>
+  <table id="vitalsTable" aria-label="{{ _('Gemini vitals results') }}">
+    <tr><th scope="row">{{ _('Birth date') }}</th><td id="resBirth"></td></tr>
+    <tr><th scope="row">{{ _('Death date') }}</th><td id="resDeath"></td></tr>
+    <tr><th scope="row">{{ _('Birth place') }}</th><td id="resBirthPlace"></td></tr>
+    <tr><th scope="row">{{ _('Death place') }}</th><td id="resDeathPlace"></td></tr>
+    <tr><th scope="row">{{ _('Confidence') }}</th><td id="resConfidence"></td></tr>
   </table>
 
-  <h3>Sources</h3>
-  <table id="sourcesTable" aria-label="Research sources">
-    <thead><tr><th scope="col">URL</th><th scope="col">Type</th><th scope="col">Notes</th></tr></thead>
+  <h3>{{ _('Sources') }}</h3>
+  <table id="sourcesTable" aria-label="{{ _('Research sources') }}">
+    <thead><tr><th scope="col">{{ _('URL') }}</th><th scope="col">{{ _('Type') }}</th><th scope="col">{{ _('Notes') }}</th></tr></thead>
     <tbody id="sourcesBody"></tbody>
   </table>
 
-  <h3>Biographical Notes</h3>
+  <h3>{{ _('Biographical Notes') }}</h3>
   <pre id="resBioNotes" style="background:var(--color-surface-container-low); color:var(--color-on-surface); padding:1em; white-space:pre-wrap; border:1px solid var(--color-outline-variant); max-height:300px; overflow-y:auto;"></pre>
 
   <div id="articlePanel" style="display:none;">
-    <h2>Wikipedia Article Draft</h2>
+    <h2>{{ _('Wikipedia Article Draft') }}</h2>
     <pre id="resArticle" style="background:var(--color-surface-container-low); color:var(--color-on-surface); padding:1em; white-space:pre-wrap; border:1px solid var(--color-outline-variant); max-height:500px; overflow-y:auto;"></pre>
   </div>
 </div>

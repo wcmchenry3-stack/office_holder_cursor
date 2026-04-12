@@ -1,4 +1,4 @@
-# RulersAI translations — pt
+# RulersAI translations — fr-CA
 # Copyright (C) 2025 RulersAI
 # This file is distributed under the same license as the RulersAI project.
 #
@@ -6,16 +6,16 @@ msgid ""
 msgstr ""
 "Project-Id-Version: RulersAI 1.Report-Msgid-Bugs-ToPOT-Creation-Date: "
 "2026-04-11 00:00+000PO-Revision-Date: YEAR-MO-DA HO:MI+ZONLast-"
-"Translator: FULL NAME <EMAIL@ADDRESSLanguage-Team: pt <LL@li.orgLanguage:"
-" pMIME-Version: 1.Content-Type: text/plain; charset=UTF-Content-Transfer-"
-"Encoding: 8bi\n"
+"Translator: FULL NAME <EMAIL@ADDRESSLanguage-Team: fr-CA "
+"<LL@li.orgLanguage: fr-CMIME-Version: 1.Content-Type: text/plain; charset"
+"=UTF-Content-Transfer-Encoding: 8bi\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
 "POT-Creation-Date: 2026-04-11 17:28-0600\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
-"Language: pt\n"
-"Language-Team: pt <LL@li.org>\n"
-"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+"Language: fr_CA\n"
+"Language-Team: fr_CA <LL@li.org>\n"
+"Plural-Forms: nplurals=2; plural=(n > 1);\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=utf-8\n"
 "Content-Transfer-Encoding: 8bit\n"

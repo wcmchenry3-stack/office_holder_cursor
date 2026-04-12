@@ -1,125 +1,125 @@
 {% extends "base.html" %}
-{% block title %}Offices — RulersAI{% endblock %}
+{% block title %}{{ _('Offices') }} — RulersAI{% endblock %}
 {% block content %}
 <div class="page-header">
   <div class="page-header-icon">
     <span class="material-symbols-outlined" aria-hidden="true">corporate_fare</span>
   </div>
   <div>
-    <h1 class="page-header-title">Offices</h1>
-    <p class="page-header-desc">Manage office configurations and scraper pages.</p>
+    <h1 class="page-header-title">{{ _('Offices') }}</h1>
+    <p class="page-header-desc">{{ _('Manage office configurations and scraper pages.') }}</p>
   </div>
 </div>
-{% if saved %}<div class="alert alert-success">Saved to local database (data/office_holder.db).</div>{% endif %}
+{% if saved %}<div class="alert alert-success">{{ _('Saved to local database (data/office_holder.db).') }}</div>{% endif %}
 {% if validation_error %}<div class="alert alert-error">{{ validation_error }}</div>{% endif %}
-{% if imported %}<div class="alert alert-success">Imported {{ imported_count }} offices to local database (data/office_holder.db).{% if imported_errors %}{{ imported_errors }} row(s) had errors.{% endif %}</div>{% endif %}
+{% if imported %}<div class="alert alert-success">{{ _('Imported %(count)s offices to local database (data/office_holder.db).') % {'count': imported_count} }}{% if imported_errors %}{{ imported_errors }} {{ _('row(s) had errors.') }}{% endif %}</div>{% endif %}
 <div class="actions">
-  <a href="/offices/new" class="btn">Add office</a>
-  <a href="/offices/import" class="btn btn-secondary">Bulk import CSV</a>
-  <a href="/api/export-config" download="office-config-export.json" class="btn btn-secondary">Export all config (JSON)</a>
-  <a href="/ai-offices" class="btn btn-secondary">AI Offices</a>
-  <a href="/gemini-research" class="btn btn-secondary">Gemini Research</a>
+  <a href="/offices/new" class="btn">{{ _('Add office') }}</a>
+  <a href="/offices/import" class="btn btn-secondary">{{ _('Bulk import CSV') }}</a>
+  <a href="/api/export-config" download="office-config-export.json" class="btn btn-secondary">{{ _('Export all config (JSON)') }}</a>
+  <a href="/ai-offices" class="btn btn-secondary">{{ _('AI Offices') }}</a>
+  <a href="/gemini-research" class="btn btn-secondary">{{ _('Gemini Research') }}</a>
   {% if not page_search_view %}
-  <button type="button" class="btn btn-secondary" id="toggleAllOn">Toggle all on</button>
-  <button type="button" class="btn btn-secondary" id="toggleAllOff">Toggle all off</button>
-  <button type="button" class="btn btn-secondary" id="testAll">Test all configs</button>
-  <button type="button" class="btn btn-secondary" id="previewAllBtn">Preview all</button>
+  <button type="button" class="btn btn-secondary" id="toggleAllOn">{{ _('Toggle all on') }}</button>
+  <button type="button" class="btn btn-secondary" id="toggleAllOff">{{ _('Toggle all off') }}</button>
+  <button type="button" class="btn btn-secondary" id="testAll">{{ _('Test all configs') }}</button>
+  <button type="button" class="btn btn-secondary" id="previewAllBtn">{{ _('Preview all') }}</button>
   {% endif %}
 </div>
 <div id="testAllResult" class="alert" style="display:none; margin-top:0.5rem;"></div>
 <div id="previewAllPanel" class="preview-panel" style="display:none; margin-top:1rem;">
-  <h2>Preview all (visible offices)</h2>
-  <p><small>Top 10 rows per office using saved config. Only offices currently shown (after filters/limit) are included.</small></p>
+  <h2>{{ _('Preview all (visible offices)') }}</h2>
+  <p><small>{{ _('Top 10 rows per office using saved config. Only offices currently shown (after filters/limit) are included.') }}</small></p>
   <div id="previewAllContent"></div>
   <div class="actions" style="margin-top:0.5rem;">
-    <button type="button" class="btn btn-secondary btn-sm" id="previewAllClear">Clear</button>
-    <button type="button" class="btn btn-secondary btn-sm" id="previewAllClose">Close</button>
+    <button type="button" class="btn btn-secondary btn-sm" id="previewAllClear">{{ _('Clear') }}</button>
+    <button type="button" class="btn btn-secondary btn-sm" id="previewAllClose">{{ _('Close') }}</button>
   </div>
 </div>
 {% if page_search_view %}
 <form method="get" action="/offices" class="office-filters form-row" style="margin:0.5rem 0; flex-wrap:wrap; gap:0.5rem 1rem;">
   <div class="form-group" style="margin:0; min-width:10rem;">
-    <label for="filterCountry">Country</label>
+    <label for="filterCountry">{{ _('Country') }}</label>
     <select name="country_id" id="filterCountry" class="page-col-filter">
-      <option value="">All</option>
+      <option value="">{{ _('All') }}</option>
       {% for c in countries %}
       <option value="{{ c.id }}" {% if filter_country_id and c.id == filter_country_id %}selected{% endif %}>{{ c.name }}</option>
       {% endfor %}
     </select>
   </div>
   <div class="form-group" style="margin:0; min-width:10rem;">
-    <label for="filterState">State</label>
+    <label for="filterState">{{ _('State') }}</label>
     <select name="state_id" id="filterState" class="page-col-filter">
-      <option value="">All</option>
+      <option value="">{{ _('All') }}</option>
       {% for s in states %}
       <option value="{{ s.id }}" {% if filter_state_id and s.id == filter_state_id %}selected{% endif %}>{{ s.name }}</option>
       {% endfor %}
     </select>
   </div>
   <div class="form-group" style="margin:0; min-width:8rem;">
-    <label for="filterLevel">Level</label>
+    <label for="filterLevel">{{ _('Level') }}</label>
     <select name="level_id" id="filterLevel" class="page-col-filter">
-      <option value="">All</option>
+      <option value="">{{ _('All') }}</option>
       {% for l in levels %}
       <option value="{{ l.id }}" {% if filter_level_id and l.id == filter_level_id %}selected{% endif %}>{{ l.name }}</option>
       {% endfor %}
     </select>
   </div>
   <div class="form-group" style="margin:0; min-width:8rem;">
-    <label for="filterBranch">Branch</label>
+    <label for="filterBranch">{{ _('Branch') }}</label>
     <select name="branch_id" id="filterBranch" class="page-col-filter">
-      <option value="">All</option>
+      <option value="">{{ _('All') }}</option>
       {% for b in branches %}
       <option value="{{ b.id }}" {% if filter_branch_id and b.id == filter_branch_id %}selected{% endif %}>{{ b.name }}</option>
       {% endfor %}
     </select>
   </div>
   <div class="form-group" style="margin:0; min-width:14rem;">
-    <label for="searchUrl">Search by URL</label>
-    <input type="text" name="search_url" id="searchUrl" value="{{ search_url or '' }}" placeholder="Exact page URL or part">
+    <label for="searchUrl">{{ _('Search by URL') }}</label>
+    <input type="text" name="search_url" id="searchUrl" value="{{ search_url or '' }}" placeholder="{{ _('Exact page URL or part') }}">
   </div>
   <div class="form-group" style="margin:0; min-width:10rem;">
-    <label for="searchOfficeId">Office ID</label>
+    <label for="searchOfficeId">{{ _('Office ID') }}</label>
     <input type="number" name="search_office_id" id="searchOfficeId" value="{{ search_office_id or '' }}" min="1" step="1">
   </div>
   <div class="form-group" style="margin:0; min-width:12rem;">
-    <label for="filterOfficeCategory">Office category</label>
+    <label for="filterOfficeCategory">{{ _('Office category') }}</label>
     <select name="office_category_id" id="filterOfficeCategory" class="page-col-filter">
-      <option value="">All</option>
+      <option value="">{{ _('All') }}</option>
       {% for oc in office_categories %}
       <option value="{{ oc.id }}" {% if filter_office_category_id and oc.id == filter_office_category_id %}selected{% endif %}>{{ oc.name }}</option>
       {% endfor %}
     </select>
   </div>
   <div class="form-group" style="margin:0; min-width:8rem;">
-    <label for="filterEnabled">On/Off</label>
+    <label for="filterEnabled">{{ _('On/Off') }}</label>
     <select name="enabled" id="filterEnabled" class="page-col-filter">
-      <option value="" {% if filter_enabled == '' %}selected{% endif %}>Both</option>
-      <option value="1" {% if filter_enabled == '1' %}selected{% endif %}>On</option>
-      <option value="0" {% if filter_enabled == '0' %}selected{% endif %}>Off</option>
+      <option value="" {% if filter_enabled == '' %}selected{% endif %}>{{ _('Both') }}</option>
+      <option value="1" {% if filter_enabled == '1' %}selected{% endif %}>{{ _('On') }}</option>
+      <option value="0" {% if filter_enabled == '0' %}selected{% endif %}>{{ _('Off') }}</option>
     </select>
   </div>
   <div class="form-group" style="margin:0; min-width:10rem;">
-    <label for="filterOfficeCount">Office count</label>
+    <label for="filterOfficeCount">{{ _('Office count') }}</label>
     <select name="office_count" id="filterOfficeCount" class="page-col-filter">
-      <option value="all" {% if filter_office_count == 'all' %}selected{% endif %}>All</option>
-      <option value="gt0" {% if filter_office_count == 'gt0' %}selected{% endif %}>Has offices (&gt;0)</option>
-      <option value="eq0" {% if filter_office_count == 'eq0' %}selected{% endif %}>No offices (=0)</option>
+      <option value="all" {% if filter_office_count == 'all' %}selected{% endif %}>{{ _('All') }}</option>
+      <option value="gt0" {% if filter_office_count == 'gt0' %}selected{% endif %}>{{ _('Has offices (>0)') }}</option>
+      <option value="eq0" {% if filter_office_count == 'eq0' %}selected{% endif %}>{{ _('No offices (=0)') }}</option>
     </select>
   </div>
   <div class="form-group" style="margin:0; min-width:8rem;">
-    <label for="showLimit">Show</label>
+    <label for="showLimit">{{ _('Show') }}</label>
     <select name="limit" id="showLimit" class="page-col-filter">
-      <option value="20" {% if filter_limit == '20' %}selected{% endif %}>Top 20</option>
-      <option value="50" {% if filter_limit == '50' %}selected{% endif %}>Top 50</option>
-      <option value="100" {% if filter_limit == '100' %}selected{% endif %}>Top 100</option>
-      <option value="all" {% if filter_limit == 'all' %}selected{% endif %}>All</option>
+      <option value="20" {% if filter_limit == '20' %}selected{% endif %}>{{ _('Top 20') }}</option>
+      <option value="50" {% if filter_limit == '50' %}selected{% endif %}>{{ _('Top 50') }}</option>
+      <option value="100" {% if filter_limit == '100' %}selected{% endif %}>{{ _('Top 100') }}</option>
+      <option value="all" {% if filter_limit == 'all' %}selected{% endif %}>{{ _('All') }}</option>
     </select>
   </div>
   <div class="form-group" style="margin:0;">
     <label>&nbsp;</label>
-    <button type="submit" class="btn btn-secondary btn-sm">Apply</button>
-    <a href="/offices" class="btn btn-secondary btn-sm" id="clearFiltersLink" style="margin-left:0.35rem;">Clear filters</a>
+    <button type="submit" class="btn btn-secondary btn-sm">{{ _('Apply') }}</button>
+    <a href="/offices" class="btn btn-secondary btn-sm" id="clearFiltersLink" style="margin-inline-start:0.35rem;">{{ _('Clear filters') }}</a>
   </div>
 </form>
 <script>
@@ -198,26 +198,26 @@
 })();
 </script>
 {% if pages %}
-<table id="pagesTable" class="table" aria-label="Pages">
+<table id="pagesTable" class="table" aria-label="{{ _('Pages') }}">
   <thead>
     <tr>
-      <th scope="col">On</th>
-      <th scope="col">Country</th>
-      <th scope="col">State</th>
-      <th scope="col">Level</th>
-      <th scope="col">Branch</th>
-      <th scope="col">Office count</th>
-      <th scope="col">Table count</th>
-      <th scope="col">URL</th>
-      <th scope="col"><span class="sr-only">Actions</span></th>
+      <th scope="col">{{ _('On') }}</th>
+      <th scope="col">{{ _('Country') }}</th>
+      <th scope="col">{{ _('State') }}</th>
+      <th scope="col">{{ _('Level') }}</th>
+      <th scope="col">{{ _('Branch') }}</th>
+      <th scope="col">{{ _('Office count') }}</th>
+      <th scope="col">{{ _('Table count') }}</th>
+      <th scope="col">{{ _('URL') }}</th>
+      <th scope="col"><span class="sr-only">{{ _('Actions') }}</span></th>
     </tr>
   </thead>
   <tbody>
     {% for p in pages %}
     <tr data-page-id="{{ p.id }}">
       <td>
-        <label class="checkbox-group" title="Include this page in runs">
-          <input type="checkbox" class="page-enabled" data-page-id="{{ p.id }}" {% if p.enabled %}checked{% endif %} aria-label="Page {{ p.id }} enabled">
+        <label class="checkbox-group" title="{{ _('Include this page in runs') }}">
+          <input type="checkbox" class="page-enabled" data-page-id="{{ p.id }}" {% if p.enabled %}checked{% endif %} aria-label="{{ _('Page %(id)s enabled') % {'id': p.id} }}">
         </label>
       </td>
       <td>{{ p.country_name or '—' }}</td>
@@ -229,10 +229,10 @@
       <td>{% if p.url %}<a href="{{ p.url }}" target="_blank" rel="noopener">{{ (p.url[:50] + '…') if p.url|length > 50 else p.url }}</a>{% else %}—{% endif %}</td>
       <td>
         {% if p.first_office_id %}
-        <a href="/offices/{{ p.first_office_id }}{% if nav_ids or list_return_query %}?{% if nav_ids %}nav_ids={{ nav_ids }}{% endif %}{% if nav_ids and list_return_query %}&{% endif %}{{ list_return_query }}{% endif %}" class="btn btn-sm btn-secondary">Edit</a>
+        <a href="/offices/{{ p.first_office_id }}{% if nav_ids or list_return_query %}?{% if nav_ids %}nav_ids={{ nav_ids }}{% endif %}{% if nav_ids and list_return_query %}&{% endif %}{{ list_return_query }}{% endif %}" class="btn btn-sm btn-secondary">{{ _('Edit') }}</a>
         {% endif %}
-        <form action="/pages/{{ p.id }}/delete" method="post" style="display:inline;" onsubmit="return confirm('Delete this page and all its offices? This cannot be undone.');">
-          <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+        <form action="/pages/{{ p.id }}/delete" method="post" style="display:inline;" onsubmit="return confirm('{{ _('Delete this page and all its offices? This cannot be undone.') }}');">
+          <button type="submit" class="btn btn-sm btn-danger">{{ _('Delete') }}</button>
         </form>
       </td>
     </tr>
@@ -240,73 +240,73 @@
   </tbody>
 </table>
 {% else %}
-<p>No pages match the filters. <a href="/offices/new">Add a page</a> or <a href="/offices/import">bulk import from CSV</a>.</p>
+<p>{{ _('No pages match the filters.') }} <a href="/offices/new">{{ _('Add a page') }}</a> {{ _('or') }} <a href="/offices/import">{{ _('bulk import from CSV') }}</a>.</p>
 {% endif %}
 {% elif offices %}
 <div class="office-filters form-row" style="margin:0.5rem 0; flex-wrap:wrap; gap:0.5rem 1rem;">
   <div class="form-group" style="margin:0; min-width:10rem;">
-    <label for="filterCountry">Country</label>
-    <select id="filterCountry" class="office-col-filter"><option value="">All</option></select>
+    <label for="filterCountry">{{ _('Country') }}</label>
+    <select id="filterCountry" class="office-col-filter"><option value="">{{ _('All') }}</option></select>
   </div>
   <div class="form-group" style="margin:0; min-width:10rem;">
-    <label for="filterState">State</label>
-    <select id="filterState" class="office-col-filter"><option value="">All</option></select>
+    <label for="filterState">{{ _('State') }}</label>
+    <select id="filterState" class="office-col-filter"><option value="">{{ _('All') }}</option></select>
   </div>
   <div class="form-group" style="margin:0; min-width:8rem;">
-    <label for="filterLevel">Level</label>
-    <select id="filterLevel" class="office-col-filter"><option value="">All</option></select>
+    <label for="filterLevel">{{ _('Level') }}</label>
+    <select id="filterLevel" class="office-col-filter"><option value="">{{ _('All') }}</option></select>
   </div>
   <div class="form-group" style="margin:0; min-width:8rem;">
-    <label for="filterBranch">Branch</label>
-    <select id="filterBranch" class="office-col-filter"><option value="">All</option></select>
+    <label for="filterBranch">{{ _('Branch') }}</label>
+    <select id="filterBranch" class="office-col-filter"><option value="">{{ _('All') }}</option></select>
   </div>
   <div class="form-group" style="margin:0; min-width:12rem;">
-    <label for="filterName">Name</label>
-    <input type="text" id="filterName" class="office-col-filter" placeholder="Search name…">
+    <label for="filterName">{{ _('Name') }}</label>
+    <input type="text" id="filterName" class="office-col-filter" placeholder="{{ _('Search name\u2026') }}">
   </div>
   <div class="form-group" style="margin:0; min-width:8rem;">
-    <label for="filterTerms">Terms</label>
+    <label for="filterTerms">{{ _('Terms') }}</label>
     <select id="filterTerms" class="office-col-filter">
-      <option value="">All</option>
+      <option value="">{{ _('All') }}</option>
       <option value="0">=0</option>
       <option value="gt0">&gt;0</option>
     </select>
   </div>
   <div class="form-group" style="margin:0; min-width:8rem;">
-    <label for="filterEnabled">On/Off</label>
+    <label for="filterEnabled">{{ _('On/Off') }}</label>
     <select id="filterEnabled" class="office-col-filter">
-      <option value="">Both</option>
-      <option value="1">On</option>
-      <option value="0">Off</option>
+      <option value="">{{ _('Both') }}</option>
+      <option value="1">{{ _('On') }}</option>
+      <option value="0">{{ _('Off') }}</option>
     </select>
   </div>
   <div class="form-group" style="margin:0;">
     <label>&nbsp;</label>
-    <button type="button" id="removeFilters" class="btn btn-secondary btn-sm">Remove filters</button>
+    <button type="button" id="removeFilters" class="btn btn-secondary btn-sm">{{ _('Remove filters') }}</button>
   </div>
   <div class="form-group" style="margin:0; min-width:8rem;">
-    <label for="showLimit">Show</label>
+    <label for="showLimit">{{ _('Show') }}</label>
     <select id="showLimit" class="office-col-filter">
-      <option value="20">Top 20</option>
-      <option value="50">Top 50</option>
-      <option value="100">Top 100</option>
-      <option value="all">All</option>
+      <option value="20">{{ _('Top 20') }}</option>
+      <option value="50">{{ _('Top 50') }}</option>
+      <option value="100">{{ _('Top 100') }}</option>
+      <option value="all">{{ _('All') }}</option>
     </select>
   </div>
 </div>
-<table id="officesTable" aria-label="Offices" class="table">
+<table id="officesTable" aria-label="{{ _('Offices') }}" class="table">
   <thead>
     <tr>
-      <th scope="col" class="sortable" data-sort="enabled" title="Sort by on/off"><span>On</span></th>
-      <th scope="col" class="sortable" data-sort="name" title="Sort by name"><span>Name</span></th>
-      <th scope="col" class="sortable" data-sort="country" title="Sort by country"><span>Country</span></th>
-      <th scope="col" class="sortable" data-sort="state" title="Sort by state"><span>State</span></th>
-      <th scope="col" class="sortable" data-sort="level" title="Sort by level"><span>Level</span></th>
-      <th scope="col" class="sortable" data-sort="branch" title="Sort by branch"><span>Branch</span></th>
-      <th scope="col" class="sortable" data-sort="url" title="Sort by URL"><span>URL</span></th>
-      <th scope="col" class="sortable" data-sort="table" title="Sort by table number"><span>Table</span></th>
-      <th scope="col">Terms</th>
-      <th scope="col"><span class="sr-only">Actions</span></th>
+      <th scope="col" class="sortable" data-sort="enabled" title="{{ _('Sort by on/off') }}"><span>{{ _('On') }}</span></th>
+      <th scope="col" class="sortable" data-sort="name" title="{{ _('Sort by name') }}"><span>{{ _('Name') }}</span></th>
+      <th scope="col" class="sortable" data-sort="country" title="{{ _('Sort by country') }}"><span>{{ _('Country') }}</span></th>
+      <th scope="col" class="sortable" data-sort="state" title="{{ _('Sort by state') }}"><span>{{ _('State') }}</span></th>
+      <th scope="col" class="sortable" data-sort="level" title="{{ _('Sort by level') }}"><span>{{ _('Level') }}</span></th>
+      <th scope="col" class="sortable" data-sort="branch" title="{{ _('Sort by branch') }}"><span>{{ _('Branch') }}</span></th>
+      <th scope="col" class="sortable" data-sort="url" title="{{ _('Sort by URL') }}"><span>{{ _('URL') }}</span></th>
+      <th scope="col" class="sortable" data-sort="table" title="{{ _('Sort by table number') }}"><span>{{ _('Table') }}</span></th>
+      <th scope="col">{{ _('Terms') }}</th>
+      <th scope="col"><span class="sr-only">{{ _('Actions') }}</span></th>
     </tr>
   </thead>
   <tbody>
@@ -322,8 +322,8 @@
         data-table="{{ o.table_no }}"
         data-terms-count="{{ o.terms_count|default(0) }}">
       <td>
-        <label class="checkbox-group" title="Include this office in runs">
-          <input type="checkbox" class="office-enabled" data-office-id="{{ o.id }}" {% if o.enabled|default(1) %}checked{% endif %} aria-label="Office {{ o.name or o.id }} enabled">
+        <label class="checkbox-group" title="{{ _('Include this office in runs') }}">
+          <input type="checkbox" class="office-enabled" data-office-id="{{ o.id }}" {% if o.enabled|default(1) %}checked{% endif %} aria-label="{{ _('Office %(name)s enabled') % {'name': (o.name or o.id)|e} }}">
         </label>
       </td>
       <td><a href="/offices/{{ o.id }}">{{ o.name or '—' }}</a></td>
@@ -331,19 +331,19 @@
       <td>{{ o.state_name or '—' }}</td>
       <td>{{ o.level_name or '—' }}</td>
       <td>{{ o.branch_name or '—' }}</td>
-      <td>{% if o.url %}<a href="{{ o.url }}" target="_blank" rel="noopener">{{ (o.url[:50] + '…') if o.url|length > 50 else o.url }}</a>{% else %}—{% endif %}</td>
+      <td>{% if o.url %}<a href="{{ o.url }}" target="_blank" rel="noopener">{{ (o.url[:50] + '\u2026') if o.url|length > 50 else o.url }}</a>{% else %}—{% endif %}</td>
       <td>{{ o.table_no }}</td>
       <td>{{ o.terms_count|default(0) }}</td>
       <td>
-        <button type="button" class="btn btn-sm office-test-btn" data-office-id="{{ o.id }}" data-office-name="{{ (o.name or 'Office')|e }}">Test config</button>
-        <span class="office-test-msg" data-office-id="{{ o.id }}" style="margin-left:0.25rem; font-size:0.875rem;"></span>
-        <button type="button" class="btn btn-sm office-populate-terms-btn" data-office-id="{{ o.id }}" data-office-name="{{ (o.name or 'Office')|e }}">Populate terms</button>
-        <button type="button" class="btn btn-sm office-populate-stop-btn" data-office-id="{{ o.id }}" style="display:none; margin-left:0.25rem;">Stop</button>
-        <span class="office-populate-msg" data-office-id="{{ o.id }}" style="margin-left:0.25rem; font-size:0.875rem;"></span>
-        <a href="/offices/{{ o.id }}/preview" class="btn btn-sm">Preview</a>
-        <a href="/offices/{{ o.id }}" class="btn btn-sm btn-secondary edit-office-btn" data-office-id="{{ o.id }}">Edit</a>
-        <form action="/offices/{{ o.id }}/delete" method="post" style="display:inline;" onsubmit="return confirm('Delete this office?');">
-          <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+        <button type="button" class="btn btn-sm office-test-btn" data-office-id="{{ o.id }}" data-office-name="{{ (o.name or 'Office')|e }}">{{ _('Test config') }}</button>
+        <span class="office-test-msg" data-office-id="{{ o.id }}" style="margin-inline-start:0.25rem; font-size:0.875rem;"></span>
+        <button type="button" class="btn btn-sm office-populate-terms-btn" data-office-id="{{ o.id }}" data-office-name="{{ (o.name or 'Office')|e }}">{{ _('Populate terms') }}</button>
+        <button type="button" class="btn btn-sm office-populate-stop-btn" data-office-id="{{ o.id }}" style="display:none; margin-inline-start:0.25rem;">{{ _('Stop') }}</button>
+        <span class="office-populate-msg" data-office-id="{{ o.id }}" style="margin-inline-start:0.25rem; font-size:0.875rem;"></span>
+        <a href="/offices/{{ o.id }}/preview" class="btn btn-sm">{{ _('Preview') }}</a>
+        <a href="/offices/{{ o.id }}" class="btn btn-sm btn-secondary edit-office-btn" data-office-id="{{ o.id }}">{{ _('Edit') }}</a>
+        <form action="/offices/{{ o.id }}/delete" method="post" style="display:inline;" onsubmit="return confirm('{{ _('Delete this office?') }}');">
+          <button type="submit" class="btn btn-sm btn-danger">{{ _('Delete') }}</button>
         </form>
       </td>
     </tr>
@@ -351,21 +351,21 @@
   </tbody>
 </table>
 {% else %}
-<p>No offices yet. <a href="/offices/new">Add one</a> or <a href="/offices/import">bulk import from CSV</a>.</p>
+<p>{{ _('No offices yet.') }} <a href="/offices/new">{{ _('Add one') }}</a> {{ _('or') }} <a href="/offices/import">{{ _('bulk import from CSV') }}</a>.</p>
 {% endif %}
 {% if not page_search_view %}
 <form method="get" action="/offices" class="office-filters form-row" style="margin:0.5rem 0; flex-wrap:wrap; gap:0.5rem 1rem;">
   <div class="form-group" style="margin:0; min-width:14rem;">
-    <label for="searchUrlFlat">Search by URL</label>
-    <input type="text" name="search_url" id="searchUrlFlat" value="{{ search_url or '' }}" placeholder="Exact page URL or part">
+    <label for="searchUrlFlat">{{ _('Search by URL') }}</label>
+    <input type="text" name="search_url" id="searchUrlFlat" value="{{ search_url or '' }}" placeholder="{{ _('Exact page URL or part') }}">
   </div>
   <div class="form-group" style="margin:0; min-width:10rem;">
-    <label for="searchOfficeIdFlat">Office ID</label>
+    <label for="searchOfficeIdFlat">{{ _('Office ID') }}</label>
     <input type="number" name="search_office_id" id="searchOfficeIdFlat" value="{{ search_office_id or '' }}" min="1" step="1">
   </div>
   <div class="form-group" style="margin:0;">
     <label>&nbsp;</label>
-    <button type="submit" class="btn btn-secondary btn-sm">Go</button>
+    <button type="submit" class="btn btn-secondary btn-sm">{{ _('Go') }}</button>
   </div>
 </form>
 <script>

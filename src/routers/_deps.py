@@ -21,6 +21,9 @@ _jinja_env = jinja2.Environment(
     extensions=["jinja2.ext.i18n"],
     autoescape=True,
 )
+# Install null translations at env level so {% trans %} blocks compile correctly.
+# Per-request translations are injected via template context (_/gettext/ngettext).
+_jinja_env.install_null_translations()
 
 
 class I18nTemplates(Jinja2Templates):
