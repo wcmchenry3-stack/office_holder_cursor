@@ -53,9 +53,15 @@ def get_claude_client() -> ClaudeClient | None:
     """Return the cached ClaudeClient singleton, or None if not configured.
 
     Thread-safe via double-checked locking (matches gemini_vitals_researcher.py pattern).
-    Returns None (not raises) when ANTHROPIC_API_KEY is not set — feature
-    is silently disabled.
+    Returns None (not raises) when ANTHROPIC_ENABLED is disabled or
+    ANTHROPIC_API_KEY is not set — feature is silently disabled.
     """
+    from src.services.ai_provider_status import is_provider_enabled
+
+    if not is_provider_enabled("anthropic"):
+        logger.info("get_claude_client: ANTHROPIC_ENABLED is disabled — returning None")
+        return None
+
     global _client
     if _client is not None:
         return _client

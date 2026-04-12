@@ -438,13 +438,15 @@ class TestInspectOnePage:
 
         assert result["result"] == "manual_review"
 
-    def test_insufficient_quorum_creates_manual_review(self, tmp_path):
+    def test_insufficient_quorum_skips_without_gh_issue(self, tmp_path):
+        """INSUFFICIENT_QUORUM is a non-error skip — no GH issue, result is skipped_quorum."""
         conn = _conn(tmp_path)
         page_id = _seed_page(conn)
 
         mock_voter = MagicMock()
         mock_voter.vote.return_value = _make_verdict(Verdict.INSUFFICIENT_QUORUM)
 
+        mock_create_gh_issue = MagicMock(return_value=None)
         with (
             patch(
                 "src.services.page_quality_inspector.db_pqc.pick_next_page",
@@ -460,7 +462,7 @@ class TestInspectOnePage:
             ),
             patch(
                 "src.services.page_quality_inspector._create_gh_issue",
-                return_value=None,
+                mock_create_gh_issue,
             ),
             patch("src.services.page_quality_inspector.ConsensusVoter", return_value=mock_voter),
         ):
@@ -468,7 +470,8 @@ class TestInspectOnePage:
 
             result = inspect_one_page(conn=conn)
 
-        assert result["result"] == "manual_review"
+        assert result["result"] == "skipped_quorum"
+        mock_create_gh_issue.assert_not_called()
 
     def test_no_data_skips_ai_vote_and_creates_gh_issue(self, tmp_path):
         """When our DB has zero records for a page, skip AI vote and create a GH issue."""

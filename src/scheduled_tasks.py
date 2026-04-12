@@ -515,6 +515,33 @@ def run_daily_gemini_research() -> None:
     if _has_active_scheduled_run("gemini_research"):
         return
 
+    from src.services.ai_provider_status import check_providers
+
+    provider_status = check_providers(required=["gemini", "openai"])
+    if not provider_status.all_available:
+        run_id = db_job_runs.create_run("gemini_research")
+        db_job_runs.finish_run(
+            run_id,
+            status="skipped",
+            result={
+                "skip_reason": provider_status.skip_reason,
+                "disabled_providers": provider_status.disabled_providers,
+                "exhausted_providers": provider_status.exhausted_providers,
+            },
+        )
+        logger.info("Gemini research run skipped: %s", provider_status.skip_reason)
+        _send_job_summary_email(
+            "Gemini Research",
+            {
+                "skip_reason": provider_status.skip_reason,
+                "disabled_providers": provider_status.disabled_providers,
+                "exhausted_providers": provider_status.exhausted_providers,
+            },
+            0.0,
+            datetime.now(timezone.utc),
+        )
+        return
+
     run_start = datetime.now(timezone.utc)
     today_batch = run_start.day % 30
     logger.info(
@@ -573,13 +600,39 @@ def run_daily_page_quality() -> None:
     if _has_active_scheduled_run("daily_page_quality"):
         return
 
+    from src.db import scheduled_job_runs as db_job_runs
+    from src.services.ai_provider_status import check_providers
+
+    provider_status = check_providers(required=["openai", "gemini", "anthropic"])
+    if not provider_status.all_available:
+        run_id = db_job_runs.create_run("daily_page_quality")
+        db_job_runs.finish_run(
+            run_id,
+            status="skipped",
+            result={
+                "skip_reason": provider_status.skip_reason,
+                "disabled_providers": provider_status.disabled_providers,
+                "exhausted_providers": provider_status.exhausted_providers,
+            },
+        )
+        logger.info("Page quality run skipped: %s", provider_status.skip_reason)
+        _send_job_summary_email(
+            "Page Quality",
+            {
+                "skip_reason": provider_status.skip_reason,
+                "disabled_providers": provider_status.disabled_providers,
+                "exhausted_providers": provider_status.exhausted_providers,
+            },
+            0.0,
+            datetime.now(timezone.utc),
+        )
+        return
+
     run_start = datetime.now(timezone.utc)
     logger.info(
         "Page quality inspection starting at %s UTC",
         run_start.strftime("%Y-%m-%d %H:%M:%S"),
     )
-
-    from src.db import scheduled_job_runs as db_job_runs
 
     run_id = db_job_runs.create_run("daily_page_quality")
 
@@ -681,6 +734,25 @@ def _send_job_summary_email(
             f"Status    : FAILED\n\n"
             f"Error:\n{error or 'Unknown error'}\n"
         )
+    elif result.get("skip_reason"):
+        status = "SKIPPED"
+        disabled = result.get("disabled_providers") or []
+        exhausted = result.get("exhausted_providers") or []
+        lines = [
+            f"Job       : {job_name}",
+            f"Run date  : {date_str}",
+            f"Started   : {started_str}",
+            "Status    : SKIPPED",
+            "",
+            "SKIP REASON",
+            "-----------",
+            f"  {result['skip_reason']}",
+        ]
+        if disabled:
+            lines.append(f"  Disabled providers : {', '.join(disabled)}")
+        if exhausted:
+            lines.append(f"  Exhausted providers: {', '.join(exhausted)}")
+        body = "\n".join(lines) + "\n"
     else:
         status = "Complete"
         lines = [
