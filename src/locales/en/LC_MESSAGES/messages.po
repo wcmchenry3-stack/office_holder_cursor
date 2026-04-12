@@ -4,23 +4,793 @@
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: RulersAI 1.0
-"
-"Report-Msgid-Bugs-To: 
-"
-"POT-Creation-Date: 2026-04-11 00:00+0000
-"
-"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE
-"
-"Last-Translator: FULL NAME <EMAIL@ADDRESS>
-"
-"Language-Team: en <LL@li.org>
-"
-"Language: en
-"
-"MIME-Version: 1.0
-"
-"Content-Type: text/plain; charset=UTF-8
-"
-"Content-Transfer-Encoding: 8bit
-"
+"Project-Id-Version: RulersAI 1.Report-Msgid-Bugs-ToPOT-Creation-Date: "
+"2026-04-11 00:00+000PO-Revision-Date: YEAR-MO-DA HO:MI+ZONLast-"
+"Translator: FULL NAME <EMAIL@ADDRESSLanguage-Team: en <LL@li.orgLanguage:"
+" eMIME-Version: 1.Content-Type: text/plain; charset=UTF-Content-Transfer-"
+"Encoding: 8bi\n"
+"Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
+"POT-Creation-Date: 2026-04-11 17:28-0600\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language: en\n"
+"Language-Team: en <LL@li.org>\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.18.0\n"
+
+#: src/templates/base.html:27
+msgid "Skip to main content"
+msgstr ""
+
+#: src/templates/base.html:194
+msgid "Open navigation menu"
+msgstr ""
+
+#: src/templates/base.html:211
+msgid "Search offices, individuals, or research"
+msgstr ""
+
+#: src/templates/base.html:212
+msgid "Search…"
+msgstr ""
+
+#: src/templates/base.html:222
+msgid "Mute completion sound"
+msgstr ""
+
+#: src/templates/base.html:232
+msgid "Change language"
+msgstr ""
+
+#: src/templates/base.html:240
+msgid "Select language"
+msgstr ""
+
+#: src/templates/base.html:264
+msgid "Switch to dark mode"
+msgstr ""
+
+#: src/templates/base.html:288
+msgid "Primary navigation"
+msgstr ""
+
+#: src/templates/base.html:306
+msgid "Dashboard"
+msgstr ""
+
+#: src/templates/base.html:314 src/templates/offices.html:2
+#: src/templates/offices.html:9 src/templates/offices.html:297
+#: src/templates/run.html:79
+msgid "Offices"
+msgstr ""
+
+#: src/templates/base.html:322
+msgid "Command Center"
+msgstr ""
+
+#: src/templates/base.html:330
+msgid "Data"
+msgstr ""
+
+#: src/templates/base.html:338
+msgid "Wiki Drafts"
+msgstr ""
+
+#: src/templates/base.html:346
+msgid "Deep Research"
+msgstr ""
+
+#: src/templates/base.html:354
+msgid "AI Creation"
+msgstr ""
+
+#: src/templates/base.html:362
+msgid "Reference Data"
+msgstr ""
+
+#: src/templates/base.html:370
+msgid "Reports"
+msgstr ""
+
+#: src/templates/base.html:378
+msgid "System"
+msgstr ""
+
+#: src/templates/base.html:385
+msgid "New Office"
+msgstr ""
+
+#: src/templates/base.html:391
+msgid "Support"
+msgstr ""
+
+#: src/templates/base.html:395
+msgid "Logout"
+msgstr ""
+
+#: src/templates/gemini_research.html:2 src/templates/offices.html:21
+msgid "Gemini Research"
+msgstr ""
+
+#: src/templates/gemini_research.html:9
+msgid "Gemini Vitals Research"
+msgstr ""
+
+#: src/templates/gemini_research.html:10
+msgid "Look up biographical vitals for an individual using Gemini AI."
+msgstr ""
+
+#: src/templates/gemini_research.html:17
+msgid "Researched items"
+msgstr ""
+
+#: src/templates/gemini_research.html:18
+msgid "View all →"
+msgstr ""
+
+#: src/templates/gemini_research.html:21
+msgid "Loading…"
+msgstr ""
+
+#: src/templates/gemini_research.html:25
+msgid "To research a new individual, search below:"
+msgstr ""
+
+#: src/templates/gemini_research.html:28
+msgid "Search individual:"
+msgstr ""
+
+#: src/templates/gemini_research.html:29
+msgid "Name or wiki URL…"
+msgstr ""
+
+#: src/templates/gemini_research.html:30
+msgid "Individual search results"
+msgstr ""
+
+#: src/templates/gemini_research.html:34
+msgid "Selected Individual"
+msgstr ""
+
+#: src/templates/gemini_research.html:35
+msgid "Selected individual details"
+msgstr ""
+
+#: src/templates/gemini_research.html:36 src/templates/wiki_drafts.html:26
+msgid "ID"
+msgstr ""
+
+#: src/templates/gemini_research.html:37 src/templates/offices.html:264
+#: src/templates/offices.html:301
+msgid "Name"
+msgstr ""
+
+#: src/templates/gemini_research.html:38 src/templates/wiki_drafts.html:28
+msgid "Wiki URL"
+msgstr ""
+
+#: src/templates/gemini_research.html:39 src/templates/gemini_research.html:58
+msgid "Birth date"
+msgstr ""
+
+#: src/templates/gemini_research.html:40 src/templates/gemini_research.html:59
+msgid "Death date"
+msgstr ""
+
+#: src/templates/gemini_research.html:41
+msgid "Living"
+msgstr ""
+
+#: src/templates/gemini_research.html:44
+msgid "Run Gemini Research"
+msgstr ""
+
+#: src/templates/gemini_research.html:50
+msgid "Starting…"
+msgstr ""
+
+#: src/templates/gemini_research.html:56
+msgid "Gemini Research Results"
+msgstr ""
+
+#: src/templates/gemini_research.html:57
+msgid "Gemini vitals results"
+msgstr ""
+
+#: src/templates/gemini_research.html:60
+msgid "Birth place"
+msgstr ""
+
+#: src/templates/gemini_research.html:61
+msgid "Death place"
+msgstr ""
+
+#: src/templates/gemini_research.html:62
+msgid "Confidence"
+msgstr ""
+
+#: src/templates/gemini_research.html:65
+msgid "Sources"
+msgstr ""
+
+#: src/templates/gemini_research.html:66
+msgid "Research sources"
+msgstr ""
+
+#: src/templates/gemini_research.html:67 src/templates/offices.html:211
+#: src/templates/offices.html:306
+msgid "URL"
+msgstr ""
+
+#: src/templates/gemini_research.html:67
+msgid "Type"
+msgstr ""
+
+#: src/templates/gemini_research.html:67
+msgid "Notes"
+msgstr ""
+
+#: src/templates/gemini_research.html:71
+msgid "Biographical Notes"
+msgstr ""
+
+#: src/templates/gemini_research.html:75
+msgid "Wikipedia Article Draft"
+msgstr ""
+
+#: src/templates/login.html:203
+msgid "Skip to sign-in"
+msgstr ""
+
+#: src/templates/login.html:233
+msgid "Sign in with Google"
+msgstr ""
+
+#: src/templates/login.html:237
+msgid "Verification Required"
+msgstr ""
+
+#: src/templates/login.html:245
+msgid "Privacy"
+msgstr ""
+
+#: src/templates/login.html:246 src/templates/offices.html:268
+#: src/templates/offices.html:308
+msgid "Terms"
+msgstr ""
+
+#: src/templates/login.html:247
+msgid "Security Disclosure"
+msgstr ""
+
+#: src/templates/offices.html:10
+msgid "Manage office configurations and scraper pages."
+msgstr ""
+
+#: src/templates/offices.html:13
+msgid "Saved to local database (data/office_holder.db)."
+msgstr ""
+
+#: src/templates/offices.html:15
+#, python-format
+msgid "Imported %(count)s offices to local database (data/office_holder.db)."
+msgstr ""
+
+#: src/templates/offices.html:15
+msgid "row(s) had errors."
+msgstr ""
+
+#: src/templates/offices.html:17
+msgid "Add office"
+msgstr ""
+
+#: src/templates/offices.html:18
+msgid "Bulk import CSV"
+msgstr ""
+
+#: src/templates/offices.html:19
+msgid "Export all config (JSON)"
+msgstr ""
+
+#: src/templates/offices.html:20
+msgid "AI Offices"
+msgstr ""
+
+#: src/templates/offices.html:23
+msgid "Toggle all on"
+msgstr ""
+
+#: src/templates/offices.html:24
+msgid "Toggle all off"
+msgstr ""
+
+#: src/templates/offices.html:25
+msgid "Test all configs"
+msgstr ""
+
+#: src/templates/offices.html:26
+msgid "Preview all"
+msgstr ""
+
+#: src/templates/offices.html:31
+msgid "Preview all (visible offices)"
+msgstr ""
+
+#: src/templates/offices.html:32
+msgid ""
+"Top 10 rows per office using saved config. Only offices currently shown "
+"(after filters/limit) are included."
+msgstr ""
+
+#: src/templates/offices.html:35
+msgid "Clear"
+msgstr ""
+
+#: src/templates/offices.html:36
+msgid "Close"
+msgstr ""
+
+#: src/templates/offices.html:42 src/templates/offices.html:205
+#: src/templates/offices.html:248 src/templates/offices.html:302
+msgid "Country"
+msgstr ""
+
+#: src/templates/offices.html:44 src/templates/offices.html:53
+#: src/templates/offices.html:62 src/templates/offices.html:71
+#: src/templates/offices.html:88 src/templates/offices.html:105
+#: src/templates/offices.html:116 src/templates/offices.html:249
+#: src/templates/offices.html:253 src/templates/offices.html:257
+#: src/templates/offices.html:261 src/templates/offices.html:270
+#: src/templates/offices.html:293 src/templates/wiki_drafts.html:15
+msgid "All"
+msgstr ""
+
+#: src/templates/offices.html:51 src/templates/offices.html:206
+#: src/templates/offices.html:252 src/templates/offices.html:303
+msgid "State"
+msgstr ""
+
+#: src/templates/offices.html:60 src/templates/offices.html:207
+#: src/templates/offices.html:256 src/templates/offices.html:304
+msgid "Level"
+msgstr ""
+
+#: src/templates/offices.html:69 src/templates/offices.html:208
+#: src/templates/offices.html:260 src/templates/offices.html:305
+msgid "Branch"
+msgstr ""
+
+#: src/templates/offices.html:78 src/templates/offices.html:359
+msgid "Search by URL"
+msgstr ""
+
+#: src/templates/offices.html:79 src/templates/offices.html:360
+msgid "Exact page URL or part"
+msgstr ""
+
+#: src/templates/offices.html:82 src/templates/offices.html:363
+msgid "Office ID"
+msgstr ""
+
+#: src/templates/offices.html:86 src/templates/run.html:36
+msgid "Office category"
+msgstr ""
+
+#: src/templates/offices.html:95 src/templates/offices.html:276
+msgid "On/Off"
+msgstr ""
+
+#: src/templates/offices.html:97 src/templates/offices.html:278
+msgid "Both"
+msgstr ""
+
+#: src/templates/offices.html:98 src/templates/offices.html:204
+#: src/templates/offices.html:279 src/templates/offices.html:300
+msgid "On"
+msgstr ""
+
+#: src/templates/offices.html:99 src/templates/offices.html:280
+msgid "Off"
+msgstr ""
+
+#: src/templates/offices.html:103 src/templates/offices.html:209
+msgid "Office count"
+msgstr ""
+
+#: src/templates/offices.html:106
+msgid "Has offices (>0)"
+msgstr ""
+
+#: src/templates/offices.html:107
+msgid "No offices (=0)"
+msgstr ""
+
+#: src/templates/offices.html:111 src/templates/offices.html:288
+msgid "Show"
+msgstr ""
+
+#: src/templates/offices.html:113 src/templates/offices.html:290
+msgid "Top 20"
+msgstr ""
+
+#: src/templates/offices.html:114 src/templates/offices.html:291
+msgid "Top 50"
+msgstr ""
+
+#: src/templates/offices.html:115 src/templates/offices.html:292
+msgid "Top 100"
+msgstr ""
+
+#: src/templates/offices.html:121
+msgid "Apply"
+msgstr ""
+
+#: src/templates/offices.html:122
+msgid "Clear filters"
+msgstr ""
+
+#: src/templates/offices.html:201
+msgid "Pages"
+msgstr ""
+
+#: src/templates/offices.html:210
+msgid "Table count"
+msgstr ""
+
+#: src/templates/offices.html:212 src/templates/offices.html:309
+#: src/templates/wiki_drafts.html:32
+msgid "Actions"
+msgstr ""
+
+#: src/templates/offices.html:219
+msgid "Include this page in runs"
+msgstr ""
+
+#: src/templates/offices.html:220
+#, python-format
+msgid "Page %(id)s enabled"
+msgstr ""
+
+#: src/templates/offices.html:232 src/templates/offices.html:344
+msgid "Edit"
+msgstr ""
+
+#: src/templates/offices.html:234
+msgid "Delete this page and all its offices? This cannot be undone."
+msgstr ""
+
+#: src/templates/offices.html:235 src/templates/offices.html:346
+msgid "Delete"
+msgstr ""
+
+#: src/templates/offices.html:243
+msgid "No pages match the filters."
+msgstr ""
+
+#: src/templates/offices.html:243
+msgid "Add a page"
+msgstr ""
+
+#: src/templates/offices.html:243 src/templates/offices.html:354
+msgid "or"
+msgstr ""
+
+#: src/templates/offices.html:243 src/templates/offices.html:354
+msgid "bulk import from CSV"
+msgstr ""
+
+#: src/templates/offices.html:265
+msgid "Search name…"
+msgstr ""
+
+#: src/templates/offices.html:285
+msgid "Remove filters"
+msgstr ""
+
+#: src/templates/offices.html:300
+msgid "Sort by on/off"
+msgstr ""
+
+#: src/templates/offices.html:301
+msgid "Sort by name"
+msgstr ""
+
+#: src/templates/offices.html:302
+msgid "Sort by country"
+msgstr ""
+
+#: src/templates/offices.html:303
+msgid "Sort by state"
+msgstr ""
+
+#: src/templates/offices.html:304
+msgid "Sort by level"
+msgstr ""
+
+#: src/templates/offices.html:305
+msgid "Sort by branch"
+msgstr ""
+
+#: src/templates/offices.html:306
+msgid "Sort by URL"
+msgstr ""
+
+#: src/templates/offices.html:307
+msgid "Sort by table number"
+msgstr ""
+
+#: src/templates/offices.html:307
+msgid "Table"
+msgstr ""
+
+#: src/templates/offices.html:325
+msgid "Include this office in runs"
+msgstr ""
+
+#: src/templates/offices.html:326
+#, python-format
+msgid "Office %(name)s enabled"
+msgstr ""
+
+#: src/templates/offices.html:338
+msgid "Test config"
+msgstr ""
+
+#: src/templates/offices.html:340
+msgid "Populate terms"
+msgstr ""
+
+#: src/templates/offices.html:341 src/templates/run.html:98
+msgid "Stop"
+msgstr ""
+
+#: src/templates/offices.html:343
+msgid "Preview"
+msgstr ""
+
+#: src/templates/offices.html:345
+msgid "Delete this office?"
+msgstr ""
+
+#: src/templates/offices.html:354
+msgid "No offices yet."
+msgstr ""
+
+#: src/templates/offices.html:354
+msgid "Add one"
+msgstr ""
+
+#: src/templates/offices.html:368
+msgid "Go"
+msgstr ""
+
+#: src/templates/operations.html:2 src/templates/operations.html:9
+msgid "Operations"
+msgstr ""
+
+#: src/templates/operations.html:10
+msgid "Monitoring, job management, and reporting."
+msgstr ""
+
+#: src/templates/operations.html:18
+msgid "AI Decisions"
+msgstr ""
+
+#: src/templates/operations.html:19
+msgid "Review AI-generated office configuration decisions"
+msgstr ""
+
+#: src/templates/operations.html:25
+msgid "Job Runs"
+msgstr ""
+
+#: src/templates/operations.html:26
+msgid "History of scheduled job executions"
+msgstr ""
+
+#: src/templates/operations.html:32
+msgid "Scraper Jobs"
+msgstr ""
+
+#: src/templates/operations.html:33
+msgid "Active and recent scraper job queue"
+msgstr ""
+
+#: src/templates/operations.html:39
+msgid "Scheduled Jobs"
+msgstr ""
+
+#: src/templates/operations.html:40
+msgid "Configure and pause/resume scheduled jobs"
+msgstr ""
+
+#: src/templates/operations.html:46
+msgid "Runner Registry"
+msgstr ""
+
+#: src/templates/operations.html:47
+msgid "Available scraper runner configurations"
+msgstr ""
+
+#: src/templates/run.html:3 src/templates/run.html:10
+msgid "Run Scraper"
+msgstr ""
+
+#: src/templates/run.html:11
+msgid "Launch scraper jobs and monitor progress."
+msgstr ""
+
+#: src/templates/run.html:16 src/templates/run.html:57
+msgid "Run"
+msgstr ""
+
+#: src/templates/run.html:18
+msgid "Full run"
+msgstr ""
+
+#: src/templates/run.html:19
+msgid "Delta run"
+msgstr ""
+
+#: src/templates/run.html:20
+msgid "Delta run + live person update"
+msgstr ""
+
+#: src/templates/run.html:21
+msgid "Full run (no bio)"
+msgstr ""
+
+#: src/templates/run.html:22
+msgid "Delta run (no bio)"
+msgstr ""
+
+#: src/templates/run.html:23
+msgid "Full run (no bio, refresh cache)"
+msgstr ""
+
+#: src/templates/run.html:24
+msgid "Delta run (no bio, refresh cache)"
+msgstr ""
+
+#: src/templates/run.html:25
+msgid "Bios only (update all individuals)"
+msgstr ""
+
+#: src/templates/run.html:26
+msgid "Re-run bio for one individual"
+msgstr ""
+
+#: src/templates/run.html:27
+msgid "Populate terms for office category"
+msgstr ""
+
+#: src/templates/run.html:28
+msgid "Run bios for selected office category"
+msgstr ""
+
+#: src/templates/run.html:32
+msgid "Individual (ID or Wikipedia URL)"
+msgstr ""
+
+#: src/templates/run.html:33
+msgid "e.g. 42 or https://en.wikipedia.org/wiki/John_Doe"
+msgstr ""
+
+#: src/templates/run.html:38
+msgid "Select office category"
+msgstr ""
+
+#: src/templates/run.html:45
+msgid "Only individuals with no death date"
+msgstr ""
+
+#: src/templates/run.html:48
+msgid "Only valid page paths (ignore blank page_path values)"
+msgstr ""
+
+#: src/templates/run.html:54
+msgid "Force update"
+msgstr ""
+
+#: src/templates/run.html:62
+msgid "Force-run specific offices"
+msgstr ""
+
+#: src/templates/run.html:63
+msgid ""
+"Immediately re-scrape one or more offices regardless of their scheduled "
+"batch day. Always fetches fresh HTML from Wikipedia (bypasses cache)."
+msgstr ""
+
+#: src/templates/run.html:65
+msgid "Office ID(s)"
+msgstr ""
+
+#: src/templates/run.html:65
+msgid "comma-separated"
+msgstr ""
+
+#: src/templates/run.html:66
+msgid "e.g. 220, 314"
+msgstr ""
+
+#: src/templates/run.html:67
+msgid "Force run"
+msgstr ""
+
+#: src/templates/run.html:74
+msgid "Job running"
+msgstr ""
+
+#: src/templates/run.html:83
+msgid "Tables"
+msgstr ""
+
+#: src/templates/run.html:87
+msgid "Infobox"
+msgstr ""
+
+#: src/templates/run.html:93
+msgid "Bios"
+msgstr ""
+
+#: src/templates/wiki_drafts.html:2 src/templates/wiki_drafts.html:9
+#: src/templates/wiki_drafts.html:23
+msgid "Wiki Draft Proposals"
+msgstr ""
+
+#: src/templates/wiki_drafts.html:10
+msgid "Review and manage Wikipedia draft proposals."
+msgstr ""
+
+#: src/templates/wiki_drafts.html:14
+msgid "Filter by status"
+msgstr ""
+
+#: src/templates/wiki_drafts.html:16
+msgid "Pending"
+msgstr ""
+
+#: src/templates/wiki_drafts.html:17
+msgid "Submitted"
+msgstr ""
+
+#: src/templates/wiki_drafts.html:18
+msgid "Published"
+msgstr ""
+
+#: src/templates/wiki_drafts.html:19
+msgid "Rejected"
+msgstr ""
+
+#: src/templates/wiki_drafts.html:27
+msgid "Individual"
+msgstr ""
+
+#: src/templates/wiki_drafts.html:29
+msgid "Status"
+msgstr ""
+
+#: src/templates/wiki_drafts.html:30
+msgid "Origin"
+msgstr ""
+
+#: src/templates/wiki_drafts.html:31
+msgid "Created"
+msgstr ""
+
+#: src/templates/wiki_drafts.html:44
+msgid "View"
+msgstr ""
+
+#: src/templates/wiki_drafts.html:50
+msgid "No draft proposals found"
+msgstr ""
+
+#: src/templates/wiki_drafts.html:50
+msgid "with status"
+msgstr ""
+

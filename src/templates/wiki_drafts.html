@@ -1,35 +1,35 @@
 {% extends "base.html" %}
-{% block title %}Wiki Draft Proposals — RulersAI{% endblock %}
+{% block title %}{{ _('Wiki Draft Proposals') }} — RulersAI{% endblock %}
 {% block content %}
 <div class="page-header">
   <div class="page-header-icon">
     <span class="material-symbols-outlined" aria-hidden="true">edit_document</span>
   </div>
   <div>
-    <h1 class="page-header-title">Wiki Draft Proposals</h1>
-    <p class="page-header-desc">Review and manage Wikipedia draft proposals.</p>
+    <h1 class="page-header-title">{{ _('Wiki Draft Proposals') }}</h1>
+    <p class="page-header-desc">{{ _('Review and manage Wikipedia draft proposals.') }}</p>
   </div>
 </div>
 
-<nav aria-label="Filter by status" style="margin-bottom:1rem;">
-  <a href="/data/wiki-drafts"{% if not status_filter %} aria-current="page" style="font-weight:600"{% endif %}>All</a> |
-  <a href="/data/wiki-drafts?status=pending"{% if status_filter == 'pending' %} aria-current="page" style="font-weight:600"{% endif %}>Pending</a> |
-  <a href="/data/wiki-drafts?status=submitted"{% if status_filter == 'submitted' %} aria-current="page" style="font-weight:600"{% endif %}>Submitted</a> |
-  <a href="/data/wiki-drafts?status=published"{% if status_filter == 'published' %} aria-current="page" style="font-weight:600"{% endif %}>Published</a> |
-  <a href="/data/wiki-drafts?status=rejected"{% if status_filter == 'rejected' %} aria-current="page" style="font-weight:600"{% endif %}>Rejected</a>
+<nav aria-label="{{ _('Filter by status') }}" style="margin-bottom:1rem;">
+  <a href="/data/wiki-drafts"{% if not status_filter %} aria-current="page" style="font-weight:600"{% endif %}>{{ _('All') }}</a> |
+  <a href="/data/wiki-drafts?status=pending"{% if status_filter == 'pending' %} aria-current="page" style="font-weight:600"{% endif %}>{{ _('Pending') }}</a> |
+  <a href="/data/wiki-drafts?status=submitted"{% if status_filter == 'submitted' %} aria-current="page" style="font-weight:600"{% endif %}>{{ _('Submitted') }}</a> |
+  <a href="/data/wiki-drafts?status=published"{% if status_filter == 'published' %} aria-current="page" style="font-weight:600"{% endif %}>{{ _('Published') }}</a> |
+  <a href="/data/wiki-drafts?status=rejected"{% if status_filter == 'rejected' %} aria-current="page" style="font-weight:600"{% endif %}>{{ _('Rejected') }}</a>
 </nav>
 
 {% if drafts %}
-<table class="table" aria-label="Wiki Draft Proposals">
+<table class="table" aria-label="{{ _('Wiki Draft Proposals') }}">
   <thead>
     <tr>
-      <th scope="col">ID</th>
-      <th scope="col">Individual</th>
-      <th scope="col">Wiki URL</th>
-      <th scope="col">Status</th>
-      <th scope="col">Origin</th>
-      <th scope="col">Created</th>
-      <th scope="col"><span class="sr-only">Actions</span></th>
+      <th scope="col">{{ _('ID') }}</th>
+      <th scope="col">{{ _('Individual') }}</th>
+      <th scope="col">{{ _('Wiki URL') }}</th>
+      <th scope="col">{{ _('Status') }}</th>
+      <th scope="col">{{ _('Origin') }}</th>
+      <th scope="col">{{ _('Created') }}</th>
+      <th scope="col"><span class="sr-only">{{ _('Actions') }}</span></th>
     </tr>
   </thead>
   <tbody>
@@ -41,12 +41,12 @@
       <td><span class="badge badge-{{ d.status }}">{{ d.status }}</span></td>
       <td>{{ d.origin or 'manual' }}</td>
       <td>{{ d.created_at or '—' }}</td>
-      <td><a href="/data/wiki-drafts/{{ d.id }}">View</a></td>
+      <td><a href="/data/wiki-drafts/{{ d.id }}">{{ _('View') }}</a></td>
     </tr>
     {% endfor %}
   </tbody>
 </table>
 {% else %}
-<p>No draft proposals found{% if status_filter %} with status "{{ status_filter }}"{% endif %}.</p>
+<p>{{ _('No draft proposals found') }}{% if status_filter %} {{ _('with status') }} "{{ status_filter }}"{% endif %}.</p>
 {% endif %}
 {% endblock %}

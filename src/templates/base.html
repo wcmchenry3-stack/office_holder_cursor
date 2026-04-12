@@ -24,7 +24,7 @@
 </head>
 <body>
   <!-- Skip link — first interactive element, sr-only until focused (WCAG 2.4.1) -->
-  <a href="#main-content" class="skip-link">Skip to main content</a>
+  <a href="#main-content" class="skip-link">{{ _('Skip to main content') }}</a>
 
   <script>window.esc = function(s) { if (s == null || s === '') return ''; s = String(s); return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); };</script>
   <script>
@@ -191,7 +191,7 @@
     <button id="menuBtn"
             type="button"
             class="menu-btn"
-            aria-label="Open navigation menu"
+            aria-label="{{ _('Open navigation menu') }}"
             aria-expanded="false"
             aria-controls="primaryNav">
       <span class="material-symbols-outlined" aria-hidden="true">menu</span>
@@ -208,8 +208,8 @@
       <span class="material-symbols-outlined" aria-hidden="true">search</span>
       <input type="search"
              autocomplete="off"
-             aria-label="Search offices, individuals, or research"
-             placeholder="Search…">
+             aria-label="{{ _('Search offices, individuals, or research') }}"
+             placeholder="{{ _('Search\u2026') }}">
     </div>
 
     <!-- Icon actions -->
@@ -219,7 +219,7 @@
               type="button"
               class="btn-icon"
               onclick="window._toggleSound()"
-              aria-label="Mute completion sound"
+              aria-label="{{ _('Mute completion sound') }}"
               aria-pressed="false">
         <span class="material-symbols-outlined" aria-hidden="true">volume_up</span>
       </button>
@@ -229,7 +229,7 @@
         <button id="langBtn"
                 type="button"
                 class="btn-icon"
-                aria-label="Change language"
+                aria-label="{{ _('Change language') }}"
                 aria-haspopup="listbox"
                 aria-expanded="false"
                 aria-controls="langMenu">
@@ -237,13 +237,13 @@
         </button>
         <ul id="langMenu"
             role="listbox"
-            aria-label="Select language"
+            aria-label="{{ _('Select language') }}"
             class="lang-menu"
             hidden>
           {% set _active_locale = locale | default('en') %}
-          {% set _ltr_locales = ['en','es','fr-CA','de','nl','pt','ru','hi','zh','ja','ko'] %}
-          {% set _locale_names = {'en':'English','es':'Español','fr-CA':'Français (Canada)','de':'Deutsch','nl':'Nederlands','pt':'Português','ru':'Русский','hi':'हिन्दी','zh':'中文','ja':'日本語','ko':'한국어'} %}
-          {% for _code in _ltr_locales %}
+          {% set _all_locales = ['en','es','fr-CA','de','nl','pt','ru','hi','zh','ja','ko','ar','he'] %}
+          {% set _locale_names = {'en':'English','es':'Español','fr-CA':'Français (Canada)','de':'Deutsch','nl':'Nederlands','pt':'Português','ru':'Русский','hi':'हिन्दी','zh':'中文','ja':'日本語','ko':'한국어','ar':'العربية','he':'עברית'} %}
+          {% for _code in _all_locales %}
           <li role="option"
               aria-selected="{{ 'true' if _code == _active_locale else 'false' }}"
               class="lang-option{% if _code == _active_locale %} is-active{% endif %}">
@@ -261,7 +261,7 @@
               type="button"
               class="btn-icon"
               onclick="window._toggleDarkMode()"
-              aria-label="Switch to dark mode"
+              aria-label="{{ _('Switch to dark mode') }}"
               aria-pressed="false">
         <span class="material-symbols-outlined" aria-hidden="true">dark_mode</span>
       </button>
@@ -285,7 +285,7 @@
   <!-- Sidebar overlay — tapping it closes the drawer on mobile -->
   <div id="sidebarOverlay" class="sidebar-overlay" aria-hidden="true"></div>
 
-  <nav id="primaryNav" aria-label="Primary navigation" class="sidebar">
+  <nav id="primaryNav" aria-label="{{ _('Primary navigation') }}" class="sidebar">
 
     <!-- Logo area -->
     <div class="sidebar-logo" aria-hidden="true">
@@ -303,7 +303,7 @@
            class="sidebar-nav-link"
            {% if _path == '/operations' or _path == '/' %}aria-current="page"{% endif %}>
           <span class="material-symbols-outlined" aria-hidden="true">dashboard</span>
-          Dashboard
+          {{ _('Dashboard') }}
         </a>
       </li>
       <li>
@@ -311,7 +311,7 @@
            class="sidebar-nav-link"
            {% if _path.startswith('/offices') %}aria-current="page"{% endif %}>
           <span class="material-symbols-outlined" aria-hidden="true">domain</span>
-          Offices
+          {{ _('Offices') }}
         </a>
       </li>
       <li>
@@ -319,7 +319,7 @@
            class="sidebar-nav-link"
            {% if _path.startswith('/run') %}aria-current="page"{% endif %}>
           <span class="material-symbols-outlined" aria-hidden="true">terminal</span>
-          Command Center
+          {{ _('Command Center') }}
         </a>
       </li>
       <li>
@@ -327,7 +327,7 @@
            class="sidebar-nav-link"
            {% if _path.startswith('/data/individuals') %}aria-current="page"{% endif %}>
           <span class="material-symbols-outlined" aria-hidden="true">groups</span>
-          Data
+          {{ _('Data') }}
         </a>
       </li>
       <li>
@@ -335,7 +335,7 @@
            class="sidebar-nav-link"
            {% if _path.startswith('/data/wiki-drafts') %}aria-current="page"{% endif %}>
           <span class="material-symbols-outlined" aria-hidden="true">description</span>
-          Wiki Drafts
+          {{ _('Wiki Drafts') }}
         </a>
       </li>
       <li>
@@ -343,7 +343,7 @@
            class="sidebar-nav-link"
            {% if _path.startswith('/gemini-research') %}aria-current="page"{% endif %}>
           <span class="material-symbols-outlined" aria-hidden="true">person_search</span>
-          Deep Research
+          {{ _('Deep Research') }}
         </a>
       </li>
       <li>
@@ -351,7 +351,7 @@
            class="sidebar-nav-link"
            {% if _path.startswith('/ai-offices') %}aria-current="page"{% endif %}>
           <span class="material-symbols-outlined" aria-hidden="true">auto_awesome</span>
-          AI Creation
+          {{ _('AI Creation') }}
         </a>
       </li>
       <li>
@@ -359,7 +359,7 @@
            class="sidebar-nav-link"
            {% if _path.startswith('/refs') %}aria-current="page"{% endif %}>
           <span class="material-symbols-outlined" aria-hidden="true">database</span>
-          Reference Data
+          {{ _('Reference Data') }}
         </a>
       </li>
       <li>
@@ -367,7 +367,7 @@
            class="sidebar-nav-link"
            {% if _path.startswith('/reports') %}aria-current="page"{% endif %}>
           <span class="material-symbols-outlined" aria-hidden="true">analytics</span>
-          Reports
+          {{ _('Reports') }}
         </a>
       </li>
       <li>
@@ -375,24 +375,24 @@
            class="sidebar-nav-link"
            {% if _path.startswith('/data/scheduled') %}aria-current="page"{% endif %}>
           <span class="material-symbols-outlined" aria-hidden="true">settings</span>
-          System
+          {{ _('System') }}
         </a>
       </li>
     </ul>
 
     <!-- Footer: CTA + Support + Logout (WCAG 3.2.6 — consistent position) -->
     <div class="sidebar-footer">
-      <a href="/offices/new" class="sidebar-cta">New Office</a>
+      <a href="/offices/new" class="sidebar-cta">{{ _('New Office') }}</a>
       <a href="https://github.com/wcmchenry3-stack/office_holder_cursor/issues"
          class="sidebar-footer-link"
          target="_blank"
          rel="noopener noreferrer">
         <span class="material-symbols-outlined" aria-hidden="true">help</span>
-        Support
+        {{ _('Support') }}
       </a>
       <a href="/logout" class="sidebar-footer-link">
         <span class="material-symbols-outlined" aria-hidden="true">logout</span>
-        Logout
+        {{ _('Logout') }}
       </a>
     </div>
   </nav>
