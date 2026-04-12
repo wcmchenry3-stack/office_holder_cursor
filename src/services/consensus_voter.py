@@ -96,10 +96,14 @@ _SYSTEM_PROMPT = (
 def _vote_openai(prompt: str, context: dict) -> AIVote:
     """Call OpenAI gpt-4o-mini and return a vote."""
     try:
+        from src.services.ai_provider_status import is_provider_enabled
         from src.services.orchestrator import get_ai_builder
         import json
         import openai
         import time
+
+        if not is_provider_enabled("openai"):
+            return AIVote(provider="openai", is_valid=None, error="provider disabled")
 
         builder = get_ai_builder()
         if builder is None:
@@ -144,7 +148,11 @@ def _vote_openai(prompt: str, context: dict) -> AIVote:
 def _vote_gemini(prompt: str, context: dict) -> AIVote:
     """Call Gemini and return a vote."""
     try:
+        from src.services.ai_provider_status import is_provider_enabled
         from src.services.gemini_vitals_researcher import get_gemini_researcher
+
+        if not is_provider_enabled("gemini"):
+            return AIVote(provider="gemini", is_valid=None, error="provider disabled")
 
         researcher = get_gemini_researcher()
         if researcher is None:
@@ -168,7 +176,11 @@ def _vote_gemini(prompt: str, context: dict) -> AIVote:
 def _vote_claude(prompt: str, context: dict) -> AIVote:
     """Call Claude and return a vote."""
     try:
+        from src.services.ai_provider_status import is_provider_enabled
         from src.services.claude_client import get_claude_client
+
+        if not is_provider_enabled("anthropic"):
+            return AIVote(provider="claude", is_valid=None, error="provider disabled")
 
         client = get_claude_client()
         if client is None:

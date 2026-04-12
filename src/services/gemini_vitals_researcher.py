@@ -67,9 +67,15 @@ def get_gemini_researcher() -> GeminiVitalsResearcher | None:
     """Return the cached GeminiVitalsResearcher singleton, or None if not configured.
 
     Thread-safe via double-checked locking (matches orchestrator.py pattern).
-    Returns None (not raises) when GEMINI_OFFICE_HOLDER is not set — feature
-    is silently disabled.
+    Returns None (not raises) when GEMINI_ENABLED is disabled or
+    GEMINI_OFFICE_HOLDER is not set — feature is silently disabled.
     """
+    from src.services.ai_provider_status import is_provider_enabled
+
+    if not is_provider_enabled("gemini"):
+        logger.info("get_gemini_researcher: GEMINI_ENABLED is disabled — returning None")
+        return None
+
     global _researcher
     if _researcher is not None:
         return _researcher

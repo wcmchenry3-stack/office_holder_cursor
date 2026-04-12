@@ -482,19 +482,24 @@ class TestPolicyCompliance:
         assert "GEMINI_OFFICE_HOLDER" in content  # Should reference env var
 
     def test_gemini_imports_only_in_service(self):
-        """Verify google.genai imports are only in the service file."""
+        """Verify google.genai imports are only in the permitted service files.
+
+        gemini_vitals_researcher.py owns all client usage; ai_provider_status.py
+        is also permitted because it contains the lightweight balance probe.
+        """
         import glob
 
+        _ALLOWED = {"gemini_vitals_researcher", "ai_provider_status"}
         for py_file in glob.glob("src/**/*.py", recursive=True):
-            if "gemini_vitals_researcher" in py_file:
+            if any(name in py_file for name in _ALLOWED):
                 continue
             content = Path(py_file).read_text(encoding="utf-8")
             assert "from google import genai" not in content, (
                 f"Direct google.genai import found in {py_file} — "
-                "all Gemini SDK usage should be in gemini_vitals_researcher.py"
+                "all Gemini SDK usage should be in gemini_vitals_researcher.py or ai_provider_status.py"
             )
             assert (
-                "from google.genai" not in content or "gemini_vitals_researcher" in py_file
+                "from google.genai" not in content
             ), f"Direct google.genai import found in {py_file}"
 
     def test_gemini_max_output_tokens_set(self):
