@@ -205,16 +205,22 @@ class TestClaudePolicyCompliance:
         assert "ANTHROPIC_API_KEY" in content  # Should reference env var
 
     def test_anthropic_imports_only_in_service(self):
-        """Verify anthropic imports are only in the service file."""
+        """Verify anthropic imports are only in the permitted service files.
+
+        claude_client.py owns all client usage; ai_provider_status.py is also
+        permitted because it contains the lightweight balance probe that must
+        import the SDK directly.
+        """
         import glob
 
+        _ALLOWED = {"claude_client", "ai_provider_status"}
         for py_file in glob.glob("src/**/*.py", recursive=True):
-            if "claude_client" in py_file:
+            if any(name in py_file for name in _ALLOWED):
                 continue
             content = Path(py_file).read_text(encoding="utf-8")
             assert "import anthropic" not in content, (
                 f"Direct anthropic import found in {py_file} — "
-                "all Anthropic SDK usage should be in claude_client.py"
+                "all Anthropic SDK usage should be in claude_client.py or ai_provider_status.py"
             )
 
     def test_max_tokens_set(self):

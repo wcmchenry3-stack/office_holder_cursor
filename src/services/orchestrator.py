@@ -7,8 +7,9 @@ Provides:
       Single SSRF enforcement point for all outbound Wikipedia requests triggered
       by user-supplied URLs. Raises ValueError for non-wikipedia.org domains.
 
-  get_ai_builder() -> AIOfficeBuilder
+  get_ai_builder() -> AIOfficeBuilder | None
       Lazy singleton — creates one AIOfficeBuilder per process and reuses it.
+      Returns None if OPENAI_ENABLED is disabled.
       Raises RuntimeError if OPENAI_API_KEY is not set.
 
   reset_ai_builder() -> None
@@ -35,8 +36,11 @@ Wikipedia API (src/scraper/wiki_fetch.py):
 
 from __future__ import annotations
 
+import logging
 import os
 import threading
+
+logger = logging.getLogger(__name__)
 
 from src.scraper.wiki_fetch import normalize_wiki_url
 from src.services.ai_office_builder import AIOfficeBuilder
@@ -59,12 +63,19 @@ def validate_and_normalize_wiki_url(url: str) -> str:
     return normalized
 
 
-def get_ai_builder() -> AIOfficeBuilder:
+def get_ai_builder() -> AIOfficeBuilder | None:
     """Return the cached AIOfficeBuilder singleton, creating it on first call.
 
     Thread-safe via double-checked locking (matches wiki_session() pattern).
+    Returns None if OPENAI_ENABLED is set to a false-like value.
     Raises RuntimeError if OPENAI_API_KEY is not set in the environment.
     """
+    from src.services.ai_provider_status import is_provider_enabled
+
+    if not is_provider_enabled("openai"):
+        logger.info("get_ai_builder: OPENAI_ENABLED is disabled — returning None")
+        return None
+
     global _builder
     if _builder is not None:
         return _builder

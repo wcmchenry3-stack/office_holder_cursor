@@ -368,10 +368,22 @@ def inspect_one_page(conn=None) -> dict | None:
 
             db_pqc.mark_page_checked(source_page_id, conn=conn)
 
-        else:
-            # DISAGREEMENT or INSUFFICIENT_QUORUM — manual review
+        elif verdict == Verdict.DISAGREEMENT:
+            # Providers disagree — flag for manual review
             result_str = "manual_review"
             gh_url = _create_gh_issue(page_url, source_page_id, verdict.value, ai_summary)
+            db_pqc.mark_page_checked(source_page_id, conn=conn)
+
+        else:
+            # INSUFFICIENT_QUORUM — expected when providers are disabled or quota-exhausted.
+            # Not an error: log at INFO, no GH issue, mark checked so it re-enters LRU normally.
+            result_str = "skipped_quorum"
+            logger.info(
+                "page_quality_inspector: INSUFFICIENT_QUORUM for source_page_id=%d url=%s"
+                " — skipping without GH issue (providers unavailable)",
+                source_page_id,
+                page_url,
+            )
             db_pqc.mark_page_checked(source_page_id, conn=conn)
 
         check_id = db_pqc.insert_check(
