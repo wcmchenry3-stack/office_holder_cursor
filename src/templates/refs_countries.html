@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Countries – Office Holder{% endblock %}
+{% block title %}Countries — RulersAI{% endblock %}
 {% block content %}
 <h1>Countries</h1>
 {% if saved %}<div class="alert alert-success">Saved to local database.</div>{% endif %}
@@ -9,9 +9,9 @@
   <a href="/refs" class="btn btn-secondary">Back to Reference data</a>
 </div>
 {% if countries %}
-<table class="table">
+<table class="table" aria-label="Countries">
   <thead>
-    <tr><th>Name</th><th></th></tr>
+    <tr><th scope="col">Name</th><th scope="col"><span class="sr-only">Actions</span></th></tr>
   </thead>
   <tbody>
     {% for c in countries %}

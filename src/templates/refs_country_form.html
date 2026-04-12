@@ -1,12 +1,12 @@
 {% extends "base.html" %}
-{% block title %}{{ "Edit" if country else "New" }} country – Office Holder{% endblock %}
+{% block title %}{{ "Edit" if country else "New" }} Country — RulersAI{% endblock %}
 {% block content %}
 <h1>{{ "Edit" if country else "New" }} country</h1>
 {% if validation_error %}<div class="alert alert-error">{{ validation_error }}</div>{% endif %}
 <form method="post" action="{% if country %}/refs/countries/{{ country.id }}{% else %}/refs/countries/new{% endif %}">
   <div class="form-group">
     <label for="name">Name</label>
-    <input type="text" id="name" name="name" value="{{ country.name if country else '' }}" required placeholder="Country name">
+    <input type="text" id="name" name="name" value="{{ country.name if country else '' }}" required aria-required="true" placeholder="Country name">
   </div>
   <div class="actions">
     <button type="submit" class="btn">Save</button>

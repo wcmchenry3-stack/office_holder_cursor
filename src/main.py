@@ -95,6 +95,7 @@ from src.routers import gemini_research as gemini_research_router
 from src.routers import ai_decisions as ai_decisions_router
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from src.routers._deps import templates, limiter
+from src.i18n import SUPPORTED_LOCALES, resolve_locale
 from src.scheduled_tasks import (
     run_daily_maintenance,
     run_daily_delta,
@@ -195,10 +196,15 @@ async def lifespan(app: FastAPI):
 
     from src.db.scheduled_job_runs import expire_stale_scheduled_job_runs
 
-    expired_count = expire_stale_scheduled_job_runs()
+    # stale_hours=0 expires every 'running' record regardless of age.  Any job that was
+    # in-flight when the previous process died cannot be running now — the subprocess was
+    # killed with the container.  Using the default stale_hours=4 would leave a record
+    # created 1 minute before an OOM kill alive for 4 hours, blocking downstream jobs
+    # (insufficient_vitals, gemini_research, daily_page_quality) all morning.
+    expired_count = expire_stale_scheduled_job_runs(stale_hours=0)
     if expired_count:
         logger.warning(
-            "[startup] Cleared %d stale scheduled_job_runs row(s) left over from previous OOM kill",
+            "[startup] Cleared %d stale scheduled_job_runs row(s) left over from previous process (OOM kill or restart)",
             expired_count,
         )
     else:
@@ -252,8 +258,11 @@ async def add_security_headers(request: Request, call_next):
     response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
     response.headers.setdefault(
         "Content-Security-Policy",
-        "default-src 'self'; script-src 'self' 'unsafe-inline'; "
-        "style-src 'self' 'unsafe-inline'; img-src 'self' data:",
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com; "
+        "img-src 'self' data: https://*.googleusercontent.com;",
     )
     response.headers.setdefault("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
     if request.url.scheme == "https":
@@ -264,6 +273,17 @@ async def add_security_headers(request: Request, call_next):
 
 
 _MAX_BODY_SIZE = 1_048_576  # 1 MB
+
+
+@app.middleware("http")
+async def detect_locale(request: Request, call_next):
+    """Populate request.state.locale using cookie → Accept-Language → 'en'."""
+    locale = request.session.get("lang", "") if hasattr(request, "session") else ""
+    if not locale or locale not in SUPPORTED_LOCALES:
+        accept_lang = request.headers.get("accept-language", "")
+        locale = resolve_locale(accept_lang)
+    request.state.locale = locale
+    return await call_next(request)
 
 
 @app.middleware("http")
@@ -321,6 +341,8 @@ async def auth_google_callback(request: Request):
             status_code=403,
         )
     request.session["user_email"] = email
+    request.session["user_name"] = user_info.get("name", "")
+    request.session["user_picture"] = user_info.get("picture", "")
     return RedirectResponse("/")
 
 
@@ -328,6 +350,16 @@ async def auth_google_callback(request: Request):
 async def logout(request: Request):
     request.session.clear()
     return RedirectResponse("/login")
+
+
+@app.post("/set-locale")
+@limiter.limit("30/minute")
+async def set_locale(request: Request, locale: str = Form(...)):
+    """Set the user's preferred locale via session cookie and redirect back."""
+    if locale in SUPPORTED_LOCALES:
+        request.session["lang"] = locale
+    referer = request.headers.get("referer", "/")
+    return RedirectResponse(referer, status_code=303)
 
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"

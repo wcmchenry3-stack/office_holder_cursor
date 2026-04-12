@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import concurrent.futures
 import sqlite3
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -333,8 +335,9 @@ def test_lifespan_calls_expire_stale_scheduled_job_runs_on_startup(monkeypatch, 
     """expire_stale_scheduled_job_runs must be called during lifespan startup (#376)."""
     calls = {"count": 0}
 
-    def fake_expire():
+    def fake_expire(stale_hours=4):
         calls["count"] += 1
+        calls["stale_hours"] = stale_hours
         return 0
 
     monkeypatch.setattr("src.db.scheduled_job_runs.expire_stale_scheduled_job_runs", fake_expire)
@@ -342,13 +345,29 @@ def test_lifespan_calls_expire_stale_scheduled_job_runs_on_startup(monkeypatch, 
     monkeypatch.setattr("src.main.AsyncIOScheduler", MagicMock())
     monkeypatch.setattr("src.db.app_settings.get_setting", lambda key, default=None: default)
 
-    import asyncio
     from src.main import lifespan, app
 
     async def _run():
         async with lifespan(app):
             pass
 
-    asyncio.run(_run())
+    # asyncio.run() raises RuntimeError when called from within a running event
+    # loop (e.g. the anyio loop used by starlette TestClient elsewhere in the
+    # suite).  Run in a dedicated thread instead — same pattern as test_job_queue.py.
+    def _thread_body():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(_run())
+        finally:
+            loop.close()
+            asyncio.set_event_loop(None)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        pool.submit(_thread_body).result(timeout=15)
 
     assert calls["count"] == 1, "expire_stale_scheduled_job_runs must be called once at startup"
+    assert calls.get("stale_hours") == 0, (
+        "startup sweep must use stale_hours=0 to expire ALL running records, "
+        "not just those older than N hours — any in-flight job died with the previous process"
+    )

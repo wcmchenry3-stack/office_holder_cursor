@@ -2493,7 +2493,13 @@ def run_with_db(
         living_errors: list[dict[str, str]] = []
         bio_cancelled = False
 
-        run_cache = RunPageCache()
+        # Skip the in-memory page cache when TABLE_HTML_CACHE_ENABLED=0.  That env var
+        # already bypasses RunPageCache for table-parsing fetches (table_cache.py:200 passes
+        # run_cache=None), but the cache was still created and forwarded to bio extraction
+        # where each URL is unique — providing no dedup benefit while accumulating HTML strings.
+        run_cache = (
+            RunPageCache() if os.environ.get("TABLE_HTML_CACHE_ENABLED", "1") != "0" else None
+        )
         run_cfg = _RunConfig(
             run_mode=run_mode,
             refresh_table_cache=refresh_table_cache,
@@ -2525,6 +2531,10 @@ def run_with_db(
                 and _cur_office_url != _prev_office_url
                 and _prev_office_url is not None
             ):
+                gc.collect()
+            elif idx > 0 and idx % 25 == 0:
+                # Fallback: nudge GC every 25 offices even when many share the same URL,
+                # so BS4 cyclic references don't accumulate for the whole same-URL batch.
                 gc.collect()
             _prev_office_url = _cur_office_url
             if cancel_check and cancel_check():
@@ -2901,6 +2911,11 @@ def run_with_db(
                 # Split: bio_cache hits (no HTTP) vs URLs that need HTTP fetch.
                 cache_hits = [u for u in to_fetch if (normalize_wiki_url(u) or u) in bio_cache]
                 http_urls = [u for u in to_fetch if (normalize_wiki_url(u) or u) not in bio_cache]
+                # all_office_data is no longer needed — bio_cache has extracted _bio_details
+                # and unique_wiki_urls drives the fetch lists.  Clear it now to free the
+                # parsed term dicts (5–30 MB) before the HTTP bio-fetch phase begins.
+                all_office_data.clear()
+                gc.collect()
                 # Process bio_cache hits sequentially (no rate limiting needed).
                 for wiki_url in cache_hits:
                     bio_cache_key = normalize_wiki_url(wiki_url) or wiki_url

@@ -1,9 +1,4 @@
 {
-  "_note": {
-    "detect": "^$",
-    "skip": ".*",
-    "description": "Detection patterns for CI policy scanners. Rate-limit retry/backoff, max_completion_tokens, and User-Agent compliance are enforced in the service layer — see ai_office_builder.py, gemini_vitals_researcher.py, and wiki_fetch.py."
-  },
   "openai": {
     "detect": "from openai|import openai|openai\\.com|OpenAI\\(|client\\.chat\\.completions|client\\.completions\\.create|OPENAI_API_KEY",
     "skip": "^\\.env"
@@ -19,5 +14,9 @@
   "claude": {
     "detect": "from anthropic|import anthropic|@anthropic-ai/sdk|Anthropic\\(|ANTHROPIC_API_KEY|claude_agent_sdk",
     "skip": "^\\.env"
+  },
+  "design-tokens": {
+    "detect": ":\\s*#[0-9a-fA-F]{3,8}|rgba?\\s*\\(|hsla?\\s*\\(|font-size:\\s*[0-9]+px|font-family:\\s*[\"']|tabindex=[\"'][1-9]",
+    "skip": "node_modules/|(^|/)dist/|(^|/)build/|(^|/)\\.cache/|(^|/)coverage/|(^|/)public/|(^|/)tokens/|\\.min\\.(css|js)|\\.stories\\.[jt]sx?|\\.test\\.[jt]sx?|\\.spec\\.[jt]sx?|__snapshots__|\\.svg$|\\.mdx?$|\\.tokens\\.json$|tailwind\\.config\\.|theme\\.[^./]+\\.[jt]sx?$"
   }
 }
