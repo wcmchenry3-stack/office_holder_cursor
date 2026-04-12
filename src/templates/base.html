@@ -21,6 +21,11 @@
       } catch (e) {}
     })();
   </script>
+  <!-- RTL font loading — Noto Sans Arabic/Hebrew loaded lazily only when needed -->
+  {% set _rtl_font_map = {'ar': 'Noto+Sans+Arabic:wght@400;700', 'he': 'Noto+Sans+Hebrew:wght@400;700'} %}
+  {% if locale in _rtl_font_map %}
+  <link href="https://fonts.googleapis.com/css2?family={{ _rtl_font_map[locale] }}&display=swap" rel="stylesheet">
+  {% endif %}
 </head>
 <body>
   <!-- Skip link — first interactive element, sr-only until focused (WCAG 2.4.1) -->
