@@ -121,9 +121,7 @@ def poll_gemini_balance() -> bool:
             logger.warning("poll_gemini_balance: RESOURCE_EXHAUSTED — Gemini quota exhausted")
             result = False
         else:
-            logger.warning(
-                "poll_gemini_balance: non-quota error (assuming available): %s", exc
-            )
+            logger.warning("poll_gemini_balance: non-quota error (assuming available): %s", exc)
             result = True
 
     _set_probe_cache("gemini", result)
@@ -157,14 +155,10 @@ def poll_anthropic_balance() -> bool:
         )
         result = True
     except anthropic.RateLimitError:
-        logger.warning(
-            "poll_anthropic_balance: RateLimitError — Anthropic quota exhausted"
-        )
+        logger.warning("poll_anthropic_balance: RateLimitError — Anthropic quota exhausted")
         result = False
     except Exception as exc:
-        logger.warning(
-            "poll_anthropic_balance: non-quota error (assuming available): %s", exc
-        )
+        logger.warning("poll_anthropic_balance: non-quota error (assuming available): %s", exc)
         result = True
 
     _set_probe_cache("anthropic", result)
@@ -198,14 +192,10 @@ def poll_openai_balance() -> bool:
         )
         result = True
     except openai.RateLimitError:
-        logger.warning(
-            "poll_openai_balance: RateLimitError — OpenAI quota exhausted"
-        )
+        logger.warning("poll_openai_balance: RateLimitError — OpenAI quota exhausted")
         result = False
     except Exception as exc:
-        logger.warning(
-            "poll_openai_balance: non-quota error (assuming available): %s", exc
-        )
+        logger.warning("poll_openai_balance: non-quota error (assuming available): %s", exc)
         result = True
 
     _set_probe_cache("openai", result)

@@ -498,9 +498,9 @@ class TestPolicyCompliance:
                 f"Direct google.genai import found in {py_file} — "
                 "all Gemini SDK usage should be in gemini_vitals_researcher.py or ai_provider_status.py"
             )
-            assert "from google.genai" not in content, (
-                f"Direct google.genai import found in {py_file}"
-            )
+            assert (
+                "from google.genai" not in content
+            ), f"Direct google.genai import found in {py_file}"
 
     def test_gemini_max_output_tokens_set(self):
         """Verify max_output_tokens is set in the Gemini service."""

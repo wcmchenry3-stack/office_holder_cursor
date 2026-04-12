@@ -122,9 +122,7 @@ class TestCheckProvidersKillSwitch:
 class TestCheckProvidersExhaustion:
     def test_anthropic_rate_limit_error_marks_exhausted(self, monkeypatch):
         monkeypatch.delenv("ANTHROPIC_ENABLED", raising=False)
-        with patch(
-            "src.services.ai_provider_status.poll_anthropic_balance", return_value=False
-        ):
+        with patch("src.services.ai_provider_status.poll_anthropic_balance", return_value=False):
             result = check_providers(["anthropic"])
         assert result.all_available is False
         assert "anthropic" in result.exhausted_providers
@@ -132,18 +130,14 @@ class TestCheckProvidersExhaustion:
 
     def test_openai_rate_limit_error_marks_exhausted(self, monkeypatch):
         monkeypatch.delenv("OPENAI_ENABLED", raising=False)
-        with patch(
-            "src.services.ai_provider_status.poll_openai_balance", return_value=False
-        ):
+        with patch("src.services.ai_provider_status.poll_openai_balance", return_value=False):
             result = check_providers(["openai"])
         assert result.all_available is False
         assert "openai" in result.exhausted_providers
 
     def test_gemini_resource_exhausted_marks_exhausted(self, monkeypatch):
         monkeypatch.delenv("GEMINI_ENABLED", raising=False)
-        with patch(
-            "src.services.ai_provider_status.poll_gemini_balance", return_value=False
-        ):
+        with patch("src.services.ai_provider_status.poll_gemini_balance", return_value=False):
             result = check_providers(["gemini"])
         assert result.all_available is False
         assert "gemini" in result.exhausted_providers
