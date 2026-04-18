@@ -300,9 +300,16 @@ async def limit_request_body_size(request: Request, call_next):
 app.add_middleware(SlowAPIMiddleware)
 # SessionMiddleware must be added AFTER SlowAPIMiddleware (above) so it is outermost and
 # populates request.session before the rate-limit key function runs.
-app.add_middleware(
-    SessionMiddleware, secret_key=os.environ.get("SECRET_KEY", "dev-only-insecure-key")
-)
+_session_secret = os.environ.get("SECRET_KEY")
+if not _session_secret:
+    if os.environ.get("GOOGLE_CLIENT_ID"):
+        raise RuntimeError(
+            "SECRET_KEY environment variable must be set in production. "
+            "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
+        )
+    # Local dev with auth disabled — use a throwaway key.
+    _session_secret = "dev-only-local-no-auth"
+app.add_middleware(SessionMiddleware, secret_key=_session_secret)
 
 
 @app.get("/login", response_class=HTMLResponse)
