@@ -6,7 +6,13 @@ on:
   push:
     branches: [dev, main]
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
+  # === Tier 0: Hygiene gates (run immediately, must pass before tier 1) ====
+
   gate-main-source:
     uses: wcmchenry3-stack/.github/.github/workflows/called-gate-main-source.yml@main
     secrets: inherit
@@ -21,7 +27,10 @@ jobs:
       python-version: '3.11'
     secrets: inherit
 
+  # === Tier 1: Substantive fast checks (need lint + secret-scan) ===========
+
   test-python:
+    needs: [lint-python, secret-scan]
     uses: wcmchenry3-stack/.github/.github/workflows/called-test-python.yml@main
     with:
       # Raised from 50 → 58 → 65 → 72 → 75 → 78 → 80 → 83 after coverage gap work (parties, ai_offices, bulk_import, refs cities/categories)
@@ -30,14 +39,13 @@ jobs:
     secrets: inherit
 
   cve-python:
+    needs: [lint-python, secret-scan]
     uses: wcmchenry3-stack/.github/.github/workflows/called-cve-python.yml@main
-    with:
-      # pygments CVE-2026-4539: no fix released yet — remove once pygments >2.19.2 ships
-      ignore-vulns: CVE-2026-4539
     secrets: inherit
 
   validate-fixtures:
     name: Validate parser fixtures
+    needs: [lint-python, secret-scan]
     runs-on: ubuntu-latest
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
@@ -58,21 +66,27 @@ jobs:
         run: pytest --tb=short -v
 
   openai-policy:
+    needs: [lint-python, secret-scan]
     uses: wcmchenry3-stack/.github/.github/workflows/called-openai-policy.yml@main
     secrets: inherit
 
   wikipedia-policy:
+    needs: [lint-python, secret-scan]
     uses: wcmchenry3-stack/.github/.github/workflows/called-wikipedia-policy.yml@main
     with:
-      allowed-repo: wcmchenry3-stack/office_holder_cursor
+      allowed-repo: wcmchenry3-stack/RulersAI
     secrets: inherit
 
   gemini-policy:
+    needs: [lint-python, secret-scan]
     uses: wcmchenry3-stack/.github/.github/workflows/called-gemini-policy.yml@main
     secrets: inherit
 
+  # === Tier 2: Expensive checks (need unit tests) ==========================
+
   ui-tests:
     name: Playwright UI tests
+    needs: [test-python]
     runs-on: ubuntu-latest
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'

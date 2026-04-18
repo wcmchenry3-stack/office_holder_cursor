@@ -577,6 +577,10 @@ async def api_refresh_table_cache(request: Request):
         use_full_page = bool(body.get("use_full_page"))
         if not url:
             raise HTTPException(status_code=400, detail="url required")
+        from src.scraper.wiki_fetch import normalize_wiki_url
+
+        if not normalize_wiki_url(url):
+            raise HTTPException(status_code=400, detail="url must be a Wikipedia URL")
     result = get_table_html(url, table_no, refresh=True, use_full_page=use_full_page)
     if "error" in result:
         raise HTTPException(status_code=502, detail=result["error"])
