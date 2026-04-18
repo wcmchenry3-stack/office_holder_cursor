@@ -43,5 +43,8 @@ htmlcov/
 src/locales/**/*.mo
 src/locales/messages.pot
 
+# Render deployment config (contains infrastructure details — use render.yaml.example)
+render.yaml
+
 # Claude Code local overrides (personal, not shared)
 .claude/settings.local.json

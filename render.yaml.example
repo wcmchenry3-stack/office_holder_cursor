@@ -1,0 +1,48 @@
+databases:
+  - name: <your-db-name>
+    plan: starter
+
+services:
+  - type: web
+    name: <your-service-name>
+    runtime: python
+    buildCommand: pip install -r requirements.txt && pybabel compile -d src/locales
+    startCommand: uvicorn src.main:app --host 0.0.0.0 --port $PORT
+    plan: starter
+    disk:
+      name: app-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: <your-db-name>
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: ALLOWED_EMAIL
+        sync: false
+      - key: APP_BASE_URL
+        sync: false
+      - key: EMAIL_APP_PASSWORD
+        sync: false
+      - key: EMAIL_FROM
+        value: <your-email>
+      - key: EMAIL_TO
+        value: <your-email>
+      - key: DAILY_DELTA_ENABLED
+        value: "1"
+      - key: APP_ENVIRONMENT
+        value: prd
+      - key: SENTRY_DSN
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: DATA_QUALITY_ENABLED
+        value: "0"
+      - key: TABLE_HTML_CACHE_ENABLED
+        value: "0"
