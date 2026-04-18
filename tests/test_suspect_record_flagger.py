@@ -250,39 +250,26 @@ class TestCheckAndGateSkipped:
         assert rows[0]["result"] == "skipped"
 
 
-class TestCheckAndGateGhIssue:
-    def test_disagreement_creates_gh_issue(self, tmp_path):
+class TestCheckAndGateNeedsReview:
+    def test_disagreement_logs_needs_review(self, tmp_path):
         conn = _conn(tmp_path)
         mock_voter = MagicMock()
         mock_voter.vote.return_value = _make_verdict(Verdict.DISAGREEMENT)
-        with (
-            patch("src.services.suspect_record_flagger.ConsensusVoter", return_value=mock_voter),
-            patch(
-                "src.services.suspect_record_flagger._create_gh_issue",
-                return_value="https://github.com/org/repo/issues/99",
-            ),
-        ):
+        with patch("src.services.suspect_record_flagger.ConsensusVoter", return_value=mock_voter):
             should_insert, flag_id = check_and_gate("1978", "No link:94:1978", 94, conn)
         assert should_insert is False
         rows = db_flags.list_recent(conn=conn)
-        assert rows[0]["result"] == "gh_issue"
-        assert rows[0]["gh_issue_url"] == "https://github.com/org/repo/issues/99"
+        assert rows[0]["result"] == "needs_review"
 
-    def test_insufficient_quorum_creates_gh_issue(self, tmp_path):
+    def test_insufficient_quorum_logs_needs_review(self, tmp_path):
         conn = _conn(tmp_path)
         mock_voter = MagicMock()
         mock_voter.vote.return_value = _make_verdict(Verdict.INSUFFICIENT_QUORUM)
-        with (
-            patch("src.services.suspect_record_flagger.ConsensusVoter", return_value=mock_voter),
-            patch(
-                "src.services.suspect_record_flagger._create_gh_issue",
-                return_value=None,
-            ),
-        ):
+        with patch("src.services.suspect_record_flagger.ConsensusVoter", return_value=mock_voter):
             should_insert, flag_id = check_and_gate("1978", "No link:94:1978", 94, conn)
         assert should_insert is False
         rows = db_flags.list_recent(conn=conn)
-        assert rows[0]["result"] == "gh_issue"
+        assert rows[0]["result"] == "needs_review"
 
 
 class TestCheckAndGateErrorHandling:
@@ -297,82 +284,3 @@ class TestCheckAndGateErrorHandling:
         assert flag_id is None
 
 
-# ---------------------------------------------------------------------------
-# GH issue enrichment: source_page_url + row_data (#400)
-# ---------------------------------------------------------------------------
-
-
-class TestCreateGhIssueEnrichment:
-    """_create_gh_issue includes source_page_url and row_data in the issue body."""
-
-    def _call(self, source_page_url=None, row_data=None):
-        from src.services.suspect_record_flagger import _create_gh_issue
-
-        captured = {}
-
-        def fake_create_issue(title, body, labels):
-            captured["body"] = body
-            return {"html_url": "https://github.com/org/repo/issues/1"}
-
-        mock_gh = MagicMock()
-        mock_gh.create_issue.side_effect = fake_create_issue
-        mock_gh.find_open_issue_by_title.return_value = None
-
-        with patch("src.services.github_client.get_github_client", return_value=mock_gh):
-            _create_gh_issue(
-                full_name="1999",
-                wiki_url="No link:42:1999",
-                office_id=42,
-                flag_reasons=["full_name is a 4-digit year: '1999'"],
-                verdict_name="disagreement",
-                ai_votes_summary="- **claude**: invalid",
-                source_page_url=source_page_url,
-                row_data=row_data,
-            )
-        return captured.get("body", "")
-
-    def test_source_page_url_appears_in_body(self):
-        body = self._call(source_page_url="https://en.wikipedia.org/wiki/Some_Office")
-        assert "### Source" in body
-        assert "https://en.wikipedia.org/wiki/Some_Office" in body
-
-    def test_row_data_appears_as_json_block(self):
-        row_data = {"Name": "1999", "Term start": "1999", "Term end": "2000"}
-        body = self._call(row_data=row_data)
-        assert "### Source" in body
-        assert "```json" in body
-        assert '"Name": "1999"' in body
-
-    def test_no_source_section_when_both_none(self):
-        body = self._call()
-        assert "### Source" not in body
-
-    def test_check_and_gate_passes_source_url_to_gh_issue(self, tmp_path):
-        """check_and_gate forwards source_page_url to _create_gh_issue."""
-        conn = _conn(tmp_path)
-        mock_voter = MagicMock()
-        mock_voter.vote.return_value = _make_verdict(Verdict.DISAGREEMENT)
-        captured = {}
-
-        def fake_gh_issue(**kwargs):
-            captured.update(kwargs)
-            return "https://github.com/org/repo/issues/2"
-
-        with (
-            patch("src.services.suspect_record_flagger.ConsensusVoter", return_value=mock_voter),
-            patch(
-                "src.services.suspect_record_flagger._create_gh_issue",
-                side_effect=fake_gh_issue,
-            ),
-        ):
-            check_and_gate(
-                full_name="1978",
-                wiki_url="No link:94:1978",
-                office_id=94,
-                conn=conn,
-                source_page_url="https://en.wikipedia.org/wiki/Test_Office",
-                row_data={"Name": "1978"},
-            )
-
-        assert captured.get("source_page_url") == "https://en.wikipedia.org/wiki/Test_Office"
-        assert captured.get("row_data") == {"Name": "1978"}

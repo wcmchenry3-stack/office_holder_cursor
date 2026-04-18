@@ -13,8 +13,8 @@ Pattern triggers (no API cost — fast, deterministic):
 Consensus outcomes (via ConsensusVoter — all 3 AIs in parallel):
   - VALID              → insert normally; log to suspect_record_flags (result='allowed')
   - INVALID            → skip; log (result='skipped')
-  - DISAGREEMENT       → skip; create GH issue; log (result='gh_issue')
-  - INSUFFICIENT_QUORUM→ skip; create GH issue; log (result='gh_issue')
+  - DISAGREEMENT       → skip; log (result='needs_review') for summary issue reporter
+  - INSUFFICIENT_QUORUM→ skip; log (result='needs_review') for summary issue reporter
 
 Graceful degradation: if all 3 AI clients unavailable (INSUFFICIENT_QUORUM),
 the record is skipped and logged conservatively.
@@ -92,70 +92,6 @@ def detect_suspicious_patterns(full_name: str | None, wiki_url: str | None) -> l
 
 
 # ---------------------------------------------------------------------------
-# GH issue helper
-# ---------------------------------------------------------------------------
-
-_GH_LABEL = "suspect-record"
-
-
-def _create_gh_issue(
-    full_name: str | None,
-    wiki_url: str | None,
-    office_id: int,
-    flag_reasons: list[str],
-    verdict_name: str,
-    ai_votes_summary: str,
-    source_page_url: str | None = None,
-    row_data: dict | None = None,
-) -> str | None:
-    """Create a GitHub issue for manual review. Returns the issue URL or None."""
-    try:
-        from src.services.github_client import get_github_client
-
-        gh = get_github_client()
-        if gh is None:
-            return None
-
-        title = f"[Suspect record] {full_name or wiki_url or 'unknown'} (office {office_id})"
-
-        existing = gh.find_open_issue_by_title(title, _GH_LABEL)
-        if existing:
-            logger.debug("Dedup: open issue already exists for '%s'", title)
-            return existing.get("html_url")
-
-        source_section = ""
-        if source_page_url or row_data:
-            source_section = "\n\n### Source\n"
-            if source_page_url:
-                source_section += f"**Page URL:** {source_page_url}\n"
-            if row_data:
-                import json as _json
-
-                source_section += (
-                    "**Parsed row data:**\n```json\n"
-                    + _json.dumps(row_data, default=str, indent=2)
-                    + "\n```"
-                )
-
-        body = (
-            f"## Suspect record flagged at parse time\n\n"
-            f"**Verdict:** {verdict_name}\n"
-            f"**Office ID:** {office_id}\n"
-            f"**full_name:** `{full_name}`\n"
-            f"**wiki_url:** `{wiki_url}`\n\n"
-            f"### Pattern triggers\n"
-            + "\n".join(f"- {r}" for r in flag_reasons)
-            + f"\n\n### AI votes\n{ai_votes_summary}"
-            + source_section
-            + "\n\nThis record was **not inserted** into the database. "
-            "Please investigate and re-scrape the office if the record is legitimate."
-        )
-        result = gh.create_issue(title=title, body=body, labels=[_GH_LABEL])
-        return result.get("html_url")
-    except Exception:
-        logger.exception("Failed to create GH issue for suspect record")
-        return None
-
 
 # ---------------------------------------------------------------------------
 # Main gate function
@@ -231,20 +167,9 @@ def check_and_gate(
             return True, flag_id
 
         # INVALID, DISAGREEMENT, or INSUFFICIENT_QUORUM → skip
-        gh_url: str | None = None
         result_str = "skipped"
         if verdict in (Verdict.DISAGREEMENT, Verdict.INSUFFICIENT_QUORUM):
-            result_str = "gh_issue"
-            gh_url = _create_gh_issue(
-                full_name=full_name,
-                wiki_url=wiki_url,
-                office_id=office_id,
-                flag_reasons=reasons,
-                verdict_name=verdict.value,
-                ai_votes_summary=ai_votes_summary,
-                source_page_url=source_page_url,
-                row_data=row_data,
-            )
+            result_str = "needs_review"
 
         flag_id = db_flags.insert_flag(
             office_id=office_id,
@@ -253,15 +178,13 @@ def check_and_gate(
             flag_reasons=reasons,
             ai_votes=ai_votes_dicts,
             result=result_str,
-            gh_issue_url=gh_url,
             conn=conn,
         )
         logger.warning(
-            "Suspect record SKIPPED (verdict=%s, office=%d, name=%r, gh=%s)",
+            "Suspect record SKIPPED (verdict=%s, office=%d, name=%r)",
             verdict.value,
             office_id,
             full_name,
-            gh_url or "none",
         )
         return False, flag_id
 
