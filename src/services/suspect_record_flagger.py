@@ -118,6 +118,11 @@ def _create_gh_issue(
 
         title = f"[Suspect record] {full_name or wiki_url or 'unknown'} (office {office_id})"
 
+        existing = gh.find_open_issue_by_title(title, _GH_LABEL)
+        if existing:
+            logger.debug("Dedup: open issue already exists for '%s'", title)
+            return existing.get("html_url")
+
         source_section = ""
         if source_page_url or row_data:
             source_section = "\n\n### Source\n"

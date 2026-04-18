@@ -190,6 +190,18 @@ class GitHubClient:
             logger.exception("Failed to create PR: %s", title)
             return None
 
+    def find_open_issue_by_title(self, title: str, label: str) -> dict | None:
+        """Return the first open issue with the given label whose title matches exactly.
+
+        Uses list_open_issues_by_label so no extra API surface is needed.
+        Returns None if no match or on error.
+        """
+        issues = self.list_open_issues_by_label(label)
+        for issue in issues:
+            if issue.get("title") == title:
+                return issue
+        return None
+
     def create_issue(self, title: str, body: str, labels: list[str]) -> dict:
         """Create a new GitHub issue. Returns the response dict.
 

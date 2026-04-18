@@ -316,6 +316,7 @@ class TestCreateGhIssueEnrichment:
 
         mock_gh = MagicMock()
         mock_gh.create_issue.side_effect = fake_create_issue
+        mock_gh.find_open_issue_by_title.return_value = None
 
         with patch("src.services.github_client.get_github_client", return_value=mock_gh):
             _create_gh_issue(

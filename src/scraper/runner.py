@@ -525,6 +525,11 @@ def _check_fill_rate_drop(office_row: dict, new_rate: float) -> None:
         if gh is None:
             return
         title = f"[Structural change] Link fill rate dropped {drop * 100:.0f}pp: {office_name}"
+
+        if gh.find_open_issue_by_title(title, "structural-change"):
+            _log.debug("Dedup: open structural-change issue already exists for '%s'", title)
+            return
+
         body = (
             f"## Wikipedia table structure may have changed\n\n"
             f"**Office:** {office_name}\n"
