@@ -18,8 +18,17 @@ REPORT=""
 
 # ── Python linting (black + ruff) ───────────────────────────────
 if [ -f "pyproject.toml" ] || [ -f "requirements.txt" ] || [ -f "setup.py" ] || [ -f "setup.cfg" ]; then
-  if command -v black &>/dev/null; then
-    OUT=$(black --check --quiet . 2>&1) || {
+  # Prefer venv black to avoid compiled-binary multiprocessing issues on Windows/Python 3.14
+  BLACK_CMD=""
+  if [ -x "venv/Scripts/black" ]; then
+    BLACK_CMD="venv/Scripts/black"
+  elif [ -x "venv/bin/black" ]; then
+    BLACK_CMD="venv/bin/black"
+  elif command -v black &>/dev/null; then
+    BLACK_CMD="black"
+  fi
+  if [ -n "$BLACK_CMD" ]; then
+    OUT=$($BLACK_CMD --check --quiet . 2>&1) || {
       FAIL=1
       REPORT+="## black\n${OUT}\n\n"
     }
