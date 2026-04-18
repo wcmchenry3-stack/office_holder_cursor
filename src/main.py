@@ -304,7 +304,7 @@ if not _session_secret:
     if os.environ.get("GOOGLE_CLIENT_ID"):
         raise RuntimeError(
             "SECRET_KEY environment variable must be set in production. "
-            "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
+            'Generate one with: python -c "import secrets; print(secrets.token_hex(32))"'
         )
     # Local dev with auth disabled — use a throwaway key.
     _session_secret = "dev-only-local-no-auth"
