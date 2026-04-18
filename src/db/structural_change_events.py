@@ -48,7 +48,16 @@ def list_unresolved(conn=None) -> list[dict]:
             " WHERE resolved = FALSE OR resolved = 0"
             " ORDER BY id DESC"
         )
-        keys = ["id", "tc_id", "office_name", "page_url", "prev_rate", "new_rate", "drop_pp", "created_at"]
+        keys = [
+            "id",
+            "tc_id",
+            "office_name",
+            "page_url",
+            "prev_rate",
+            "new_rate",
+            "drop_pp",
+            "created_at",
+        ]
         return [dict(zip(keys, row)) for row in cur.fetchall()]
     finally:
         if own_conn:

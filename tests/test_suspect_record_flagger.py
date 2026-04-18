@@ -282,5 +282,3 @@ class TestCheckAndGateErrorHandling:
             should_insert, flag_id = check_and_gate("1978", "", 94, conn)
         assert should_insert is True
         assert flag_id is None
-
-

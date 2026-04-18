@@ -101,7 +101,11 @@ def refresh(conn=None) -> str | None:
 
     try:
         structural = db_sce.list_unresolved(conn=conn)
-        suspects = [r for r in db_flags.list_recent(limit=500, conn=conn) if r.get("result") == "needs_review"]
+        suspects = [
+            r
+            for r in db_flags.list_recent(limit=500, conn=conn)
+            if r.get("result") == "needs_review"
+        ]
 
         body = _build_body(structural, suspects)
 
@@ -110,7 +114,9 @@ def refresh(conn=None) -> str | None:
             number = existing["number"]
             gh.update_issue(number, body)
             url = existing["html_url"]
-            logger.info("Updated summary issue #%d (%d items)", number, len(structural) + len(suspects))
+            logger.info(
+                "Updated summary issue #%d (%d items)", number, len(structural) + len(suspects)
+            )
         else:
             resp = gh.create_issue(title=_SUMMARY_TITLE, body=body, labels=[_SUMMARY_LABEL])
             url = resp["html_url"]

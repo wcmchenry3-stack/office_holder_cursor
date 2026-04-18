@@ -3100,6 +3100,7 @@ def run_with_db(
         if not dry_run and not test_run:
             try:
                 from src.services.summary_issue_reporter import refresh as _refresh_summary
+
                 _refresh_summary(conn=conn)
             except Exception as _summary_err:
                 _log.warning("Summary issue refresh failed (run not affected): %s", _summary_err)

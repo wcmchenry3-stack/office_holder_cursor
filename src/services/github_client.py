@@ -290,6 +290,7 @@ class GitHubClient:
                         attempt + 1,
                     )
                     import time
+
                     time.sleep(backoff)
                     backoff *= 2
                     continue
