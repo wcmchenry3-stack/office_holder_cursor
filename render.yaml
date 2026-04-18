@@ -31,9 +31,9 @@ services:
       - key: EMAIL_APP_PASSWORD
         sync: false
       - key: EMAIL_FROM
-        value: wcmchenry3@gmail.com
+        sync: false
       - key: EMAIL_TO
-        value: wcmchenry3@gmail.com
+        sync: false
       - key: DAILY_DELTA_ENABLED
         value: "1"
       - key: APP_ENVIRONMENT
