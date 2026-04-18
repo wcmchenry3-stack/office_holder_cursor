@@ -8,8 +8,8 @@ set -uo pipefail
 INPUT=$(cat)
 COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null)
 
-# Only gate on PR-creation commands
-if ! echo "$COMMAND" | grep -qE 'gh\s+pr\s+create'; then
+# Only gate on PR-creation commands (anchored to start to avoid matching --body text)
+if ! echo "$COMMAND" | grep -qE '^gh\s+pr\s+create'; then
   exit 0
 fi
 
@@ -28,8 +28,10 @@ MERGE_BASE=$(git merge-base origin/dev HEAD 2>/dev/null || \
              git merge-base origin/main HEAD 2>/dev/null || \
              echo "")
 if [ -n "$MERGE_BASE" ]; then
-  CHANGED_FILES=$(git diff --name-only "$MERGE_BASE" HEAD 2>/dev/null || echo "")
+  DIFF_BASE="$MERGE_BASE"
+  CHANGED_FILES=$(git diff --name-only "$DIFF_BASE" HEAD 2>/dev/null || echo "")
 else
+  DIFF_BASE="HEAD~1"
   CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || echo "")
 fi
 
@@ -40,13 +42,19 @@ fi
 # ── Check each policy's detection patterns ───────────────────────
 TRIGGERED=""
 
-for POLICY in $(jq -r 'to_entries[] | select(.value | type == "object") | .key' "$PATTERNS_FILE"); do
-  DETECT=$(jq -r --arg p "$POLICY" '.[$p].detect' "$PATTERNS_FILE")
-  SKIP=$(jq -r --arg p "$POLICY" '.[$p].skip // empty' "$PATTERNS_FILE")
+for POLICY in $(jq -r 'to_entries[] | select(.value | type == "object") | .key' "$PATTERNS_FILE" | tr -d '\r'); do
+  DETECT=$(jq -r --arg p "$POLICY" '.[$p].detect' "$PATTERNS_FILE" | tr -d '\r')
+  SKIP=$(jq -r --arg p "$POLICY" '.[$p].skip // empty' "$PATTERNS_FILE" | tr -d '\r')
+
+  # Guard: skip policy if detect pattern resolved to null or empty
+  # (prevents any file with the literal string "null" from being flagged)
+  [ -z "$DETECT" ] || [ "$DETECT" = "null" ] && continue
 
   while IFS= read -r file; do
     # Skip .claude/ directory (contains policy definitions with pattern strings)
     case "$file" in .claude/*) continue ;; esac
+    # Skip documentation files — they reference APIs by name but contain no executable code
+    case "$file" in *.md|*.mdx|CLAUDE.md) continue ;; esac
 
     # Skip files matching the skip pattern (checked against full path and basename
     # so patterns can exclude by directory prefix OR by filename)
@@ -54,8 +62,10 @@ for POLICY in $(jq -r 'to_entries[] | select(.value | type == "object") | .key' 
       continue
     fi
 
-    # Check if file exists and matches detection pattern
-    if [ -f "$file" ] && grep -qE "$DETECT" "$file" 2>/dev/null; then
+    # Check if the diff *introduces* lines matching the detection pattern.
+    # Grep only added lines (^\+[^+]) so pre-existing literals in unchanged
+    # code never trigger the gate — only newly written or modified lines do.
+    if git diff "$DIFF_BASE" HEAD -- "$file" 2>/dev/null | grep -qE "^\+[^+].*($DETECT)"; then
       TRIGGERED+="  - $POLICY → $file\n"
       break  # One match per policy is enough to trigger
     fi
