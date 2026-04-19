@@ -190,6 +190,27 @@ class GitHubClient:
             logger.exception("Failed to create PR: %s", title)
             return None
 
+    def find_open_issue_by_title(self, title: str, label: str) -> dict | None:
+        """Return the first open issue with the given label whose title matches exactly.
+
+        Uses list_open_issues_by_label so no extra API surface is needed.
+        Returns None if no match or on error.
+        """
+        issues = self.list_open_issues_by_label(label)
+        for issue in issues:
+            if issue.get("title") == title:
+                return issue
+        return None
+
+    def update_issue(self, number: int, body: str) -> dict | None:
+        """Update the body of an existing issue. Returns the response dict or None on failure."""
+        url = f"{_GITHUB_API_BASE}/repos/{self._repo}/issues/{number}"
+        try:
+            return self._patch(url, json={"body": body})
+        except RuntimeError:
+            logger.exception("Failed to update issue #%d", number)
+            return None
+
     def create_issue(self, title: str, body: str, labels: list[str]) -> dict:
         """Create a new GitHub issue. Returns the response dict.
 
@@ -254,6 +275,32 @@ class GitHubClient:
                     f"GitHub PUT failed with HTTP {exc.response.status_code}"
                 ) from exc
         raise RuntimeError("GitHub PUT: unreachable after retry loop")
+
+    def _patch(self, url: str, json: dict) -> dict:
+        backoff = 1.0
+        for attempt in range(3):
+            try:
+                resp = httpx.patch(url, headers=self._headers, json=json, timeout=15.0)
+                if resp.status_code == 429:
+                    if attempt == 2:
+                        raise RuntimeError(f"GitHub PATCH rate-limited after 3 attempts: {url}")
+                    logger.warning(
+                        "GitHub PATCH rate-limited; retrying in %.0f s (attempt %d/3)",
+                        backoff,
+                        attempt + 1,
+                    )
+                    import time
+
+                    time.sleep(backoff)
+                    backoff *= 2
+                    continue
+                resp.raise_for_status()
+                return resp.json()
+            except httpx.HTTPStatusError as exc:
+                raise RuntimeError(
+                    f"GitHub PATCH failed with HTTP {exc.response.status_code}"
+                ) from exc
+        raise RuntimeError("GitHub PATCH: unreachable after retry loop")
 
     def _post(self, url: str, json: dict) -> dict:
         backoff = 1.0
