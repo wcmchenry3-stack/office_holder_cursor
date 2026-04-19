@@ -688,6 +688,19 @@ def _run_pg_migrations(conn) -> None:
         "pg_office_table_config_cache_batch_backfill",
         "UPDATE office_table_config SET cache_batch = id % 7 WHERE cache_batch = 0",
     )
+    _apply(
+        "pg_create_structural_change_events",
+        "CREATE TABLE IF NOT EXISTS structural_change_events ("
+        " id SERIAL PRIMARY KEY,"
+        " tc_id INTEGER,"
+        " office_name TEXT,"
+        " page_url TEXT,"
+        " prev_rate REAL,"
+        " new_rate REAL,"
+        " drop_pp REAL,"
+        " resolved BOOLEAN NOT NULL DEFAULT FALSE,"
+        " created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())",
+    )
 
 
 def _sqlite_add_columns_if_missing(conn) -> None:

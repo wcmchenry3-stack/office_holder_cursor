@@ -519,28 +519,21 @@ def _check_fill_rate_drop(office_row: dict, new_rate: float) -> None:
         drop * 100,
     )
     try:
-        from src.services.github_client import get_github_client
+        from src.db import structural_change_events as db_sce
 
-        gh = get_github_client()
-        if gh is None:
-            return
-        title = f"[Structural change] Link fill rate dropped {drop * 100:.0f}pp: {office_name}"
-        body = (
-            f"## Wikipedia table structure may have changed\n\n"
-            f"**Office:** {office_name}\n"
-            f"**Source page URL:** {page_url}\n"
-            f"**office_table_config id:** {tc_id}\n\n"
-            f"| Metric | Value |\n"
-            f"|---|---|\n"
-            f"| Previous fill rate | {prev_rate * 100:.1f}% |\n"
-            f"| Current fill rate  | {new_rate * 100:.1f}% |\n"
-            f"| Drop               | {drop * 100:.1f}pp |\n\n"
-            f"A drop of more than 30 percentage points suggests the Wikipedia table "
-            f"column layout has changed. Please review the page and update `office_table_config`."
+        db_sce.insert_event(
+            tc_id=tc_id,
+            office_name=str(office_name),
+            page_url=page_url,
+            prev_rate=prev_rate,
+            new_rate=new_rate,
+            drop_pp=drop,
         )
-        gh.create_issue(title=title, body=body, labels=["structural-change"])
+        _log.info(
+            "Logged structural change event for office '%s' (drop=%.0f%%)", office_name, drop * 100
+        )
     except Exception:
-        _log.exception("_check_fill_rate_drop: failed to create GH issue")
+        _log.exception("_check_fill_rate_drop: failed to log structural change event")
 
 
 def _suspect_gate(
@@ -3102,6 +3095,15 @@ def run_with_db(
             "Done",
             {"terms_parsed": total_terms, "unique_wiki_urls": len(unique_wiki_urls)},
         )
+
+        # Refresh the single summary GH issue with all outstanding data quality items
+        if not dry_run and not test_run:
+            try:
+                from src.services.summary_issue_reporter import refresh as _refresh_summary
+
+                _refresh_summary(conn=conn)
+            except Exception as _summary_err:
+                _log.warning("Summary issue refresh failed (run not affected): %s", _summary_err)
 
         # Preview rows: same filter/normalize as import so UI shows exactly what would be in the table (include dead-link / name-only rows)
         preview_rows = _build_preview_rows(all_office_data) if (dry_run or test_run) else None

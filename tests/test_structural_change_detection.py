@@ -142,47 +142,47 @@ class TestCheckFillRateDrop:
             _check_fill_rate_drop(_office_row(prev_rate=0.80), new_rate=0.51)
         mock_gh.assert_not_called()
 
-    def test_drop_above_threshold_creates_gh_issue(self):
+    def test_drop_above_threshold_logs_to_db(self, tmp_path):
         from src.scraper.runner import _check_fill_rate_drop
 
-        mock_gh_client = MagicMock()
-        mock_gh_client.create_issue.return_value = {
-            "html_url": "https://github.com/org/repo/issues/1"
-        }
+        inserted = {}
 
-        with patch("src.services.github_client.get_github_client", return_value=mock_gh_client):
+        def fake_insert(tc_id, office_name, page_url, prev_rate, new_rate, drop_pp, conn=None):
+            inserted.update(
+                {
+                    "tc_id": tc_id,
+                    "office_name": office_name,
+                    "prev_rate": prev_rate,
+                    "new_rate": new_rate,
+                    "drop_pp": drop_pp,
+                }
+            )
+            return 1
+
+        with patch("src.db.structural_change_events.insert_event", side_effect=fake_insert):
             _check_fill_rate_drop(_office_row(prev_rate=0.90), new_rate=0.50)
 
-        mock_gh_client.create_issue.assert_called_once()
-        call_kwargs = mock_gh_client.create_issue.call_args.kwargs
-        assert "structural-change" in call_kwargs["labels"]
-        assert "40" in call_kwargs["title"]  # 40pp drop
+        assert inserted["office_name"] == "Test Office"
+        assert abs(inserted["drop_pp"] - 0.40) < 0.01
+        assert inserted["prev_rate"] == pytest.approx(0.90)
+        assert inserted["new_rate"] == pytest.approx(0.50)
 
-    def test_issue_body_contains_rates(self):
+    def test_drop_above_threshold_does_not_create_gh_issue(self):
         from src.scraper.runner import _check_fill_rate_drop
 
-        mock_gh_client = MagicMock()
-        mock_gh_client.create_issue.return_value = {}
-
-        with patch("src.services.github_client.get_github_client", return_value=mock_gh_client):
-            _check_fill_rate_drop(_office_row(prev_rate=0.80), new_rate=0.40)
-
-        body = mock_gh_client.create_issue.call_args.kwargs["body"]
-        assert "80.0%" in body
-        assert "40.0%" in body
-
-    def test_gh_client_unavailable_does_not_raise(self):
-        from src.scraper.runner import _check_fill_rate_drop
-
-        with patch("src.services.github_client.get_github_client", return_value=None):
-            # Should not raise
+        with patch("src.db.structural_change_events.insert_event", return_value=1), patch(
+            "src.services.github_client.get_github_client"
+        ) as mock_gh:
             _check_fill_rate_drop(_office_row(prev_rate=0.90), new_rate=0.50)
 
-    def test_gh_exception_swallowed(self):
+        mock_gh.assert_not_called()
+
+    def test_exception_swallowed(self):
         from src.scraper.runner import _check_fill_rate_drop
 
         with patch(
-            "src.services.github_client.get_github_client", side_effect=RuntimeError("api down")
+            "src.db.structural_change_events.insert_event",
+            side_effect=RuntimeError("db down"),
         ):
             # Should not raise
             _check_fill_rate_drop(_office_row(prev_rate=0.90), new_rate=0.50)

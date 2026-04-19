@@ -18,14 +18,14 @@ REPORT=""
 
 # ── Python linting (black + ruff) ───────────────────────────────
 if [ -f "pyproject.toml" ] || [ -f "requirements.txt" ] || [ -f "setup.py" ] || [ -f "setup.cfg" ]; then
-  if command -v black &>/dev/null; then
-    OUT=$(black --check --quiet . 2>&1) || {
+  if command -v black &>/dev/null || python -m black --version &>/dev/null 2>&1; then
+    OUT=$(python -m black --check --quiet . 2>&1) || {
       FAIL=1
       REPORT+="## black\n${OUT}\n\n"
     }
   fi
-  if command -v ruff &>/dev/null; then
-    OUT=$(ruff check --no-fix . 2>&1) || {
+  if command -v ruff &>/dev/null || python -m ruff --version &>/dev/null 2>&1; then
+    OUT=$(python -m ruff check --no-fix . 2>&1) || {
       FAIL=1
       REPORT+="## ruff\n${OUT}\n\n"
     }

@@ -363,6 +363,19 @@ CREATE TABLE IF NOT EXISTS suspect_record_flags (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- structural_change_events: fill-rate drops that indicate a Wikipedia table layout change.
+CREATE TABLE IF NOT EXISTS structural_change_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tc_id INTEGER,
+    office_name TEXT,
+    page_url TEXT,
+    prev_rate REAL,
+    new_rate REAL,
+    drop_pp REAL,
+    resolved INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- nolink_supersede_log: audit trail for no-link placeholder lifecycle events.
 -- Each row records when a "No link:…" placeholder was retired in favour of a real-URL individual.
 CREATE TABLE IF NOT EXISTS nolink_supersede_log (
@@ -769,6 +782,19 @@ CREATE TABLE IF NOT EXISTS suspect_record_flags (
     ai_votes TEXT,
     result TEXT NOT NULL DEFAULT 'skipped',
     gh_issue_url TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- structural_change_events: fill-rate drops that indicate a Wikipedia table layout change.
+CREATE TABLE IF NOT EXISTS structural_change_events (
+    id SERIAL PRIMARY KEY,
+    tc_id INTEGER,
+    office_name TEXT,
+    page_url TEXT,
+    prev_rate REAL,
+    new_rate REAL,
+    drop_pp REAL,
+    resolved BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
