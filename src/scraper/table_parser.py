@@ -10,6 +10,7 @@ See: https://www.mediawiki.org/wiki/API:Etiquette#The_User-Agent_header
 import copy
 import logging
 import re
+from collections import OrderedDict
 from datetime import datetime, date
 from urllib.parse import urlparse, quote
 
@@ -590,8 +591,10 @@ class Offices:
 
         # Run-level infobox cache: persists across tables for the same parser instance so the
         # same individual appearing in multiple tables only pays one HTTP infobox call per run.
+        # Bounded to 500 entries (LRU) to prevent unbounded heap growth across nightly batch runs.
         if not hasattr(self, "_infobox_cache"):
-            self._infobox_cache = {}
+            self._infobox_cache: OrderedDict[str, dict] = OrderedDict()
+            self._infobox_cache_max: int = 500
         # tracks the previous entry --> this helps the rowspan function track
         previous_row_wiki_link = None
         previous_row_district = None
@@ -1330,6 +1333,7 @@ class Offices:
                         return [existing]
                 cache = getattr(self, "_infobox_cache", None)
                 if cache is not None and wiki_link in cache:
+                    cache.move_to_end(wiki_link)
                     cached = cache[wiki_link]
                     terms_list = cached["terms"]
                     infobox_items = cached["infobox_items"]
@@ -1351,6 +1355,8 @@ class Offices:
                             "infobox_items": infobox_items,
                             "bio_details": getattr(self.Biography, "_last_bio_details", None),
                         }
+                        if len(cache) > self._infobox_cache_max:
+                            cache.popitem(last=False)
                 logger.debug(f" find_term_dates returned {len(terms_list)} term(s) from infobox")
                 # When infobox had no dates (placeholder), use table years only for this record (same as "table has years only")
                 if (
